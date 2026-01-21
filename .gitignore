@@ -36,8 +36,11 @@ id_rsa*
 
 # Kubeconfig files
 *kubeconfig*
-*.yaml
-*.yml
+admin.conf
+config.yaml
+
+# Allow vital config files
+!docker-compose.yml
 !frontend/vite.config.js
 !frontend/tailwind.config.js
 !frontend/postcss.config.js
