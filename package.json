@@ -1,0 +1,18 @@
+{
+  "name": "kubeez",
+  "version": "1.0.0",
+  "description": "Zero-Touch Kubernetes Platform - One-Click Cluster Installation",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+  },
+  "keywords": ["kubernetes", "k8s", "automation", "devops", "cluster"],
+  "author": "KubeEZ Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
