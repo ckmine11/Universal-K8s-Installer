@@ -1,52 +1,73 @@
-# 🚀 KubeEZ - Enterprise Kubernetes Automation Suite
+# 🚀 KubeEZ - Intelligent Kubernetes Automation Suite
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
+![Version](https://img.shields.io/badge/version-2.1.0-green.svg)
 ![Status](https://img.shields.io/badge/status-Production%20Ready-success.svg)
+![Feature](https://img.shields.io/badge/feature-Self--Healing-purple.svg)
 
-**The ultimate "No-Ops" platform to provision, scale, and manage production-grade Kubernetes clusters on bare-metal servers, VMs, or cloud instances with a single click.**
+**The ultimate "No-Ops" platform to provision, scale, and manage production-grade Kubernetes clusters.** 
+KubeEZ doesn't just install Kubernetes; it **diagnoses, fixes, and ensures success** using an integrated AI-driven recovery engine. It works natively on bare-metal servers, VMs (Oracle/AWS/Azure), or even local simulations.
 
 ---
 
 ## 📖 Table of Contents
 - [Overview](#-overview)
+- [🔥 New: Intelligent Recovery](#-new-intelligent-recovery)
 - [Key Features](#-key-features)
 - [System Architecture](#-system-architecture)
-- [Technology Stack](#-technology-stack)
 - [Getting Started](#-getting-started)
-- [Security & Authentication](#-security--authentication)
-- [Detailed Workflow](#-detailed-workflow)
+- [Simulation Mode](#-simulation-mode)
+- [Security](#-security)
 - [Project Structure](#-project-structure)
-- [Deployment Guide](#-deployment-guide)
 
 ---
 
 ## 🌟 Overview
-Setting up Kubernetes "the hard way" involves dozens of complex steps: disabling swap, configuring iptables, installing CNI plugins, generating certificates, and rigorous firewall management. **KubeEZ** automates 100% of this process. It connects to your fresh Linux servers via SSH and transforms them into a High-Availability Kubernetes Cluster in minutes.
+
+Setting up Kubernetes "the hard way" is painful. KubeEZ automates 100% of it. Whether you have fresh Ubuntu servers or old CentOS boxes, KubeEZ connects via SSH, prepares the environment, and builds a High-Availability Cluster in minutes.
+
+**What makes KubeEZ unique?**
+If an installation fails (e.g., DNS issues, Package locks, Swap memory), KubeEZ **automatically detects the error, fixes it on the node, and retries**, guaranteeing a successful deployment.
 
 ---
 
-## 🔥 Key Features
+## 🔥 New: Intelligent Recovery system
+
+KubeEZ v2.1 introduces a groundbreaking **Self-Healing Engine** inside the installer.
+
+### 🧠 Smart Diagnostics
+The engine analyzes error logs in real-time to identify root causes:
+- **DNS Failures**: Detects `Could not resolve host` or network unreachability.
+- **Package Blocks**: Detects `dpkg` or `apt` locks held by background updates.
+- **Configuration Drifts**: Detects enabled Swap memory or port conflicts.
+
+### 🛠️ Auto-Fix Actions
+Once diagnosed, KubeEZ can automatically execute surgical fixes:
+- **`fix_dns_resolv`**: Patches `/etc/resolv.conf` with Google Public DNS (`8.8.8.8`) to restore internet access.
+- **`fix_dpkg_lock`**: Safely kills stuck `apt` processes and repairs the package database.
+- **`fix_swap_off`**: Disables swap and modifies `/etc/fstab` to persist changes.
+- **`fix_kube_reset`**: Cleans up partial installations to ensure a fresh retry.
+
+---
+
+## 💎 Key Features
 
 ### 🛡️ Production-Grade Engineering
-- **Multi-OS Support**: Seamlessly works on **Ubuntu (20.04/22.04/24.04)**, **CentOS 7/8/Stream**, **RHEL**, and **Rocky Linux**.
-- **System Hardening**: Automatically handles:
-    - Persistent Swap Disabling.
-    - Kernel Module Loading (`overlay`, `br_netfilter`).
-    - Sysctl Parameter Tuning (`net.bridge.bridge-nf-call-iptables`).
-    - Firewall Configuration (`ufw`/`firewalld`).
-- **HA Ready**: Supports Multi-Master setups with automatic Certificate Key generation and Control Plane Endpoint configuration.
+- **Universal OS Support**: Ubuntu (20.04 - 24.04), CentOS 7/8/Stream, RHEL, Rocky Linux.
+- **System Hardening**: Auto-configures Firewall (`ufw`/`firewalld`), Kernel Modules (`overlay`, `br_netfilter`), and Sysctl params.
+- **HA Ready**: Automatic Certificate Key generation for Multi-Master Control Planes.
 
 ### 🎨 Futuristic Dashboard
-- **Real-Time Logs**: Watch the installation process live via WebSockets.
-- **Glassmorphism UI**: Beautiful, dark-mode interface built with React & Tailwind CSS.
-- **Wizard Flow**: Step-by-step guidance for cluster configuration.
+- **Live Node Monitoring**: Real-time CPU, RAM, and Disk usage via SSH/Kubectl.
+- **Glassmorphism UI**: Beautiful, dark-mode accessible interface.
+- **Wizard Flow**: Step-by-step guidance.
+- **Robust Downloads**: Securely download `kubeconfig` even if SSH users are non-root.
 
-### 🔒 Enterprise Security
-- **Secure Authentication**: Built-in Admin system with **Initial Setup Mode**.
-- **JWT Sessions**: Stateless, secure API access.
-- **SSH Key Handling**: Supports direct key content pasting (no file path dependency for Docker environments).
-- **Role-Based Access**: Secured API endpoints (`/api/clusters/*` protected).
+### 🧪 Simulation Mode
+Don't have servers yet?
+- **Mock Engine**: Auto-generates mock Kubeconfig and Health Stats.
+- **UI Testing**: Validates the entire dashboard flow without real infrastructure.
+- **Safe Fallback**: If real nodes disconnect, the UI degrades gracefully instead of crashing.
 
 ---
 
@@ -57,112 +78,54 @@ graph TD
     User[Admin User] -->|HTTPS| FE[React Frontend]
     FE -->|REST/WS| BE[Node.js Backend]
     
-    subgraph "KubeEZ Docker Container"
+    subgraph "KubeEZ Engine"
         BE
-        Data[(JSON Store)]
-        Scripts[Bash Automation Scripts]
+        Auto[Automation Engine]
+        Healer[Self-Healing Module]
+        Store[Persistent Data]
     end
     
-    BE -->|SSH (Port 22)| Master[Master Node 1]
-    BE -->|SSH (Port 22)| Worker1[Worker Node 1]
-    BE -->|SSH (Port 22)| Worker2[Worker Node 2]
+    BE -->|SSH (Port 22)| Master[Master Node]
+    BE -->|SSH (Port 22)| Worker[Worker Node]
     
-    Master -->|Kubeadm Join| HA_Master[HA Master 2]
+    Healer -->|Fix Commands| Master
+    Healer -->|Fix Commands| Worker
 ```
 
-The Backend acts as an **Orchestrator**. It pushes verified Bash scripts (`backend/src/automation/*.sh`) to the target nodes and executes them with `sudo`, streaming stdout/stderr back to the Frontend in real-time.
-
----
-
-## 💻 Technology Stack
-
-### **Frontend**
-- **Framework**: React 18 + Vite
-- **Styling**: Tailwind CSS + Custom Animations
-- **Icons**: Lucide React
-- **State**: Context API (Auth/Wizard)
-
-### **Backend**
-- **Runtime**: Node.js (Alpine Linux)
-- **API**: Express.js
-- **Communication**: WebSockets (`ws`) for live logs
-- **SSH Client**: `node-ssh`
-- **Security**: `bcryptjs` (Hashing), `jsonwebtoken` (Auth)
-
-### **DevOps**
-- **Containerization**: Docker & Docker Compose
-- **Scripting**: Advanced Bash (Idempotent, POSIX compliant)
+The Backend acts as an **Orchestrator**. It pushes verified idempotent Bash scripts to target nodes. If a script fails (exit code != 0), the **Self-Healing Module** intercepts the stderr, calculates a fix strategy, executes it, and auto-retries the step.
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- **Docker** and **Docker Compose** installed on your machine.
-- Access to **1 or more Linux Servers** (VMs, VPS, or Bare Metal) with SSH access (Root or Sudo user).
+- **Docker** and **Docker Compose**.
+- Target Linux Servers (or use Simulation Mode).
 
-### Local Installation
-1.  **Clone the Repository**:
+### Quick Start
+1.  **Clone**:
     ```bash
-    git clone https://github.com/your-username/kubeez.git
-    cd kubeez
+    git clone https://github.com/ckmine11/Universal-K8s-Installer.git
+    cd Universal-K8s-Installer
     ```
 
-2.  **Start the Application**:
+2.  **Run**:
     ```bash
     docker-compose up -d --build
     ```
 
-3.  **Access the Dashboard**:
-    Open [http://localhost](http://localhost) in your browser.
-
-4.  **Initialize System**:
-    - You will see the **INITIALIZE SYSTEM ACCESS** screen.
-    - Set your **Admin Username** and **Strong Password**.
-    - You are now logged in!
+3.  **Access**:
+    Open `http://localhost:5173`.
+    - Create your Admin Account.
+    - Start a New Cluster!
 
 ---
 
-## 🔐 Security & Authentication
+## 🔐 Security
 
-### The "God Mode" Protocol
-KubeEZ uses a "Claim on First Run" security model:
-1.  **Unclaimed State**: When deployed fresh, the system has no users.
-2.  **Initialization**: The first user to access the UI gets to set the Admin credentials.
-3.  **Locked State**: Once set, the `/api/auth/setup` endpoint is permanently disabled.
-
-### Password Recovery
-If you lose your admin password:
-1.  SSH into the host machine running KubeEZ.
-2.  Delete the user data file: `rm backend/data/users.json`.
-3.  Restart the container. The system resets to "Unclaimed State".
-
----
-
-## 📜 Detailed Workflow
-
-### 1. Pre-Flight Checks
-Before installing anything, KubeEZ verifies:
-- OS Compatibility.
-- CPU/RAM Resources (Minimum 2 CPU, 2GB RAM for Master).
-- Port Availability (6443, 10250, etc.).
-- Network Connectivity.
-
-### 2. Base Installation (`install-kubernetes.sh`)
-- Validates Package Managers (`apt` vs `yum`).
-- Installs `socat`, `conntrack`, `ipset`.
-- Configures `overlay` and networking modules.
-- Sets up Kubernetes Repositories (handling CentOS 7 EOL/Mirrors).
-- Installs `kubelet`, `kubeadm`, `kubectl`.
-
-### 3. Container Runtime (`install-containerd.sh`)
-- Installs `containerd`.
-- Generates default config and enables `SystemdCgroup = true` (Critical for K8s stability).
-
-### 4. Cluster Initialization (`init-control-plane.sh`)
-- Runs `kubeadm init`.
-- Configures `admin.conf` for the user.
-- Installs CNI Plugin (Calico/Flannel/Weave).
+- **JWT Authentication**: All API endpoints (including Recovery actions and Downloads) are secured.
+- **SSH Key Handling**: Supports direct key content (no file dependency).
+- **Persistent Sessions**: Cluster state is saved to disk, surviving container restarts.
 
 ---
 
@@ -172,58 +135,19 @@ Before installing anything, KubeEZ verifies:
 kubeez/
 ├── backend/
 │   ├── src/
-│   │   ├── automation/       # The "Brain" - Shell Scripts
-│   │   │   ├── install-kubernetes.sh
-│   │   │   ├── install-containerd.sh
-│   │   │   ├── init-control-plane.sh
-│   │   │   └── ...
+│   │   ├── automation/       # Shell Scripts (Install, Join, Reset)
 │   │   ├── services/
-│   │   │   ├── automationEngine.js  # SSH Orchestrator
-│   │   │   └── authService.js       # Security Logic
-│   │   └── server.js                # API Entry Point
-│   └── Dockerfile
+│   │   │   ├── automationEngine.js  # The Brain (SSH + Error Analysis)
+│   │   │   ├── installationManager.js # State Machine
+│   │   └── routes/           # Secure API
+│   └── data/                 # Persistent volumes (clusters.json)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/       # Header, Cards, UI Elements
-│   │   ├── context/          # Auth Context
-│   │   ├── pages/            # Login, Wizard, Dashboard
-│   │   └── App.jsx
+│   │   ├── pages/            # InstallationDashboard (Live UI)
+│   │   └── components/       # UI Widgets
 │   └── Dockerfile
-├── docker-compose.yml
-└── README.md
+└── docker-compose.yml
 ```
-
----
-
-## 🌍 Deployment Guide
-
-### Recommended: VPS (Oracle/AWS/DigitalOcean)
-Since KubeEZ manages long-running processes, **hosting on a VPS is recommended** over Serverless (Vercel/Render).
-
-1.  **SSH into your VPS**.
-2.  **Install Docker**: `curl -fsSL https://get.docker.com | sh`.
-3.  **Clone & Run**:
-    ```bash
-    git clone https://github.com/your-username/kubeez.git
-    cd kubeez
-    sudo docker compose up -d --build
-    ```
-4.  **Access**: Go to `http://YOUR_VPS_IP`.
-
----
-
-## 🤝 Contributing
-Contributions are welcome!
-1.  Fork the Project.
-2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`).
-3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`).
-4.  Push to the Branch (`git push origin feature/AmazingFeature`).
-5.  Open a Pull Request.
-
----
-
-## 📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ---
 
