@@ -1,6 +1,9 @@
 # Backend Dockerfile
 FROM node:18-alpine
 
+# Install curl for healthchecks and debugging
+RUN apk add --no-cache curl
+
 # Set working directory
 WORKDIR /app
 

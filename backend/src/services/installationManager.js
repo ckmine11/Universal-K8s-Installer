@@ -5,6 +5,23 @@ class InstallationManager {
     constructor() {
         this.installations = new Map()
         this.clients = new Map() // WebSocket clients per installation
+
+        // Auto-cleanup stale installations every hour
+        setInterval(() => this.cleanupStaleInstallations(), 60 * 60 * 1000)
+    }
+
+    cleanupStaleInstallations() {
+        const now = new Date().getTime()
+        const ONE_DAY = 24 * 60 * 60 * 1000
+
+        for (const [id, inst] of this.installations.entries()) {
+            const startDate = new Date(inst.startedAt).getTime()
+            // Remove if older than 24 hours AND not running
+            if (now - startDate > ONE_DAY && inst.status !== 'running') {
+                this.installations.delete(id)
+                this.clients.delete(id) // Ensure clients are gone too
+            }
+        }
     }
 
     addClient(installationId, ws) {
@@ -138,6 +155,11 @@ class InstallationManager {
                 message,
                 timestamp: new Date().toISOString()
             })
+
+            // Cap logs at 2000 entries to prevent OOM
+            if (installation.logs.length > 2000) {
+                installation.logs = installation.logs.slice(-2000)
+            }
         }
     }
 

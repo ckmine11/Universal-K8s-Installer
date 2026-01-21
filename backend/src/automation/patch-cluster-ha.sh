@@ -49,7 +49,9 @@ if [ "$ALREADY_CONFIGURED" = false ]; then
 
     echo "Adding controlPlaneEndpoint to configuration..."
     if grep -q "kubernetesVersion:" /tmp/cluster-config.yaml; then
-        sed -i "/kubernetesVersion:/a controlPlaneEndpoint: \"$MASTER_IP:6443\"" /tmp/cluster-config.yaml
+        # Detect indentation
+        INDENT=$(grep "kubernetesVersion:" /tmp/cluster-config.yaml | grep -o "^ *")
+        sed -i "/kubernetesVersion:/a ${INDENT}controlPlaneEndpoint: \"$MASTER_IP:6443\"" /tmp/cluster-config.yaml
     else
         echo "controlPlaneEndpoint: \"$MASTER_IP:6443\"" >> /tmp/cluster-config.yaml
     fi
