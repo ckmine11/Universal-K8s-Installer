@@ -253,6 +253,29 @@ class InstallationManager {
             throw new Error('Cluster not found')
         }
 
+        // Handle Simulation Mode
+        if (cluster.simulationMode) {
+            return `apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN5RENDQWJ...
+    server: https://${cluster.masterNodes[0].ip}:6443
+  name: ${cluster.clusterName}
+contexts:
+- context:
+    cluster: ${cluster.clusterName}
+    user: kubernetes-admin
+  name: kubernetes-admin@${cluster.clusterName}
+current-context: kubernetes-admin@${cluster.clusterName}
+kind: Config
+preferences: {}
+users:
+- name: kubernetes-admin
+  user:
+    client-certificate-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JS...
+    client-key-data: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVkt...`
+        }
+
         const masterNode = cluster.masterNodes[0]
         if (!masterNode) {
             throw new Error('No master node found configuration')
@@ -260,7 +283,8 @@ class InstallationManager {
 
         try {
             const ssh = await automationEngine.connectSSH(masterNode)
-            const result = await ssh.execCommand('cat /etc/kubernetes/admin.conf')
+            // Use sudo to ensure we can read the file even if non-root user
+            const result = await ssh.execCommand('sudo cat /etc/kubernetes/admin.conf')
             ssh.dispose()
 
             if (result.stderr) {
@@ -281,6 +305,25 @@ class InstallationManager {
 
         if (!cluster) {
             throw new Error('Cluster not found')
+        }
+
+        // Handle Simulation Mode - Return Fake Healthy Data
+        if (cluster.simulationMode) {
+            const randomCpu = (Math.random() * 15 + 5).toFixed(1) // 5-20%
+            const randomRam = (Math.random() * 30 + 20).toFixed(1) // 20-50%
+            const randomDisk = (Math.random() * 5 + 40).toFixed(1) // 40-45%
+
+            return {
+                cpu: parseFloat(randomCpu),
+                ram: parseFloat(randomRam),
+                disk: parseFloat(randomDisk),
+                nodes: cluster.masterNodes.concat(cluster.workerNodes || []).map(n => ({
+                    name: n.hostname || `node-${n.ip}`,
+                    status: 'Ready',
+                    ip: n.ip
+                })),
+                timestamp: new Date().toISOString()
+            }
         }
 
         const masterNode = cluster.masterNodes[0]

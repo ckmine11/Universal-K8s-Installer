@@ -111,6 +111,15 @@ class AutomationEngine {
             }
         }
 
+        if (errorLog.includes('could not resolve host') || errorLog.includes('curl#6') || errorLog.includes('network is unreachable')) {
+            return {
+                reason: 'DNS/Internet Failure',
+                message: 'Node cannot resolve domain names. Likely a missing or bad DNS configuration.',
+                suggestedFix: 'Configure Google DNS (8.8.8.8) and retry.',
+                fixAction: 'fix_dns_resolv'
+            }
+        }
+
         return {
             reason: 'Unknown execution error',
             message: 'An unexpected script error occurred.',
@@ -142,6 +151,15 @@ class AutomationEngine {
                 await ssh.execCommand('sudo rm -rf /etc/cni/net.d')
                 await ssh.execCommand('sudo rm -rf $HOME/.kube/config')
                 onLog('success', '✓ Kubernetes state reset. Ready for clean install.')
+            }
+            else if (fixAction === 'fix_dns_resolv' || fixAction === 'retry_connection') {
+                // Force DNS
+                await ssh.execCommand('echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf')
+                await ssh.execCommand('echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf')
+                onLog('success', '✓ Patched /etc/resolv.conf with Public DNS.')
+            }
+            else if (fixAction === 'retry_step') {
+                onLog('info', 'Assuming transient error. Retrying...')
             }
             else {
                 onLog('info', 'ℹ No specific script for this fix. Just retrying connection/step.')

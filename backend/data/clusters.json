@@ -1,7 +1,7 @@
 [
   {
-    "id": "0c53ea4b-1d6f-4cf5-ac7c-173d3acd7672",
-    "clusterName": "k8s",
+    "id": "f8cab11d-b94f-46d8-ad05-a517fc3b6ffb",
+    "clusterName": "k8s-recovered",
     "k8sVersion": "1.28.0",
     "networkPlugin": "flannel",
     "masterNodes": [
@@ -11,6 +11,13 @@
         "password": "root",
         "sshKey": "",
         "hostname": "master1.mine.com"
+      },
+      {
+        "ip": "192.168.220.84",
+        "username": "root",
+        "password": "root",
+        "sshKey": "",
+        "hostname": "master2.mine.com"
       }
     ],
     "workerNodes": [
@@ -36,7 +43,7 @@
       "dashboard": true
     },
     "status": "healthy",
-    "name": "k8s",
+    "name": "k8s-recovered",
     "version": "1.28.0",
     "nodes": [
       {
@@ -46,16 +53,16 @@
         "status": "Ready"
       },
       {
-        "name": "worker2.mine.com",
-        "ip": "192.168.220.82",
-        "role": "worker",
+        "name": "master2.mine.com",
+        "ip": "192.168.220.84",
+        "role": "master",
         "status": "Ready"
       }
     ],
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-21T14:36:59.907Z",
+    "updatedAt": "2026-01-21T14:59:50.619Z",
     "createdAt": "2026-01-21T10:50:37.354Z"
   }
 ]

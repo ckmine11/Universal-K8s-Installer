@@ -22,6 +22,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     const logsEndRef = useRef(null)
     const wsRef = useRef(null)
     const [health, setHealth] = useState(null)
+    const [healthError, setHealthError] = useState(null)
     const [errorState, setErrorState] = useState(null)
     const [isFixing, setIsFixing] = useState(false)
 
@@ -34,9 +35,19 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                 })
                     .then(res => res.json())
                     .then(data => {
-                        if (!data.error) setHealth(data)
+                        if (!data.error) {
+                            setHealth(data)
+                            setHealthError(null)
+                        } else {
+                            // Backend reported an error (e.g. SSH failed)
+                            setHealth(null)
+                            setHealthError(data.details || data.error)
+                        }
                     })
-                    .catch(console.error)
+                    .catch(err => {
+                        console.error(err)
+                        setHealthError('Connection Failed')
+                    })
             }
             fetchHealth()
             const interval = setInterval(fetchHealth, 10000)
@@ -115,10 +126,31 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         }])
     }
 
-    const downloadKubeconfig = () => {
-        // Download from backend
-        const token = localStorage.getItem('token')
-        window.location.href = `/api/clusters/${installationId}/kubeconfig?token=${token}`
+    const downloadKubeconfig = async () => {
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/clusters/${installationId}/kubeconfig?token=${token}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+
+            if (!res.ok) {
+                const errData = await res.json()
+                throw new Error(errData.details || errData.error || 'Download failed')
+            }
+
+            const blob = await res.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `kubeconfig-${installationId}.yaml`
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+        } catch (error) {
+            console.error('Download error:', error)
+            alert('Failed to download Kubeconfig: ' + error.message)
+        }
     }
 
     const handleAutoFix = async () => {
@@ -439,19 +471,19 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                             {[
                                 {
                                     label: 'CPU Usage',
-                                    val: health ? `${health.cpu}%` : '...',
+                                    val: healthError ? 'OFF' : (health ? `${health.cpu}%` : '...'),
                                     color: 'from-blue-400 to-blue-600',
                                     percent: health ? health.cpu : 0
                                 },
                                 {
                                     label: 'RAM Usage',
-                                    val: health ? `${health.ram}%` : '...',
+                                    val: healthError ? 'OFF' : (health ? `${health.ram}%` : '...'),
                                     color: 'from-purple-400 to-purple-600',
                                     percent: health ? health.ram : 0
                                 },
                                 {
                                     label: 'Disk Usage',
-                                    val: health ? `${health.disk}%` : '...',
+                                    val: healthError ? 'OFF' : (health ? `${health.disk}%` : '...'),
                                     color: 'from-green-400 to-green-600',
                                     percent: health ? health.disk : 0
                                 }
@@ -469,9 +501,9 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         </div>
 
                         <div className="mt-8 space-y-4">
-                            {/* Show actual cluster nodes if available */}
-                            {clusterInfo?.nodes && clusterInfo.nodes.length > 0 ? (
-                                clusterInfo.nodes.map((node, idx) => (
+                            {/* Show actual cluster nodes if available - PREFER LIVE HEALTH DATA */}
+                            {(health?.nodes || clusterInfo?.nodes) && (health?.nodes || clusterInfo?.nodes).length > 0 ? (
+                                (health?.nodes || clusterInfo?.nodes).map((node, idx) => (
                                     <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                                         <div className="flex items-center space-x-3">
                                             <div className={`w-2 h-2 rounded-full animate-pulse ${node.status === 'Ready' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
@@ -515,9 +547,11 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
                             <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
                                 <span className="text-sm text-gray-400">Connectivity Check</span>
-                                <span className="text-xs font-bold text-green-400 flex items-center">
-                                    <div className={`w-1.5 h-1.5 rounded-full mr-2 ${health ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`}></div>
-                                    {health ? 'CONNECTED' : 'CHECKING...'}
+                                <span className={`text-xs font-bold flex items-center ${health ? 'text-green-400' : (healthError ? 'text-red-400' : 'text-yellow-400')
+                                    }`}>
+                                    <div className={`w-1.5 h-1.5 rounded-full mr-2 ${health ? 'bg-green-400' : (healthError ? 'bg-red-400' : 'bg-yellow-400 animate-pulse')
+                                        }`}></div>
+                                    {health ? 'CONNECTED' : (healthError ? 'FAILED: ' + healthError.substring(0, 15) + '...' : 'CHECKING...')}
                                 </span>
                             </div>
                         </div>
