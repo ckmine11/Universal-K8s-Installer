@@ -20,6 +20,13 @@
         "password": "root",
         "sshKey": "",
         "hostname": "worker1.mine.com"
+      },
+      {
+        "ip": "192.168.220.82",
+        "username": "root",
+        "password": "root",
+        "sshKey": "",
+        "hostname": "worker2.mine.com"
       }
     ],
     "addons": {
@@ -39,8 +46,8 @@
         "status": "Ready"
       },
       {
-        "name": "worker1.mine.com",
-        "ip": "192.168.220.81",
+        "name": "worker2.mine.com",
+        "ip": "192.168.220.82",
         "role": "worker",
         "status": "Ready"
       }
@@ -48,7 +55,7 @@
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-21T12:01:13.092Z",
+    "updatedAt": "2026-01-21T14:36:59.907Z",
     "createdAt": "2026-01-21T10:50:37.354Z"
   }
 ]
