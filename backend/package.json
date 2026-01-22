@@ -1,17 +1,22 @@
 {
     "name": "kubeez-backend",
-    "version": "1.0.0",
+    "version": "2.1.0",
     "description": "KubeEZ Backend API with WebSocket support",
     "type": "module",
     "main": "src/server.js",
     "scripts": {
         "dev": "node --watch src/server.js",
-        "start": "node src/server.js"
+        "start": "node src/server.js",
+        "test": "echo \"Tests will be added with Jest\" && exit 0",
+        "test:watch": "echo \"Test watch mode\" && exit 0",
+        "lint": "echo \"Linting will be added\" && exit 0"
     },
     "keywords": [
         "kubernetes",
         "automation",
-        "websocket"
+        "websocket",
+        "gitops",
+        "self-healing"
     ],
     "author": "KubeEZ Team",
     "license": "MIT",
@@ -22,6 +27,7 @@
         "uuid": "^9.0.1",
         "cors": "^2.8.5",
         "jsonwebtoken": "^9.0.2",
-        "bcryptjs": "^2.4.3"
+        "bcryptjs": "^2.4.3",
+        "express-rate-limit": "^7.1.5"
     }
 }

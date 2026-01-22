@@ -722,22 +722,54 @@ class AutomationEngine {
         const scriptPath = join(__dirname, '../automation/install-addons.sh')
 
         try {
-            const scriptAddons = []
-            if (addons.ingress) scriptAddons.push('ingress')
-            if (addons.monitoring) scriptAddons.push('monitoring')
-            if (addons.logging) scriptAddons.push('logging')
-            if (addons.dashboard) scriptAddons.push('dashboard')
+            const addonsToInstall = []
 
-            onLog('info', `Installing add-ons: ${addonList.join(', ')}`)
+            // Legacy addons (handled by install-addons.sh)
+            if (addons.ingress) addonsToInstall.push({ type: 'legacy', name: 'ingress', label: 'Nginx Ingress' })
+            if (addons.monitoring) addonsToInstall.push({ type: 'legacy', name: 'monitoring', label: 'Prometheus Stack' })
+            if (addons.logging) addonsToInstall.push({ type: 'legacy', name: 'logging', label: 'EFK Stack' })
+            if (addons.dashboard) addonsToInstall.push({ type: 'legacy', name: 'dashboard', label: 'Kubernetes Dashboard' })
+
+            // New addons (dedicated scripts)
+            // Note: Frontend sends 'cert-manager', Backend previously checked 'certManager'
+            if (addons.certManager || addons['cert-manager']) addonsToInstall.push({ type: 'script', script: 'addons/cert-manager.sh', label: 'Cert Manager' })
+            if (addons.longhorn) addonsToInstall.push({ type: 'script', script: 'addons/longhorn.sh', label: 'Longhorn Storage' })
+            if (addons.argocd) addonsToInstall.push({ type: 'script', script: 'addons/argocd.sh', label: 'ArgoCD' })
+
+            if (addonsToInstall.length === 0) {
+                onLog('info', 'No valid add-ons selected to install.')
+                return
+            }
+
+            const addonNames = addonsToInstall.map(a => a.label).join(', ')
+            onLog('info', `Installing add-ons: ${addonNames}`)
             onLog('info', 'Waiting 60 seconds for cluster networking to settle and nodes to become Ready...')
             await this.sleep(60000)
 
-            for (const addon of scriptAddons) {
-                onLog('info', `Step: Installing ${addon}...`)
-                await this.executeScript(ssh, scriptPath, [addon], onLog)
+            const legacyScriptPath = join(__dirname, '../automation/install-addons.sh')
+
+            for (const item of addonsToInstall) {
+                onLog('info', `Step: Installing ${item.label}...`)
+                try {
+                    if (item.type === 'legacy') {
+                        await this.executeScript(ssh, legacyScriptPath, [item.name], onLog)
+                    } else {
+                        const scriptPath = join(__dirname, '../automation', item.script)
+                        await this.executeScript(ssh, scriptPath, [], onLog)
+                    }
+                    onLog('success', `✓ ${item.label} installed successfully`)
+                } catch (err) {
+                    onLog('error', `❌ Failed to install ${item.label}: ${err.message}`)
+                    // Continue with other addons instead of failing entire process?
+                    // Usually better to throw so user knows, but for addons, partial success might be better.
+                    // For now, let's allow it to propagate if critical, or maybe log and verify?
+                    // automationEngine install method catches errors. So if we throw, it stops.
+                    // Given user wants "everything installable", stopping is safer to debug. 
+                    throw err
+                }
             }
 
-            onLog('success', '✓ All add-ons installed successfully')
+            onLog('success', '✓ Selected add-ons installation phase completed')
         } finally {
             ssh.dispose()
         }

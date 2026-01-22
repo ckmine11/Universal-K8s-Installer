@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ADDONS_LIST } from '../config/addons'
 import {
     CheckCircle2,
     XCircle,
@@ -10,7 +11,14 @@ import {
     Activity,
     Plus,
     Zap,
-    Package
+    Package,
+    Network,
+    BarChart3,
+    LayoutDashboard,
+    Shield,
+    Database,
+    GitBranch,
+    Sparkles
 } from 'lucide-react'
 
 export default function InstallationDashboard({ installationId, onGoHome, onScaleCluster }) {
@@ -326,30 +334,67 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             {/* Add-on Selection Modal */}
             {isAddonModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-[#0f172a] border border-white/10 rounded-3xl max-w-lg w-full p-8 shadow-2xl relative">
+                    <div className="bg-[#0f172a]/95 backdrop-blur-xl border border-white/10 rounded-[32px] max-w-5xl w-full p-10 shadow-2xl relative overflow-hidden">
                         <h2 className="text-2xl font-bold mb-2">Install Add-ons</h2>
                         <p className="text-gray-400 mb-6">Select additional components to install on your cluster.</p>
 
-                        <div className="space-y-3 mb-8">
-                            {[
-                                { id: 'ingress', label: 'Nginx Ingress Controller', desc: 'Enterprise traffic routing' },
-                                { id: 'monitoring', label: 'Prometheus + Grafana', desc: 'Observability stack' },
-                                { id: 'logging', label: 'Fluentd + Elasticsearch', desc: 'Log aggregation' },
-                                { id: 'dashboard', label: 'Kubernetes Dashboard', desc: 'Web UI for K8s' }
-                            ].map(addon => (
-                                <div key={addon.id}
-                                    onClick={() => setAddonSelection(p => ({ ...p, [addon.id]: !p[addon.id] }))}
-                                    className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${addonSelection[addon.id] ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
-                                >
-                                    <div>
-                                        <div className="font-bold">{addon.label}</div>
-                                        <div className="text-sm text-gray-400">{addon.desc}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 my-8 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                            {ADDONS_LIST.map(addon => {
+                                // Map icon name to component
+                                const iconMap = {
+                                    Network,
+                                    BarChart3,
+                                    LayoutDashboard,
+                                    Shield,
+                                    Database,
+                                    GitBranch,
+                                    Sparkles
+                                };
+                                const Icon = iconMap[addon.iconName] || Package;
+                                const isSelected = addonSelection[addon.key];
+
+                                return (
+                                    <div
+                                        key={addon.key}
+                                        onClick={() => setAddonSelection(p => ({ ...p, [addon.key]: !p[addon.key] }))}
+                                        className={`group relative p-6 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden ${isSelected
+                                                ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
+                                            }`}
+                                    >
+                                        {/* Selection Indicator */}
+                                        <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
+                                                ? 'bg-blue-500 border-blue-500 scale-110'
+                                                : 'border-white/20 group-hover:border-white/40'
+                                            }`}>
+                                            {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                        </div>
+
+                                        {/* Badge */}
+                                        {addon.badge && (
+                                            <div className={`absolute top-4 left-4 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${addon.badgeColor} backdrop-blur-md bg-black/20`}>
+                                                {addon.badge}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-8">
+                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 ${isSelected
+                                                    ? `bg-gradient-to-br ${addon.gradient} shadow-lg scale-110`
+                                                    : 'bg-white/5 border border-white/10 group-hover:scale-110 group-hover:bg-white/10'
+                                                }`}>
+                                                <Icon className="w-6 h-6 text-white" />
+                                            </div>
+
+                                            <h3 className={`font-bold text-lg mb-2 transition-colors ${isSelected ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
+                                                {addon.name}
+                                            </h3>
+                                            <p className={`text-sm leading-relaxed transition-colors ${isSelected ? 'text-blue-100/80' : 'text-slate-400 group-hover:text-slate-300'}`}>
+                                                {addon.desc}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${addonSelection[addon.id] ? 'border-blue-500 bg-blue-500' : 'border-gray-500'}`}>
-                                        {addonSelection[addon.id] && <CheckCircle2 className="w-4 h-4 text-white" />}
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         <div className="flex space-x-3">

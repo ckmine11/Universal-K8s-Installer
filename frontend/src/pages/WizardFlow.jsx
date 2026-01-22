@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ADDONS_LIST } from '../config/addons'
 import {
     ChevronRight,
     Server,
@@ -20,7 +21,12 @@ import {
     FileCode,
     Network,
     Zap,
-    Activity
+    Activity,
+    BarChart3,
+    LayoutDashboard,
+    Database,
+    GitBranch,
+    Sparkles
 } from 'lucide-react'
 import NodeVerificationCard from '../components/NodeVerificationCard'
 import DeploymentPlan from '../components/DeploymentPlan'
@@ -36,8 +42,10 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
         addons: {
             ingress: true,
             monitoring: false,
-            logging: false,
-            dashboard: true
+            dashboard: false,
+            'cert-manager': false,
+            longhorn: false,
+            argocd: false
         }
     })
 
@@ -844,36 +852,65 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                 <h2 className="text-4xl font-black mb-2 tracking-tight">Select OS Add-ons</h2>
                                 <p className="text-slate-400">Enhance your cluster with industrial-grade tools.</p>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {[
-                                    { key: 'ingress', name: 'Nginx Ingress', desc: 'Enterprise traffic routing & SSL termination', icon: Globe, color: 'text-blue-400' },
-                                    { key: 'monitoring', name: 'Prometheus + Grafana', desc: 'Deep observability & real-time alerting', icon: Cpu, color: 'text-purple-400' },
-                                    { key: 'logging', name: 'EFK Stack', desc: 'Centralized log aggregation & analysis', icon: Terminal, color: 'text-emerald-400' },
-                                    { key: 'dashboard', name: 'Control Web UI', desc: 'Visual management cockpit for K8s', icon: Server, color: 'text-blue-500' }
-                                ].map((addon) => (
-                                    <button
-                                        key={addon.key}
-                                        onClick={() => setFormData({
-                                            ...formData,
-                                            addons: { ...formData.addons, [addon.key]: !formData.addons[addon.key] }
-                                        })}
-                                        className={`p-6 rounded-[32px] border-2 transition-all text-left flex items-start space-x-5 group ${formData.addons[addon.key]
-                                            ? 'border-blue-500 bg-blue-500/10'
-                                            : 'border-white/5 bg-white/5 hover:border-white/10'
-                                            }`}
-                                    >
-                                        <div className={`p-4 rounded-2xl ${formData.addons[addon.key] ? 'bg-blue-500 text-white' : 'bg-white/5 text-slate-500'}`}>
-                                            <addon.icon className="w-6 h-6" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <h3 className="font-bold text-lg">{addon.name}</h3>
-                                                {formData.addons[addon.key] && <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(96,165,250,1)]"></div>}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {ADDONS_LIST.map((addon) => {
+                                    const iconMap = {
+                                        Network,
+                                        BarChart3,
+                                        LayoutDashboard,
+                                        Shield,
+                                        Database,
+                                        GitBranch,
+                                        Sparkles
+                                    }
+                                    const Icon = iconMap[addon.iconName] || Package;
+                                    const isSelected = formData.addons[addon.key];
+
+                                    return (
+                                        <button
+                                            key={addon.key}
+                                            onClick={() => setFormData({
+                                                ...formData,
+                                                addons: { ...formData.addons, [addon.key]: !formData.addons[addon.key] }
+                                            })}
+                                            className={`group relative p-6 rounded-2xl border transition-all duration-300 text-left overflow-hidden ${isSelected
+                                                ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
+                                                }`}
+                                        >
+                                            {/* Selection Indicator */}
+                                            <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
+                                                ? 'bg-blue-500 border-blue-500 scale-110'
+                                                : 'border-white/20 group-hover:border-white/40'
+                                                }`}>
+                                                {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
                                             </div>
-                                            <p className="text-sm text-slate-400 leading-snug">{addon.desc}</p>
-                                        </div>
-                                    </button>
-                                ))}
+
+                                            {/* Badge */}
+                                            {addon.badge && (
+                                                <div className={`absolute top-4 left-4 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${addon.badgeColor} backdrop-blur-md bg-black/20`}>
+                                                    {addon.badge}
+                                                </div>
+                                            )}
+
+                                            <div className="mt-8">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 ${isSelected
+                                                    ? `bg-gradient-to-br ${addon.gradient} shadow-lg scale-110`
+                                                    : 'bg-white/5 border border-white/10 group-hover:scale-110 group-hover:bg-white/10'
+                                                    }`}>
+                                                    <Icon className="w-6 h-6 text-white" />
+                                                </div>
+
+                                                <h3 className={`font-bold text-lg mb-2 transition-colors ${isSelected ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
+                                                    {addon.name}
+                                                </h3>
+                                                <p className={`text-sm leading-relaxed transition-colors ${isSelected ? 'text-blue-100/80' : 'text-slate-400 group-hover:text-slate-300'}`}>
+                                                    {addon.desc}
+                                                </p>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -1035,6 +1072,8 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                         </div>
                     )}
 
+
+
                     {/* Footer Navigation */}
                     <div className="mt-16 flex items-center justify-between pt-10 border-t border-white/5">
                         <button
@@ -1073,23 +1112,24 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                             )}
                         </div>
                     </div>
-                </div>
 
-                {/* Support Modals */}
-                {showDeploymentPlan && (
-                    <DeploymentPlan
-                        config={{
-                            ...formData,
-                            masterNodes: sanitizeNodeData(formData.masterNodes),
-                            workerNodes: sanitizeNodeData(formData.workerNodes || [])
-                        }}
-                        verificationResults={verificationResults}
-                        onConfirm={handleConfirmInstall}
-                        onCancel={() => setShowDeploymentPlan(false)}
-                        isInstalling={isInstalling}
-                    />
-                )}
+
+                    {/* Support Modals */}
+                    {showDeploymentPlan && (
+                        <DeploymentPlan
+                            config={{
+                                ...formData,
+                                masterNodes: sanitizeNodeData(formData.masterNodes),
+                                workerNodes: sanitizeNodeData(formData.workerNodes || [])
+                            }}
+                            verificationResults={verificationResults}
+                            onConfirm={handleConfirmInstall}
+                            onCancel={() => setShowDeploymentPlan(false)}
+                            isInstalling={isInstalling}
+                        />
+                    )}
+                </div>
             </div>
-        </div>
+        </div >
     )
 }
