@@ -1,35 +1,35 @@
 [
   {
-    "id": "ba3305cf-f9b2-4762-bfd8-92b89d923aea",
-    "clusterName": "k8s",
+    "id": "93c3acd2-0fc8-429d-a755-386896208834",
+    "clusterName": "Existing Cluster",
     "k8sVersion": "1.28.0",
     "networkPlugin": "flannel",
     "masterNodes": [
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "fb434c6a6094b5f579786b3857114115:241f7d6024d52f9e400a1a45ecb422f6",
+        "password": "abee25cb120b8ce39aa25e43be0b48a7:5f202f5dea7c697b9f48b6b4f4cefd2f",
         "sshKey": "",
         "hostname": "master1.mine.com"
       }
     ],
     "workerNodes": [
       {
-        "ip": "192.168.220.81",
+        "ip": "192.168.220.82",
         "username": "root",
-        "password": "3a9ed1f03813238e5c1711b84bd4a092:3f5944083fd89a65aa3253a267e57825",
+        "password": "d6e3d880258719a372d62f8ddd25a0e1:3b77c958acbe8dd9e496f31d60ff6a2a",
         "sshKey": "",
-        "hostname": "worker1.mine.com"
+        "hostname": "worker2.mine.com"
       }
     ],
     "addons": {
       "ingress": true,
       "monitoring": false,
       "logging": false,
-      "dashboard": false
+      "dashboard": true
     },
     "status": "healthy",
-    "name": "k8s",
+    "name": "Existing Cluster",
     "version": "1.28.0",
     "nodes": [
       {
@@ -39,8 +39,8 @@
         "status": "Ready"
       },
       {
-        "name": "worker1.mine.com",
-        "ip": "192.168.220.81",
+        "name": "worker2.mine.com",
+        "ip": "192.168.220.82",
         "role": "worker",
         "status": "Ready"
       }
@@ -48,7 +48,7 @@
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-22T07:35:05.110Z",
-    "createdAt": "2026-01-21T18:15:34.624Z"
+    "updatedAt": "2026-01-22T12:23:01.891Z",
+    "createdAt": "2026-01-22T12:23:01.891Z"
   }
 ]
