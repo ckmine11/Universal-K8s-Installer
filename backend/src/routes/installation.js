@@ -233,4 +233,44 @@ router.post('/:id/retry', requireAuth, async (req, res) => {
     }
 })
 
+// Install Add-ons to existing cluster
+router.post('/:id/addons', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params
+        const { addons } = req.body
+
+        // Load cluster config (decrypted)
+        const clusters = await installationManager.getSavedClusters()
+        const existingCluster = clusters.find(c => c.id === id)
+
+        if (!existingCluster) {
+            return res.status(404).json({ error: 'Cluster not found' })
+        }
+
+        const newInstallationId = uuidv4()
+        const addonInstallation = {
+            ...existingCluster, // Copy credentials and nodes
+            id: newInstallationId,
+            addons: addons, // Use new addons selection
+            mode: 'addon-only',
+            status: 'pending',
+            logs: [],
+            progress: 0,
+            createdAt: new Date().toISOString()
+        }
+
+        installationManager.startInstallation(addonInstallation)
+
+        res.json({
+            success: true,
+            newInstallationId: newInstallationId,
+            message: 'Add-on installation started'
+        })
+
+    } catch (error) {
+        console.error('Add-on install error:', error)
+        res.status(500).json({ error: 'Failed to start add-on installation' })
+    }
+})
+
 export default router

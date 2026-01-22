@@ -1,49 +1,35 @@
 [
   {
-    "id": "f8cab11d-b94f-46d8-ad05-a517fc3b6ffb",
-    "clusterName": "k8s-recovered",
+    "id": "ba3305cf-f9b2-4762-bfd8-92b89d923aea",
+    "clusterName": "k8s",
     "k8sVersion": "1.28.0",
     "networkPlugin": "flannel",
     "masterNodes": [
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "root",
+        "password": "fb434c6a6094b5f579786b3857114115:241f7d6024d52f9e400a1a45ecb422f6",
         "sshKey": "",
         "hostname": "master1.mine.com"
-      },
-      {
-        "ip": "192.168.220.84",
-        "username": "root",
-        "password": "root",
-        "sshKey": "",
-        "hostname": "master2.mine.com"
       }
     ],
     "workerNodes": [
       {
         "ip": "192.168.220.81",
         "username": "root",
-        "password": "root",
+        "password": "3a9ed1f03813238e5c1711b84bd4a092:3f5944083fd89a65aa3253a267e57825",
         "sshKey": "",
         "hostname": "worker1.mine.com"
-      },
-      {
-        "ip": "192.168.220.82",
-        "username": "root",
-        "password": "root",
-        "sshKey": "",
-        "hostname": "worker2.mine.com"
       }
     ],
     "addons": {
-      "ingress": false,
+      "ingress": true,
       "monitoring": false,
       "logging": false,
-      "dashboard": true
+      "dashboard": false
     },
     "status": "healthy",
-    "name": "k8s-recovered",
+    "name": "k8s",
     "version": "1.28.0",
     "nodes": [
       {
@@ -53,16 +39,16 @@
         "status": "Ready"
       },
       {
-        "name": "master2.mine.com",
-        "ip": "192.168.220.84",
-        "role": "master",
+        "name": "worker1.mine.com",
+        "ip": "192.168.220.81",
+        "role": "worker",
         "status": "Ready"
       }
     ],
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-21T14:59:50.619Z",
-    "createdAt": "2026-01-21T10:50:37.354Z"
+    "updatedAt": "2026-01-22T07:35:05.110Z",
+    "createdAt": "2026-01-21T18:15:34.624Z"
   }
 ]

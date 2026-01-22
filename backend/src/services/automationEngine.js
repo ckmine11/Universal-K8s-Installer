@@ -206,6 +206,46 @@ class AutomationEngine {
                 this.simulationMode = true
             }
 
+            // ==========================================
+            // MODE: ADD-ON ONLY (Day-2 Operations)
+            // ==========================================
+            if (installation.mode === 'addon-only') {
+                onLog('info', '🚀 Mode: Add-on Installation Only')
+                onProgress(10, 'Verifying connectivity...')
+                await this.validateConnectivity(installation, onLog)
+
+                onProgress(50, 'Installing selected add-ons...')
+                await this.installAddons(installation, onLog)
+
+                onProgress(100, 'Add-on installation completed!')
+                onLog('success', '✅ Add-ons installed successfully!')
+
+                const clusterInfo = {
+                    name: installation.clusterName,
+                    version: installation.k8sVersion,
+                    nodes: [
+                        ...installation.masterNodes.map(n => ({
+                            name: n.hostname || `master-${n.ip}`,
+                            ip: n.ip,
+                            role: 'master',
+                            status: 'Ready'
+                        })),
+                        ...(installation.workerNodes || []).map(n => ({
+                            name: n.hostname || `worker-${n.ip}`,
+                            ip: n.ip,
+                            role: 'worker',
+                            status: 'Ready'
+                        }))
+                    ],
+                    nodeCount: installation.masterNodes.length + (installation.workerNodes?.length || 0),
+                    endpoint: `https://${installation.masterNodes[0].ip}:6443`,
+                    simulationMode: this.simulationMode
+                }
+
+                onComplete(clusterInfo)
+                return
+            }
+
             // Step 1: Validate connectivity
             onProgress(5, 'Validating node connectivity...')
             await this.validateConnectivity(installation, onLog)

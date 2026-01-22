@@ -9,7 +9,8 @@ import {
     Terminal,
     Activity,
     Plus,
-    Zap
+    Zap,
+    Package
 } from 'lucide-react'
 
 export default function InstallationDashboard({ installationId, onGoHome, onScaleCluster }) {
@@ -25,6 +26,50 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     const [healthError, setHealthError] = useState(null)
     const [errorState, setErrorState] = useState(null)
     const [isFixing, setIsFixing] = useState(false)
+
+    // Add-on Management State
+    const [isAddonModalOpen, setIsAddonModalOpen] = useState(false)
+    const [addonSelection, setAddonSelection] = useState({
+        ingress: false,
+        monitoring: false,
+        logging: false,
+        dashboard: false
+    })
+    const [installingAddons, setInstallingAddons] = useState(false)
+
+    const handleAddonSubmit = async () => {
+        // Validation: At least one addon must be selected
+        if (!Object.values(addonSelection).some(v => v)) {
+            alert('Please select at least one add-on.')
+            return
+        }
+
+        setInstallingAddons(true)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/clusters/${installationId}/addons`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ addons: addonSelection })
+            })
+
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Failed to start addon install')
+
+            setIsAddonModalOpen(false)
+            // Redirect to the new dashboard for the Add-on installation job
+            navigate(`/dashboard/${data.newInstallationId}`)
+
+        } catch (err) {
+            console.error(err)
+            alert(err.message)
+        } finally {
+            setInstallingAddons(false)
+        }
+    }
 
     useEffect(() => {
         if (status === 'completed' && installationId) {
@@ -278,6 +323,54 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                 </div>
             )}
 
+            {/* Add-on Selection Modal */}
+            {isAddonModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-[#0f172a] border border-white/10 rounded-3xl max-w-lg w-full p-8 shadow-2xl relative">
+                        <h2 className="text-2xl font-bold mb-2">Install Add-ons</h2>
+                        <p className="text-gray-400 mb-6">Select additional components to install on your cluster.</p>
+
+                        <div className="space-y-3 mb-8">
+                            {[
+                                { id: 'ingress', label: 'Nginx Ingress Controller', desc: 'Enterprise traffic routing' },
+                                { id: 'monitoring', label: 'Prometheus + Grafana', desc: 'Observability stack' },
+                                { id: 'logging', label: 'Fluentd + Elasticsearch', desc: 'Log aggregation' },
+                                { id: 'dashboard', label: 'Kubernetes Dashboard', desc: 'Web UI for K8s' }
+                            ].map(addon => (
+                                <div key={addon.id}
+                                    onClick={() => setAddonSelection(p => ({ ...p, [addon.id]: !p[addon.id] }))}
+                                    className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${addonSelection[addon.id] ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                                >
+                                    <div>
+                                        <div className="font-bold">{addon.label}</div>
+                                        <div className="text-sm text-gray-400">{addon.desc}</div>
+                                    </div>
+                                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${addonSelection[addon.id] ? 'border-blue-500 bg-blue-500' : 'border-gray-500'}`}>
+                                        {addonSelection[addon.id] && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex space-x-3">
+                            <button
+                                onClick={() => setIsAddonModalOpen(false)}
+                                className="flex-1 px-4 py-3 rounded-xl border border-white/10 hover:bg-white/5 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAddonSubmit}
+                                disabled={installingAddons}
+                                className="flex-1 px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold transition-colors disabled:opacity-50 flex items-center justify-center"
+                            >
+                                {installingAddons ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Start Installation'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div className="glass rounded-2xl p-8 mb-6">
                 <div className="flex items-center justify-between">
@@ -386,6 +479,13 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                             >
                                 <Plus className="w-5 h-5" />
                                 <span>Scale This Cluster</span>
+                            </button>
+                            <button
+                                onClick={() => setIsAddonModalOpen(true)}
+                                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                            >
+                                <Package className="w-5 h-5" />
+                                <span>Install Add-ons</span>
                             </button>
                         </div>
                     ) : status === 'failed' ? (
