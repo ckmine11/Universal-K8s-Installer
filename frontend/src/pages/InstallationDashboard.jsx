@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ADDONS_LIST } from '../config/addons'
+import ClusterTopology3D from '../components/ClusterTopology3D'
 import {
     CheckCircle2,
     XCircle,
@@ -44,6 +45,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         dashboard: false
     })
     const [installingAddons, setInstallingAddons] = useState(false)
+    const [viewMode, setViewMode] = useState('3d') // 'list' | '3d'
 
     const handleAddonSubmit = async () => {
         // Validation: At least one addon must be selected
@@ -358,14 +360,14 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                         key={addon.key}
                                         onClick={() => setAddonSelection(p => ({ ...p, [addon.key]: !p[addon.key] }))}
                                         className={`group relative p-6 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden ${isSelected
-                                                ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
-                                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
+                                            ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
+                                            : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
                                             }`}
                                     >
                                         {/* Selection Indicator */}
                                         <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
-                                                ? 'bg-blue-500 border-blue-500 scale-110'
-                                                : 'border-white/20 group-hover:border-white/40'
+                                            ? 'bg-blue-500 border-blue-500 scale-110'
+                                            : 'border-white/20 group-hover:border-white/40'
                                             }`}>
                                             {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
                                         </div>
@@ -379,8 +381,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
                                         <div className="mt-8">
                                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 ${isSelected
-                                                    ? `bg-gradient-to-br ${addon.gradient} shadow-lg scale-110`
-                                                    : 'bg-white/5 border border-white/10 group-hover:scale-110 group-hover:bg-white/10'
+                                                ? `bg-gradient-to-br ${addon.gradient} shadow-lg scale-110`
+                                                : 'bg-white/5 border border-white/10 group-hover:scale-110 group-hover:bg-white/10'
                                                 }`}>
                                                 <Icon className="w-6 h-6 text-white" />
                                             </div>
@@ -609,7 +611,23 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                 </div>
                                 <h3 className="text-xl font-bold">Node Health Monitor</h3>
                             </div>
-                            <span className="text-xs font-mono text-green-400 bg-green-400/10 px-2 py-1 rounded">LIVE</span>
+                            <div className="flex items-center space-x-2">
+                                <div className="bg-black/20 p-1 rounded-lg flex space-x-1">
+                                    <button
+                                        onClick={() => setViewMode('list')}
+                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${viewMode === 'list' ? 'bg-white/10 text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                                    >
+                                        LIST
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('3d')}
+                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${viewMode === '3d' ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'text-gray-500 hover:text-gray-300'}`}
+                                    >
+                                        3D VIEW
+                                    </button>
+                                </div>
+                                <span className="text-xs font-mono text-green-400 bg-green-400/10 px-2 py-1 rounded">LIVE</span>
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-3 gap-4">
@@ -646,26 +664,35 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         </div>
 
                         <div className="mt-8 space-y-4">
-                            {/* Show actual cluster nodes if available - PREFER LIVE HEALTH DATA */}
-                            {(health?.nodes || clusterInfo?.nodes) && (health?.nodes || clusterInfo?.nodes).length > 0 ? (
-                                (health?.nodes || clusterInfo?.nodes).map((node, idx) => (
-                                    <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                                        <div className="flex items-center space-x-3">
-                                            <div className={`w-2 h-2 rounded-full animate-pulse ${node.status === 'Ready' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-                                            <span className="text-sm font-semibold">{node.name || `${node.role} Node`}</span>
-                                        </div>
-                                        <span className="text-xs text-gray-400">{node.ip || 'N/A'}</span>
-                                    </div>
-                                ))
+                            {viewMode === '3d' ? (
+                                <ClusterTopology3D clusterInfo={health || clusterInfo} height="300px" />
                             ) : (
-                                /* Fallback: Show placeholder during installation */
-                                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                                    <div className="flex items-center space-x-3">
-                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                                        <span className="text-sm font-semibold">Initializing nodes...</span>
-                                    </div>
-                                    <span className="text-xs text-gray-400">Pending</span>
-                                </div>
+                                <>
+                                    {/* Show actual cluster nodes if available - PREFER LIVE HEALTH DATA */}
+                                    {(health?.nodes || clusterInfo?.nodes) && (health?.nodes || clusterInfo?.nodes).length > 0 ? (
+                                        (health?.nodes || clusterInfo?.nodes).map((node, idx) => (
+                                            <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-colors group">
+                                                <div className="flex items-center space-x-3">
+                                                    <div className={`w-2 h-2 rounded-full animate-pulse ${node.status === 'Ready' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                                                    <span className="text-sm font-semibold group-hover:text-blue-400 transition-colors">{node.name || `${node.role} Node`}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="block text-xs text-gray-400 font-mono">{node.ip || 'N/A'}</span>
+                                                    <span className="text-[10px] text-gray-500 uppercase tracking-widest">{node.role}</span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        /* Fallback: Show placeholder during installation */
+                                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                                                <span className="text-sm font-semibold">Initializing nodes...</span>
+                                            </div>
+                                            <span className="text-xs text-gray-400">Pending</span>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>

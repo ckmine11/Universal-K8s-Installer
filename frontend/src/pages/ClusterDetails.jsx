@@ -10,8 +10,11 @@ import {
     Plus,
     ArrowLeft,
     Trash2,
-    Layers
+    Layers,
+    Box,
+    List
 } from 'lucide-react'
+import ClusterTopology3D from '../components/ClusterTopology3D'
 
 export default function ClusterDetails({ onScaleCluster }) {
     const { id } = useParams()
@@ -20,6 +23,8 @@ export default function ClusterDetails({ onScaleCluster }) {
     const [loading, setLoading] = useState(true)
     const [health, setHealth] = useState(null)
     const [healthLoading, setHealthLoading] = useState(true)
+
+    const [viewMode, setViewMode] = useState('3d') // 'list' | '3d'
 
     useEffect(() => {
         const token = localStorage.getItem('token')
@@ -177,36 +182,69 @@ export default function ClusterDetails({ onScaleCluster }) {
                     </div>
 
                     {/* Nodes List */}
-                    <div className="glass rounded-[32px] p-8 border border-white/5">
-                        <h3 className="text-xl font-bold text-white mb-6">Cluster Nodes</h3>
-                        <div className="space-y-3">
-                            {allNodes.map((node, i) => (
-                                <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-colors group">
-                                    <div className="flex items-center space-x-4">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${node.role === 'master' ? 'bg-purple-500/10 text-purple-400' : 'bg-blue-500/10 text-blue-400'}`}>
-                                            <Server className="w-5 h-5" />
+                    {/* Nodes Visualization */}
+                    <div className="glass rounded-[32px] p-8 border border-white/5 overflow-hidden relative">
+                        <div className="flex items-center justify-between mb-6 relative z-10">
+                            <h3 className="text-xl font-bold text-white">Cluster Topology</h3>
+                            <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
+                                <button
+                                    onClick={() => setViewMode('list')}
+                                    className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-blue-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                                    title="List View"
+                                >
+                                    <List className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('3d')}
+                                    className={`p-2 rounded-lg transition-all ${viewMode === '3d' ? 'bg-blue-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                                    title="3D View"
+                                >
+                                    <Box className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {viewMode === '3d' ? (
+                            <div className="h-[500px] w-full bg-black/20 rounded-2xl border border-white/5 overflow-hidden">
+                                <ClusterTopology3D clusterInfo={{
+                                    nodes: allNodes.map((n, idx) => ({
+                                        ip: n.ip || `10.0.0.${idx}`,
+                                        hostname: n.hostname || `node-${idx}`,
+                                        role: n.role,
+                                        status: n.status
+                                    }))
+                                }} />
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {allNodes.map((node, i) => (
+                                    <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-colors group">
+                                        <div className="flex items-center space-x-4">
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${node.role === 'master' ? 'bg-purple-500/10 text-purple-400' : 'bg-blue-500/10 text-blue-400'}`}>
+                                                <Server className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-white">{node.hostname || `${node.role.charAt(0).toUpperCase() + node.role.slice(1)} Node`}</p>
+                                                <p className="text-xs text-slate-500 font-mono">{node.ip}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-bold text-white">{node.hostname || `${node.role.charAt(0).toUpperCase() + node.role.slice(1)} Node`}</p>
-                                            <p className="text-xs text-slate-500 font-mono">{node.ip}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center space-x-6">
-                                        <div className="text-right">
-                                            <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Role</p>
-                                            <p className="text-sm font-bold text-slate-300 capitalize">{node.role}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Status</p>
-                                            <div className={`flex items-center justify-end text-sm font-bold ${node.status === 'Ready' ? 'text-emerald-400' : 'text-yellow-400'}`}>
-                                                <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${node.status === 'Ready' ? 'bg-emerald-400' : 'bg-yellow-400'}`}></span>
-                                                {node.status || 'Unknown'}
+                                        <div className="flex items-center space-x-6">
+                                            <div className="text-right">
+                                                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Role</p>
+                                                <p className="text-sm font-bold text-slate-300 capitalize">{node.role}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Status</p>
+                                                <div className={`flex items-center justify-end text-sm font-bold ${node.status === 'Ready' ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${node.status === 'Ready' ? 'bg-emerald-400' : 'bg-yellow-400'}`}></span>
+                                                    {node.status || 'Unknown'}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
