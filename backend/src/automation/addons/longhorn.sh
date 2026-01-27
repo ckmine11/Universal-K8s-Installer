@@ -27,10 +27,8 @@ kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.5.3/depl
 
 # 4. Wait for Longhorn to be ready
 echo "Step 3/4: Waiting for Longhorn components..."
-sleep 30  # Give it time to create resources
-
 echo "Waiting for Longhorn manager..."
-kubectl wait --for=condition=Available deployment/longhorn-driver-deployer -n longhorn-system --timeout=300s || echo "Warning: Timeout waiting for driver deployer"
+kubectl rollout status deployment/longhorn-driver-deployer -n longhorn-system --timeout=300s
 
 # 5. Create NodePort service for Longhorn UI
 echo "Step 4/4: Exposing Longhorn UI..."

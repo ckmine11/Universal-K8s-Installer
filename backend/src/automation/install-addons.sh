@@ -21,7 +21,13 @@ if [ -z "$ADDON" ]; then
     echo "Usage: $0 <addon-name>"
     echo "Available add-ons: ingress, monitoring, dashboard"
     exit 1
+
 fi
+
+# Approve any pending CSRs (Fixes 'tls: internal error' for logs/metrics)
+echo "Ensuring Kubelet CSRs are approved..."
+kubectl get csr -o go-template='{{range .items}}{{if not .status.certificate}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' | xargs -r kubectl certificate approve || true
+
 
 echo "========================================="
 echo "Installing Add-on: $ADDON"
@@ -31,7 +37,7 @@ case $ADDON in
     ingress)
         echo "Installing Nginx Ingress Controller..."
         kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/baremetal/deploy.yaml
-        kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
+        kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=300s
         echo "✓ Nginx Ingress Controller installed"
         ;;
         
@@ -53,7 +59,7 @@ case $ADDON in
         kubectl apply --server-side --force-conflicts -f /tmp/bundle-monitoring.yaml
         
         echo "Waiting for Operator to be ready..."
-        if ! kubectl wait --for=condition=Available deployment/prometheus-operator -n monitoring --timeout=300s; then
+        if ! kubectl rollout status deployment/prometheus-operator -n monitoring --timeout=300s; then
             echo "Error: Prometheus Operator failed to become ready"
             exit 1
         fi
@@ -110,7 +116,7 @@ spec:
   serviceMonitorNamespaceSelector: {}
   resources:
     requests:
-      memory: 400Mi
+      memory: 256Mi
       cpu: 200m
     limits:
       memory: 800Mi
@@ -137,8 +143,17 @@ spec:
 EOF
 
         echo "Waiting for Prometheus to be ready..."
-        if ! kubectl wait --for=condition=Available statefulset/prometheus-main -n monitoring --timeout=300s; then
+        echo "Waiting for Prometheus to be ready..."
+        if ! kubectl rollout status statefulset/prometheus-main -n monitoring --timeout=600s; then
             echo "Error: Prometheus failed to become ready"
+            echo "--- DIAGNOSTIC INFO ---"
+            echo "StatefulSet Details:"
+            kubectl describe statefulset prometheus-main -n monitoring
+            echo "Pod Events:"
+            kubectl get events -n monitoring --sort-by='.lastTimestamp'
+            echo "Pod Logs (if any):"
+            kubectl logs -l app.kubernetes.io/name=prometheus -n monitoring --tail=20 --all-containers=true
+            echo "-----------------------"
             exit 1
         fi
 
@@ -240,7 +255,7 @@ spec:
     spec:
       containers:
       - name: grafana
-        image: grafana/grafana:10.2.3
+        image: grafana/grafana:11.3.0
         ports:
         - containerPort: 3000
         resources:
@@ -280,6 +295,16 @@ spec:
     targetPort: 3000
     nodePort: 30000
 EOF
+
+        echo "Waiting for Grafana to be ready..."
+        if ! kubectl rollout status deployment/grafana -n monitoring --timeout=300s; then
+             echo "Error: Grafana failed to become ready"
+             echo "--- DIAGNOSTIC INFO ---"
+             kubectl get events -n monitoring --field-selector involvedObject.name=grafana
+             kubectl logs deployment/grafana -n monitoring --tail=20
+             echo "-----------------------"
+             exit 1
+        fi
 
         # 5. Node Exporter (The actual metrics source)
         echo "Step 4/5: Installing Node Exporter (Metrics Agent)..."

@@ -378,16 +378,21 @@ users:
                 ssh.execCommand("free -m | awk 'NR==2{printf \"%.2f\", $3*100/$2 }'"),
                 // Disk Usage (root partition)
                 ssh.execCommand("df -h / | awk 'NR==2 {print $5}' | sed 's/%//'"),
-                // Node Status (kubectl) - try/catch in case kubectl fails or permission issues
-                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get nodes --no-headers | awk '{print $1,$2}'")
+                // Node Status (kubectl) - Get Name, Status, Role
+                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get nodes --no-headers | awk '{print $1,$2,$3}'")
             ])
 
             ssh.dispose()
 
             // Parse Nodes
             const nodesList = nodesResult.stdout.split('\n').filter(Boolean).map(line => {
-                const [name, status] = line.split(/\s+/)
-                return { name, status }
+                const [name, status, rawRole] = line.split(/\s+/)
+                const isMaster = rawRole && (rawRole.includes('master') || rawRole.includes('control-plane'))
+                return {
+                    name,
+                    status,
+                    role: isMaster ? 'master' : 'worker'
+                }
             })
 
             return {

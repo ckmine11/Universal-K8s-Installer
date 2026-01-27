@@ -12,21 +12,29 @@ class AutomationEngine {
     }
 
     async executeScript(ssh, scriptPath, args = [], onLog) {
+        let remotePath
         try {
             // Read script content
             const scriptContent = readFileSync(scriptPath, 'utf8')
 
             // Upload script to remote node
-            const remotePath = `/tmp/kubeez-${Date.now()}.sh`
+            remotePath = `/tmp/kubeez-${Date.now()}.sh`
             await ssh.execCommand(`cat > ${remotePath} << 'EOFSCRIPT'\n${scriptContent}\nEOFSCRIPT`)
             await ssh.execCommand(`chmod +x ${remotePath}`)
 
             onLog('info', `Script execution started: ${scriptPath.split(/[\\/]/).pop()}`)
 
-            // Execute script with correctly quoted arguments and streaming logs
-            const quotedArgs = args.map(arg => `'${String(arg).replace(/'/g, "'\\''")}'`).join(' ')
+            // VALIDATION: Strict validation of arguments to prevent injection
+            const safeArgs = args.map(arg => {
+                const s = String(arg)
+                // Allow alphanumeric, dashes, dots, underscores, slashes, colons
+                if (!/^[\w\-\.\:\/]+$/.test(s)) {
+                    throw new Error(`Invalid argument detected (security check): ${s}`)
+                }
+                return s
+            }).join(' ')
 
-            const result = await ssh.execCommand(`sudo bash ${remotePath} ${quotedArgs}`, {
+            const result = await ssh.execCommand(`sudo bash ${remotePath} ${safeArgs}`, {
                 onStdout: (chunk) => {
                     const lines = chunk.toString('utf8').split('\n')
                     lines.forEach(line => {
@@ -37,7 +45,7 @@ class AutomationEngine {
                     const lines = chunk.toString('utf8').split('\n')
                     lines.forEach(line => {
                         if (line.trim()) {
-                            // Don't treat all stderr as warnings (yum/apt use it for progress)
+                            // Filter warnings vs errors
                             if (line.includes('warning') || line.includes('Error') || line.includes('fail')) {
                                 onLog('warning', line)
                             } else {
@@ -48,12 +56,8 @@ class AutomationEngine {
                 }
             })
 
-            // Cleanup
-            await ssh.execCommand(`rm -f ${remotePath}`)
-
             if (result.code !== 0) {
                 // INTELLIGENT ERROR ANALYSIS
-                // Capture the last few lines of stderr for context
                 const errorContext = result.stderr.slice(-500) // Last 500 chars
                 const analysis = this.analyzeError(errorContext)
 
@@ -66,9 +70,13 @@ class AutomationEngine {
 
             return result
         } catch (error) {
-            // Pass through our enriched error if it exists
             if (error.diagnosis) throw error;
             throw new Error(`Failed to execute script: ${error.message}`)
+        } finally {
+            // Ensure cleanup happens even on error
+            if (remotePath) {
+                await ssh.execCommand(`rm -f ${remotePath}`).catch(() => { })
+            }
         }
     }
 
@@ -423,8 +431,9 @@ class AutomationEngine {
         ]
 
         for (const node of allNodes) {
+            let ssh
             try {
-                const ssh = await this.connectSSH(node)
+                ssh = await this.connectSSH(node)
 
                 // Get OS info
                 const osInfo = await ssh.execCommand('cat /etc/os-release')
@@ -432,9 +441,10 @@ class AutomationEngine {
                 const osType = osMatch ? osMatch[1] : 'unknown'
 
                 onLog('success', `✓ Connected to ${node.type} node: ${node.ip} (${osType})`)
-                ssh.dispose()
             } catch (error) {
                 throw new Error(`Failed to connect to ${node.type} node ${node.ip}: ${error.message}`)
+            } finally {
+                if (ssh) ssh.dispose()
             }
         }
     }

@@ -59,6 +59,11 @@ class ClusterStore {
     }
 
     async saveCluster(cluster) {
+        if (this._isWriting) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+            return this.saveCluster(cluster)
+        }
+        this._isWriting = true
         try {
             const clusters = await this.getClusters()
 
@@ -148,18 +153,35 @@ class ClusterStore {
         } catch (error) {
             console.error('Error saving cluster:', error)
             return false
+        } finally {
+            this._isWriting = false
         }
     }
 
     async deleteCluster(id) {
+        // Use a simple in-memory lock to prevent race conditions during file IO
+        if (this._isWriting) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+            return this.deleteCluster(id)
+        }
+
+        this._isWriting = true
         try {
-            let clusters = await this.getClusters()
-            clusters = clusters.filter(c => c.id !== id)
-            await fs.promises.writeFile(CLUSTERS_FILE, JSON.stringify(clusters, null, 2))
+            // CRITICAL FIX: Read RAW file to preserve encryption of other clusters
+            const rawData = await fs.promises.readFile(CLUSTERS_FILE, 'utf8').catch(() => '[]')
+            let rawClusters = JSON.parse(rawData)
+
+            // Filter out the deleted cluster
+            const newClusters = rawClusters.filter(c => c.id !== id)
+
+            // Write back the raw (still encrypted) data
+            await fs.promises.writeFile(CLUSTERS_FILE, JSON.stringify(newClusters, null, 2))
             return true
         } catch (error) {
             console.error('Error deleting cluster:', error)
             return false
+        } finally {
+            this._isWriting = false
         }
     }
 }

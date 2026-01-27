@@ -56,7 +56,30 @@ app.get('/api/health', (req, res) => {
 // WebSocket connection handling
 wss.on('connection', (ws, req) => {
     // Expected path: /ws/installation/:id or similar
-    const pathname = new URL(req.url, `http://${req.headers.host}`).pathname
+    // Authentication Check
+    const url = new URL(req.url, `http://${req.headers.host}`)
+    const token = url.searchParams.get('token')
+    const pathname = url.pathname
+
+    if (!token) {
+        console.log('WebSocket connection rejected: No token provided')
+        ws.close(4001, 'Unauthorized: Check credentials')
+        return
+    }
+
+    try {
+        const decoded = authService.verifyToken(token)
+        if (!decoded) {
+            console.log('WebSocket connection rejected: Invalid token')
+            ws.close(4001, 'Unauthorized: Invalid token')
+            return
+        }
+    } catch (err) {
+        console.log('WebSocket connection rejected: Token verification failed', err.message)
+        ws.close(4001, 'Unauthorized')
+        return
+    }
+
     const pathParts = pathname.split('/').filter(p => p && p !== 'ws' && p !== 'installation')
     const installationId = pathParts[pathParts.length - 1]
 

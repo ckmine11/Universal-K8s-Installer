@@ -114,7 +114,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         // Connect to WebSocket via Nginx proxy on the same port as the UI
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.host // This includes the port, e.g., 5173
-        const ws = new WebSocket(`${protocol}//${host}/ws/installation/${installationId}`)
+        const token = localStorage.getItem('token')
+        const ws = new WebSocket(`${protocol}//${host}/ws/installation/${installationId}?token=${token}`)
         wsRef.current = ws
 
         ws.onopen = () => {
@@ -265,6 +266,31 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             console.error(err)
             setIsFixing(false)
             alert('Failed to trigger auto-fix/retry: ' + err.message)
+        }
+    }
+
+    const handleRetry = async () => {
+        // Removed confirm dialog as it may be blocked
+        setIsFixing(true)
+        addLog('info', 'Initiating retry...')
+
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/clusters/${installationId}/retry`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Retry failed')
+
+            if (data.success && data.newInstallationId) {
+                navigate(`/dashboard/${data.newInstallationId}`, { replace: true })
+            }
+        } catch (err) {
+            console.error('Retry error:', err)
+            alert(err.message)
+            setIsFixing(false)
         }
     }
 
@@ -538,8 +564,16 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                     ) : status === 'failed' ? (
                         <div className="space-y-3">
                             <button
+                                onClick={handleRetry}
+                                disabled={isFixing}
+                                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                {isFixing ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+                                <span>{isFixing ? 'Retrying...' : 'Retry Installation'}</span>
+                            </button>
+                            <button
                                 onClick={onGoHome}
-                                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
                             >
                                 <span>← Go Home</span>
                             </button>

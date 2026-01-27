@@ -22,9 +22,9 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 # 3. Wait for cert-manager to be ready
 echo "Step 3/3: Waiting for cert-manager to be ready..."
-kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=300s
-kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=300s
-kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=300s
+kubectl rollout status deployment/cert-manager -n cert-manager --timeout=300s
+kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=300s
+kubectl rollout status deployment/cert-manager-cainjector -n cert-manager --timeout=300s
 
 # 4. Create a self-signed ClusterIssuer for testing
 echo "Creating self-signed ClusterIssuer..."

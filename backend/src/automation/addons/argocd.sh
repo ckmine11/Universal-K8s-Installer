@@ -22,9 +22,9 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 
 # 3. Wait for ArgoCD to be ready
 echo "Step 3/4: Waiting for ArgoCD components..."
-kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=300s
-kubectl wait --for=condition=Available deployment/argocd-repo-server -n argocd --timeout=300s
-kubectl wait --for=condition=Available deployment/argocd-dex-server -n argocd --timeout=300s
+kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
+kubectl rollout status deployment/argocd-repo-server -n argocd --timeout=300s
+kubectl rollout status deployment/argocd-dex-server -n argocd --timeout=300s
 
 # 4. Expose ArgoCD server via NodePort
 echo "Step 4/4: Exposing ArgoCD UI..."

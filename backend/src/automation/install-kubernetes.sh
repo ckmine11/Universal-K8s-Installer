@@ -15,7 +15,7 @@ echo "========================================="
 echo "Installing core dependencies (socat, conntrack, ipset)..."
 if command -v apt-get &> /dev/null; then
     apt-get update -y
-    apt-get install -y socat conntrack ipset curl gpg jq
+    apt-get install -y socat conntrack ipset curl gnupg jq
 elif command -v yum &> /dev/null; then
     yum install -y socat conntrack ipset curl jq
 else
