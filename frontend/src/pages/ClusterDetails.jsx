@@ -210,6 +210,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                                     nodes: allNodes.map((n, idx) => ({
                                         ip: n.ip || `10.0.0.${idx}`,
                                         hostname: n.hostname || `node-${idx}`,
+                                        name: n.hostname || `Node-${idx}`, // Pass hostname as name for 3D view
                                         role: n.role,
                                         status: n.status
                                     }))

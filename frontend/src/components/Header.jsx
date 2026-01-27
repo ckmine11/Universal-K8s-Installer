@@ -28,6 +28,21 @@ export default function Header() {
                     </Link>
 
                     <div className="flex items-center space-x-4">
+                        {/* Engineered By Badge - Enhanced */}
+                        <div className="hidden md:flex items-center space-x-3 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg shadow-blue-500/10 hover:border-blue-500/30 transition-all duration-300 group mr-4">
+                            <div className="relative">
+                                <div className="absolute inset-0 bg-blue-500 blur-sm opacity-50 animate-pulse"></div>
+                                <div className="relative w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-inner">
+                                    CK
+                                </div>
+                            </div>
+                            <div className="text-[10px] leading-tight">
+                                <div className="text-slate-400 font-medium uppercase tracking-widest text-[8px] group-hover:text-blue-400 transition-colors">Engineered by</div>
+                                <div className="text-white font-bold tracking-wide group-hover:text-blue-200 transition-colors">CHANDAN KUMAR</div>
+                            </div>
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse ml-1"></div>
+                        </div>
+
                         <a
                             href="#"
                             className="p-2 text-slate-400 hover:text-white transition-colors"

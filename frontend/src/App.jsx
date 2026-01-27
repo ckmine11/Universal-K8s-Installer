@@ -132,14 +132,13 @@ function DashboardWrapper({ onGoHome, onScaleCluster }) {
     return <InstallationDashboard installationId={id} onGoHome={onGoHome} onScaleCluster={onScaleCluster} />
 }
 
-import Footer from './components/Footer'
+
 
 function App() {
     return (
         <BrowserRouter>
             <AuthProvider>
                 <AuthenticatedApp />
-                <Footer />
             </AuthProvider>
         </BrowserRouter>
     )

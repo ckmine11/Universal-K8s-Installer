@@ -326,6 +326,19 @@ users:
         const cluster = clusters.find(c => c.id === id)
 
         if (!cluster) {
+            // Fallback: Check if this is an active/completed installation ID
+            // and try to resolve to the real cluster via Master IP
+            const installation = this.installations.get(id)
+            if (installation) {
+                const masterIp = installation.masterNodes?.[0]?.ip
+                if (masterIp) {
+                    const found = clusters.find(c => c.masterNodes && c.masterNodes.some(n => n.ip === masterIp))
+                    if (found) {
+                        return this.getClusterHealth(found.id)
+                    }
+                }
+            }
+
             throw new Error('Cluster not found')
         }
 

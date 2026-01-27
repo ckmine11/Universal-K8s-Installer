@@ -166,6 +166,8 @@ export default function ClusterTopology3D({ clusterInfo, height = "500px" }) {
                 </div>
             </div>
 
+
+
             <Canvas camera={{ position: [0, 4, 8], fov: 60 }} onCreated={(state) => state.gl.setClearColor('#000000', 0)}>
                 <Scene clusterInfo={clusterInfo} />
             </Canvas>
