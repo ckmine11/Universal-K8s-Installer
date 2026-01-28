@@ -837,6 +837,72 @@ class AutomationEngine {
             ssh.dispose()
         }
     }
+
+    async upgradeCluster(cluster, targetVersion, callbacks) {
+        const { onLog, onProgress, onComplete, onError } = callbacks
+
+        try {
+            onLog('info', `🚀 Starting Cluster Upgrade to v${targetVersion}...`)
+            onLog('info', '⚠️ Ensure you have a backup of etcd before proceeding.')
+
+            if (this.simulationMode) {
+                onLog('info', '[SIMULATION] Upgrading cluster components...')
+                await this.sleep(3000)
+                onLog('success', `[SIMULATION] ✓ Cluster upgraded to v${targetVersion}`)
+                onComplete({ ...cluster, version: targetVersion })
+                return
+            }
+
+            const scriptPath = join(__dirname, '../automation/upgrade-cluster.sh')
+            const allNodes = [
+                ...cluster.masterNodes.map(n => ({ ...n, role: 'master' })),
+                ...(cluster.workerNodes || []).map(n => ({ ...n, role: 'worker' }))
+            ]
+
+            let firstMasterUpgraded = false
+
+            for (let i = 0; i < allNodes.length; i++) {
+                const node = allNodes[i]
+                // FIX: Actually update progress!
+                const percentage = Math.floor((i / allNodes.length) * 100)
+                onProgress(percentage, `Upgrading node ${node.ip} (${node.role})...`)
+
+                onLog('info', `--------------------------------------------------`)
+                onLog('info', `Processing Node: ${node.ip} (${node.role})`)
+
+                const ssh = await this.connectSSH(node)
+
+                try {
+                    // Determine flags
+                    // $1=TARGET_VERSION, $2=ROLE, $3=IS_FIRST_MASTER
+                    const isFirstMaster = (node.role === 'master' && !firstMasterUpgraded)
+                    const args = [targetVersion, node.role, isFirstMaster ? 'true' : 'false']
+
+                    onLog('info', `Step: Upgrading node components...`)
+                    await this.executeScript(ssh, scriptPath, args, onLog)
+
+                    if (isFirstMaster) firstMasterUpgraded = true
+
+                    onLog('success', `✓ Node ${node.ip} upgraded successfully`)
+
+                } catch (err) {
+                    onLog('error', `❌ Upgrade failed on node ${node.ip}: ${err.message}`)
+                    throw new Error(`Critical Upgrade Failure on ${node.ip}: ${err.message}`)
+                } finally {
+                    ssh.dispose()
+                }
+            }
+
+            onProgress(100, 'Cluster upgrade complete')
+            onLog('success', `✅ Cluster successfully upgraded to v${targetVersion}`)
+            // FIX: Must update 'k8sVersion' property to correctly persist changes in clusterStore
+            onComplete({ ...cluster, k8sVersion: targetVersion })
+
+        } catch (error) {
+            onLog('error', `❌ Upgrade process terminated: ${error.message}`)
+            onError(error)
+        }
+    }
 }
 
 export const automationEngine = new AutomationEngine()

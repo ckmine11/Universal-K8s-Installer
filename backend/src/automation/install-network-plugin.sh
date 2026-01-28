@@ -26,7 +26,8 @@ if [ "$PLUGIN" == "calico" ]; then
     echo "Installing Calico using direct manifest (High Compatibility Mode)..."
     
     # Download standard Calico manifest
-    curl -sL https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml -o /tmp/calico.yaml
+    # Download standard Calico manifest (Upgraded for K8s v1.30+)
+    curl -sL https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml -o /tmp/calico.yaml
     
     # Patch POD_CIDR (uncomment and replace)
     sed -i 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|' /tmp/calico.yaml

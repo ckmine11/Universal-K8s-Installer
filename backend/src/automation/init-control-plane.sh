@@ -46,10 +46,21 @@ else
     systemctl start containerd
 fi
 
-# 2. Create Reliable Kubeadm Config
+# 2. Determine Kubeadm API Version
+KUBEADM_API_VERSION="kubeadm.k8s.io/v1beta3"
+# Extract major and minor version for comparison (e.g., 1.35.0 -> 135)
+VER_NUM=$(echo $K8S_VERSION | awk -F. '{printf "%d%02d", $1,$2}')
+
+if [ "$VER_NUM" -ge "131" ]; then
+    echo "Directed Kubeadm to use v1beta4 API (K8s >= 1.31 detected)"
+    KUBEADM_API_VERSION="kubeadm.k8s.io/v1beta4"
+else
+    echo "Directed Kubeadm to use v1beta3 API (K8s < 1.31 detected)"
+fi
+
 echo "Creating Kubeadm Configuration..."
 cat <<EOF > /tmp/kubeadm-config.yaml
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: $KUBEADM_API_VERSION
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: $MASTER_IP
@@ -59,7 +70,7 @@ nodeRegistration:
   imagePullPolicy: IfNotPresent
   name: $(hostname)
 ---
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: $KUBEADM_API_VERSION
 kind: ClusterConfiguration
 kubernetesVersion: v$K8S_VERSION
 controlPlaneEndpoint: "$MASTER_IP:6443"

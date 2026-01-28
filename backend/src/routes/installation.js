@@ -273,4 +273,45 @@ router.post('/:id/addons', requireAuth, async (req, res) => {
     }
 })
 
+// Upgrade Cluster Version
+router.post('/:id/upgrade', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params
+        const { targetVersion } = req.body
+
+        // Load cluster config
+        const clusters = await installationManager.getSavedClusters()
+        const existingCluster = clusters.find(c => c.id === id)
+
+        if (!existingCluster) {
+            return res.status(404).json({ error: 'Cluster not found' })
+        }
+
+        const newInstallationId = uuidv4()
+        const upgradeInstallation = {
+            ...existingCluster,
+            id: newInstallationId,
+            originalClusterId: existingCluster.id, // PERSIST: Keep track of the real cluster ID
+            targetVersion: targetVersion,
+            mode: 'upgrade',
+            status: 'pending',
+            logs: [],
+            progress: 0,
+            createdAt: new Date().toISOString()
+        }
+
+        installationManager.startInstallation(upgradeInstallation)
+
+        res.json({
+            success: true,
+            newInstallationId: newInstallationId,
+            message: `Upgrade to v${targetVersion} started`
+        })
+
+    } catch (error) {
+        console.error('Upgrade error:', error)
+        res.status(500).json({ error: 'Failed to start cluster upgrade' })
+    }
+})
+
 export default router

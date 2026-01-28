@@ -101,7 +101,7 @@ class InstallationManager {
 
         // Start automation engine
         try {
-            await automationEngine.install(installation, {
+            const callbacks = {
                 onLog: (level, message) => {
                     this.addLog(id, level, message)
                     this.broadcast(id, {
@@ -132,10 +132,17 @@ class InstallationManager {
                         type: 'status',
                         status: 'failed',
                         error: error.message,
-                        diagnosis: error.diagnosis // Send structured diagnosis to frontend
+                        diagnosis: error.diagnosis
                     })
                 }
-            })
+            }
+
+            if (installation.mode === 'upgrade') {
+                await automationEngine.upgradeCluster(installation, installation.targetVersion, callbacks)
+            } else {
+                await automationEngine.install(installation, callbacks)
+            }
+
         } catch (error) {
             this.failInstallation(id, error)
             this.broadcast(id, {
@@ -190,6 +197,11 @@ class InstallationManager {
                 addons: installation.addons,
                 status: 'healthy',
                 ...clusterInfo
+            }
+
+            // Handle Upgrade/Addon ID Preservation
+            if (installation.originalClusterId) {
+                finalCluster.id = installation.originalClusterId
             }
 
             // Handle Scaling Merge Logic

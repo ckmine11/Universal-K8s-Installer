@@ -134,14 +134,14 @@ export default function Home({ onStartNew, onScaleExisting }) {
                                             key={addon.key}
                                             onClick={() => setAddonSelection(p => ({ ...p, [addon.key]: !p[addon.key] }))}
                                             className={`group relative p-6 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden ${isSelected
-                                                    ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
-                                                    : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
+                                                ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
                                                 }`}
                                         >
                                             {/* Selection Indicator */}
                                             <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
-                                                    ? 'bg-blue-500 border-blue-500 scale-110'
-                                                    : 'border-white/20 group-hover:border-white/40'
+                                                ? 'bg-blue-500 border-blue-500 scale-110'
+                                                : 'border-white/20 group-hover:border-white/40'
                                                 }`}>
                                                 {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
                                             </div>
@@ -155,8 +155,8 @@ export default function Home({ onStartNew, onScaleExisting }) {
 
                                             <div className="mt-8">
                                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 ${isSelected
-                                                        ? `bg-gradient-to-br ${addon.gradient} shadow-lg scale-110`
-                                                        : 'bg-white/5 border border-white/10 group-hover:scale-110 group-hover:bg-white/10'
+                                                    ? `bg-gradient-to-br ${addon.gradient} shadow-lg scale-110`
+                                                    : 'bg-white/5 border border-white/10 group-hover:scale-110 group-hover:bg-white/10'
                                                     }`}>
                                                     <Icon className="w-6 h-6 text-white" />
                                                 </div>
@@ -289,7 +289,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
 
             {/* Managed Fleet Section - Only shows if relevant */}
             {savedClusters.length > 0 && (
-                <div className="animate-in [animation-delay:500ms]">
+                <div className="animate-in [animation-delay:500ms] mb-20 w-full max-w-5xl">
                     <div className="flex items-center justify-between mb-8 px-4">
                         <div className="flex items-center space-x-4">
                             <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
@@ -362,6 +362,52 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     </div>
                 </div>
             )}
+
+            {/* How It Works Section */}
+            <div className={`w-full max-w-5xl mb-20 transition-all duration-700 delay-100 ${savedClusters.length > 0 ? 'opacity-50 hover:opacity-100' : 'opacity-100'}`}>
+                <div className="text-center mb-12">
+                    <h3 className="text-2xl font-black text-white uppercase tracking-widest mb-2">How It Works</h3>
+                    <div className="h-1 w-20 bg-blue-500 mx-auto rounded-full"></div>
+                </div>
+
+                <div className="relative grid grid-cols-1 md:grid-cols-3 gap-8">
+                    {/* Connecting Line */}
+                    <div className="absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-blue-500/0 via-blue-500/50 to-blue-500/0 -translate-y-1/2 hidden md:block"></div>
+
+                    {[
+                        { title: "Configure", icon: Settings, desc: "Define your master and worker nodes with simple SSH credentials.", color: "blue" },
+                        { title: "Automate", icon: Zap, desc: "KubeEZ runs deep automation scripts to provision the cluster.", color: "purple" },
+                        { title: "Control", icon: LayoutDashboard, desc: "Manage add-ons, scale nodes, and visualize topology instantly.", color: "pink" }
+                    ].map((step, i) => (
+                        <div key={i} className="relative z-10 flex flex-col items-center text-center group">
+                            <div className={`w-20 h-20 rounded-2xl bg-slate-900 border border-${step.color}-500/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-300 relative overflow-hidden`}>
+                                <div className={`absolute inset-0 bg-gradient-to-br from-${step.color}-500/10 to-transparent`}></div>
+                                <step.icon className={`w-8 h-8 text-${step.color}-400`} />
+                            </div>
+                            <h4 className="text-lg font-bold text-white mb-2">{step.title}</h4>
+                            <p className="text-slate-400 text-sm max-w-[200px]">{step.desc}</p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Features Grid */}
+            <div className={`w-full max-w-6xl transition-all duration-700 delay-200 ${savedClusters.length > 0 ? 'opacity-50 hover:opacity-100' : 'opacity-100'}`}>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {[
+                        { title: "Multi-OS Core", icon: Server, desc: "Native support for Ubuntu, Debian, CentOS, and RHEL." },
+                        { title: "3D Topology", icon: Network, desc: "Visualize your cluster infrastructure in real-time 3D." },
+                        { title: "Smart Scaling", icon: BarChart3, desc: "One-click node addition without downtime." },
+                        { title: "Enterprise Ready", icon: Shield, desc: "Security hardened with RBAC and Firewall automation." }
+                    ].map((feature, i) => (
+                        <div key={i} className="p-6 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all group">
+                            <feature.icon className="w-8 h-8 text-slate-500 group-hover:text-white mb-4 transition-colors" />
+                            <h4 className="font-bold text-white mb-2">{feature.title}</h4>
+                            <p className="text-sm text-slate-500 group-hover:text-slate-400">{feature.desc}</p>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     )
 }

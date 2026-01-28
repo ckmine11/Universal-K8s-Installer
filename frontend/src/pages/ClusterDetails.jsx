@@ -25,6 +25,43 @@ export default function ClusterDetails({ onScaleCluster }) {
     const [healthLoading, setHealthLoading] = useState(true)
 
     const [viewMode, setViewMode] = useState('3d') // 'list' | '3d'
+    const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
+    const [targetVersion, setTargetVersion] = useState('')
+    const [upgradeLoading, setUpgradeLoading] = useState(false)
+
+    // Calculate next version options
+    const currentVersion = cluster?.k8sVersion || '1.28.0'
+    const minorVersion = parseInt(currentVersion.split('.')[1])
+    const availableUpgrades = []
+    // STRICT SAFETY: Only allow next minor version (n+1) to prevent skip-level failures
+    // Kubeadm cannot upgrade across multiple minor versions (e.g. 1.28 -> 1.30 is forbidden)
+    if (minorVersion < 35) availableUpgrades.push(`1.${minorVersion + 1}.0`)
+
+    const handleUpgrade = () => {
+        if (!targetVersion) return
+        setUpgradeLoading(true)
+        const token = localStorage.getItem('token')
+
+        fetch(`/api/clusters/${id}/upgrade`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ targetVersion })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // Redirect to installation view to watch progress
+                    navigate(`/dashboard/${data.newInstallationId}`)
+                } else {
+                    alert('Upgrade failed: ' + data.error)
+                }
+            })
+            .catch(err => alert('Upgrade error: ' + err.message))
+            .finally(() => setUpgradeLoading(false))
+    }
 
     useEffect(() => {
         const token = localStorage.getItem('token')
@@ -122,12 +159,20 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* Quick Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                <div className="glass p-6 rounded-2xl border border-white/5">
+                <div className="glass p-6 rounded-2xl border border-white/5 relative overflow-hidden">
                     <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-2">Kubernetes Version</p>
                     <p className="text-xl font-bold text-white flex items-center">
                         <Layers className="w-6 h-6 mr-2 text-blue-400" />
                         v{cluster.k8sVersion}
                     </p>
+                    {availableUpgrades.length > 0 && (
+                        <div className="absolute top-4 right-4">
+                            <span className="flex h-3 w-3 relative">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                            </span>
+                        </div>
+                    )}
                 </div>
                 <div className="glass p-6 rounded-2xl border border-white/5">
                     <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-2">Network Plugin</p>
@@ -171,6 +216,17 @@ export default function ClusterDetails({ onScaleCluster }) {
                                 <Download className="w-4 h-4 mr-2" />
                                 Kubeconfig
                             </button>
+
+                            {availableUpgrades.length > 0 && (
+                                <button
+                                    onClick={() => setUpgradeModalOpen(true)}
+                                    className="flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/20"
+                                >
+                                    <div className="w-4 h-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin" hidden={!upgradeLoading}></div>
+                                    Upgrade Available
+                                </button>
+                            )}
+
                             <button
                                 onClick={() => onScaleCluster(cluster)}
                                 className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20"
@@ -312,6 +368,55 @@ export default function ClusterDetails({ onScaleCluster }) {
                     </div>
                 </div>
             </div>
+
+            {/* UPGRADE MODAL */}
+            {upgradeModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in duration-200">
+                        <h2 className="text-xl font-bold text-white mb-2">Upgrade Cluster Version</h2>
+                        <p className="text-slate-400 text-sm mb-6">Select a target version to upgrade to. This process will sequentially upgrade control plane and worker nodes.</p>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Current Version</label>
+                                <div className="p-3 bg-white/5 rounded-xl text-white font-mono text-sm border border-white/5">
+                                    v{cluster.k8sVersion}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">Target Version</label>
+                                <select
+                                    className="w-full p-3 bg-slate-800 rounded-xl text-white border border-white/10 focus:border-blue-500 outline-none appearance-none"
+                                    value={targetVersion}
+                                    onChange={(e) => setTargetVersion(e.target.value)}
+                                >
+                                    <option value="" disabled>Select Version</option>
+                                    {availableUpgrades.map(v => (
+                                        <option key={v} value={v}>v{v} (Recommended)</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="pt-4 flex space-x-3">
+                                <button
+                                    onClick={() => setUpgradeModalOpen(false)}
+                                    className="flex-1 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 font-bold transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleUpgrade}
+                                    disabled={!targetVersion || upgradeLoading}
+                                    className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                    {upgradeLoading ? 'Starting...' : 'Start Upgrade'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

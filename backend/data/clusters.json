@@ -1,14 +1,14 @@
 [
   {
-    "id": "07fa52d7-9324-4ea4-9ad6-5747b8a52e5a",
+    "id": "23058da5-ebe9-429b-93fe-2c0ae78b0478",
     "clusterName": "k8s",
-    "k8sVersion": "1.28.0",
+    "k8sVersion": "1.30.0",
     "networkPlugin": "flannel",
     "masterNodes": [
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "7854eb35c8302155140dcca561ce8a0a:25105ba136aba107679c6021663c53e9",
+        "password": "f3cf483b66e3749fbafee179f33b24a1:546eeb9ba11c6c97f84c5513c3979b96",
         "sshKey": "",
         "hostname": "master1.mine.com"
       }
@@ -17,14 +17,14 @@
       {
         "ip": "192.168.220.81",
         "username": "root",
-        "password": "be78369e1cd7aeb1791dd59ada8cc653:cd4620d524bc64c25608919cc74512ca",
+        "password": "f872eac367e7600331dcfa9fa5fe75ae:03b9a29fbdfb383223ac50d2e48bf843",
         "sshKey": "",
         "hostname": "worker1.mine.com"
       },
       {
         "ip": "192.168.220.82",
         "username": "root",
-        "password": "abd6fd3b3e959ff4fb28d56d62261613:a1c9b2bde3f2848a7ab69d06a5a932d9",
+        "password": "1a374fc07598015143f401e6e235929a:eaf36d6cf8703227b0426105cfc89344",
         "sshKey": "",
         "hostname": "worker2.mine.com"
       }
@@ -37,9 +37,9 @@
       "longhorn": false,
       "argocd": false
     },
-    "status": "healthy",
+    "status": "pending",
     "name": "k8s",
-    "version": "1.28.0",
+    "version": "1.29.0",
     "nodes": [
       {
         "name": "master1.mine.com",
@@ -63,7 +63,12 @@
     "nodeCount": 3,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-27T09:45:48.891Z",
-    "createdAt": "2026-01-26T07:49:05.475Z"
+    "updatedAt": "2026-01-28T15:01:04.573Z",
+    "createdAt": "2026-01-28T14:48:48.400Z",
+    "targetVersion": "1.30.0",
+    "mode": "upgrade",
+    "logs": [],
+    "progress": 0,
+    "originalClusterId": "23058da5-ebe9-429b-93fe-2c0ae78b0478"
   }
 ]

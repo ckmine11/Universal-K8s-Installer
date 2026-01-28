@@ -87,6 +87,10 @@ function AuthenticatedApp() {
                         element={<DashboardWrapper onGoHome={navigateToHome} onScaleCluster={startScaling} />}
                     />
                     <Route
+                        path="/installation/:id"
+                        element={<DashboardWrapper onGoHome={navigateToHome} onScaleCluster={startScaling} />}
+                    />
+                    <Route
                         path="/cluster/:id"
                         element={<ClusterDetails onScaleCluster={startScaling} />}
                     />
@@ -94,6 +98,18 @@ function AuthenticatedApp() {
                         path="/docs"
                         element={<Docs />}
                     />
+                    <Route path="*" element={
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+                            <h1 className="text-6xl font-black text-white mb-4">404</h1>
+                            <p className="text-xl text-slate-400 mb-8">Page not found</p>
+                            <button
+                                onClick={() => window.location.href = '/'}
+                                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold"
+                            >
+                                Go Home
+                            </button>
+                        </div>
+                    } />
                 </Routes>
             </main>
 

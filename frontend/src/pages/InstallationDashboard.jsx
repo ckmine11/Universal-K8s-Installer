@@ -82,6 +82,22 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     }
 
     useEffect(() => {
+        // Fetch initial status to determine mode (Install/Upgrade/Scale)
+        if (installationId) {
+            const token = localStorage.getItem('token')
+            fetch(`/api/clusters/${installationId}/status`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data && !data.error) {
+                        setClusterInfo(prev => ({ ...prev, ...data }))
+                        if (data.status) setStatus(data.status)
+                    }
+                })
+                .catch(err => console.error("Initial status fetch failed:", err))
+        }
+
         if (status === 'completed' && installationId) {
             const fetchHealth = () => {
                 const token = localStorage.getItem('token')
@@ -449,8 +465,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold mb-2">
-                            {status === 'running' && 'Installing Kubernetes Cluster...'}
-                            {status === 'completed' && '✅ Cluster Installation Complete!'}
+                            {status === 'running' && (clusterInfo?.mode === 'upgrade' ? 'Upgrading Kubernetes Cluster...' : 'Installing Kubernetes Cluster...')}
+                            {status === 'completed' && (clusterInfo?.mode === 'upgrade' ? '✅ Cluster Upgrade Complete!' : '✅ Cluster Installation Complete!')}
                             {status === 'failed' && '❌ Installation Failed'}
                         </h1>
                         <p className="text-gray-400">Installation ID: {installationId}</p>
