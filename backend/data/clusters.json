@@ -8,7 +8,7 @@
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "5a4279bef7f6a2cb762b20831032cfa0:4cc535a65664794e78a9ee0336cdecdc",
+        "password": "97f138fe57a9f50863d066ef15aa108d:2eeb0c81a573aa556c0f8b59ac19d20a",
         "sshKey": "",
         "hostname": "master1.mine.com"
       }
@@ -17,22 +17,27 @@
       {
         "ip": "192.168.220.81",
         "username": "root",
-        "password": "c3d8e4bbbab99537465688c4f1dc492d:486a6912c5a4891d84c3762f00cbb2aa",
+        "password": "94e46307d8ed220eb02dc3995789d98d:8152f84301bdf46cf80b82a9f6a6dca7",
         "sshKey": "",
         "hostname": "worker1.mine.com"
+      },
+      {
+        "ip": "192.168.220.82",
+        "username": "root",
+        "password": "0a93357b0e2252e0083c885f591ef08a:275d69c80a7fe6f72d4f2f51f7e3b99a",
+        "sshKey": "",
+        "hostname": "worker2.mine.com"
       }
     ],
     "addons": {
       "ingress": true,
       "monitoring": false,
-      "dashboard": false,
-      "cert-manager": false,
-      "longhorn": false,
-      "argocd": false
+      "logging": false,
+      "dashboard": false
     },
-    "status": "pending",
+    "status": "healthy",
     "name": "k8s-cluster",
-    "version": "1.32.0",
+    "version": "1.33.0",
     "nodes": [
       {
         "name": "master1.mine.com",
@@ -41,8 +46,8 @@
         "status": "Ready"
       },
       {
-        "name": "worker1.mine.com",
-        "ip": "192.168.220.81",
+        "name": "worker2.mine.com",
+        "ip": "192.168.220.82",
         "role": "worker",
         "status": "Ready"
       }
@@ -50,7 +55,7 @@
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-29T11:53:41.563Z",
+    "updatedAt": "2026-01-29T12:30:59.724Z",
     "createdAt": "2026-01-29T11:48:39.336Z",
     "originalClusterId": "4ac61065-4cd7-452a-874b-10e5d50f3f5b",
     "targetVersion": "1.33.0",

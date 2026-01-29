@@ -104,8 +104,17 @@ if [ -f /etc/kubernetes/admin.conf ] && kubectl get nodes &> /dev/null; then
     echo "Skipping kubeadm init on existing Control Plane..."
 else
     echo "Running HA-ready kubeadm init..."
+    
+    # FIX: Check for Legacy Kernel (Kernel < 4.x) and ignore SystemVerification globally
+    KERNEL_MAJOR=$(uname -r | cut -d. -f1)
+    IGNORE_FLAGS="--ignore-preflight-errors=NumCPU,Mem"
+    if [ "$KERNEL_MAJOR" -lt 4 ]; then
+        echo "⚠️ Warning: Legacy Kernel detected ($(uname -r)). Bypassing SystemVerification check."
+        IGNORE_FLAGS="${IGNORE_FLAGS},SystemVerification"
+    fi
+
     # Removed FileContent--proc-sys-net-bridge-bridge-nf-call-iptables from ignore list as we settled it in system prep
-    kubeadm init --config /tmp/kubeadm-config.yaml --upload-certs --ignore-preflight-errors=NumCPU,Mem
+    kubeadm init --config /tmp/kubeadm-config.yaml --upload-certs $IGNORE_FLAGS
 fi
 
 # 4. Setup kubeconfig

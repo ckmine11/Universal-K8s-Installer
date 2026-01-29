@@ -50,12 +50,21 @@ else
     conntrack -F || true
     sleep 5
 
+    # FIX: Check for Legacy Kernel (Kernel < 4.x) and ignore SystemVerification globally
+    KERNEL_MAJOR=$(uname -r | cut -d. -f1)
+    IGNORE_FLAGS="--ignore-preflight-errors=NumCPU,Mem"
+    
+    if [ "$KERNEL_MAJOR" -lt 4 ]; then
+        echo "⚠️ Warning: Legacy Kernel detected ($(uname -r)). Bypassing SystemVerification check for Universal Compatibility."
+        IGNORE_FLAGS="${IGNORE_FLAGS},SystemVerification"
+    fi
+
     if [ "$NODE_TYPE" == "master" ]; then
         echo "Joining as Additional Control Plane..."
-        eval "$JOIN_COMMAND --control-plane --certificate-key $CERT_KEY --ignore-preflight-errors=NumCPU,Mem"
+        eval "$JOIN_COMMAND --control-plane --certificate-key $CERT_KEY $IGNORE_FLAGS"
     else
         echo "Joining as Worker Node..."
-        eval "$JOIN_COMMAND --ignore-preflight-errors=NumCPU,Mem"
+        eval "$JOIN_COMMAND $IGNORE_FLAGS"
     fi
 fi
 
