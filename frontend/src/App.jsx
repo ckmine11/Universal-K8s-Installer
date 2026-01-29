@@ -150,12 +150,17 @@ function DashboardWrapper({ onGoHome, onScaleCluster }) {
 
 
 
+import { ToastProvider } from './components/ToastProvider'
+
 function App() {
+    console.log("KUBEEZ_UX_DIAG_LOADED_V2");
     return (
         <BrowserRouter>
-            <AuthProvider>
-                <AuthenticatedApp />
-            </AuthProvider>
+            <ToastProvider>
+                <AuthProvider>
+                    <AuthenticatedApp />
+                </AuthProvider>
+            </ToastProvider>
         </BrowserRouter>
     )
 }

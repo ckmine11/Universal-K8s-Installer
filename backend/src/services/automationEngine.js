@@ -28,11 +28,11 @@ class AutomationEngine {
             const safeArgs = args.map(arg => {
                 const s = String(arg)
                 // Allow alphanumeric, dashes, dots, underscores, slashes, colons
-                if (!/^[\w\-\.\:\/]+$/.test(s)) {
+                if (!/^[\w\-\.\:\/\s]+$/.test(s)) {
                     throw new Error(`Invalid argument detected (security check): ${s}`)
                 }
                 return s
-            }).join(' ')
+            }).map(arg => `'${arg}'`).join(' ')
 
             const result = await ssh.execCommand(`sudo bash ${remotePath} ${safeArgs}`, {
                 onStdout: (chunk) => {

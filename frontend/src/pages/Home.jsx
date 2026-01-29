@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '../components/ToastProvider'
+import { CardSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
 import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles } from 'lucide-react'
 
 export default function Home({ onStartNew, onScaleExisting }) {
+    const { toast } = useToast()
     const navigate = useNavigate()
     const [savedClusters, setSavedClusters] = useState([])
     const [loading, setLoading] = useState(true)
@@ -23,10 +26,20 @@ export default function Home({ onStartNew, onScaleExisting }) {
 
     const handleAddonSubmit = async () => {
         if (!Object.values(addonSelection).some(v => v)) {
-            alert('Please select at least one add-on.')
+            toast({
+                title: 'Selection Required',
+                message: 'Please select at least one add-on to install.',
+                type: 'info'
+            })
             return
         }
         setInstallingAddons(true)
+        toast({
+            title: 'Initializing',
+            message: 'Preparing add-on installation pipeline...',
+            type: 'loading',
+            duration: 3000
+        })
         try {
             const token = localStorage.getItem('token')
             const res = await fetch(`/api/clusters/${selectedClusterId}/addons`, {
@@ -39,10 +52,20 @@ export default function Home({ onStartNew, onScaleExisting }) {
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Failed to start addon install')
+
+            toast({
+                title: 'Success',
+                message: 'Add-on installation triggered successfully.',
+                type: 'success'
+            })
             setIsAddonModalOpen(false)
             navigate(`/dashboard/${data.newInstallationId}`)
         } catch (err) {
-            alert(err.message)
+            toast({
+                title: 'Error',
+                message: err.message,
+                type: 'error'
+            })
         } finally {
             setInstallingAddons(false)
         }
@@ -53,6 +76,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
     }, [])
 
     const fetchSavedClusters = async () => {
+        setLoading(true)
         try {
             const token = localStorage.getItem('token')
             const response = await fetch('/api/clusters/list', {
@@ -62,6 +86,11 @@ export default function Home({ onStartNew, onScaleExisting }) {
             setSavedClusters(data)
         } catch (error) {
             console.error('Failed to fetch clusters:', error)
+            toast({
+                title: 'Connection Error',
+                message: 'Could not fetch managed clusters from backend.',
+                type: 'error'
+            })
         } finally {
             setLoading(false)
         }
@@ -78,8 +107,17 @@ export default function Home({ onStartNew, onScaleExisting }) {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             setSavedClusters(prev => prev.filter(c => c.id !== id))
+            toast({
+                title: 'Removed',
+                message: 'Cluster management record deleted.',
+                type: 'success'
+            })
         } catch (error) {
-            alert('Failed to delete cluster record')
+            toast({
+                title: 'Action Failed',
+                message: 'Failed to delete cluster record.',
+                type: 'error'
+            })
         }
     }
     return (
@@ -308,7 +346,12 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     </div>
 
                     <div className="grid grid-cols-1 gap-4">
-                        {savedClusters.map((cluster) => (
+                        {loading ? (
+                            <>
+                                <CardSkeleton />
+                                <CardSkeleton />
+                            </>
+                        ) : savedClusters.map((cluster) => (
                             <div
                                 key={cluster.id}
                                 onClick={() => navigate(`/cluster/${cluster.id}`)}
@@ -392,18 +435,23 @@ export default function Home({ onStartNew, onScaleExisting }) {
             </div>
 
             {/* Features Grid */}
-            <div className={`w-full max-w-6xl transition-all duration-700 delay-200 ${savedClusters.length > 0 ? 'opacity-50 hover:opacity-100' : 'opacity-100'}`}>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className={`w-full max-w-6xl transition-all duration-700 delay-200 mb-20 ${savedClusters.length > 0 ? 'opacity-50 hover:opacity-100' : 'opacity-100'}`}>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {[
-                        { title: "Multi-OS Core", icon: Server, desc: "Native support for Ubuntu, Debian, CentOS, and RHEL." },
-                        { title: "3D Topology", icon: Network, desc: "Visualize your cluster infrastructure in real-time 3D." },
-                        { title: "Smart Scaling", icon: BarChart3, desc: "One-click node addition without downtime." },
-                        { title: "Enterprise Ready", icon: Shield, desc: "Security hardened with RBAC and Firewall automation." }
+                        { title: "Multi-OS Core", icon: Server, desc: "Native support for Ubuntu, Debian, CentOS, and RHEL.", color: "blue" },
+                        { title: "3D Topology", icon: Network, desc: "Visualize your cluster infrastructure in real-time 3D.", color: "emerald" },
+                        { title: "Smart Scaling", icon: BarChart3, desc: "One-click node addition without downtime.", color: "purple" },
+                        { title: "Enterprise Ready", icon: Shield, desc: "Security hardened with RBAC and Firewall automation.", color: "orange" },
+                        { title: "Seamless Upgrades", icon: Rocket, desc: "Zero-effort Kubernetes version upgrades.", color: "cyan" },
+                        { title: "Add-on Marketplace", icon: Package, desc: "Install Monitoring, Storage, and GitOps in seconds.", color: "pink" }
                     ].map((feature, i) => (
-                        <div key={i} className="p-6 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all group">
-                            <feature.icon className="w-8 h-8 text-slate-500 group-hover:text-white mb-4 transition-colors" />
-                            <h4 className="font-bold text-white mb-2">{feature.title}</h4>
-                            <p className="text-sm text-slate-500 group-hover:text-slate-400">{feature.desc}</p>
+                        <div key={i} className="p-8 rounded-[32px] bg-slate-900/40 backdrop-blur-xl border border-white/5 hover:border-white/20 transition-all group relative overflow-hidden">
+                            <div className={`absolute -right-8 -bottom-8 w-24 h-24 bg-${feature.color}-500/10 blur-2xl rounded-full group-hover:scale-150 transition-transform`}></div>
+                            <div className={`w-14 h-14 rounded-2xl bg-${feature.color}-500/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform border border-${feature.color}-500/20`}>
+                                <feature.icon className={`w-7 h-7 text-${feature.color}-400`} />
+                            </div>
+                            <h4 className="text-xl font-bold text-white mb-3 tracking-tight">{feature.title}</h4>
+                            <p className="text-slate-400 text-sm leading-relaxed">{feature.desc}</p>
                         </div>
                     ))}
                 </div>

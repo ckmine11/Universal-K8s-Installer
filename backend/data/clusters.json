@@ -1,14 +1,14 @@
 [
   {
-    "id": "23058da5-ebe9-429b-93fe-2c0ae78b0478",
-    "clusterName": "k8s",
-    "k8sVersion": "1.30.0",
+    "id": "4ac61065-4cd7-452a-874b-10e5d50f3f5b",
+    "clusterName": "k8s-cluster",
+    "k8sVersion": "1.32.0",
     "networkPlugin": "flannel",
     "masterNodes": [
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "f3cf483b66e3749fbafee179f33b24a1:546eeb9ba11c6c97f84c5513c3979b96",
+        "password": "50145897f18b65da6a1756d13a0ecfee:39b48c8c8e8f7afa9f1a0d4c3e1a7432",
         "sshKey": "",
         "hostname": "master1.mine.com"
       }
@@ -17,29 +17,22 @@
       {
         "ip": "192.168.220.81",
         "username": "root",
-        "password": "f872eac367e7600331dcfa9fa5fe75ae:03b9a29fbdfb383223ac50d2e48bf843",
+        "password": "2ebcc390d3b3df6d82e1cb657e93cf62:9928b39983fd3fbdb065d8fb861de5c7",
         "sshKey": "",
         "hostname": "worker1.mine.com"
-      },
-      {
-        "ip": "192.168.220.82",
-        "username": "root",
-        "password": "1a374fc07598015143f401e6e235929a:eaf36d6cf8703227b0426105cfc89344",
-        "sshKey": "",
-        "hostname": "worker2.mine.com"
       }
     ],
     "addons": {
-      "ingress": false,
-      "monitoring": true,
+      "ingress": true,
+      "monitoring": false,
       "dashboard": false,
-      "cert-manager": true,
+      "cert-manager": false,
       "longhorn": false,
       "argocd": false
     },
-    "status": "pending",
-    "name": "k8s",
-    "version": "1.29.0",
+    "status": "healthy",
+    "name": "k8s-cluster",
+    "version": "1.32.0",
     "nodes": [
       {
         "name": "master1.mine.com",
@@ -52,23 +45,17 @@
         "ip": "192.168.220.81",
         "role": "worker",
         "status": "Ready"
-      },
-      {
-        "name": "worker2.mine.com",
-        "ip": "192.168.220.82",
-        "role": "worker",
-        "status": "Ready"
       }
     ],
-    "nodeCount": 3,
+    "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-28T15:01:04.573Z",
-    "createdAt": "2026-01-28T14:48:48.400Z",
-    "targetVersion": "1.30.0",
+    "updatedAt": "2026-01-29T09:05:46.037Z",
+    "createdAt": "2026-01-29T08:06:47.375Z",
+    "originalClusterId": "4ac61065-4cd7-452a-874b-10e5d50f3f5b",
+    "targetVersion": "1.32.0",
     "mode": "upgrade",
     "logs": [],
-    "progress": 0,
-    "originalClusterId": "23058da5-ebe9-429b-93fe-2c0ae78b0478"
+    "progress": 0
   }
 ]

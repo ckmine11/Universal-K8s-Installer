@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
+import { useToast } from '../components/ToastProvider'
 import { ADDONS_LIST } from '../config/addons'
+import { K8S_VERSIONS } from '../config/versions'
 import {
     ChevronRight,
     Server,
@@ -32,6 +34,7 @@ import NodeVerificationCard from '../components/NodeVerificationCard'
 import DeploymentPlan from '../components/DeploymentPlan'
 
 export default function WizardFlow({ onStartInstallation, onCancel, mode = 'install', initialData = null }) {
+    const { toast } = useToast()
     const [currentStep, setCurrentStep] = useState(mode === 'scale' ? 2 : 1)
     const [formData, setFormData] = useState({
         clusterName: mode === 'scale' ? 'Existing Cluster' : '',
@@ -251,7 +254,11 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
             }
         } catch (error) {
             console.error('Installation trigger error:', error)
-            alert(`Failed to start installation: ${error.message}`)
+            toast({
+                title: 'Installation Failed',
+                message: error.message,
+                type: 'error'
+            })
             setIsInstalling(false)
         }
         // Do NOT set isInstalling(false) on success, because we are navigating away 
@@ -319,15 +326,11 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                         value={formData.k8sVersion}
                                         onChange={(e) => setFormData({ ...formData, k8sVersion: e.target.value })}
                                     >
-                                        <option value="1.35.0" className="bg-slate-900">v1.35.0 (Future Ready)</option>
-                                        <option value="1.34.0" className="bg-slate-900">v1.34.0</option>
-                                        <option value="1.33.0" className="bg-slate-900">v1.33.0</option>
-                                        <option value="1.32.0" className="bg-slate-900">v1.32.0 (Latest Stable)</option>
-                                        <option value="1.31.0" className="bg-slate-900">v1.31.0</option>
-                                        <option value="1.30.0" className="bg-slate-900">v1.30.0</option>
-                                        <option value="1.29.0" className="bg-slate-900">v1.29.0</option>
-                                        <option value="1.28.0" className="bg-slate-900">v1.28.0 (Legacy Recommended)</option>
-                                        <option value="1.27.0" className="bg-slate-900">v1.27.0</option>
+                                        {K8S_VERSIONS.map(v => (
+                                            <option key={v.value} value={v.value} className="bg-slate-900">
+                                                {v.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="md:col-span-2 space-y-2">

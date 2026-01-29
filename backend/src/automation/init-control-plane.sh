@@ -79,8 +79,19 @@ networking:
 etcd:
   local:
     extraArgs:
+$(if [ "$KUBEADM_API_VERSION" = "kubeadm.k8s.io/v1beta4" ]; then
+cat <<EOF2
+    - name: heartbeat-interval
+      value: "250"
+    - name: election-timeout
+      value: "2500"
+EOF2
+else
+cat <<EOF2
       heartbeat-interval: "250"
       election-timeout: "2500"
+EOF2
+fi)
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration

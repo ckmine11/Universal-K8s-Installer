@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useToast } from '../components/ToastProvider'
+import Skeleton from '../components/Skeleton'
 import {
     Activity,
     Server,
@@ -17,6 +19,7 @@ import {
 import ClusterTopology3D from '../components/ClusterTopology3D'
 
 export default function ClusterDetails({ onScaleCluster }) {
+    const { toast } = useToast()
     const { id } = useParams()
     const navigate = useNavigate()
     const [cluster, setCluster] = useState(null)
@@ -56,10 +59,20 @@ export default function ClusterDetails({ onScaleCluster }) {
                     // Redirect to installation view to watch progress
                     navigate(`/dashboard/${data.newInstallationId}`)
                 } else {
-                    alert('Upgrade failed: ' + data.error)
+                    toast({
+                        title: 'Upgrade Failed',
+                        message: data.error,
+                        type: 'error'
+                    })
                 }
             })
-            .catch(err => alert('Upgrade error: ' + err.message))
+            .catch(err => {
+                toast({
+                    title: 'Upgrade Error',
+                    message: err.message,
+                    type: 'error'
+                })
+            })
             .finally(() => setUpgradeLoading(false))
     }
 
@@ -349,8 +362,19 @@ export default function ClusterDetails({ onScaleCluster }) {
                                 </div>
                             </div>
                         ) : (
-                            <div className="py-8 text-center text-slate-500 text-sm">
-                                {healthLoading ? 'Connecting to Cluster...' : 'Metrics Unavailable'}
+                            <div className="space-y-6 relative z-10">
+                                <div className="space-y-2">
+                                    <Skeleton className="w-24 h-4" />
+                                    <Skeleton className="w-full h-8" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="w-24 h-4" />
+                                    <Skeleton className="w-full h-8" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="w-24 h-4" />
+                                    <Skeleton className="w-full h-8" />
+                                </div>
                             </div>
                         )}
 

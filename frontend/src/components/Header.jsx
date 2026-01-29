@@ -16,13 +16,22 @@ export default function Header() {
                                 <Server className="w-6 h-6 text-white" />
                             </div>
                         </div>
-                        <div>
-                            <h1 className="text-xl font-black tracking-tighter text-white">
-                                Universal <span className="text-blue-500">K8s</span> Installer
-                            </h1>
-                            <div className="flex items-center space-x-1.5">
-                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Control OS v2.0</p>
+                        <div className="flex items-center space-x-6">
+                            <div>
+                                <h1 className="text-xl font-black tracking-tighter text-white">
+                                    Universal <span className="text-blue-500">K8s</span> Installer
+                                </h1>
+                                <div className="flex items-center space-x-1.5">
+                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">v2.1.0</p>
+                                </div>
+                            </div>
+                            <div className="hidden md:flex flex-col items-end">
+                                <span className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-0.5">Engine Status</span>
+                                <div className="flex items-center space-x-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                                    <span className="text-xs font-bold text-slate-300">v2.1.0 Production</span>
+                                </div>
                             </div>
                         </div>
                     </Link>

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '../components/ToastProvider'
+import { HealthSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
+import { K8S_VERSIONS } from '../config/versions'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import {
     CheckCircle2,
@@ -19,10 +22,13 @@ import {
     Shield,
     Database,
     GitBranch,
-    Sparkles
+    Sparkles,
+    AlertTriangle,
+    Rocket
 } from 'lucide-react'
 
 export default function InstallationDashboard({ installationId, onGoHome, onScaleCluster }) {
+    const { toast } = useToast()
     const navigate = useNavigate()
     const [status, setStatus] = useState('running') // 'running', 'completed', 'failed'
     const [progress, setProgress] = useState(0)
@@ -45,6 +51,9 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         dashboard: false
     })
     const [installingAddons, setInstallingAddons] = useState(false)
+    const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false)
+    const [targetVersion, setTargetVersion] = useState('')
+    const [isUpgrading, setIsUpgrading] = useState(false)
     const [viewMode, setViewMode] = useState('3d') // 'list' | '3d'
 
     const handleAddonSubmit = async () => {
@@ -75,9 +84,48 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
         } catch (err) {
             console.error(err)
-            alert(err.message)
+            toast({
+                title: 'Operation Failed',
+                message: err.message,
+                type: 'error'
+            })
         } finally {
             setInstallingAddons(false)
+        }
+    }
+    const handleUpgradeSubmit = async () => {
+        if (!targetVersion) {
+            alert('Please select a target version.')
+            return
+        }
+        if (targetVersion === clusterInfo?.version || targetVersion === clusterInfo?.k8sVersion) {
+            alert('Cluster is already at this version.')
+            return
+        }
+        setIsUpgrading(true)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/clusters/${installationId}/upgrade`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ targetVersion })
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Failed to start upgrade')
+            setIsUpgradeModalOpen(false)
+            navigate(`/dashboard/${data.newInstallationId}`)
+        } catch (err) {
+            console.error(err)
+            toast({
+                title: 'Upgrade Failed',
+                message: err.message,
+                type: 'error'
+            })
+        } finally {
+            setIsUpgrading(false)
         }
     }
 
@@ -151,10 +199,27 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                 setStatus(data.status)
                 if (data.status === 'completed') {
                     setClusterInfo(data.clusterInfo)
+                    toast({
+                        title: 'Mission Accomplished',
+                        message: 'Infrastructure is now live and fully operational.',
+                        type: 'success'
+                    })
                 }
                 if (data.status === 'failed' && data.diagnosis) {
                     setErrorState(data.diagnosis)
+                    toast({
+                        title: 'Installation Halted',
+                        message: data.diagnosis.message || 'A critical error occurred.',
+                        type: 'error',
+                        duration: Infinity
+                    })
                 }
+            } else if (data.type === 'milestone') {
+                toast({
+                    title: 'Milestone Reached',
+                    message: data.message,
+                    type: 'success'
+                })
             }
         }
 
@@ -460,6 +525,95 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                 </div>
             )}
 
+            {/* Upgrade Selection Modal */}
+            {isUpgradeModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-[#0f172a]/95 backdrop-blur-xl border border-white/10 rounded-[32px] max-w-xl w-full p-10 shadow-2xl relative overflow-hidden">
+                        {/* Animated Background Gradients */}
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-[80px] pointer-events-none animate-pulse"></div>
+
+                        <div className="relative z-10">
+                            <div className="flex items-center space-x-4 mb-6">
+                                <div className="p-4 bg-blue-500/10 rounded-2xl border border-blue-500/20">
+                                    <Rocket className="w-7 h-7 text-blue-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-black text-white">Upgrade Engine</h2>
+                                    <p className="text-gray-400 text-sm font-medium">Select target version to begin the rolling upgrade.</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-6 mb-8">
+                                <div className="p-6 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md">
+                                    <p className="text-xs font-black uppercase text-gray-500 tracking-widest mb-1">Current Version</p>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                        <p className="text-xl font-black text-white">v{clusterInfo?.version || clusterInfo?.k8sVersion}</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Target Version</label>
+                                    <div className="relative">
+                                        <select
+                                            className="w-full px-6 py-4 rounded-2xl bg-black/40 border border-white/10 text-white focus:outline-none focus:border-blue-500 transition-all font-bold appearance-none cursor-pointer"
+                                            value={targetVersion}
+                                            onChange={(e) => setTargetVersion(e.target.value)}
+                                        >
+                                            <option value="" disabled className="bg-slate-900">Select Kubernetes Version</option>
+                                            {K8S_VERSIONS.map(v => (
+                                                <option key={v.value} value={v.value} className="bg-slate-900" disabled={v.value === (clusterInfo?.version || clusterInfo?.k8sVersion)}>
+                                                    {v.label} {v.value === (clusterInfo?.version || clusterInfo?.k8sVersion) ? '(Current)' : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                                            <Zap size={18} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-start space-x-4">
+                                    <AlertTriangle className="w-6 h-6 text-orange-400 mt-0.5 shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-bold text-orange-200 mb-1">Critical Awareness</p>
+                                        <p className="text-xs text-orange-200/70 leading-relaxed">
+                                            This is a rolling upgrade. Nodes will be drained and updated one by one. Ensure all nodes are 'Ready' before proceeding.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <button
+                                    onClick={() => setIsUpgradeModalOpen(false)}
+                                    className="px-6 py-4 rounded-xl border border-white/10 hover:bg-white/5 text-gray-400 font-bold transition-all"
+                                >
+                                    Abort
+                                </button>
+                                <button
+                                    onClick={handleUpgradeSubmit}
+                                    disabled={isUpgrading || !targetVersion}
+                                    className="px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-black shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                >
+                                    {isUpgrading ? (
+                                        <>
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            <span>Processing...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Rocket className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                                            <span>Start Upgrade</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div className="glass rounded-2xl p-8 mb-6">
                 <div className="flex items-center justify-between">
@@ -576,6 +730,13 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                 <Package className="w-5 h-5" />
                                 <span>Install Add-ons</span>
                             </button>
+                            <button
+                                onClick={() => setIsUpgradeModalOpen(true)}
+                                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors"
+                            >
+                                <Rocket className="w-5 h-5" />
+                                <span>Upgrade Cluster</span>
+                            </button>
                         </div>
                     ) : status === 'failed' ? (
                         <div className="space-y-3">
@@ -680,38 +841,58 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4">
-                            {[
-                                {
-                                    label: 'CPU Usage',
-                                    val: healthError ? 'OFF' : (health ? `${health.cpu}%` : '...'),
-                                    color: 'from-blue-400 to-blue-600',
-                                    percent: health ? health.cpu : 0
-                                },
-                                {
-                                    label: 'RAM Usage',
-                                    val: healthError ? 'OFF' : (health ? `${health.ram}%` : '...'),
-                                    color: 'from-purple-400 to-purple-600',
-                                    percent: health ? health.ram : 0
-                                },
-                                {
-                                    label: 'Disk Usage',
-                                    val: healthError ? 'OFF' : (health ? `${health.disk}%` : '...'),
-                                    color: 'from-green-400 to-green-600',
-                                    percent: health ? health.disk : 0
-                                }
-                            ].map((stat, i) => (
-                                <div key={i} className="bg-white/5 rounded-2xl p-4 text-center border border-white/5 hover:border-white/10 transition-colors">
-                                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-tighter mb-2">{stat.label}</p>
-                                    <div className={`text-xl font-black bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`}>
-                                        {stat.val}
-                                    </div>
-                                    <div className="w-full bg-white/5 h-1 mt-3 rounded-full overflow-hidden">
-                                        <div className={`h-full bg-gradient-to-r ${stat.color}`} style={{ width: `${Math.min(stat.percent, 100)}%` }}></div>
-                                    </div>
+                        {(!health && !healthError) ? (
+                            <HealthSkeleton />
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-3 gap-4">
+                                    {[
+                                        {
+                                            label: 'CPU Usage',
+                                            val: healthError ? 'OFF' : (health ? `${health.cpu}%` : '...'),
+                                            color: 'from-blue-400 to-blue-600',
+                                            percent: health ? health.cpu : 0
+                                        },
+                                        {
+                                            label: 'Memory',
+                                            val: healthError ? 'OFF' : (health ? `${health.mem}%` : '...'),
+                                            color: 'from-purple-400 to-purple-600',
+                                            percent: health ? health.mem : 0
+                                        },
+                                        {
+                                            label: 'Pods Ready',
+                                            val: healthError ? 'OFF' : (health ? `${health.pods}` : '...'),
+                                            color: 'from-emerald-400 to-emerald-600',
+                                            percent: health ? 100 : 0
+                                        }
+                                    ].map((m, i) => (
+                                        <div key={i} className="bg-white/5 rounded-2xl p-6 border border-white/5 group hover:border-white/10 transition-all">
+                                            <p className="text-xs font-black uppercase text-gray-500 tracking-widest mb-2">{m.label}</p>
+                                            <div className="flex items-center justify-between mb-4">
+                                                <span className="text-2xl font-black">{m.val}</span>
+                                                <Zap className={`w-4 h-4 ${healthError ? 'text-gray-600' : 'text-yellow-400'}`} />
+                                            </div>
+                                            <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
+                                                <div
+                                                    className={`h-full bg-gradient-to-r ${m.color} transition-all duration-1000 ease-in-out`}
+                                                    style={{ width: `${m.percent}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
-                        </div>
+
+                                {healthError && (
+                                    <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center space-x-3 text-red-400">
+                                        <AlertTriangle className="w-5 h-5 shrink-0" />
+                                        <div className="text-xs">
+                                            <p className="font-bold">Telemetric Connection Failed</p>
+                                            <p className="opacity-70">{healthError}</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
 
                         <div className="mt-8 space-y-4">
                             {viewMode === '3d' ? (
