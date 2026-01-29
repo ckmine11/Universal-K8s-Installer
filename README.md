@@ -53,14 +53,19 @@ Once diagnosed, KubeEZ can automatically execute surgical fixes:
 ## 💎 Key Features
 
 ### 🛡️ Production-Grade Engineering
-- **Universal OS Support**: Ubuntu (20.04 - 24.04), CentOS 7/8/Stream, RHEL, Rocky Linux.
+### 🛡️ Production-Grade Engineering
+- **Universal OS Support**: 
+    - **Debian Family**: Ubuntu (20.04+), Debian (10/11/12).
+    - **RHEL Family**: CentOS 7/8/Stream, RHEL 8/9, Fedora, AlmaLinux, Oracle Linux, Amazon Linux 2/2023.
+- **Legacy Kernel Adapter**: Built-in compatibility layer that allows modern Kubernetes to run on legacy kernels (e.g., CentOS 7's 3.10) by intelligently bypassing specific preflight checks using `--ignore-preflight-errors=SystemVerification`.
 - **System Hardening**: Auto-configures Firewall (`ufw`/`firewalld`), Kernel Modules (`overlay`, `br_netfilter`), and Sysctl params.
 - **HA Ready**: Automatic Certificate Key generation for Multi-Master Control Planes.
 
-### 🎨 Futuristic Dashboard
+### 🔭 Futuristic Observability
+- **Orbital Universal Terminal**: "God-mode" SSH multiplexing allowing broadcast commands to all nodes simultaneously via a glass-morphism web UI.
+- **3D Digital Twin**: Real-time 3D particle visualization of network traffic and cluster topology.
 - **Live Node Monitoring**: Real-time CPU, RAM, and Disk usage via SSH/Kubectl.
 - **Glassmorphism UI**: Beautiful, dark-mode accessible interface.
-- **Wizard Flow**: Step-by-step guidance.
 - **Robust Downloads**: Securely download `kubeconfig` even if SSH users are non-root.
 
 ### 🧪 Simulation Mode
