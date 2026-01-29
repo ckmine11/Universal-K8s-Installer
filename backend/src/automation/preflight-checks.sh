@@ -19,11 +19,13 @@ echo "========================================="
 echo -n "Checking OS compatibility... "
 if [ -f /etc/os-release ]; then
     . /etc/os-release
-    if [[ "$ID" == "ubuntu" ]] || [[ "$ID" == "centos" ]] || [[ "$ID" == "rhel" ]] || [[ "$ID" == "rocky" ]]; then
+    # Expanded OS Whitelist for Universal Support
+    if [[ "$ID" == "ubuntu" ]] || [[ "$ID" == "debian" ]] || [[ "$ID" == "centos" ]] || [[ "$ID" == "rhel" ]] || [[ "$ID" == "rocky" ]] || [[ "$ID" == "almalinux" ]] || [[ "$ID" == "fedora" ]] || [[ "$ID" == "ol" ]] || [[ "$ID" == "amzn" ]]; then
         echo -e "${GREEN}✓ $PRETTY_NAME${NC}"
     else
-        echo -e "${RED}✗ Unsupported OS: $PRETTY_NAME${NC}"
-        exit 1
+        echo -e "${RED}✗ Unsupported OS: $PRETTY_NAME (ID: $ID)${NC}"
+        echo -e "${YELLOW}⚠ Proceeding anyway (Universal Mode active)...${NC}"
+        # exit 1  <-- Disabled strict exit to allow "Universal" attempt
     fi
 else
     echo -e "${RED}✗ Cannot determine OS${NC}"

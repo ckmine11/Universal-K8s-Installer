@@ -2,10 +2,15 @@ import express from 'express'
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
 import cors from 'cors'
+import helmet from 'helmet'
+import compression from 'compression'
+import rateLimit from 'express-rate-limit'
 import { v4 as uuidv4 } from 'uuid'
 import installationRoutes from './routes/installation.js'
 import nodeVerificationRoutes from './routes/nodeVerification.js'
 import { installationManager } from './services/installationManager.js'
+import { terminalService } from './services/terminalService.js'
+import { trafficSniffer } from './services/trafficSniffer.js'
 
 const app = express()
 const server = createServer(app)
@@ -14,9 +19,27 @@ const wss = new WebSocketServer({ server }) // Allow all paths, we filter below
 import { authService } from './services/authService.js'
 import { requireAuth } from './middleware/authMiddleware.js'
 
+import { requestLogger, errorLogger } from './middleware/logger.js'
+
 // Middleware
+app.use(helmet({
+    contentSecurityPolicy: false, // Disable CSP to avoid frontend conflicts (API-focused)
+    crossOriginEmbedderPolicy: false
+}))
+app.use(compression()) // Gzip compression
 app.use(cors())
 app.use(express.json())
+app.use(requestLogger) // Structured logging
+
+// Rate Limiting (DDoS Protection)
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 500, // Limit each IP to 500 requests per windowMs
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: { error: 'Too many requests, please try again later.' }
+})
+app.use('/api/', limiter) // Apply to all API routes
 
 // Public Auth Routes
 app.get('/api/auth/status', (req, res) => {
@@ -80,29 +103,56 @@ wss.on('connection', (ws, req) => {
         return
     }
 
-    const pathParts = pathname.split('/').filter(p => p && p !== 'ws' && p !== 'installation')
-    const installationId = pathParts[pathParts.length - 1]
+    // Routing based on pathname
+    if (pathname.startsWith('/ws/installation')) {
+        const id = pathname.split('/').pop()
+        console.log(`WebSocket: Installation stream connected for ${id}`)
+        installationManager.addClient(id, ws)
+        ws.on('close', () => installationManager.removeClient(id, ws))
 
-    console.log(`WebSocket client connected for installation: ${installationId}`)
+        ws.send(JSON.stringify({ type: 'log', level: 'info', message: 'Connected to KubeEZ installation stream' }))
+    }
+    else if (pathname.startsWith('/ws/orbital')) {
+        const id = pathname.split('/').pop()
+        console.log(`WebSocket: Orbital Terminal connected for ${id}`)
 
-    // Register client for this installation
-    installationManager.addClient(installationId, ws)
+        ws.on('message', async (message) => {
+            try {
+                const data = JSON.parse(message)
+                if (data.type === 'command' && data.clusterId && data.nodes) {
+                    await terminalService.broadcastCommand(data.clusterId, data.nodes, data.command, (nodeIp, type, chunk) => {
+                        ws.send(JSON.stringify({ type: 'terminal-output', nodeIp, streamType: type, content: chunk }))
+                    })
+                }
+            } catch (err) {
+                console.error('Orbital command failed:', err)
+            }
+        })
 
-    ws.on('close', () => {
-        console.log(`WebSocket client disconnected for installation: ${installationId}`)
-        installationManager.removeClient(installationId, ws)
-    })
+        ws.on('close', () => {
+            console.log(`WebSocket: Orbital Terminal disconnected for ${id}`)
+            terminalService.closeSession(id)
+        })
+    }
+    else if (pathname.startsWith('/ws/traffic')) {
+        const id = pathname.split('/').pop()
+        console.log(`WebSocket: Traffic stream connected for ${id}`)
 
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error)
-    })
+        const onPulse = (data) => {
+            if (data.clusterId === id) {
+                ws.send(JSON.stringify({ type: 'traffic-pulse', ...data }))
+            }
+        }
 
-    // Send initial connection message
-    ws.send(JSON.stringify({
-        type: 'log',
-        level: 'info',
-        message: 'Connected to KubeEZ installation stream'
-    }))
+        trafficSniffer.on('traffic-pulse', onPulse)
+        trafficSniffer.startSniffing(id)
+
+        ws.on('close', () => {
+            console.log(`WebSocket: Traffic stream disconnected for ${id}`)
+            trafficSniffer.removeListener('traffic-pulse', onPulse)
+            // Option to stop sniffing if no clients left
+        })
+    }
 })
 
 const PORT = process.env.PORT || 3000

@@ -1,5 +1,7 @@
 import { automationEngine } from './automationEngine.js'
 import { clusterStore } from './clusterStore.js'
+import { terminalService } from './terminalService.js'
+import { trafficSniffer } from './trafficSniffer.js'
 
 class InstallationManager {
     constructor() {
@@ -276,6 +278,15 @@ class InstallationManager {
 
 
     async deleteCluster(id) {
+        // CLEANUP: Force close any active sessions before deleting data
+        try {
+            console.log(`[Cleanup] Closing active sessions for cluster ${id}`)
+            await terminalService.closeSession(id)
+            trafficSniffer.stopSniffing(id)
+        } catch (err) {
+            console.warn(`[Cleanup] Warning during session cleanup for ${id}:`, err.message)
+        }
+
         return await clusterStore.deleteCluster(id)
     }
 

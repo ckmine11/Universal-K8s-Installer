@@ -2,13 +2,13 @@
   {
     "id": "4ac61065-4cd7-452a-874b-10e5d50f3f5b",
     "clusterName": "k8s-cluster",
-    "k8sVersion": "1.32.0",
+    "k8sVersion": "1.33.0",
     "networkPlugin": "flannel",
     "masterNodes": [
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "50145897f18b65da6a1756d13a0ecfee:39b48c8c8e8f7afa9f1a0d4c3e1a7432",
+        "password": "5a4279bef7f6a2cb762b20831032cfa0:4cc535a65664794e78a9ee0336cdecdc",
         "sshKey": "",
         "hostname": "master1.mine.com"
       }
@@ -17,7 +17,7 @@
       {
         "ip": "192.168.220.81",
         "username": "root",
-        "password": "2ebcc390d3b3df6d82e1cb657e93cf62:9928b39983fd3fbdb065d8fb861de5c7",
+        "password": "c3d8e4bbbab99537465688c4f1dc492d:486a6912c5a4891d84c3762f00cbb2aa",
         "sshKey": "",
         "hostname": "worker1.mine.com"
       }
@@ -30,7 +30,7 @@
       "longhorn": false,
       "argocd": false
     },
-    "status": "healthy",
+    "status": "pending",
     "name": "k8s-cluster",
     "version": "1.32.0",
     "nodes": [
@@ -50,10 +50,10 @@
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-29T09:05:46.037Z",
-    "createdAt": "2026-01-29T08:06:47.375Z",
+    "updatedAt": "2026-01-29T11:53:41.563Z",
+    "createdAt": "2026-01-29T11:48:39.336Z",
     "originalClusterId": "4ac61065-4cd7-452a-874b-10e5d50f3f5b",
-    "targetVersion": "1.32.0",
+    "targetVersion": "1.33.0",
     "mode": "upgrade",
     "logs": [],
     "progress": 0

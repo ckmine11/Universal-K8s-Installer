@@ -854,6 +854,10 @@ class AutomationEngine {
             }
 
             const scriptPath = join(__dirname, '../automation/upgrade-cluster.sh')
+
+            // VALIDATION: Strict Version Path Check
+            this.validateUpgradePath(cluster.k8sVersion, targetVersion)
+
             const allNodes = [
                 ...cluster.masterNodes.map(n => ({ ...n, role: 'master' })),
                 ...(cluster.workerNodes || []).map(n => ({ ...n, role: 'worker' }))
@@ -902,6 +906,34 @@ class AutomationEngine {
             onLog('error', `❌ Upgrade process terminated: ${error.message}`)
             onError(error)
         }
+    }
+
+    validateUpgradePath(currentVersion, targetVersion) {
+        // Parse "1.28.2" -> [1, 28, 2]
+        const parse = (v) => v.split('.').map(Number)
+        const [cMajor, cMinor] = parse(currentVersion)
+        const [tMajor, tMinor] = parse(targetVersion)
+
+        if (cMajor !== tMajor) {
+            throw new Error(`Major version upgrades (v${cMajor} -> v${tMajor}) are not supported automatically.`)
+        }
+
+        if (tMinor < cMinor) {
+            throw new Error(`Downgrades are not supported (v${currentVersion} -> v${targetVersion}).`)
+        }
+
+        if (tMinor > cMinor + 1) {
+            throw new Error(`Skip-level upgrades are unsafe (v${currentVersion} -> v${targetVersion}). Please upgrade to v${cMajor}.${cMinor + 1} first.`)
+        }
+
+        if (tMinor === cMinor && parse(targetVersion)[2] <= parse(currentVersion)[2]) {
+            // Re-installing same version is technically fine (idempotent), but warn
+            // actually, patch downgrades are bad too.
+            if (parse(targetVersion)[2] < parse(currentVersion)[2])
+                throw new Error(`Patch version downgrade not supported.`)
+        }
+
+        return true
     }
 }
 

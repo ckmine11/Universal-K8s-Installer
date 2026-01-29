@@ -16,6 +16,8 @@ echo "Installing core dependencies (socat, conntrack, ipset)..."
 if command -v apt-get &> /dev/null; then
     apt-get update -y
     apt-get install -y socat conntrack ipset curl gnupg jq
+elif command -v dnf &> /dev/null; then
+    dnf install -y socat conntrack ipset curl jq
 elif command -v yum &> /dev/null; then
     yum install -y socat conntrack ipset curl jq
 else
@@ -37,8 +39,11 @@ if command -v apt-get &> /dev/null; then
     apt-get install -y kubelet kubeadm kubectl
     apt-mark hold kubelet kubeadm kubectl
 
-elif command -v yum &> /dev/null; then
-    echo "Installing Kubernetes on RHEL/CentOS/Rocky..."
+elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
+    PKG_MGR="yum"
+    [ -x "$(command -v dnf)" ] && PKG_MGR="dnf"
+    
+    echo "Installing Kubernetes on RHEL/CentOS/Rocky/Fedora using $PKG_MGR..."
     
     # CentOS 7 EOL Fix (Triple-protection)
     if [ -f /etc/yum.repos.d/CentOS-Base.repo ] && grep -q "release 7" /etc/redhat-release; then
@@ -60,7 +65,7 @@ gpgcheck=1
 gpgkey=https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/rpm/repodata/repomd.xml.key
 EOF
     # Use timeout and increase verbosity
-    yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes --setopt=timeout=30 --setopt=minrate=100
+    $PKG_MGR install -y kubelet kubeadm kubectl --disableexcludes=kubernetes --setopt=timeout=30 --setopt=minrate=100
     systemctl enable --now kubelet
 fi
 

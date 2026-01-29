@@ -13,10 +13,14 @@ import {
     ArrowLeft,
     Trash2,
     Layers,
-    Box,
-    List
+    List,
+    Terminal,
+    Globe,
+    Command,
+    Box
 } from 'lucide-react'
 import ClusterTopology3D from '../components/ClusterTopology3D'
+import OrbitalTerminal from '../components/OrbitalTerminal'
 
 export default function ClusterDetails({ onScaleCluster }) {
     const { toast } = useToast()
@@ -28,6 +32,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     const [healthLoading, setHealthLoading] = useState(true)
 
     const [viewMode, setViewMode] = useState('3d') // 'list' | '3d'
+    const [isTerminalOpen, setIsTerminalOpen] = useState(false)
     const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
     const [targetVersion, setTargetVersion] = useState('')
     const [upgradeLoading, setUpgradeLoading] = useState(false)
@@ -241,6 +246,14 @@ export default function ClusterDetails({ onScaleCluster }) {
                             )}
 
                             <button
+                                onClick={() => setIsTerminalOpen(true)}
+                                className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-bold transition-all shadow-lg"
+                            >
+                                <Terminal className="w-4 h-4 mr-2" />
+                                Orbital Terminal
+                            </button>
+
+                            <button
                                 onClick={() => onScaleCluster(cluster)}
                                 className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20"
                             >
@@ -275,15 +288,18 @@ export default function ClusterDetails({ onScaleCluster }) {
 
                         {viewMode === '3d' ? (
                             <div className="h-[500px] w-full bg-black/20 rounded-2xl border border-white/5 overflow-hidden">
-                                <ClusterTopology3D clusterInfo={{
-                                    nodes: allNodes.map((n, idx) => ({
-                                        ip: n.ip || `10.0.0.${idx}`,
-                                        hostname: n.hostname || `node-${idx}`,
-                                        name: n.hostname || `Node-${idx}`, // Pass hostname as name for 3D view
-                                        role: n.role,
-                                        status: n.status
-                                    }))
-                                }} />
+                                <ClusterTopology3D
+                                    clusterId={id}
+                                    clusterInfo={{
+                                        nodes: allNodes.map((n, idx) => ({
+                                            ip: n.ip || `10.0.0.${idx}`,
+                                            hostname: n.hostname || (n.role === 'master' ? 'master' : `worker-${idx}`),
+                                            role: n.role,
+                                            status: n.status || (health ? 'Ready' : 'Pending')
+                                        }))
+                                    }}
+                                    height="500px"
+                                />
                             </div>
                         ) : (
                             <div className="space-y-3">
@@ -440,6 +456,15 @@ export default function ClusterDetails({ onScaleCluster }) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Orbital Terminal Modal */}
+            {isTerminalOpen && (
+                <OrbitalTerminal
+                    clusterId={id}
+                    nodes={allNodes}
+                    onClose={() => setIsTerminalOpen(false)}
+                />
             )}
         </div>
     )

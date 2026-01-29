@@ -72,22 +72,63 @@ function ClusterNode({ position, role, name, status }) {
     )
 }
 
-function Scene({ clusterInfo }) {
+function TrafficPulse({ start, end, onComplete }) {
+    const meshRef = useRef()
+    const curve = useMemo(() => {
+        const mid = new THREE.Vector3().addVectors(new THREE.Vector3(...start), new THREE.Vector3(...end)).multiplyScalar(0.5)
+        mid.y += 1.5 // Arc upward
+        return new THREE.CatmullRomCurve3([
+            new THREE.Vector3(...start),
+            mid,
+            new THREE.Vector3(...end)
+        ])
+    }, [start, end])
+
+    useFrame((state) => {
+        if (!meshRef.current) return
+        const t = (state.clock.getElapsedTime() * 0.5) % 1
+        const position = curve.getPoint(t)
+        meshRef.current.position.copy(position)
+
+        // If we reach the end, we could trigger onComplete, 
+        // but for simplicity in this "Wow" feature, we'll let it loop or we'll manage a pool.
+    })
+
+    return (
+        <mesh ref={meshRef}>
+            <sphereGeometry args={[0.1, 8, 8]} />
+            <meshBasicMaterial color="#60a5fa" transparent opacity={0.8} />
+            <pointLight distance={2} intensity={2} color="#60a5fa" />
+        </mesh>
+    )
+}
+
+function Scene({ clusterInfo, pulses = [] }) {
     const masterNodes = clusterInfo?.nodes?.filter(n => n.role === 'master') || []
     const workerNodes = clusterInfo?.nodes?.filter(n => n.role === 'worker') || []
 
     const masterPos = [0, 1, 0]
     const radius = 4
 
-    // Calculate worker positions
-    const workerPositions = workerNodes.map((_, i) => {
-        const angle = (i / workerNodes.length) * Math.PI * 2
-        return [
-            Math.cos(angle) * radius,
-            0.5,
-            Math.sin(angle) * radius
-        ]
-    })
+    // Calculate worker positions and map them by IP or index for pulse lookups
+    const nodePositionMap = useMemo(() => {
+        const map = new Map()
+        map.set('master', masterPos)
+
+        workerNodes.forEach((node, i) => {
+            const angle = (i / workerNodes.length) * Math.PI * 2
+            const pos = [
+                Math.cos(angle) * radius,
+                0.5,
+                Math.sin(angle) * radius
+            ]
+            map.set(node.hostname || `worker-${i}`, pos)
+            map.set(node.ip, pos)
+        })
+        return map
+    }, [workerNodes])
+
+    const workerPositions = workerNodes.map((node, i) => nodePositionMap.get(node.hostname || `worker-${i}`))
 
     return (
         <>
@@ -111,25 +152,37 @@ function Scene({ clusterInfo }) {
                 />
             ))}
 
-            {/* Worker Nodes */}
-            {workerNodes.map((node, i) => (
-                <React.Fragment key={`worker-${node.ip || i}`}>
-                    <ClusterNode
-                        position={workerPositions[i]}
-                        role="worker"
-                        name={node.name || `Worker-${i}`}
-                        status={node.status}
-                    />
+            {/* Worker Nodes & Connections */}
+            {workerNodes.map((node, i) => {
+                const pos = nodePositionMap.get(node.hostname || `worker-${i}`)
+                return (
+                    <React.Fragment key={`worker-${node.ip || i}`}>
+                        <ClusterNode
+                            position={pos}
+                            role="worker"
+                            name={node.name || `Worker-${i}`}
+                            status={node.status}
+                        />
 
-                    {/* Safe Mesh-based Connection Line */}
-                    <Line
-                        points={[masterPos, workerPositions[i]]}
-                        color="#a855f7"
-                        lineWidth={1}
-                        transparent
-                        opacity={0.3}
-                    />
-                </React.Fragment>
+                        {/* Connection Line */}
+                        <Line
+                            points={[masterPos, pos]}
+                            color="#a855f7"
+                            lineWidth={1}
+                            transparent
+                            opacity={0.3}
+                        />
+                    </React.Fragment>
+                )
+            })}
+
+            {/* Render Active Traffic Pulses */}
+            {pulses.map(pulse => (
+                <TrafficPulse
+                    key={pulse.id}
+                    start={nodePositionMap.get(pulse.from) || masterPos}
+                    end={nodePositionMap.get(pulse.to) || masterPos}
+                />
             ))}
 
             <OrbitControls
@@ -143,8 +196,31 @@ function Scene({ clusterInfo }) {
     )
 }
 
-export default function ClusterTopology3D({ clusterInfo, height = "500px" }) {
+export default function ClusterTopology3D({ clusterId, clusterInfo, height = "500px" }) {
     const hasData = clusterInfo?.nodes && clusterInfo.nodes.length > 0;
+    const [pulses, setPulses] = React.useState([])
+
+    React.useEffect(() => {
+        if (!clusterId) return
+
+        const token = localStorage.getItem('token')
+        const ws = new WebSocket(`ws://${window.location.hostname}:3000/ws/traffic/${clusterId}?token=${token}`)
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data)
+            if (data.type === 'traffic-pulse') {
+                const pulseId = Math.random().toString(36).substr(2, 9)
+                setPulses(prev => [...prev, { ...data, id: pulseId }])
+
+                // Remove pulse after animation (e.g., 2 seconds)
+                setTimeout(() => {
+                    setPulses(prev => prev.filter(p => p.id !== pulseId))
+                }, 4000)
+            }
+        }
+
+        return () => ws.close()
+    }, [clusterId])
 
     if (!hasData) {
         return (
@@ -162,14 +238,12 @@ export default function ClusterTopology3D({ clusterInfo, height = "500px" }) {
             <div className="absolute top-4 left-4 pointer-events-none z-10">
                 <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                    <span className="text-xs font-mono text-green-400 uppercase tracking-widest">Live Topology</span>
+                    <span className="text-xs font-mono text-green-400 uppercase tracking-widest">Live Topology & Traffic</span>
                 </div>
             </div>
 
-
-
             <Canvas camera={{ position: [0, 4, 8], fov: 60 }} onCreated={(state) => state.gl.setClearColor('#000000', 0)}>
-                <Scene clusterInfo={clusterInfo} />
+                <Scene clusterInfo={clusterInfo} pulses={pulses} />
             </Canvas>
         </div>
     )

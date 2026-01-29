@@ -15,7 +15,9 @@
         "react-router-dom": "^6.20.0",
         "three": "^0.160.0",
         "@react-three/fiber": "^8.15.12",
-        "@react-three/drei": "^9.99.0"
+        "@react-three/drei": "^9.99.0",
+        "@xterm/xterm": "^5.5.0",
+        "@xterm/addon-fit": "^0.10.0"
     },
     "devDependencies": {
         "@types/react": "^18.2.43",
