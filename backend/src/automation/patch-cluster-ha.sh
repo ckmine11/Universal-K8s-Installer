@@ -111,6 +111,49 @@ if [ "$ALREADY_CONFIGURED" = false ]; then
     echo "✓ Cluster configuration updated for HA"
 fi
 
+# 2.5 Self-Healing: Fix Malformed etcd extraArgs (Array vs Map)
+# This handles legacy/broken configs from previous failed installs
+echo "Checking for malformed etcd configuration..."
+kubectl -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}' > /tmp/cluster-config-check.yaml
+
+if grep -q "\- name: heartbeat-interval" /tmp/cluster-config-check.yaml; then
+    echo "⚠️  Detected malformed etcd extraArgs (Array format). Applying fix..."
+    
+    # Backup
+    cp /tmp/cluster-config-check.yaml /tmp/cluster-config-malformed.yaml
+    
+    # Fix using sed: Convert "- name: key \n value: val" -> "key: val"
+    # We use a loop to handle multiple args if needed, but specifically targeting the known broken ones
+    sed -i '/- name: heartbeat-interval/{N;s/- name: heartbeat-interval\n *value: /heartbeat-interval: /}' /tmp/cluster-config-check.yaml
+    sed -i '/- name: election-timeout/{N;s/- name: election-timeout\n *value: /election-timeout: /}' /tmp/cluster-config-check.yaml
+    
+    echo "Verified fix in temp file:"
+    grep "heartbeat-interval" /tmp/cluster-config-check.yaml
+    
+    # Apply Patch
+    echo "Applying patched Key-Value configuration..."
+    
+    # JSON Escape logic (reused)
+    if command -v jq &> /dev/null; then
+        CONFIG_JSON=$(cat /tmp/cluster-config-check.yaml | jq -Rs .)
+    else
+        CONFIG_JSON=$(cat /tmp/cluster-config-check.yaml | \
+            sed 's/\\/\\\\/g' | \
+            sed 's/"/\\"/g' | \
+            sed ':a;N;$!ba;s/\n/\\n/g')
+        CONFIG_JSON="\"$CONFIG_JSON\""
+    fi
+    
+    kubectl -n kube-system patch configmap kubeadm-config --type merge -p "{\"data\":{\"ClusterConfiguration\":$CONFIG_JSON}}"
+    
+    echo "✓ Fixed malformed etcd configuration"
+    
+    # Sync to disk
+    cat /tmp/cluster-config-check.yaml > /etc/kubernetes/kubeadm-config.yaml
+else
+    echo "✓ etcd configuration is valid (Map format)"
+fi
+
 # 4. Upload certificates for HA masters to join
 echo "Uploading certificates for HA masters..."
 CERT_KEY=$(kubeadm init phase upload-certs --upload-certs 2>/dev/null | tail -1)

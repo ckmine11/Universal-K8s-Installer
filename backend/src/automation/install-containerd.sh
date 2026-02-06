@@ -63,13 +63,48 @@ if command -v apt-get &> /dev/null; then
     apt-get update
     apt-get install -y containerd.io
 
-elif command -v yum &> /dev/null; then
-    echo "Detected RHEL/CentOS/Rocky system..."
-    yum install -y yum-utils --setopt=timeout=30
-    yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-    yum install -y containerd.io --setopt=timeout=30 --setopt=minrate=100
+elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
+    PKG_MGR="yum"
+    [ -x "$(command -v dnf)" ] && PKG_MGR="dnf"
+    
+    echo "Detected RHEL/CentOS/Rocky/Fedora system (using $PKG_MGR)..."
 
-    # Ensure CNI plugins (Missing in RHEL packages)
+    # Universal SSL/Time Fix for RHEL family
+    $PKG_MGR install -y ca-certificates || true
+    if command -v update-ca-trust &> /dev/null; then
+        update-ca-trust force-enable || true
+        update-ca-trust extract || true
+    fi
+    
+    # Sync time
+    $PKG_MGR install -y ntpdate || true
+    ntpdate -u pool.ntp.org || true
+    hwclock -w || true
+
+    # Install Utils
+    if [ "$PKG_MGR" = "dnf" ]; then
+        $PKG_MGR install -y dnf-plugins-core
+        $PKG_MGR config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    else
+        $PKG_MGR install -y yum-utils
+        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    fi
+
+    # Fallback for Repo SSL issues (Legacy CentOS 7)
+    if [ $? -ne 0 ]; then
+         echo "⚠️ Repo add failed. Retrying with SSL verification disabled..."
+         if [ "$PKG_MGR" = "dnf" ]; then
+            $PKG_MGR config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+         else
+            yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+         fi
+         # Disable SSL verify for this specific repo
+         sed -i 's/enabled=1/enabled=1\nsslverify=0/' /etc/yum.repos.d/docker-ce.repo
+    fi
+
+    $PKG_MGR install -y containerd.io
+
+    # Ensure CNI plugins (Missing in some RHEL packages)
     if [ ! -d "/opt/cni/bin" ] || [ -z "$(ls -A /opt/cni/bin)" ]; then
         echo "Installing CNI plugins manually for RHEL-based system..."
         mkdir -p /opt/cni/bin

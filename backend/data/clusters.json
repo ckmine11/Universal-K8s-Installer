@@ -1,53 +1,105 @@
 [
   {
-    "id": "4ac61065-4cd7-452a-874b-10e5d50f3f5b",
-    "clusterName": "k8s-cluster",
+    "id": "111997aa-9978-4b4e-9633-0965bb0b0ed0",
+    "clusterName": "k8s-ubuntu",
     "k8sVersion": "1.33.0",
+    "networkPlugin": "flannel",
+    "masterNodes": [
+      {
+        "ip": "192.168.220.90",
+        "username": "mine",
+        "password": "4d5de1bb14974d2da7135065cd783eb2:3008f3da967e18aae774f1ebf2895b14",
+        "sshKey": "",
+        "hostname": "master1-ubuntu.mine.com"
+      }
+    ],
+    "workerNodes": [
+      {
+        "ip": "192.168.220.91",
+        "username": "mine",
+        "password": "eea9efae75443eee5a54f46f4741afcb:cb241d995fb5e31c4d0231974de53d3a",
+        "sshKey": "",
+        "hostname": "worker1-ubuntu.mine.com"
+      }
+    ],
+    "addons": {
+      "ingress": true,
+      "monitoring": false,
+      "dashboard": false,
+      "cert-manager": false,
+      "longhorn": false,
+      "argocd": false
+    },
+    "status": "healthy",
+    "name": "k8s-ubuntu",
+    "version": "1.33.0",
+    "nodes": [
+      {
+        "name": "master1-ubuntu.mine.com",
+        "ip": "192.168.220.90",
+        "role": "master",
+        "status": "Ready"
+      },
+      {
+        "name": "worker1-ubuntu.mine.com",
+        "ip": "192.168.220.91",
+        "role": "worker",
+        "status": "Ready"
+      }
+    ],
+    "nodeCount": 2,
+    "endpoint": "https://192.168.220.90:6443",
+    "simulationMode": false,
+    "updatedAt": "2026-02-06T12:26:53.805Z",
+    "createdAt": "2026-02-06T11:48:12.167Z",
+    "originalClusterId": "111997aa-9978-4b4e-9633-0965bb0b0ed0",
+    "targetVersion": "1.33.0",
+    "mode": "upgrade",
+    "logs": [],
+    "progress": 0
+  },
+  {
+    "id": "35739520-e534-4685-96a2-0e38c63dd0aa",
+    "clusterName": "k8s-centos",
+    "k8sVersion": "1.32.0",
     "networkPlugin": "flannel",
     "masterNodes": [
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "97f138fe57a9f50863d066ef15aa108d:2eeb0c81a573aa556c0f8b59ac19d20a",
+        "password": "cfef6b32606178080696f7c34b2cdf22:9becd4a0464e19c49b58ad20c73b2265",
         "sshKey": "",
-        "hostname": "master1.mine.com"
+        "hostname": "master1-centos.mine.com"
       }
     ],
     "workerNodes": [
       {
         "ip": "192.168.220.81",
         "username": "root",
-        "password": "94e46307d8ed220eb02dc3995789d98d:8152f84301bdf46cf80b82a9f6a6dca7",
+        "password": "d8a8b91681ace08c8e893640264f691b:209b70d3f310076277c1dab957e43f60",
         "sshKey": "",
-        "hostname": "worker1.mine.com"
-      },
-      {
-        "ip": "192.168.220.82",
-        "username": "root",
-        "password": "0a93357b0e2252e0083c885f591ef08a:275d69c80a7fe6f72d4f2f51f7e3b99a",
-        "sshKey": "",
-        "hostname": "worker2.mine.com"
+        "hostname": "worker1-centos.mine.com"
       }
     ],
     "addons": {
-      "ingress": true,
+      "ingress": false,
       "monitoring": false,
       "logging": false,
-      "dashboard": false
+      "dashboard": true
     },
     "status": "healthy",
-    "name": "k8s-cluster",
-    "version": "1.33.0",
+    "name": "k8s-centos",
+    "version": "1.32.0",
     "nodes": [
       {
-        "name": "master1.mine.com",
+        "name": "master1-centos.mine.com",
         "ip": "192.168.220.80",
         "role": "master",
         "status": "Ready"
       },
       {
-        "name": "worker2.mine.com",
-        "ip": "192.168.220.82",
+        "name": "worker1-centos.mine.com",
+        "ip": "192.168.220.81",
         "role": "worker",
         "status": "Ready"
       }
@@ -55,12 +107,7 @@
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-01-29T12:30:59.724Z",
-    "createdAt": "2026-01-29T11:48:39.336Z",
-    "originalClusterId": "4ac61065-4cd7-452a-874b-10e5d50f3f5b",
-    "targetVersion": "1.33.0",
-    "mode": "upgrade",
-    "logs": [],
-    "progress": 0
+    "updatedAt": "2026-02-06T14:08:22.896Z",
+    "createdAt": "2026-02-06T14:08:22.896Z"
   }
 ]

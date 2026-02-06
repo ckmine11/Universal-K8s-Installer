@@ -46,17 +46,10 @@ else
     systemctl start containerd
 fi
 
-# 2. Determine Kubeadm API Version
+# 2. Force v1beta3 API for Universal Compatibility
+# v1beta3 works across all Kubernetes versions (1.28 - 1.32+)
 KUBEADM_API_VERSION="kubeadm.k8s.io/v1beta3"
-# Extract major and minor version for comparison (e.g., 1.35.0 -> 135)
-VER_NUM=$(echo $K8S_VERSION | awk -F. '{printf "%d%02d", $1,$2}')
-
-if [ "$VER_NUM" -ge "131" ]; then
-    echo "Directed Kubeadm to use v1beta4 API (K8s >= 1.31 detected)"
-    KUBEADM_API_VERSION="kubeadm.k8s.io/v1beta4"
-else
-    echo "Directed Kubeadm to use v1beta3 API (K8s < 1.31 detected)"
-fi
+echo "Using v1beta3 API for universal compatibility across all K8s versions"
 
 echo "Creating Kubeadm Configuration..."
 cat <<EOF > /tmp/kubeadm-config.yaml
@@ -79,19 +72,8 @@ networking:
 etcd:
   local:
     extraArgs:
-$(if [ "$KUBEADM_API_VERSION" = "kubeadm.k8s.io/v1beta4" ]; then
-cat <<EOF2
-    - name: heartbeat-interval
-      value: "250"
-    - name: election-timeout
-      value: "2500"
-EOF2
-else
-cat <<EOF2
       heartbeat-interval: "250"
       election-timeout: "2500"
-EOF2
-fi)
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration

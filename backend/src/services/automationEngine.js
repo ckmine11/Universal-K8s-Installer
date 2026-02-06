@@ -191,7 +191,56 @@ class AutomationEngine {
             privateKey: node.sshKey || undefined,
             readyTimeout: 30000
         })
+
+        // Auto-configure passwordless sudo for non-root users
+        if (node.username !== 'root') {
+            await this.ensurePasswordlessSudo(ssh, node)
+        }
+
         return ssh
+    }
+
+    async ensurePasswordlessSudo(ssh, node) {
+        try {
+            // Check if user already has passwordless sudo
+            const sudoCheck = await ssh.execCommand('sudo -n true 2>/dev/null', {
+                options: { pty: false }
+            })
+
+            if (sudoCheck.code === 0) {
+                // Already has passwordless sudo
+                return
+            }
+
+            // User needs passwordless sudo - configure it automatically
+            const username = node.username
+            const sudoersFile = `/etc/sudoers.d/kubeez-${username}`
+
+            // Create the sudoers entry using the user's password
+            const setupCommand = `echo '${node.password}' | sudo -S bash -c "echo '${username} ALL=(ALL) NOPASSWD:ALL' > ${sudoersFile} && chmod 0440 ${sudoersFile}"`
+
+            const result = await ssh.execCommand(setupCommand, {
+                options: { pty: true }
+            })
+
+            if (result.code !== 0) {
+                throw new Error(`Failed to configure passwordless sudo: ${result.stderr}`)
+            }
+
+            // Verify it worked
+            const verifyCheck = await ssh.execCommand('sudo -n true 2>/dev/null')
+            if (verifyCheck.code !== 0) {
+                throw new Error('Passwordless sudo verification failed')
+            }
+
+        } catch (error) {
+            // If auto-setup fails, throw a helpful error
+            throw new Error(
+                `Cannot configure passwordless sudo for user '${node.username}' on ${node.ip}. ` +
+                `Please either: (1) Use 'root' user, or (2) Manually configure passwordless sudo. ` +
+                `Error: ${error.message}`
+            )
+        }
     }
 
     sleep(ms) {
