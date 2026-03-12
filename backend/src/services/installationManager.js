@@ -373,8 +373,9 @@ users:
 
             return {
                 cpu: parseFloat(randomCpu),
-                ram: parseFloat(randomRam),
+                mem: parseFloat(randomRam),
                 disk: parseFloat(randomDisk),
+                pods: Math.floor(Math.random() * 20 + 10),
                 nodes: cluster.masterNodes.concat(cluster.workerNodes || []).map(n => ({
                     name: n.hostname || `node-${n.ip}`,
                     status: 'Ready',
@@ -394,7 +395,7 @@ users:
             const ssh = await automationEngine.connectSSH(masterNode)
 
             // Parallel execution for speed
-            const [cpuResult, memResult, diskResult, nodesResult] = await Promise.all([
+            const [cpuResult, memResult, diskResult, nodesResult, podsResult] = await Promise.all([
                 // CPU Usage (simple top check)
                 ssh.execCommand("top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}'"),
                 // Memory Usage (free -m)
@@ -402,7 +403,9 @@ users:
                 // Disk Usage (root partition)
                 ssh.execCommand("df -h / | awk 'NR==2 {print $5}' | sed 's/%//'"),
                 // Node Status (kubectl) - Get Name, Status, Role
-                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get nodes --no-headers | awk '{print $1,$2,$3}'")
+                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get nodes --no-headers | awk '{print $1,$2,$3}'"),
+                // Pods Running count
+                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get pods -A --field-selector=status.phase=Running --no-headers | wc -l")
             ])
 
             ssh.dispose()
@@ -420,8 +423,9 @@ users:
 
             return {
                 cpu: parseFloat(cpuResult.stdout) || 0,
-                ram: parseFloat(memResult.stdout) || 0,
+                mem: parseFloat(memResult.stdout) || 0,
                 disk: parseFloat(diskResult.stdout) || 0,
+                pods: parseInt((podsResult.stdout || '0').trim(), 10) || 0,
                 nodes: nodesList.length > 0 ? nodesList : null, // If null, use stored config
                 timestamp: new Date().toISOString()
             }

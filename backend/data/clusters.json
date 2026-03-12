@@ -1,6 +1,6 @@
 [
   {
-    "id": "86f231b0-06b0-4288-b4ab-1a7a10d90d6f",
+    "id": "c0fb6ef3-f3db-4217-9bc0-c8f56860f38c",
     "clusterName": "k8s",
     "k8sVersion": "1.32.0",
     "networkPlugin": "flannel",
@@ -8,7 +8,7 @@
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "43c9a443b09a9bb4043aaf9e15cb1c30:e8760d190de131cdad9ce097972284fc",
+        "password": "0daf01d9c014cfdee868c6a3b82d461b:3354f00ec013076f17faa2c9edf0f04b",
         "sshKey": "",
         "hostname": "master1.mine.com"
       }
@@ -17,9 +17,16 @@
       {
         "ip": "192.168.220.82",
         "username": "root",
-        "password": "f4dc7855bc0c130ea6557c8f8c1f5bf9:551a3d14e62869f6189dd68144d7c29d",
+        "password": "efa85a0a13c231ae269bb652d6004d16:7616a87d1f985193f00ecd6b8da723db",
         "sshKey": "",
         "hostname": "worker1.mine.com"
+      },
+      {
+        "ip": "192.168.220.83",
+        "username": "root",
+        "password": "3adb53f03abbc17d082c2d3eaa18b02d:3a19f276515c4d23c8c4c67fd3418b5b",
+        "sshKey": "",
+        "hostname": "worker2.mine.com"
       }
     ],
     "addons": {
@@ -39,8 +46,8 @@
         "status": "Ready"
       },
       {
-        "name": "worker1.mine.com",
-        "ip": "192.168.220.82",
+        "name": "worker2.mine.com",
+        "ip": "192.168.220.83",
         "role": "worker",
         "status": "Ready"
       }
@@ -48,7 +55,7 @@
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-03-12T07:25:05.052Z",
+    "updatedAt": "2026-03-12T07:47:41.399Z",
     "createdAt": "2026-03-12T07:25:05.052Z"
   }
 ]
