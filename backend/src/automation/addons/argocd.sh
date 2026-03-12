@@ -18,7 +18,7 @@ kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
 # 2. Install ArgoCD
 echo "Step 2/4: Installing ArgoCD..."
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 # 3. Wait for ArgoCD to be ready
 echo "Step 3/4: Waiting for ArgoCD components..."
