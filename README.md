@@ -121,7 +121,7 @@ The Backend acts as an **Orchestrator**. It pushes verified idempotent Bash scri
 
 3.  **Access**:
     Open `http://localhost:5173`.
-    - Create your Admin Account.
+    - your Admin Account Username - admin Passwword - admin.
     - Start a New Cluster!
 
 ---
