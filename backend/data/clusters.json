@@ -1,32 +1,25 @@
 [
   {
-    "id": "c0fb6ef3-f3db-4217-9bc0-c8f56860f38c",
-    "clusterName": "k8s",
+    "id": "2565e411-f039-4d6f-8362-478531f457e0",
+    "clusterName": "k8s-cluster",
     "k8sVersion": "1.32.0",
     "networkPlugin": "flannel",
     "masterNodes": [
       {
         "ip": "192.168.220.80",
         "username": "root",
-        "password": "0daf01d9c014cfdee868c6a3b82d461b:3354f00ec013076f17faa2c9edf0f04b",
+        "password": "d3bb51778e8a56ca3619501d0b690fb9:62b5df37d2fe5a0834679176c5a68f36",
         "sshKey": "",
-        "hostname": "master1.mine.com"
+        "hostname": "master.mine.com"
       }
     ],
     "workerNodes": [
       {
-        "ip": "192.168.220.82",
+        "ip": "192.168.220.81",
         "username": "root",
-        "password": "efa85a0a13c231ae269bb652d6004d16:7616a87d1f985193f00ecd6b8da723db",
+        "password": "f0c7e5491e768d469c84355a35636fea:5bcd30de92d77cafb081776f4f28259d",
         "sshKey": "",
         "hostname": "worker1.mine.com"
-      },
-      {
-        "ip": "192.168.220.83",
-        "username": "root",
-        "password": "3adb53f03abbc17d082c2d3eaa18b02d:3a19f276515c4d23c8c4c67fd3418b5b",
-        "sshKey": "",
-        "hostname": "worker2.mine.com"
       }
     ],
     "addons": {
@@ -36,18 +29,18 @@
       "dashboard": false
     },
     "status": "healthy",
-    "name": "k8s",
+    "name": "k8s-cluster",
     "version": "1.32.0",
     "nodes": [
       {
-        "name": "master1.mine.com",
+        "name": "master.mine.com",
         "ip": "192.168.220.80",
         "role": "master",
         "status": "Ready"
       },
       {
-        "name": "worker2.mine.com",
-        "ip": "192.168.220.83",
+        "name": "worker1.mine.com",
+        "ip": "192.168.220.81",
         "role": "worker",
         "status": "Ready"
       }
@@ -55,7 +48,7 @@
     "nodeCount": 2,
     "endpoint": "https://192.168.220.80:6443",
     "simulationMode": false,
-    "updatedAt": "2026-03-12T07:47:41.399Z",
-    "createdAt": "2026-03-12T07:25:05.052Z"
+    "updatedAt": "2026-03-14T19:37:27.831Z",
+    "createdAt": "2026-03-14T19:37:27.831Z"
   }
 ]
