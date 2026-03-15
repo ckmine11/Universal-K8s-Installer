@@ -1,97 +1,79 @@
-# 🚀 KubeEZ - Intelligent Kubernetes Automation Suite
+# 🚀 KubeEZ: The Intelligent Kubernetes Platform
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-2.1.0-green.svg)
-![Status](https://img.shields.io/badge/status-Production%20Ready-success.svg)
-![Feature](https://img.shields.io/badge/feature-Self--Healing-purple.svg)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-Production%20Ready-success.svg)](README.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**The ultimate "No-Ops" platform to provision, scale, and manage production-grade Kubernetes clusters.** 
-KubeEZ doesn't just install Kubernetes; it **diagnoses, fixes, and ensures success** using an integrated AI-driven recovery engine. It works natively on bare-metal servers, VMs (Oracle/AWS/Azure), or even local simulations.
-
----
-
-## 📖 Table of Contents
-- [Overview](#-overview)
-- [🔥 New: Intelligent Recovery](#-new-intelligent-recovery)
-- [Key Features](#-key-features)
-- [System Architecture](#-system-architecture)
-- [Getting Started](#-getting-started)
-- [Simulation Mode](#-simulation-mode)
-- [Security](#-security)
-- [Project Structure](#-project-structure)
+**KubeEZ** is a production-grade, "No-Ops" platform designed to provision, scale, and manage Kubernetes clusters with zero friction. Built with an integrated AI-driven recovery engine, KubeEZ goes beyond simple installation by diagnosing and auto-repairing infrastructure issues in real-time.
 
 ---
 
-## 🌟 Overview
+## 📑 Quick Navigation
 
-Setting up Kubernetes "the hard way" is painful. KubeEZ automates 100% of it. Whether you have fresh Ubuntu servers or old CentOS boxes, KubeEZ connects via SSH, prepares the environment, and builds a High-Availability Cluster in minutes.
-
-**What makes KubeEZ unique?**
-If an installation fails (e.g., DNS issues, Package locks, Swap memory), KubeEZ **automatically detects the error, fixes it on the node, and retries**, guaranteeing a successful deployment.
-
----
-
-## 🔥 New: Intelligent Recovery system
-
-KubeEZ v2.1 introduces a groundbreaking **Self-Healing Engine** inside the installer.
-
-### 🧠 Smart Diagnostics
-The engine analyzes error logs in real-time to identify root causes:
-- **DNS Failures**: Detects `Could not resolve host` or network unreachability.
-- **Package Blocks**: Detects `dpkg` or `apt` locks held by background updates.
-- **Configuration Drifts**: Detects enabled Swap memory or port conflicts.
-
-### 🛠️ Auto-Fix Actions
-Once diagnosed, KubeEZ can automatically execute surgical fixes:
-- **`fix_dns_resolv`**: Patches `/etc/resolv.conf` with Google Public DNS (`8.8.8.8`) to restore internet access.
-- **`fix_dpkg_lock`**: Safely kills stuck `apt` processes and repairs the package database.
-- **`fix_swap_off`**: Disables swap and modifies `/etc/fstab` to persist changes.
-- **`fix_kube_reset`**: Cleans up partial installations to ensure a fresh retry.
+| Document | Description |
+| :--- | :--- |
+| [📂 **User Guide**](USER_GUIDE.md) | **Start Here!** Step-by-step instructions for installation and management. |
+| [🛠️ **Setup Guide**](SETUP.md) | Technical prerequisites and platform deployment instructions. |
+| [🛡️ **Security**](SECURITY.md) | Overview of security measures, SSH handling, and authentication. |
+| [🧪 **Real Installation**](REAL_INSTALLATION_GUIDE.md) | Guide for deploying on real physical or virtual machines. |
 
 ---
 
-## 💎 Key Features
+## 🔥 Why KubeEZ?
 
-### 🛡️ Production-Grade Engineering
-### 🛡️ Production-Grade Engineering
-- **Universal OS Support**: 
-    - **Debian Family**: Ubuntu (20.04+), Debian (10/11/12).
-    - **RHEL Family**: CentOS 7/8/Stream, RHEL 8/9, Fedora, AlmaLinux, Oracle Linux, Amazon Linux 2/2023.
-- **Legacy Kernel Adapter**: Built-in compatibility layer that allows modern Kubernetes to run on legacy kernels (e.g., CentOS 7's 3.10) by intelligently bypassing specific preflight checks using `--ignore-preflight-errors=SystemVerification`.
-- **System Hardening**: Auto-configures Firewall (`ufw`/`firewalld`), Kernel Modules (`overlay`, `br_netfilter`), and Sysctl params.
-- **HA Ready**: Automatic Certificate Key generation for Multi-Master Control Planes.
+### 🧠 Self-Healing Intelligence
+Most installers fail and leave you guessing. KubeEZ's **Integrated Recovery Engine** analyzes stderr in real-time:
+- **Auto-Fix DNS**: Patches networking on the fly.
+- **Lock Recovery**: Safely handles stuck `apt`/`dpkg` processes.
+- **Pre-flight Repair**: Disables swap and configures kernel modules automatically.
 
-### 🔭 Futuristic Observability
-- **Orbital Universal Terminal**: "God-mode" SSH multiplexing allowing broadcast commands to all nodes simultaneously via a glass-morphism web UI.
-- **3D Digital Twin**: Real-time 3D particle visualization of network traffic and cluster topology.
-- **Live Node Monitoring**: Real-time CPU, RAM, and Disk usage via SSH/Kubectl.
-- **Glassmorphism UI**: Beautiful, dark-mode accessible interface.
-- **Robust Downloads**: Securely download `kubeconfig` even if SSH users are non-root.
+### 🔭 Visual Orchestration
+- **3D Digital Twin**: Visualize your cluster topology and real-time traffic in an interactive 3D map.
+- **Orbital Terminal**: Broadcast commands to all nodes simultaneously through a beautiful Glassmorphism UI.
+- **Live Telemetry**: Monitor core metrics (CPU, Memory, Pods) directly from your dashboard.
 
-### 🧪 Simulation Mode
-Don't have servers yet?
-- **Mock Engine**: Auto-generates mock Kubeconfig and Health Stats.
-- **UI Testing**: Validates the entire dashboard flow without real infrastructure.
-- **Safe Fallback**: If real nodes disconnect, the UI degrades gracefully instead of crashing.
+### 🌍 Universal Compatibility
+Supports all major Linux distributions including Ubuntu, Debian, RHEL, CentOS Stream, AlmaLinux, Rocky Linux, and Oracle Linux.
 
 ---
 
-## 🏗️ System Architecture
+## ⚡ Quick Start (Local Deployment)
+
+Get the KubeEZ platform running on your local machine in seconds using Docker:
+
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/ckmine11/Universal-K8s-Installer.git
+   cd Universal-K8s-Installer
+   ```
+
+2. **Launch via Compose**:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+3. **Explore**:
+   Open [http://localhost:5173](http://localhost:5173) to start building your first cluster!
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
 graph TD
     User[Admin User] -->|HTTPS| FE[React Frontend]
     FE -->|REST/WS| BE[Node.js Backend]
     
-    subgraph "KubeEZ Engine"
+    subgraph "KubeEZ Control Plane"
         BE
         Auto[Automation Engine]
         Healer[Self-Healing Module]
         Store[Persistent Data]
     end
     
-    BE -->|SSH (Port 22)| Master[Master Node]
-    BE -->|SSH (Port 22)| Worker[Worker Node]
+    BE -->|SSH| Master[Master Node]
+    BE -->|SSH| Worker[Worker Node]
     
     Healer -->|Fix Commands| Master
     Healer -->|Fix Commands| Worker
@@ -108,21 +90,22 @@ The Backend acts as an **Orchestrator**. It pushes verified idempotent Bash scri
 - Target Linux Servers (or use Simulation Mode).
 
 ### Quick Start
-1.  **Clone**:
-    ```bash
-    git clone https://github.com/ckmine11/Universal-K8s-Installer.git
-    cd Universal-K8s-Installer
-    ```
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/ckmine11/Universal-K8s-Installer.git
+   cd Universal-K8s-Installer
+   ```
 
-2.  **Run**:
-    ```bash
-    docker-compose up -d --build
-    ```
+2. **Launch via Compose**:
+   ```bash
+   docker-compose up -d --build
+   ```
 
-3.  **Access**:
-    Open `http://localhost:5173`.
-    - your Admin Account Username - admin Passwword - admin.
-    - Start a New Cluster!
+3. **Access**:
+   Open [http://localhost:5173](http://localhost:5173).
+   - **Username**: `admin`
+   - **Password**: `admin`
+   - Start building your first cluster!
 
 ---
 
@@ -136,24 +119,15 @@ The Backend acts as an **Orchestrator**. It pushes verified idempotent Bash scri
 
 ## 📂 Project Structure
 
-```
-kubeez/
-├── backend/
-│   ├── src/
-│   │   ├── automation/       # Shell Scripts (Install, Join, Reset)
-│   │   ├── services/
-│   │   │   ├── automationEngine.js  # The Brain (SSH + Error Analysis)
-│   │   │   ├── installationManager.js # State Machine
-│   │   └── routes/           # Secure API
-│   └── data/                 # Persistent volumes (clusters.json)
-├── frontend/
-│   ├── src/
-│   │   ├── pages/            # InstallationDashboard (Live UI)
-│   │   └── components/       # UI Widgets
-│   └── Dockerfile
-└── docker-compose.yml
-```
+- `frontend/`: React-based dashboard with Glassmorphism UI and 3D visualization.
+- `backend/src/automation/`: Production-ready Bash scripts for K8s lifecycle management.
+- `backend/src/services/`: The core engine handling SSH coordination and AI diagnostics.
+- `backend/data/`: Persistent storage for cluster configurations and backups.
 
 ---
 
-**Built with ❤️ for the Kubernetes Community.**
+## 🤝 Contributing
+
+We love contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to get started.
+
+Built with ❤️ by the **KubeEZ Team**.
