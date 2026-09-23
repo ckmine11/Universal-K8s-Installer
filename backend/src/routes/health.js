@@ -1,6 +1,7 @@
 import express from 'express';
 import os from 'os';
 import { BackupService } from '../services/backupService.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 
 export const healthRouter = express.Router();
 
@@ -20,7 +21,7 @@ healthRouter.get('/', (req, res) => {
  * Detailed health check with system metrics
  * GET /api/health/detailed
  */
-healthRouter.get('/detailed', (req, res) => {
+healthRouter.get('/detailed', requireAuth, (req, res) => {
     const memoryUsage = process.memoryUsage();
     const systemMemory = {
         total: os.totalmem(),
@@ -74,17 +75,20 @@ healthRouter.get('/detailed', (req, res) => {
  * Backup system health
  * GET /api/health/backups
  */
-healthRouter.get('/backups', (req, res) => {
+healthRouter.get('/backups', requireAuth, (req, res) => {
     try {
+        if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+            return res.status(403).json({ error: 'Only admins can view backups' });
+        }
         const stats = BackupService.getStats();
-        const backups = BackupService.listBackups();
+        const backups = BackupService.listBackups(req.user.id);
 
         res.json({
             status: 'healthy',
             backupSystem: {
                 enabled: true,
                 stats,
-                recentBackups: backups.slice(0, 5).map(b => ({
+                recentBackups: backups.map(b => ({
                     filename: b.filename,
                     size: formatBytes(b.size),
                     created: b.created
@@ -96,6 +100,49 @@ healthRouter.get('/backups', (req, res) => {
             status: 'unhealthy',
             error: error.message
         });
+    }
+});
+
+/**
+ * Trigger manual backup
+ * POST /api/health/backups
+ */
+healthRouter.post('/backups', requireAuth, (req, res) => {
+    try {
+        if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+            return res.status(403).json({ error: 'Only admins can create backups' });
+        }
+        const result = BackupService.createBackup('manual', req.user.id);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json(result);
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Restore from a backup
+ * POST /api/health/backups/restore
+ */
+healthRouter.post('/backups/restore', requireAuth, (req, res) => {
+    try {
+        if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+            return res.status(403).json({ error: 'Only admins can restore backups' });
+        }
+        const { filename } = req.body;
+        if (!filename) return res.status(400).json({ success: false, error: 'Missing backup filename' });
+
+        const result = BackupService.restoreBackup(filename, req.user.id);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json(result);
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

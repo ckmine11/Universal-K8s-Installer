@@ -11,10 +11,14 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --production
+RUN npm install
 
-# Copy source code
+# Copy source code and build script
 COPY src ./src
+COPY build-agent.js ./
+
+# Build agent bundle into public/agent-bundle.js
+RUN node build-agent.js
 
 # Create logs directory
 RUN mkdir -p logs

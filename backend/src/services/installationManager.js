@@ -191,6 +191,7 @@ class InstallationManager {
             // Prepare data to save
             let finalCluster = {
                 id: installationId,
+                ownerId: installation.ownerId, // Save the ownerId to the cluster data
                 clusterName: installation.clusterName,
                 k8sVersion: installation.k8sVersion,
                 networkPlugin: installation.networkPlugin,

@@ -1,4 +1,5 @@
 import { NodeSSH } from 'node-ssh'
+import { automationEngine } from './automationEngine.js'
 
 class NodeVerifier {
     async verifyNode(nodeConfig) {
@@ -17,16 +18,21 @@ class NodeVerifier {
 
         try {
             // Step 1: Test SSH connectivity
-            const ssh = new NodeSSH()
+            let ssh;
 
             try {
-                await ssh.connect({
-                    host: ip,
-                    username,
-                    password: password || undefined,
-                    privateKey: sshKey || undefined,
-                    timeout: 10000
-                })
+                if (nodeConfig.ownerId || nodeConfig.orgId) {
+                    ssh = await automationEngine.connectSSH(nodeConfig)
+                } else {
+                    ssh = new NodeSSH()
+                    await ssh.connect({
+                        host: ip,
+                        username,
+                        password: password || undefined,
+                        privateKey: sshKey || undefined,
+                        timeout: 10000
+                    })
+                }
 
                 result.reachable = true
                 result.status = 'connected'

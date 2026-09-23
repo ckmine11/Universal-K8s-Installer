@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-06-19
+
+### Added
+- 🚀 **Zero-Install Gateway Agent**: The agent script now automatically bundles its dependencies into a single `agent-bundle.js` using `esbuild`.
+- 💻 **Portable Node.js Auto-Download**: The PowerShell/Bash installation script now automatically downloads a portable Node.js v18.20.2 binary if Node is not installed on the system. No manual Node.js installation required!
+- 🔄 **Agent Refresh Button**: Added a manual refresh button to the Registered Agents UI to quickly poll agent online status.
+
+### Changed
+- 🌐 **Localized Gateway UI**: Translated Gateway Agent connection instructions into easy-to-understand Roman Hindi to improve user comprehension.
+- 🎨 **Simplified Settings**: Removed the "System Health" monitoring tab from the Settings page to keep the admin interface clean and focused strictly on cluster management.
+- 🧹 **UI Cleanups**: Removed unnecessary dummy data, GitHub links, and "Engineered by" footers to provide a premium SaaS look.
+- ⚙️ **Nginx Proxy Updates**: Updated the Nginx proxy rules to properly route requests for the newly bundled `agent-bundle.js`.
+
+---
+
 ## [2.1.0] - 2026-01-22
 
 ### Added
@@ -102,6 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Highlights |
 |---------|-------------|------------|
+| 2.2.0   | 2026-06-19  | Zero-Install Gateway Agent, UI cleanups |
 | 2.1.0   | 2026-01-22  | Bug fixes, documentation, monitoring improvements |
 | 2.0.0   | 2026-01-20  | Self-healing engine, WebSocket support |
 | 1.0.0   | 2026-01-15  | Initial release |

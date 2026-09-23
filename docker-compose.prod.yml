@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Nginx internal proxy (routes /api, /ws to backend, everything else to frontend)
+  proxy:
+    image: nginx:alpine
+    container_name: kubeez-proxy
+    ports:
+      - "8090:80"
+    volumes:
+      - ./nginx/production.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - kubeez-network
+    restart: unless-stopped
+
+  # Backend API + WebSocket Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kubeez-backend
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - APP_SECRET=${APP_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - CORS_ORIGIN=${CORS_ORIGIN:-https://k8scluster.space}
+      - DOMAIN=${DOMAIN:-k8scluster.space}
+    volumes:
+      - kubeez-data:/app/data
+      - kubeez-logs:/app/logs
+    networks:
+      - kubeez-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Frontend (React SPA served by internal Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=
+    container_name: kubeez-frontend
+    expose:
+      - "80"
+    depends_on:
+      - backend
+    networks:
+      - kubeez-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+networks:
+  kubeez-network:
+    driver: bridge
+
+volumes:
+  kubeez-data:
+    driver: local
+  kubeez-logs:
+    driver: local

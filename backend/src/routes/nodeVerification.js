@@ -1,10 +1,11 @@
 import express from 'express'
 import { nodeVerifier } from '../services/nodeVerifier.js'
+import { requireAuth } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
 // Verify a single node
-router.post('/verify', async (req, res) => {
+router.post('/verify', requireAuth, async (req, res) => {
     try {
         const { ip, username, password, sshKey } = req.body
 
@@ -21,7 +22,9 @@ router.post('/verify', async (req, res) => {
             ip,
             username,
             password,
-            sshKey
+            sshKey,
+            ownerId: req.user.id,
+            orgId: req.user.orgId
         })
 
         console.log(`[Node Verification] Result for ${ip}:`, result.status)
@@ -36,7 +39,7 @@ router.post('/verify', async (req, res) => {
 })
 
 // Verify multiple nodes
-router.post('/verify-batch', async (req, res) => {
+router.post('/verify-batch', requireAuth, async (req, res) => {
     try {
         const { nodes } = req.body
 
@@ -48,7 +51,11 @@ router.post('/verify-batch', async (req, res) => {
 
         // Verify all nodes in parallel
         const results = await Promise.all(
-            nodes.map(node => nodeVerifier.verifyNode(node))
+            nodes.map(node => nodeVerifier.verifyNode({
+                ...node,
+                ownerId: req.user.id,
+                orgId: req.user.orgId
+            }))
         )
 
         res.json({ results })

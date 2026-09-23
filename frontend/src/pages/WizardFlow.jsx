@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../components/ToastProvider'
+import { useNavigate } from 'react-router-dom'
 import { ADDONS_LIST } from '../config/addons'
 import { K8S_VERSIONS } from '../config/versions'
 import {
@@ -80,6 +81,38 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
     const [showPasswords, setShowPasswords] = useState({})
     const [showDeploymentPlan, setShowDeploymentPlan] = useState(false)
     const [isInstalling, setIsInstalling] = useState(false)
+
+    // SaaS Agent Gate
+    const navigate = useNavigate()
+    const [isSaasMode, setIsSaasMode] = useState(false)
+    const [agentCheckDone, setAgentCheckDone] = useState(false)
+    const [hasOnlineAgent, setHasOnlineAgent] = useState(true) // optimistic until checked
+    const [agentCheckLoading, setAgentCheckLoading] = useState(false)
+
+    useEffect(() => {
+        const checkSaasAndAgents = async () => {
+            try {
+                const configRes = await fetch('/api/config')
+                const config = configRes.ok ? await configRes.json() : {}
+                if (config.mode === 'saas') {
+                    setIsSaasMode(true)
+                    setAgentCheckLoading(true)
+                    const token = localStorage.getItem('token')
+                    const agentRes = await fetch('/api/agent/has-online', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                    const agentData = agentRes.ok ? await agentRes.json() : { hasOnline: false }
+                    setHasOnlineAgent(agentData.hasOnline)
+                }
+            } catch (e) {
+                console.warn('Agent gate check failed:', e)
+            } finally {
+                setAgentCheckDone(true)
+                setAgentCheckLoading(false)
+            }
+        }
+        checkSaasAndAgents()
+    }, [])
 
     // Compute derived state for all nodes and their verification results
     const allNodes = formData.masterNodes.map(n => ({ ...n, role: 'master' }))
@@ -265,6 +298,56 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
         // and we don't want the button to re-enable before unmount.
     }
 
+    // SaaS Agent Gate: block wizard if no agent online
+    if (isSaasMode && agentCheckDone && !hasOnlineAgent) {
+        return (
+            <div className="max-w-2xl mx-auto py-16 px-4">
+                <div className="glass rounded-[40px] border border-amber-500/20 bg-amber-500/5 p-10 text-center">
+                    <div className="inline-flex p-5 bg-amber-500/10 border border-amber-500/20 rounded-3xl mb-6">
+                        <AlertTriangle className="w-12 h-12 text-amber-400" />
+                    </div>
+                    <h2 className="text-2xl font-black text-white uppercase tracking-wide mb-3">Node Agent Required</h2>
+                    <p className="text-slate-300 leading-relaxed mb-2">
+                        To deploy a local cluster in SaaS mode, <strong className="text-amber-300">you must first install a Node Agent</strong>.
+                    </p>
+                    <p className="text-slate-400 text-sm leading-relaxed mb-8">
+                        The agent establishes a secure connection between your local server and the KubeEZ SaaS backend. 
+                        Without the agent, we cannot reach your private servers.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                        <button
+                            onClick={() => navigate('/agents')}
+                            className="px-8 py-4 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-amber-600/20 active:scale-95 transition-all"
+                        >
+                            → Setup Node Agents
+                        </button>
+                        <button
+                            onClick={onCancel}
+                            className="px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/5 text-slate-300 font-black text-xs uppercase tracking-wider rounded-2xl transition-all active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                    <div className="mt-8 p-4 bg-black/20 rounded-2xl border border-white/5 text-left">
+                        <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3">Setup Steps:</p>
+                        <ol className="space-y-2">
+                            {[
+                                'Go to the Node Agents page → Generate a Token',
+                                'Run the install command on your local server (as root)',
+                                'Once the agent shows "Online", return here to create your cluster'
+                            ].map((step, i) => (
+                                <li key={i} className="flex items-start gap-2 text-[11px] text-slate-400">
+                                    <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 font-black flex items-center justify-center text-[9px] shrink-0 mt-0.5">{i+1}</span>
+                                    {step}
+                                </li>
+                            ))}
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="max-w-5xl mx-auto py-8 px-4 selection:bg-blue-500/30">
             {/* Horizontal Step Indicator */}
@@ -370,6 +453,24 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                         <span className="text-xs font-bold text-blue-400 uppercase">Scaling Active Fabric</span>
                                     </div>
                                 )}
+                            </div>
+
+                            <div className="mb-6 p-5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-4">
+                                <div className="p-2 bg-amber-500/20 rounded-xl">
+                                    <Shield className="w-5 h-5 text-amber-400" />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-black text-amber-300 uppercase tracking-widest mb-1">SaaS Deployment Mode</h4>
+                                    <p className="text-xs text-amber-200/80 leading-relaxed mb-3">
+                                        Direct SSH connections are disabled in SaaS mode for your security. To deploy to your local LAN servers, you must first connect them using KubeEZ Outbound Node Agents.
+                                    </p>
+                                    <button 
+                                        onClick={(e) => { e.preventDefault(); window.location.href = '/agents'; }}
+                                        className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/20 transition-all"
+                                    >
+                                        Configure Node Agents
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Master Nodes Section - Redesigned for Scaling */}

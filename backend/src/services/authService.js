@@ -4,6 +4,12 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../utils/cryptoUtils.js';
+import { v4 as uuidv4 } from 'uuid';
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +23,16 @@ if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT) || 465,
+    secure: true,
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    }
+});
+
 class AuthService {
     constructor() {
         this.users = [];
@@ -28,6 +44,21 @@ class AuthService {
             if (fs.existsSync(USERS_FILE)) {
                 const data = fs.readFileSync(USERS_FILE, 'utf8');
                 this.users = JSON.parse(data);
+                
+                // Quick migration: Ensure all existing users have an orgId
+                let modified = false;
+                this.users.forEach((u, index) => {
+                    if (!u.orgId) {
+                        u.orgId = uuidv4();
+                        modified = true;
+                    }
+                    // The first user in the system is always the Super Admin
+                    if (index === 0 && u.role !== 'superadmin') {
+                        u.role = 'superadmin';
+                        modified = true;
+                    }
+                });
+                if (modified) this.saveUsers();
             }
         } catch (error) {
             console.error('Error loading users:', error);
@@ -40,20 +71,33 @@ class AuthService {
     }
 
     isSetupRequired() {
+        if (process.env.KUBEEZ_MODE === 'saas') {
+            return false;
+        }
         return this.users.length === 0;
     }
 
-    async registerAdmin(username, password) {
-        if (this.users.length > 0) {
-            throw new Error('Admin already registered. Use login.');
+    async registerUser(username, password, email) {
+        const existing = this.users.find(u => u.username.toLowerCase() === username.toLowerCase() || (u.email && email && u.email.toLowerCase() === email.toLowerCase()));
+        if (existing) {
+            throw new Error('Username or email is already taken');
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
+        
+        // Every new registration is a Tenant Admin with a unique orgId
+        // BUT the very first user is the Global Super Admin
+        const role = this.users.length === 0 ? 'superadmin' : 'admin';
+        const orgId = uuidv4();
+
         const newUser = {
-            id: 'admin',
+            id: uuidv4(),
+            orgId,
             username,
+            email,
             password: hashedPassword,
-            role: 'admin',
+            role,
+            subscription: { plan: 'FREE', maxClusters: 1, maxNodes: 2 },
             createdAt: new Date().toISOString()
         };
 
@@ -61,6 +105,34 @@ class AuthService {
         this.saveUsers();
 
         return this.generateToken(newUser);
+    }
+
+    async createTeamMember(adminOrgId, username, password, email, role = 'user') {
+        const existing = this.users.find(u => u.username.toLowerCase() === username.toLowerCase() || (u.email && email && u.email.toLowerCase() === email.toLowerCase()));
+        if (existing) {
+            throw new Error('Username or email is already taken');
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const newUser = {
+            id: uuidv4(),
+            orgId: adminOrgId,
+            username,
+            email,
+            password: hashedPassword,
+            role,
+            subscription: { plan: 'MEMBER', maxClusters: 0, maxNodes: 0 },
+            createdAt: new Date().toISOString()
+        };
+
+        this.users.push(newUser);
+        this.saveUsers();
+        return newUser;
+    }
+
+    async registerAdmin(username, password, email) {
+        return this.registerUser(username, password, email);
     }
 
     async login(username, password) {
@@ -79,7 +151,7 @@ class AuthService {
 
     generateToken(user) {
         return jwt.sign(
-            { id: user.id, username: user.username, role: user.role },
+            { id: user.id, username: user.username, role: user.role, orgId: user.orgId },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -87,11 +159,120 @@ class AuthService {
 
     verifyToken(token) {
         try {
-            return jwt.verify(token, JWT_SECRET);
+            const decoded = jwt.verify(token, JWT_SECRET);
+            const user = this.getUserById(decoded.id);
+            if (!user || user.isSuspended) {
+                return null;
+            }
+            return decoded;
         } catch (error) {
             console.error('JWT Verification Failed:', error.message)
             return null;
         }
+    }
+
+    // ─── Super Admin Functions ────────────────────────────────────────
+
+    getAllUsers() {
+        return this.users.map(u => {
+            const { password, resetToken, resetTokenExpiry, ...safeUser } = u;
+            return safeUser;
+        });
+    }
+
+    updateUserStatus(id, isSuspended) {
+        const user = this.getUserById(id);
+        if (user) {
+            user.isSuspended = isSuspended;
+            this.saveUsers();
+            return user;
+        }
+        throw new Error('User not found');
+    }
+
+    updateUserRole(id, role) {
+        const user = this.getUserById(id);
+        if (user) {
+            user.role = role;
+            this.saveUsers();
+            return user;
+        }
+        throw new Error('User not found');
+    }
+
+    getUserById(id) {
+        return this.users.find(u => u.id === id);
+    }
+
+    getUsersByOrgId(orgId) {
+        return this.users.filter(u => u.orgId === orgId).map(u => {
+            const { password, resetToken, resetTokenExpiry, ...safeUser } = u;
+            return safeUser;
+        });
+    }
+
+    updateUserSubscription(id, plan, maxClusters, maxNodes) {
+        const user = this.getUserById(id);
+        if (user) {
+            user.subscription = { plan, maxClusters, maxNodes };
+            this.saveUsers();
+            return user;
+        }
+        throw new Error('User not found');
+    }
+
+    async forgotPassword(email) {
+        const user = this.users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+        if (!user) {
+            // Return success even if not found to prevent email enumeration
+            return true;
+        }
+
+        // Generate 6-digit code
+        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        user.resetToken = resetCode;
+        user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
+
+        this.saveUsers();
+
+        try {
+            await transporter.sendMail({
+                from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+                to: email,
+                subject: 'KubeEZ - Password Reset Code',
+                text: `Your password reset code is: ${resetCode}\n\nThis code is valid for 1 hour.`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                        <h2 style="color: #3b82f6;">KubeEZ Platform</h2>
+                        <p>We received a request to reset your password.</p>
+                        <p>Your 6-digit reset code is:</p>
+                        <h1 style="background: #f4f4f5; padding: 10px 20px; text-align: center; letter-spacing: 5px; color: #18181b; border-radius: 5px;">${resetCode}</h1>
+                        <p style="color: #71717a; font-size: 12px; margin-top: 20px;">This code will expire in 1 hour. If you did not request this, please ignore this email.</p>
+                    </div>
+                `
+            });
+            console.log(`Reset code sent to ${email}`);
+        } catch (error) {
+            console.error('Error sending reset email:', error);
+            throw new Error('Failed to send reset email. Please try again later.');
+        }
+
+        return true;
+    }
+
+    async resetPassword(token, newPassword) {
+        const user = this.users.find(u => u.resetToken === token && u.resetTokenExpiry > Date.now());
+        if (!user) {
+            throw new Error('Invalid or expired reset token');
+        }
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        user.resetToken = undefined;
+        user.resetTokenExpiry = undefined;
+
+        this.saveUsers();
+        return true;
     }
 }
 

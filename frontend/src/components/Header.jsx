@@ -1,9 +1,18 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Server, Github, BookOpen, LogOut } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Server, Github, BookOpen, LogOut, User, Settings, Wifi, Users, Zap } from 'lucide-react'
 
 export default function Header() {
     const { logout, user } = useAuth()
+    const [isSaasMode, setIsSaasMode] = useState(false)
+
+    useEffect(() => {
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(d => setIsSaasMode(d.mode === 'saas'))
+            .catch(() => {})
+    }, [])
 
     return (
         <header className="sticky top-0 z-50 w-full border-b border-white/5 bg-black/20 backdrop-blur-xl">
@@ -37,40 +46,53 @@ export default function Header() {
                     </Link>
 
                     <div className="flex items-center space-x-4">
-                        {/* Engineered By Badge - Enhanced */}
-                        <div className="hidden md:flex items-center space-x-3 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg shadow-blue-500/10 hover:border-blue-500/30 transition-all duration-300 group mr-4">
-                            <div className="relative">
-                                <div className="absolute inset-0 bg-blue-500 blur-sm opacity-50 animate-pulse"></div>
-                                <div className="relative w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-inner">
-                                    CK
-                                </div>
-                            </div>
-                            <div className="text-[10px] leading-tight">
-                                <div className="text-slate-400 font-medium uppercase tracking-widest text-[8px] group-hover:text-blue-400 transition-colors">Engineered by</div>
-                                <div className="text-white font-bold tracking-wide group-hover:text-blue-200 transition-colors">CHANDAN KUMAR</div>
-                            </div>
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse ml-1"></div>
-                        </div>
-
-                        <a
-                            href="#"
-                            className="p-2 text-slate-400 hover:text-white transition-colors"
-                        >
-                            <Github className="w-5 h-5" />
-                        </a>
-                        <Link to="/docs" className="flex items-center space-x-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all active:scale-95">
-                            <BookOpen className="w-4 h-4 text-blue-400" />
+                        <Link to="/docs" className="flex items-center space-x-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all active:scale-95 text-blue-400">
+                            <BookOpen className="w-4 h-4" />
                             <span>Docs</span>
                         </Link>
 
+                        <Link to="/pricing" className="flex items-center space-x-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all active:scale-95 text-emerald-400">
+                            <Zap className="w-4 h-4" />
+                            <span>Pricing</span>
+                        </Link>
+
+                        {user && (user.role === 'admin' || user.role === 'superadmin') && (
+                            <Link to="/settings" className="flex items-center space-x-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all active:scale-95">
+                                <Settings className="w-4 h-4 text-purple-400" />
+                                <span>Settings</span>
+                            </Link>
+                        )}
+
+                        <Link to="/agents" className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-sm font-bold transition-all active:scale-95 text-emerald-400 group">
+                            <Wifi className="w-4 h-4 animate-pulse" />
+                            <span>SaaS Tunnels</span>
+                        </Link>
+
+                        <Link to="/incidents" className="flex items-center space-x-2 px-5 py-2.5 bg-red-500/10 hover:bg-red-500/15 border border-red-500/20 rounded-xl text-sm font-bold transition-all active:scale-95 text-red-400 group">
+                            <div className="relative">
+                                <div className="absolute inset-0 bg-red-500 blur-sm opacity-50 group-hover:animate-ping"></div>
+                                <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse"></div>
+                            </div>
+                            <span>Incidents</span>
+                        </Link>
+
                         {user && (
-                            <button
-                                onClick={logout}
-                                className="flex items-center space-x-2 px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-sm font-bold text-red-400 transition-all active:scale-95"
-                            >
-                                <LogOut className="w-4 h-4" />
-                                <span>Logout</span>
-                            </button>
+                            <div className="flex items-center space-x-4">
+                                <div className="hidden sm:flex items-center space-x-2 bg-white/5 border border-white/5 rounded-xl px-4 py-2 shadow-inner">
+                                    <User className="w-3.5 h-3.5 text-blue-400" />
+                                    <span className="text-xs font-bold text-slate-200">{user.username}</span>
+                                    <span className={`text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest ${user.role === 'superadmin' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/20' : user.role === 'admin' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/20' : 'bg-slate-500/20 text-slate-400 border border-slate-500/20'}`}>
+                                        {user.role}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={logout}
+                                    className="flex items-center space-x-2 px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-sm font-bold text-red-400 transition-all active:scale-95"
+                                >
+                                    <LogOut className="w-4 h-4" />
+                                    <span>Logout</span>
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>

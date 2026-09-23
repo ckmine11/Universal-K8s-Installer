@@ -1,0 +1,26 @@
+[
+  {
+    "agentId": "c278b222-6f3e-4846-a6ea-53bf589144f0",
+    "token": "c54bbaa9-5a31-4e93-99e3-63bd2a8a80a8",
+    "ownerId": "9d2c1905-e7fd-4bd2-9e84-2f22537f35c1",
+    "ownerUsername": "root",
+    "orgId": "2ecd611c-5330-4120-8a9c-cec9b54ae4f8",
+    "label": "Agent-c278b2",
+    "registeredNodeIps": [],
+    "status": "offline",
+    "lastSeen": "2026-06-20T16:11:54.956Z",
+    "createdAt": "2026-06-20T16:10:57.903Z"
+  },
+  {
+    "agentId": "2f6d8c93-9bce-4c54-aedd-b4f6fd8d0e2f",
+    "token": "eef0ce6b-2ddc-46ab-845e-e11899b3e320",
+    "ownerId": "admin",
+    "ownerUsername": "admin",
+    "orgId": "c00af38d-0c3f-4028-b0bb-b8071d4b0e68",
+    "label": "Agent-2f6d8c",
+    "registeredNodeIps": [],
+    "status": "online",
+    "lastSeen": "2026-09-23T16:36:12.705Z",
+    "createdAt": "2026-09-23T13:01:49.587Z"
+  }
+]

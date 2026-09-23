@@ -25,3 +25,10 @@ export const requireAuth = (req, res, next) => {
     req.user = decoded;
     next();
 };
+
+export const requireSuperAdmin = (req, res, next) => {
+    if (!req.user || req.user.role !== 'superadmin') {
+        return res.status(403).json({ error: 'Super Admin access required' });
+    }
+    next();
+};

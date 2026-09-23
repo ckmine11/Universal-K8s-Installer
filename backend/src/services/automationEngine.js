@@ -2,9 +2,36 @@ import { NodeSSH } from 'node-ssh'
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { agentService } from './agentService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+
+class AgentSSHProxy {
+    constructor(agentId, nodeConfig) {
+        this.agentId = agentId
+        this.nodeConfig = nodeConfig
+    }
+    
+    async connect() { return true; } // Agent manages connection lazily
+
+    async execCommand(command, config = {}) {
+        try {
+            const result = await agentService.relaySSH(this.agentId, this.nodeConfig, command)
+            
+            // Handle output callbacks if provided
+            if (config.onStdout && result.stdout) config.onStdout(Buffer.from(result.stdout))
+            if (config.onStderr && result.stderr) config.onStderr(Buffer.from(result.stderr))
+            
+            return { code: result.exitCode, stdout: result.stdout, stderr: result.stderr }
+        } catch (e) {
+            if (config.onStderr) config.onStderr(Buffer.from(e.message))
+            return { code: 1, stdout: '', stderr: e.message }
+        }
+    }
+
+    dispose() { } // Handled by agent
+}
 
 class AutomationEngine {
     constructor() {
@@ -58,14 +85,10 @@ class AutomationEngine {
 
             if (result.code !== 0) {
                 // INTELLIGENT ERROR ANALYSIS
-                const errorContext = result.stderr.slice(-500) // Last 500 chars
-                const analysis = this.analyzeError(errorContext)
-
-                const enrichedError = new Error(`Script execution failed with code ${result.code}`)
-                enrichedError.code = result.code
-                enrichedError.diagnosis = analysis
-                enrichedError.stderr = result.stderr
-                throw enrichedError
+                const combinedOutput = (result.stderr + ' ' + result.stdout).trim()
+                const error = new Error(combinedOutput || 'Unknown script error')
+                error.diagnosis = this.analyzeError(combinedOutput)
+                throw error
             }
 
             return result
@@ -80,49 +103,65 @@ class AutomationEngine {
         }
     }
 
-    analyzeError(stderr) {
-        const errorLog = stderr.toLowerCase()
+    analyzeError(output) {
+        const errorLog = output.toLowerCase()
 
-        if (errorLog.includes('could not get lock') || errorLog.includes('resource temporarily unavailable')) {
+        if (errorLog.includes('could not get lock') || 
+            errorLog.includes('resource temporarily unavailable') ||
+            errorLog.includes('waiting for cache lock') ||
+            errorLog.includes('dpkg: error: dpkg frontend is locked') ||
+            errorLog.includes('dpkg frontend is locked')) {
             return {
                 reason: 'Package Manager Locked',
-                message: 'Another process is using apt/dpkg. This often happens if an auto-update is running in background.',
+                message: 'Another process is using apt/dpkg. Auto-healing will forcefully clear the locks.',
                 suggestedFix: 'Kill background apt processes and remove lock files.',
                 fixAction: 'fix_dpkg_lock'
             }
         }
 
-        if (errorLog.includes('running with swap on is not supported')) {
+        if (errorLog.includes('running with swap on is not supported') ||
+            errorLog.includes('swap is enabled') ||
+            errorLog.includes('swapoff') ||
+            errorLog.includes('swap:')) {
             return {
                 reason: 'Swap Memory Enabled',
-                message: 'Kubernetes requires swap memory to be disabled, but swap is currently active.',
+                message: 'Kubernetes requires swap memory to be disabled. Auto-healing will permanently disable swap.',
                 suggestedFix: 'Disable swap immediately.',
                 fixAction: 'fix_swap_off'
             }
         }
 
-        if (errorLog.includes('port 6443 is already in use') || errorLog.includes('address already in use')) {
+        if (errorLog.includes('port 6443 is already in use') || 
+            errorLog.includes('address already in use') ||
+            errorLog.includes('bind: address already in use')) {
             return {
                 reason: 'Port Conflict',
-                message: 'Port 6443 is already in use. A previous partial installation might be running.',
+                message: 'Port 6443 is already in use. Auto-healing will automatically reset the previous Kubernetes state.',
                 suggestedFix: 'Reset Kubernetes configuration and kill conflicting processes.',
                 fixAction: 'fix_kube_reset'
             }
         }
 
-        if (errorLog.includes('connection timed out') || errorLog.includes('connection refused')) {
+        if (errorLog.includes('connection timed out') || 
+            errorLog.includes('connection refused') ||
+            errorLog.includes('no route to host') ||
+            errorLog.includes('network is unreachable')) {
             return {
                 reason: 'Network Timeout',
-                message: 'SSH or Network connection timed out. Firewall might be blocking keys.',
+                message: 'SSH or Network connection failed. Auto-healing will retry the connection.',
                 suggestedFix: 'Retry connection and check Firewall settings.',
                 fixAction: 'retry_connection'
             }
         }
 
-        if (errorLog.includes('could not resolve host') || errorLog.includes('curl#6') || errorLog.includes('network is unreachable')) {
+        if (errorLog.includes('could not resolve host') || 
+            errorLog.includes('curl#6') || 
+            errorLog.includes('name or service not known') ||
+            errorLog.includes('temporary failure in name resolution') ||
+            errorLog.includes('could not resolve dns')) {
             return {
                 reason: 'DNS/Internet Failure',
-                message: 'Node cannot resolve domain names. Likely a missing or bad DNS configuration.',
+                message: 'Node cannot resolve domain names. Auto-healing will automatically inject Google Public DNS (8.8.8.8).',
                 suggestedFix: 'Configure Google DNS (8.8.8.8) and retry.',
                 fixAction: 'fix_dns_resolv'
             }
@@ -183,6 +222,22 @@ class AutomationEngine {
     }
 
     async connectSSH(node) {
+        // Check if a Gateway Agent is available for this owner
+        if (node.ownerId || node.orgId) {
+            const gatewayAgent = await agentService.getGatewayAgentForOwner(node.ownerId, 'admin', node.orgId)
+            if (gatewayAgent) {
+                console.log(`[AutomationEngine] Routing SSH to ${node.ip} via Gateway Agent ${gatewayAgent.agentId}`)
+                const proxy = new AgentSSHProxy(gatewayAgent.agentId, node)
+                await proxy.connect()
+                
+                if (node.username !== 'root') {
+                    await this.ensurePasswordlessSudo(proxy, node)
+                }
+                return proxy
+            }
+        }
+
+        console.log(`[AutomationEngine] Direct SSH to ${node.ip}`)
         const ssh = new NodeSSH()
         await ssh.connect({
             host: node.ip,
@@ -248,19 +303,26 @@ class AutomationEngine {
     }
 
     async install(installation, callbacks) {
-        const { onLog, onProgress, onComplete, onError } = callbacks
+        const { onProgress, onLog, onComplete, onError } = callbacks
 
         try {
-            onLog('info', '🚀 Starting Kubernetes cluster installation...')
-            onProgress(0, 'Initializing installation process')
+            onLog('info', 'Starting deployment initialization...')
+            onProgress(1, 'Initializing...')
+            
+            // Inject ownerId into nodes for Gateway routing
+            if (installation.ownerId) {
+                installation.masterNodes.forEach(n => n.ownerId = installation.ownerId)
+                if (installation.workerNodes) {
+                    installation.workerNodes.forEach(n => n.ownerId = installation.ownerId)
+                }
+            }
 
-            // Try to detect if we have real nodes
-            const hasRealNodes = await this.detectRealNodes(installation, onLog)
+            // Determine simulation mode
+            this.simulationMode = !(await this.detectRealNodes(installation, onLog))
 
-            if (!hasRealNodes) {
+            if (this.simulationMode) {
                 onLog('warning', '⚠️ No real nodes detected - Running in SIMULATION mode')
                 onLog('warning', '⚠️ To use real installation, provide actual Linux machines with SSH access')
-                this.simulationMode = true
             }
 
             // ==========================================

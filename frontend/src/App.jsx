@@ -8,6 +8,12 @@ import WizardFlow from './pages/WizardFlow'
 import InstallationDashboard from './pages/InstallationDashboard'
 import ClusterDetails from './pages/ClusterDetails'
 import Docs from './pages/Docs'
+import Settings from './pages/Settings'
+import AgentNodes from './pages/AgentNodes'
+import AdminUsers from './pages/AdminUsers'
+import Pricing from './pages/Pricing'
+import VendorPortal from './pages/VendorPortal'
+import Incidents from './pages/Incidents'
 
 function AuthenticatedApp() {
     const navigate = useNavigate()
@@ -97,6 +103,31 @@ function AuthenticatedApp() {
                     <Route
                         path="/docs"
                         element={<Docs />}
+                    />
+                    <Route
+                        path="/settings"
+                        element={<Settings />}
+                    />
+                    <Route
+                        path="/agents"
+                        element={<AgentNodes />}
+                    />
+                    <Route
+                        path="/incidents"
+                        element={<Incidents />}
+                    />
+                    <Route
+                        path="/pricing"
+                        element={<Pricing />}
+                    />
+
+                    <Route
+                        path="/vendor-portal"
+                        element={<VendorPortal />}
+                    />
+                    <Route
+                        path="/users"
+                        element={<AdminUsers />}
                     />
                     <Route path="*" element={
                         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">

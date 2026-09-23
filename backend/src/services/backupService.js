@@ -23,12 +23,14 @@ export class BackupService {
     }
 
     /**
-     * Create a backup of clusters.json
+     * Create a backup of clusters for a specific user
      * @param {string} reason - Reason for backup (optional)
+     * @param {string} userId - ID of the user taking the backup
      * @returns {Object} Backup result with path and timestamp
      */
-    static createBackup(reason = 'manual') {
+    static createBackup(reason = 'manual', userId) {
         try {
+            if (!userId) throw new Error('User ID is required for backup');
             this.initialize();
 
             // Check if source file exists
@@ -39,18 +41,22 @@ export class BackupService {
                 };
             }
 
-            // Create timestamp-based filename
+            // Read existing clusters
+            const allClusters = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
+            const userClusters = allClusters.filter(c => c.ownerId === userId);
+
+            // Create timestamp-based filename isolated by user
             const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
-            const backupFilename = `clusters-${timestamp}-${reason}.json`;
+            const backupFilename = `clusters-${userId}-${timestamp}-${reason}.json`;
             const backupPath = path.join(this.BACKUP_DIR, backupFilename);
 
-            // Copy file
-            fs.copyFileSync(this.DATA_PATH, backupPath);
+            // Write only this user's clusters to the backup file
+            fs.writeFileSync(backupPath, JSON.stringify(userClusters, null, 2));
 
             // Get file stats
             const stats = fs.statSync(backupPath);
 
-            console.log(`✓ Backup created: ${backupFilename}`);
+            console.log(`✓ Backup created for user ${userId}: ${backupFilename}`);
 
             return {
                 success: true,
@@ -70,11 +76,13 @@ export class BackupService {
     }
 
     /**
-     * List all available backups
+     * List all available backups for a specific user
+     * @param {string} userId - ID of the user
      * @returns {Array} List of backup files with metadata
      */
-    static listBackups() {
+    static listBackups(userId) {
         try {
+            if (!userId) return [];
             this.initialize();
 
             if (!fs.existsSync(this.BACKUP_DIR)) {
@@ -83,7 +91,7 @@ export class BackupService {
 
             const files = fs.readdirSync(this.BACKUP_DIR);
             const backups = files
-                .filter(file => file.endsWith('.json'))
+                .filter(file => file.endsWith('.json') && file.includes(`clusters-${userId}-`))
                 .map(file => {
                     const filePath = path.join(this.BACKUP_DIR, file);
                     const stats = fs.statSync(filePath);
@@ -106,34 +114,60 @@ export class BackupService {
     }
 
     /**
-     * Restore from a backup file
+     * Restore from a backup file for a specific user
      * @param {string} backupFilename - Name of backup file to restore
+     * @param {string} userId - ID of the user
      * @returns {Object} Restore result
      */
-    static restoreBackup(backupFilename) {
+    static restoreBackup(backupFilename, userId) {
         try {
+            if (!userId) throw new Error('User ID is required for restore');
             const backupPath = path.join(this.BACKUP_DIR, backupFilename);
 
-            // Check if backup exists
+            // Check if backup exists and belongs to the user
             if (!fs.existsSync(backupPath)) {
                 return {
                     success: false,
                     error: 'Backup file not found'
                 };
             }
+            if (!backupFilename.includes(`clusters-${userId}-`)) {
+                return {
+                    success: false,
+                    error: 'Unauthorized to restore this backup'
+                };
+            }
 
             // Create a backup of current state before restoring
-            const currentBackup = this.createBackup('pre-restore');
+            const currentBackup = this.createBackup('pre-restore', userId);
 
-            // Restore the backup
-            fs.copyFileSync(backupPath, this.DATA_PATH);
+            // Read the backup clusters
+            const restoredClusters = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+            
+            // Validate that the restored clusters belong to the user
+            if (restoredClusters.some(c => c.ownerId !== userId)) {
+                return { success: false, error: 'Backup contains data belonging to another user' };
+            }
 
-            console.log(`✓ Restored from backup: ${backupFilename}`);
+            // Read all current clusters
+            let allClusters = [];
+            if (fs.existsSync(this.DATA_PATH)) {
+                allClusters = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
+            }
+
+            // Remove existing clusters for this user and append the restored ones
+            allClusters = allClusters.filter(c => c.ownerId !== userId);
+            allClusters.push(...restoredClusters);
+
+            // Write back to clusters.json
+            fs.writeFileSync(this.DATA_PATH, JSON.stringify(allClusters, null, 2));
+
+            console.log(`✓ Restored from backup: ${backupFilename} for user ${userId}`);
 
             return {
                 success: true,
                 restoredFrom: backupFilename,
-                currentBackup: currentBackup.filename,
+                currentBackup: currentBackup?.filename,
                 timestamp: new Date().toISOString()
             };
         } catch (error) {

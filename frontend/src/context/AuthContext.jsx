@@ -25,8 +25,6 @@ export const AuthProvider = ({ children }) => {
             }
 
             if (token) {
-                // Here we decode manually just to get basic info, real verify is via 401 on API calls
-                // Simple check for now
                 setUser({ token, role: 'admin' });
                 setIsAuthenticated(true);
             }
@@ -48,8 +46,24 @@ export const AuthProvider = ({ children }) => {
         if (!res.ok) throw new Error(data.error || 'Login failed');
 
         localStorage.setItem('token', data.token);
-        setUser({ username, role: 'admin' });
+        setUser({ username: data.user?.username || username, role: data.user?.role || 'user' });
         setIsAuthenticated(true);
+    };
+
+    const register = async (username, password) => {
+        const res = await fetch(`${API_URL}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Registration failed');
+
+        localStorage.setItem('token', data.token);
+        setUser({ username: data.user?.username || username, role: data.user?.role || 'user' });
+        setIsAuthenticated(true);
+        setIsSetupRequired(false);
     };
 
     const setup = async (username, password) => {
@@ -63,7 +77,7 @@ export const AuthProvider = ({ children }) => {
         if (!res.ok) throw new Error(data.error || 'Setup failed');
 
         localStorage.setItem('token', data.token);
-        setUser({ username, role: 'admin' });
+        setUser({ username: data.user?.username || username, role: 'admin' });
         setIsAuthenticated(true);
         setIsSetupRequired(false);
     };
@@ -75,7 +89,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, setup, logout }}>
+        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout }}>
             {children}
         </AuthContext.Provider>
     );
