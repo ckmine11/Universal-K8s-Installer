@@ -204,7 +204,8 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, height = "50
         if (!clusterId) return
 
         const token = localStorage.getItem('token')
-        const ws = new WebSocket(`ws://${window.location.hostname}:3000/ws/traffic/${clusterId}?token=${token}`)
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/traffic/${clusterId}?token=${token}`)
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data)

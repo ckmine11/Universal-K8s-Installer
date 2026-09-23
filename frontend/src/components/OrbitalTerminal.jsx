@@ -39,7 +39,8 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
 
         // WebSocket Setup
         const token = localStorage.getItem('token');
-        const ws = new WebSocket(`ws://${window.location.hostname}:3000/ws/orbital/${clusterId}?token=${token}`);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/orbital/${clusterId}?token=${token}`);
         wsRef.current = ws;
 
         ws.onmessage = (event) => {
