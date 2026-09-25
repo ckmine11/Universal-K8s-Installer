@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useToast } from '../components/ToastProvider'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, apiFetch } from '../context/AuthContext'
 import { Lock, Key, Loader2, ShieldAlert } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -37,10 +37,8 @@ export default function VendorPortal() {
         }
         setVendorGenerating(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/license/generate', {
+            const res = await apiFetch('/api/license/generate', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     plan: vendorForm.plan,
                     maxClusters: vendorForm.clusters,

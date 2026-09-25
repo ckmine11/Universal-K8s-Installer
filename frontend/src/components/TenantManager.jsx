@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useToast } from './ToastProvider'
+import { apiFetch } from '../context/AuthContext'
 import { Loader2, Users, Shield, AlertTriangle, CheckCircle2, ShieldOff, Edit3, X } from 'lucide-react'
 
 export default function TenantManager() {
@@ -15,10 +16,7 @@ export default function TenantManager() {
     const fetchTenants = async () => {
         setLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/superadmin/users', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch('/api/superadmin/users')
             const data = await res.ok ? await res.json() : null
             if (data && Array.isArray(data)) {
                 setTenants(data)
@@ -44,13 +42,8 @@ export default function TenantManager() {
         if (!window.confirm(confirmMsg)) return
 
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/superadmin/users/${tenant.id}/status`, {
+            const res = await apiFetch(`/api/superadmin/users/${tenant.id}/status`, {
                 method: 'PUT',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({ isSuspended: !tenant.isSuspended })
             })
             const data = await res.json()
@@ -75,13 +68,8 @@ export default function TenantManager() {
     const handleSaveLimits = async () => {
         setSaving(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/superadmin/users/${editingTenant.id}/limits`, {
+            const res = await apiFetch(`/api/superadmin/users/${editingTenant.id}/limits`, {
                 method: 'PUT',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify(editForm)
             })
             const data = await res.json()
@@ -102,13 +90,8 @@ export default function TenantManager() {
         if (!window.confirm(`Are you sure you want to make ${tenant.username} a ${newRole}?`)) return
 
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/superadmin/users/${tenant.id}/role`, {
+            const res = await apiFetch(`/api/superadmin/users/${tenant.id}/role`, {
                 method: 'PUT',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({ role: newRole })
             })
             const data = await res.json()

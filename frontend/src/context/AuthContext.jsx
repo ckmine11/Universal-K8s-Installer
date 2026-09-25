@@ -3,33 +3,14 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const AuthContext = createContext();
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-// ─── JWT client-side decode (no signature check - just for expiry/payload) ───
-function decodeJwt(token) {
-    try {
-        const payload = token.split('.')[1];
-        return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    } catch {
-        return null;
-    }
-}
-
-function isTokenExpired(token) {
-    const decoded = decodeJwt(token);
-    if (!decoded || !decoded.exp) return true;
-    // Treat as expired 60 seconds before actual expiry (safety buffer)
-    return Date.now() >= (decoded.exp - 60) * 1000;
-}
-
-// ─── Global apiFetch: auto-logout on 401/403 ─────────────────────────────────
+// ─── Global apiFetch: credentials:include (HttpOnly cookie), auto-logout on 401/403 ──
 // Import and use this instead of raw fetch() for all protected API calls
 export async function apiFetch(url, options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = {
-        ...(options.headers || {}),
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    };
-
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, {
+        ...options,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...options.headers }
+    });
 
     if (res.status === 401 || res.status === 403) {
         if (typeof window.__kubeezLogout === 'function') {
@@ -51,8 +32,11 @@ export const AuthProvider = ({ children }) => {
         checkAuthStatus();
     }, []);
 
-    const logout = (redirectToLogin = true) => {
-        localStorage.removeItem('token');
+    const logout = async (redirectToLogin = true) => {
+        try {
+            await apiFetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
+        } catch (_) { /* ignore network errors on logout */ }
+        localStorage.removeItem('user');
         setUser(null);
         setIsAuthenticated(false);
         if (redirectToLogin && window.location.pathname !== '/login') {
@@ -64,8 +48,6 @@ export const AuthProvider = ({ children }) => {
     window.__kubeezLogout = logout;
 
     const checkAuthStatus = async () => {
-        const token = localStorage.getItem('token');
-
         try {
             const statusRes = await fetch(`${API_URL}/api/auth/status`);
             if (statusRes.ok) {
@@ -73,24 +55,24 @@ export const AuthProvider = ({ children }) => {
                 setIsSetupRequired(statusData.setupRequired);
             }
 
-            if (token) {
-                // ① Check expiry client-side first (instant, no network)
-                if (isTokenExpired(token)) {
-                    console.warn('[Auth] Stored JWT is expired - clearing session');
-                    logout(false); // don't redirect yet, let router handle it
-                    return;
+            // Try to restore user from localStorage, then verify with /api/auth/me
+            const storedUser = localStorage.getItem('user');
+            if (storedUser) {
+                try {
+                    const parsed = JSON.parse(storedUser);
+                    // Verify the cookie is still valid via /api/auth/me
+                    const meRes = await apiFetch(`${API_URL}/api/auth/me`);
+                    if (meRes.ok) {
+                        const meData = await meRes.json();
+                        setUser({ ...parsed, ...meData });
+                        setIsAuthenticated(true);
+                    } else {
+                        // Cookie expired or invalid — clear local state
+                        localStorage.removeItem('user');
+                    }
+                } catch (_) {
+                    localStorage.removeItem('user');
                 }
-
-                // ② Decode claims from token
-                const decoded = decodeJwt(token);
-                setUser({
-                    token,
-                    id: decoded?.id,
-                    username: decoded?.username || 'User',
-                    role: decoded?.role || 'admin',
-                    orgId: decoded?.orgId
-                });
-                setIsAuthenticated(true);
             }
         } catch (e) {
             console.error('Auth check failed', e);
@@ -102,6 +84,7 @@ export const AuthProvider = ({ children }) => {
     const login = async (username, password) => {
         const res = await fetch(`${API_URL}/api/auth/login`, {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
@@ -109,21 +92,21 @@ export const AuthProvider = ({ children }) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Login failed');
 
-        localStorage.setItem('token', data.token);
-        const decoded = decodeJwt(data.token);
-        setUser({
-            token: data.token,
-            id: decoded?.id,
-            username: decoded?.username || data.user?.username || username,
-            role: decoded?.role || data.user?.role || 'admin',
-            orgId: decoded?.orgId
-        });
+        const userInfo = {
+            id: data.user?.id,
+            username: data.user?.username || username,
+            role: data.user?.role || 'admin',
+            orgId: data.user?.orgId
+        };
+        localStorage.setItem('user', JSON.stringify(userInfo));
+        setUser(userInfo);
         setIsAuthenticated(true);
     };
 
     const register = async (username, password, email) => {
         const res = await fetch(`${API_URL}/api/auth/register`, {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password, email })
         });
@@ -131,15 +114,14 @@ export const AuthProvider = ({ children }) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Registration failed');
 
-        localStorage.setItem('token', data.token);
-        const decoded = decodeJwt(data.token);
-        setUser({
-            token: data.token,
-            id: decoded?.id,
-            username: decoded?.username || data.user?.username || username,
-            role: decoded?.role || data.user?.role || 'user',
-            orgId: decoded?.orgId
-        });
+        const userInfo = {
+            id: data.user?.id,
+            username: data.user?.username || username,
+            role: data.user?.role || 'user',
+            orgId: data.user?.orgId
+        };
+        localStorage.setItem('user', JSON.stringify(userInfo));
+        setUser(userInfo);
         setIsAuthenticated(true);
         setIsSetupRequired(false);
     };
@@ -147,6 +129,7 @@ export const AuthProvider = ({ children }) => {
     const setup = async (username, password) => {
         const res = await fetch(`${API_URL}/api/auth/setup`, {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
@@ -154,15 +137,14 @@ export const AuthProvider = ({ children }) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Setup failed');
 
-        localStorage.setItem('token', data.token);
-        const decoded = decodeJwt(data.token);
-        setUser({
-            token: data.token,
-            id: decoded?.id,
-            username: decoded?.username || data.user?.username || username,
-            role: decoded?.role || 'admin',
-            orgId: decoded?.orgId
-        });
+        const userInfo = {
+            id: data.user?.id,
+            username: data.user?.username || username,
+            role: data.user?.role || 'admin',
+            orgId: data.user?.orgId
+        };
+        localStorage.setItem('user', JSON.stringify(userInfo));
+        setUser(userInfo);
         setIsAuthenticated(true);
         setIsSetupRequired(false);
     };

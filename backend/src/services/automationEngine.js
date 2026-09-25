@@ -1106,6 +1106,157 @@ class AutomationEngine {
 
         return true
     }
+
+    // ─── Resume: skip completed steps, run only what's missing ──────────────
+    async resume(cluster, analysis, callbacks) {
+        const { onProgress, onLog, onComplete, onError } = callbacks
+        const { resumeFromStep, missingWorkers } = analysis
+
+        const STEP_ORDER = [
+            'installContainerRuntime',
+            'installKubernetesComponents',
+            'initializeControlPlane',
+            'installNetworkPlugin',
+            'joinNodes',
+            'installAddons',
+            'postValidation'
+        ]
+
+        const STEP_PROGRESS = {
+            installContainerRuntime:    20,
+            installKubernetesComponents: 35,
+            initializeControlPlane:     50,
+            installNetworkPlugin:       65,
+            joinNodes:                  75,
+            installAddons:             85,
+            postValidation:            95
+        }
+
+        const startIdx = STEP_ORDER.indexOf(resumeFromStep)
+        const steps = STEP_ORDER.slice(startIdx >= 0 ? startIdx : 0)
+
+        this.simulationMode = false // Resume always runs on real nodes
+
+        try {
+            onLog('info', `▶ Resuming installation from: ${resumeFromStep}`)
+            onLog('info', `Steps to run: ${steps.join(' → ')}`)
+            onProgress(5, 'Starting resume...')
+
+            let joinCommand = null
+
+            for (const step of steps) {
+                onProgress(STEP_PROGRESS[step] ?? 50, `Running: ${step}...`)
+
+                switch (step) {
+
+                    case 'installContainerRuntime':
+                        onLog('info', 'Installing container runtime...')
+                        await this.installContainerRuntime(cluster, onLog)
+                        break
+
+                    case 'installKubernetesComponents':
+                        onLog('info', 'Installing Kubernetes components...')
+                        await this.installKubernetesComponents(cluster, onLog)
+                        break
+
+                    case 'initializeControlPlane':
+                        onLog('info', 'Initializing control plane...')
+                        joinCommand = await this.initializeControlPlane(cluster, onLog)
+                        break
+
+                    case 'installNetworkPlugin':
+                        // Regenerate fresh join token if CP was already done before this resume
+                        if (!joinCommand) {
+                            joinCommand = await this._regenerateJoinCommand(cluster, onLog)
+                        }
+                        onLog('info', 'Installing network plugin...')
+                        await this.installNetworkPlugin(cluster, onLog)
+                        break
+
+                    case 'joinNodes': {
+                        if (!joinCommand) {
+                            joinCommand = await this._regenerateJoinCommand(cluster, onLog)
+                        }
+                        const workersToJoin = missingWorkers?.length > 0
+                            ? missingWorkers
+                            : (cluster.workerNodes || [])
+                        if (workersToJoin.length === 0) {
+                            onLog('info', 'All nodes already joined — skipping')
+                        } else {
+                            onLog('info', `Joining ${workersToJoin.length} missing worker node(s)...`)
+                            const partialInstallation = { ...cluster, masterNodes: [], workerNodes: workersToJoin }
+                            await this.joinNodes(partialInstallation, joinCommand, onLog)
+                        }
+                        break
+                    }
+
+                    case 'installAddons':
+                        onLog('info', 'Installing add-ons...')
+                        await this.installAddons(cluster, onLog)
+                        break
+
+                    case 'postValidation':
+                        onLog('info', 'Running post-installation validation...')
+                        await this.postInstallationValidation(cluster, onLog)
+                        break
+                }
+
+                onLog('success', `✓ ${step} complete`)
+            }
+
+            onProgress(100, 'Resume completed!')
+            onLog('success', '✅ Cluster installation resumed and completed successfully!')
+
+            const clusterInfo = {
+                name: cluster.clusterName,
+                version: cluster.k8sVersion,
+                nodes: [
+                    ...cluster.masterNodes.map(n => ({
+                        name: n.hostname || `master-${n.ip}`,
+                        ip: n.ip, role: 'master', status: 'Ready'
+                    })),
+                    ...(cluster.workerNodes || []).map(n => ({
+                        name: n.hostname || `worker-${n.ip}`,
+                        ip: n.ip, role: 'worker', status: 'Ready'
+                    }))
+                ],
+                nodeCount: cluster.masterNodes.length + (cluster.workerNodes?.length || 0),
+                endpoint: `https://${cluster.masterNodes[0].ip}:6443`,
+                simulationMode: false
+            }
+
+            onComplete(clusterInfo)
+
+        } catch (error) {
+            onLog('error', `❌ Resume failed: ${error.message}`)
+            onError(error)
+        }
+    }
+
+    // Regenerate a fresh kubeadm join token (existing token may have expired)
+    async _regenerateJoinCommand(cluster, onLog) {
+        onLog('info', 'Generating fresh join token...')
+        const masterNode = cluster.masterNodes[0]
+        const ssh = await this.connectSSH(masterNode)
+        try {
+            const joinResult = await ssh.execCommand(
+                'sudo kubeadm token create --print-join-command 2>/dev/null'
+            )
+            const certResult = await ssh.execCommand(
+                'sudo kubeadm init phase upload-certs --upload-certs 2>/dev/null | tail -1'
+            )
+            if (!joinResult.stdout?.trim()) {
+                throw new Error('Could not generate join token — is the cluster control plane running?')
+            }
+            onLog('success', '✓ Fresh join token generated')
+            return {
+                joinCommand: joinResult.stdout.trim(),
+                certKey: certResult.stdout.trim()
+            }
+        } finally {
+            ssh.dispose?.()
+        }
+    }
 }
 
 export const automationEngine = new AutomationEngine()

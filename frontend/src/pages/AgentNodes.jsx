@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import {
     Server, Plus, Wifi, WifiOff, Clock, Copy, Check,
@@ -88,13 +88,8 @@ function GenerateAgentCard({ onGenerated }) {
     const handleGenerate = async () => {
         setLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/agent/token', {
+            const res = await apiFetch('/api/agent/token', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({ label: label.trim() || undefined })
             })
             const data = await res.json()
@@ -243,10 +238,8 @@ function AgentCard({ agent, onDelete }) {
     const handleDelete = async () => {
         setDeleting(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/agent/${agent.agentId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+            const res = await apiFetch(`/api/agent/${agent.agentId}`, {
+                method: 'DELETE'
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
@@ -364,10 +357,7 @@ export default function AgentNodes() {
     const fetchAgents = useCallback(async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/agent/list', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch('/api/agent/list')
             if (res.ok) {
                 const data = await res.json()
                 setAgents(data)

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../components/ToastProvider'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, apiFetch } from '../context/AuthContext'
 import TenantManager from '../components/TenantManager'
 import {
     Activity,
@@ -67,10 +67,7 @@ export default function Settings() {
     const fetchLicenseStatus = async () => {
         setLicenseLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/license/status', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch('/api/license/status')
             const data = await res.ok ? await res.json() : null
             if (data) {
                 setLicenseStatus(data)
@@ -127,10 +124,8 @@ export default function Settings() {
         }
         setPwdLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/auth/change-password', {
+            const res = await apiFetch('/api/auth/change-password', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentPassword: pwdForm.current, newPassword: pwdForm.newPwd })
             })
             const data = await res.json()
@@ -149,10 +144,7 @@ export default function Settings() {
     const fetchHealth = async () => {
         setHealthLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/health/detailed', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch('/api/health/detailed')
             const data = await res.ok ? await res.json() : null
             if (data) {
                 setHealthData(data)
@@ -173,10 +165,7 @@ export default function Settings() {
     const fetchBackups = async () => {
         setBackupLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/health/backups', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch('/api/health/backups')
             const data = await res.ok ? await res.json() : null
             if (data) {
                 setBackupData(data.backupSystem)
@@ -197,13 +186,8 @@ export default function Settings() {
     const handleCreateBackup = async () => {
         setIsBackingUp(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/health/backups', {
-                method: 'POST',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
+            const res = await apiFetch('/api/health/backups', {
+                method: 'POST'
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Backup failed')
@@ -228,13 +212,8 @@ export default function Settings() {
     const handleRestoreBackup = async (filename) => {
         setIsRestoring(filename)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/health/backups/restore', {
+            const res = await apiFetch('/api/health/backups/restore', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({ filename })
             })
             const data = await res.json()
@@ -628,11 +607,9 @@ export default function Settings() {
                                                         <button
                                                             onClick={async () => {
                                                                 try {
-                                                                    const token = localStorage.getItem('token');
-                                                                    const res = await fetch('/api/stripe/create-checkout-session', {
+                                                                    const res = await apiFetch('/api/stripe/create-checkout-session', {
                                                                         method: 'POST',
-                                                                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                                                        body: JSON.stringify({ planId: 'pro', userId: user.id })
+                                                                        body: JSON.stringify({ planId: 'pro' })
                                                                     });
                                                                     const data = await res.json();
                                                                     if (data.url) {
@@ -651,11 +628,9 @@ export default function Settings() {
                                                         <button
                                                             onClick={async () => {
                                                                 try {
-                                                                    const token = localStorage.getItem('token');
-                                                                    const res = await fetch('/api/stripe/create-checkout-session', {
+                                                                    const res = await apiFetch('/api/stripe/create-checkout-session', {
                                                                         method: 'POST',
-                                                                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                                                        body: JSON.stringify({ planId: 'unlimited', userId: user.id })
+                                                                        body: JSON.stringify({ planId: 'pro' })
                                                                     });
                                                                     const data = await res.json();
                                                                     if (data.url) {
@@ -758,13 +733,8 @@ export default function Settings() {
                                                             if (!licenseKeyInput.trim()) return
                                                             setActivatingLicense(true)
                                                             try {
-                                                                const token = localStorage.getItem('token')
-                                                                const res = await fetch('/api/license/activate', {
+                                                                const res = await apiFetch('/api/license/activate', {
                                                                     method: 'POST',
-                                                                    headers: {
-                                                                        'Authorization': `Bearer ${token}`,
-                                                                        'Content-Type': 'application/json'
-                                                                    },
                                                                     body: JSON.stringify({ licenseKey: licenseKeyInput.trim() })
                                                                 })
                                                                 const data = await res.json()

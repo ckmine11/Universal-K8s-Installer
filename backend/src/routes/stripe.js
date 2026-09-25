@@ -23,9 +23,6 @@ router.post('/create-checkout-session', express.json(), requireAuth, async (req,
         if (planId === 'pro') {
             priceId = process.env.STRIPE_PRICE_PRO || 'price_mock_pro'
             planName = 'PRO'
-        } else if (planId === 'unlimited') {
-            priceId = process.env.STRIPE_PRICE_UNLIMITED || 'price_mock_unlimited'
-            planName = 'UNLIMITED'
         } else {
             return res.status(400).json({ error: 'Invalid plan selected' })
         }
@@ -102,8 +99,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         if (user) {
             user.subscription = {
                 plan: planName,
-                maxClusters: planName === 'PRO' ? 5 : 9999,
-                maxNodes: planName === 'PRO' ? 20 : 9999
+                maxClusters: 10,
+                maxNodes: 50,
+                maxMembers: 5
             }
             authService.saveUsers()
             console.log(`[Stripe Webhook] Successfully upgraded user ${user.username}`)

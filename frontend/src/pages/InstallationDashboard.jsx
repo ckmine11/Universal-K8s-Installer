@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
+import { apiFetch } from '../context/AuthContext'
 import { useInstallationTracker } from '../context/InstallationTrackerContext'
 import { HealthSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
@@ -67,13 +68,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
         setInstallingAddons(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/clusters/${installationId}/addons`, {
+            const res = await apiFetch(`/api/clusters/${installationId}/addons`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({ addons: addonSelection })
             })
 
@@ -106,13 +102,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         }
         setIsUpgrading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/clusters/${installationId}/upgrade`, {
+            const res = await apiFetch(`/api/clusters/${installationId}/upgrade`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({ targetVersion })
             })
             const data = await res.json()
@@ -134,10 +125,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     useEffect(() => {
         // Fetch initial status to determine mode (Install/Upgrade/Scale)
         if (installationId) {
-            const token = localStorage.getItem('token')
-            fetch(`/api/clusters/${installationId}/status`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            apiFetch(`/api/clusters/${installationId}/status`)
                 .then(res => res.json())
                 .then(data => {
                     if (data && !data.error) {
@@ -160,10 +148,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
         if (status === 'completed' && installationId) {
             const fetchHealth = () => {
-                const token = localStorage.getItem('token')
-                fetch(`/api/clusters/${installationId}/health`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                })
+                apiFetch(`/api/clusters/${installationId}/health`)
                     .then(res => res.json())
                     .then(data => {
                         if (!data.error) {
@@ -190,8 +175,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         // Connect to WebSocket via Nginx proxy on the same port as the UI
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.host // This includes the port, e.g., 5173
-        const token = localStorage.getItem('token')
-        const ws = new WebSocket(`${protocol}//${host}/ws/installation/${installationId}?token=${token}`)
+        const ws = new WebSocket(`${protocol}//${host}/ws/installation/${installationId}`)
         wsRef.current = ws
 
         ws.onopen = () => {
@@ -288,10 +272,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
     const downloadKubeconfig = async () => {
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/clusters/${installationId}/kubeconfig?token=${token}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch(`/api/clusters/${installationId}/kubeconfig`)
 
             if (!res.ok) {
                 const errData = await res.json()
@@ -299,14 +280,12 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             }
 
             const blob = await res.blob()
-            const url = window.URL.createObjectURL(blob)
+            const url = URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = url
             a.download = `kubeconfig-${installationId}.yaml`
-            document.body.appendChild(a)
             a.click()
-            window.URL.revokeObjectURL(url)
-            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
         } catch (error) {
             console.error('Download error:', error)
             alert('Failed to download Kubeconfig: ' + error.message)
@@ -318,13 +297,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
         setIsFixing(true)
         try {
-            const token = localStorage.getItem('token')
-            if (!token) throw new Error('Authentication required')
-
             // 1. Get Status to find IP
-            const statusRes = await fetch(`/api/clusters/${installationId}/status`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const statusRes = await apiFetch(`/api/clusters/${installationId}/status`)
             if (!statusRes.ok) throw new Error('Failed to fetch status')
 
             const installationData = await statusRes.json()
@@ -332,12 +306,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
             // 2. Execute Fix
             addLog('info', `Attempting to fix ${errorState.reason}...`)
-            const fixRes = await fetch('/api/clusters/action/fix', {
+            const fixRes = await apiFetch('/api/clusters/action/fix', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({
                     installationId,
                     nodeIp: targetIp,
@@ -349,9 +319,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             addLog('success', '✅ Fix applied. Restarting installation...')
 
             // 3. Retry Installation (Clone & Restart)
-            const retryRes = await fetch(`/api/clusters/${installationId}/retry`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
+            const retryRes = await apiFetch(`/api/clusters/${installationId}/retry`, {
+                method: 'POST'
             })
             const retryData = await retryRes.json()
 
@@ -379,10 +348,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         addLog('info', 'Initiating retry...')
 
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/clusters/${installationId}/retry`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
+            const res = await apiFetch(`/api/clusters/${installationId}/retry`, {
+                method: 'POST'
             })
 
             const data = await res.json()

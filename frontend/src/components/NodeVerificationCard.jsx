@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { apiFetch } from '../context/AuthContext'
 import {
     CheckCircle2,
     XCircle,
@@ -45,13 +46,8 @@ export default function NodeVerificationCard({ node, nodeType, index, onVerify, 
         setVerificationResult(null)
 
         try {
-            const token = localStorage.getItem('token')
-            const response = await fetch('/api/nodes/verify', {
+            const response = await apiFetch('/api/nodes/verify', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify(node)
             })
 

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid'
 import { automationEngine } from './automationEngine.js'
 import { clusterStore } from './clusterStore.js'
 import { terminalService } from './terminalService.js'
@@ -242,10 +243,87 @@ class InstallationManager {
     failInstallation(installationId, error) {
         const installation = this.installations.get(installationId)
         if (installation) {
-            installation.status = 'failed'
-            installation.error = error.message
+            installation.status  = 'failed'
+            installation.error   = error.message
             installation.failedAt = new Date().toISOString()
+
+            // Persist to disk so resume works after server restart (fire-and-forget)
+            clusterStore.saveCluster({
+                id:            installation.originalClusterId || installationId,
+                ownerId:       installation.ownerId,
+                orgId:         installation.orgId,
+                clusterName:   installation.clusterName,
+                k8sVersion:    installation.k8sVersion,
+                networkPlugin: installation.networkPlugin,
+                masterNodes:   installation.masterNodes,
+                workerNodes:   installation.workerNodes,
+                addons:        installation.addons,
+                mode:          installation.mode,
+                status:        'failed',
+                error:         error.message,
+                failedAt:      installation.failedAt
+            }).catch(e =>
+                console.error('[InstallationManager] Could not persist failed cluster:', e.message)
+            )
         }
+    }
+
+    async resumeInstallation(clusterId, analysis, userId, orgId) {
+        const { resumeAnalyzer } = await import('./resumeAnalyzer.js')
+
+        // Load cluster config from store (has SSH creds)
+        const clusters = await clusterStore.getClusters()
+        const cluster = clusters.find(c => c.id === clusterId)
+        if (!cluster) throw new Error('Cluster not found — cannot resume')
+
+        const resumeId = uuidv4()
+
+        const resumeInstallation = {
+            ...cluster,
+            id: resumeId,
+            originalClusterId: clusterId,
+            ownerId: userId,
+            orgId,
+            mode: 'resume',
+            status: 'pending',
+            progress: 0,
+            logs: [],
+            createdAt: new Date().toISOString()
+        }
+
+        this.installations.set(resumeId, {
+            ...resumeInstallation,
+            status: 'running',
+            startedAt: new Date().toISOString()
+        })
+
+        this.broadcast(resumeId, { type: 'status', status: 'running' })
+
+        // Run resume in background
+        const callbacks = {
+            onLog: (level, message) => {
+                this.addLog(resumeId, level, message)
+                this.broadcast(resumeId, { type: 'log', level, message })
+            },
+            onProgress: (progress, step) => {
+                this.updateProgress(resumeId, progress, step)
+                this.broadcast(resumeId, { type: 'progress', progress, step })
+            },
+            onComplete: (clusterInfo) => {
+                this.completeInstallation(resumeId, clusterInfo)
+                this.broadcast(resumeId, { type: 'status', status: 'completed', clusterInfo })
+            },
+            onError: (error) => {
+                this.failInstallation(resumeId, error)
+                this.broadcast(resumeId, { type: 'status', status: 'failed', error: error.message })
+            }
+        }
+
+        automationEngine.resume(cluster, analysis, callbacks).catch(err => {
+            this.failInstallation(resumeId, err)
+        })
+
+        return resumeId
     }
 
     getStatus(installationId) {

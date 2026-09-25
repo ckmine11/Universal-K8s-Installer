@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { apiFetch } from '../context/AuthContext'
 
 export default function Incidents() {
     const [incidents, setIncidents] = useState([])
@@ -6,10 +7,7 @@ export default function Incidents() {
 
     const fetchIncidents = async () => {
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/incidents', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch('/api/incidents')
             if (res.ok) {
                 const data = await res.json()
                 setIncidents(data)

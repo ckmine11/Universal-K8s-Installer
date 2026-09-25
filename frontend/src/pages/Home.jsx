@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
+import { apiFetch } from '../context/AuthContext'
 import { CardSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
 import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles } from 'lucide-react'
@@ -41,13 +42,8 @@ export default function Home({ onStartNew, onScaleExisting }) {
             duration: 3000
         })
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/clusters/${selectedClusterId}/addons`, {
+            const res = await apiFetch(`/api/clusters/${selectedClusterId}/addons`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({ addons: addonSelection })
             })
             const data = await res.json()
@@ -78,10 +74,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
     const fetchSavedClusters = async () => {
         setLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const response = await fetch('/api/clusters/list', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const response = await apiFetch('/api/clusters/list')
             const data = await response.json()
             setSavedClusters(data)
         } catch (error) {
@@ -101,10 +94,8 @@ export default function Home({ onStartNew, onScaleExisting }) {
         if (!window.confirm('Are you sure you want to remove this cluster from management?')) return
 
         try {
-            const token = localStorage.getItem('token')
-            await fetch(`/api/clusters/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+            await apiFetch(`/api/clusters/${id}`, {
+                method: 'DELETE'
             })
             setSavedClusters(prev => prev.filter(c => c.id !== id))
             toast({

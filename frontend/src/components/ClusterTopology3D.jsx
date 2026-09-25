@@ -203,9 +203,8 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, height = "50
     React.useEffect(() => {
         if (!clusterId) return
 
-        const token = localStorage.getItem('token')
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/traffic/${clusterId}?token=${token}`)
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/traffic/${clusterId}`)
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data)

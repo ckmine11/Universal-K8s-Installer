@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import {
     Users, Shield, User, Trash2, Crown, RefreshCw, Loader2,
@@ -34,10 +34,8 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
         }
         setLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/admin/users/${user.id}/reset-password`, {
+            const res = await apiFetch(`/api/admin/users/${user.id}/reset-password`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ newPassword: password })
             })
             const data = await res.json()
@@ -109,10 +107,8 @@ function CreateUserModal({ onClose, onSuccess }) {
         }
         setLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
             })
             const data = await res.json()
@@ -183,10 +179,8 @@ function UserCard({ userItem, currentUser, onRefresh }) {
         setChangingRole(true)
         const newRole = userItem.role === 'admin' ? 'user' : 'admin'
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/admin/users/${userItem.id}/role`, {
+            const res = await apiFetch(`/api/admin/users/${userItem.id}/role`, {
                 method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ role: newRole })
             })
             const data = await res.json()
@@ -203,10 +197,8 @@ function UserCard({ userItem, currentUser, onRefresh }) {
     const handleDelete = async () => {
         setDeleting(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/admin/users/${userItem.id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+            const res = await apiFetch(`/api/admin/users/${userItem.id}`, {
+                method: 'DELETE'
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
@@ -332,10 +324,7 @@ export default function AdminUsers() {
     const fetchUsers = useCallback(async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/admin/users', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
+            const res = await apiFetch('/api/admin/users')
             if (!res.ok) throw new Error('Failed to load users')
             const data = await res.json()
             setUsers(data)

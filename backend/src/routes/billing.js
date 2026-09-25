@@ -10,7 +10,7 @@ router.get('/subscription', requireAuth, (req, res) => {
         if (!user) return res.status(404).json({ error: 'User not found' })
         
         // Return current subscription or default
-        const sub = user.subscription || { plan: 'FREE', maxClusters: 1, maxNodes: 3 }
+        const sub = user.subscription || { plan: 'FREE', maxClusters: 1, maxNodes: 2, maxMembers: 1 }
         res.json(sub)
     } catch (e) {
         res.status(500).json({ error: e.message })

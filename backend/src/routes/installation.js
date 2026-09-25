@@ -4,6 +4,7 @@ import { installationManager } from '../services/installationManager.js'
 import { automationEngine } from '../services/automationEngine.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 import { licenseService } from '../services/licenseService.js'
+import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 
 
 const router = express.Router()
@@ -318,6 +319,65 @@ router.post('/:id/retry', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Retry error:', error)
         res.status(500).json({ error: 'Failed to retry installation' })
+    }
+})
+
+// Analyze failed cluster — detect what completed, what's missing, where to resume
+router.post('/:id/analyze', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params
+        const clusters = await installationManager.getSavedClusters()
+        const cluster = clusters.find(c => c.id === id)
+
+        if (!cluster) return res.status(404).json({ error: 'Cluster not found' })
+        if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized' })
+        }
+
+        const logs = []
+        const onLog = (level, msg) => logs.push({ level, message: msg })
+
+        const analysis = await resumeAnalyzer.analyze(cluster, onLog)
+        res.json({ ...analysis, logs })
+
+    } catch (error) {
+        console.error('Resume analyze error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Start resume from where installation failed
+router.post('/:id/resume', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params
+        const { analysis } = req.body  // Pass analysis result from /analyze call
+
+        if (!analysis?.resumeFromStep) {
+            return res.status(400).json({ error: 'Missing analysis — call /analyze first' })
+        }
+
+        const clusters = await installationManager.getSavedClusters()
+        const cluster = clusters.find(c => c.id === id)
+
+        if (!cluster) return res.status(404).json({ error: 'Cluster not found' })
+        if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized' })
+        }
+
+        const resumeId = await installationManager.resumeInstallation(
+            id, analysis, req.user.id, req.user.orgId
+        )
+
+        res.json({
+            success: true,
+            resumeInstallationId: resumeId,
+            resumeFromStep: analysis.resumeFromStep,
+            message: `Resuming from: ${analysis.resumeFromStep}`
+        })
+
+    } catch (error) {
+        console.error('Resume start error:', error)
+        res.status(500).json({ error: error.message })
     }
 })
 

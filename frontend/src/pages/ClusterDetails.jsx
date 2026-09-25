@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
+import { apiFetch } from '../context/AuthContext'
 import Skeleton from '../components/Skeleton'
 import {
     Activity,
@@ -17,10 +18,13 @@ import {
     Terminal,
     Globe,
     Command,
-    Box
+    Box,
+    PlayCircle,
+    AlertTriangle
 } from 'lucide-react'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
+import ResumeModal from '../components/ResumeModal'
 
 export default function ClusterDetails({ onScaleCluster }) {
     const { toast } = useToast()
@@ -36,6 +40,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
     const [targetVersion, setTargetVersion] = useState('')
     const [upgradeLoading, setUpgradeLoading] = useState(false)
+    const [resumeModalOpen, setResumeModalOpen] = useState(false)
 
     // Calculate next version options
     const currentVersion = cluster?.k8sVersion || '1.28.0'
@@ -48,14 +53,9 @@ export default function ClusterDetails({ onScaleCluster }) {
     const handleUpgrade = () => {
         if (!targetVersion) return
         setUpgradeLoading(true)
-        const token = localStorage.getItem('token')
 
-        fetch(`/api/clusters/${id}/upgrade`, {
+        apiFetch(`/api/clusters/${id}/upgrade`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
             body: JSON.stringify({ targetVersion })
         })
             .then(res => res.json())
@@ -82,11 +82,8 @@ export default function ClusterDetails({ onScaleCluster }) {
     }
 
     useEffect(() => {
-        const token = localStorage.getItem('token')
         // 1. Fetch Cluster Config
-        fetch('/api/clusters/list', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        })
+        apiFetch('/api/clusters/list')
             .then(res => res.json())
             .then(data => {
                 const found = data.find(c => c.id === id)
@@ -106,10 +103,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     }, [id, navigate])
 
     const fetchHealthData = () => {
-        const token = localStorage.getItem('token')
-        fetch(`/api/clusters/${id}/health`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        })
+        apiFetch(`/api/clusters/${id}/health`)
             .then(res => res.json())
             .then(data => {
                 if (!data.error) {
@@ -120,10 +114,15 @@ export default function ClusterDetails({ onScaleCluster }) {
             .finally(() => setHealthLoading(false))
     }
 
-    const downloadKubeconfig = () => {
-        // Trigger download from backend API
-        const token = localStorage.getItem('token')
-        window.location.href = `/api/clusters/${id}/kubeconfig?token=${token}`
+    const downloadKubeconfig = async () => {
+        const res = await apiFetch(`/api/clusters/${id}/kubeconfig`)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `kubeconfig-${id}.yaml`
+        a.click()
+        URL.revokeObjectURL(url)
     }
 
     if (loading) {
@@ -155,6 +154,13 @@ export default function ClusterDetails({ onScaleCluster }) {
 
     return (
         <div className="max-w-7xl mx-auto py-8 px-4">
+            {/* Resume Modal — rendered at root so it overlays entire page */}
+            {resumeModalOpen && (
+                <ResumeModal
+                    cluster={cluster}
+                    onClose={() => setResumeModalOpen(false)}
+                />
+            )}
             {/* Header */}
             <div className="flex items-center space-x-4 mb-8">
                 <button
@@ -163,16 +169,33 @@ export default function ClusterDetails({ onScaleCluster }) {
                 >
                     <ArrowLeft className="w-6 h-6 text-slate-400" />
                 </button>
-                <div>
+                <div className="flex-1">
                     <h1 className="text-3xl font-black text-white tracking-tight">{cluster.clusterName}</h1>
                     <div className="flex items-center space-x-3 text-slate-400 text-sm mt-1">
-                        <span className="flex items-center"><Activity className="w-4 h-4 mr-1 text-green-400" /> Active</span>
+                        {cluster.status === 'failed' ? (
+                            <span className="flex items-center text-red-400">
+                                <AlertTriangle className="w-4 h-4 mr-1" /> Installation Failed
+                            </span>
+                        ) : (
+                            <span className="flex items-center"><Activity className="w-4 h-4 mr-1 text-green-400" /> Active</span>
+                        )}
                         <span>•</span>
                         <span>ID: {cluster.id}</span>
                         <span>•</span>
                         <span>Created: {new Date(cluster.createdAt).toLocaleDateString()}</span>
                     </div>
                 </div>
+
+                {/* Resume button — only for failed clusters */}
+                {cluster.status === 'failed' && (
+                    <button
+                        onClick={() => setResumeModalOpen(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                    >
+                        <PlayCircle className="w-4 h-4" />
+                        Resume Installation
+                    </button>
+                )}
             </div>
 
             {/* Quick Stats */}

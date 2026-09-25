@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
+import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import { v4 as uuidv4 } from 'uuid'
 import installationRoutes from './routes/installation.js'
@@ -52,6 +53,7 @@ app.use(cors({
     },
     credentials: true
 }))
+app.use(cookieParser())
 
 // Stripe routes MUST be before express.json() because webhook needs raw body
 app.use('/api/stripe', stripeRoutes)
@@ -91,7 +93,14 @@ app.post('/api/auth/setup', async (req, res) => {
             return res.status(400).json({ error: 'Setup already completed. Please register or login.' })
         }
         const token = await authService.registerUser(username, password, email)
-        res.json({ token, user: { username, role: 'admin' } })
+        const decoded = authService.verifyToken(token)
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000
+        })
+        res.json({ token, user: { id: decoded?.id, username: decoded?.username || username, role: decoded?.role || 'admin', orgId: decoded?.orgId } })
     } catch (e) {
         res.status(400).json({ error: e.message })
     }
@@ -103,7 +112,13 @@ app.post('/api/auth/register', async (req, res) => {
         if (!username || !password || !email) return res.status(400).json({ error: 'Username, password, and email are required' })
         const token = await authService.registerUser(username, password, email)
         const decoded = authService.verifyToken(token)
-        res.json({ token, user: { username, role: decoded.role } })
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000
+        })
+        res.json({ token, user: { id: decoded?.id, username: decoded?.username || username, role: decoded?.role || 'user', orgId: decoded?.orgId } })
     } catch (e) {
         res.status(400).json({ error: e.message })
     }
@@ -135,10 +150,26 @@ app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body
         const token = await authService.login(username, password)
-        res.json({ token })
+        const decoded = authService.verifyToken(token)
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000
+        })
+        res.json({ token, user: { id: decoded?.id, username: decoded?.username, role: decoded?.role, orgId: decoded?.orgId } })
     } catch (e) {
         res.status(401).json({ error: e.message })
     }
+})
+
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('token', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' })
+    res.json({ message: 'Logged out' })
+})
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+    res.json({ id: req.user.id, username: req.user.username, role: req.user.role, orgId: req.user.orgId })
 })
 
 // Protected Routes
@@ -292,8 +323,15 @@ wss.on('connection', (ws, req) => {
     // Expected path: /ws/installation/:id or similar
     // Authentication Check
     const url = new URL(req.url, `http://${req.headers.host}`)
-    const token = url.searchParams.get('token')
+    let token = url.searchParams.get('token')
     const pathname = url.pathname
+
+    if (!token) {
+        // Try cookie
+        const cookieHeader = req.headers.cookie || ''
+        const cookieToken = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('token='))?.split('=')[1]
+        if (cookieToken) token = cookieToken
+    }
 
     if (!token) {
         console.log('WebSocket connection rejected: No token provided')

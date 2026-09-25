@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../components/ToastProvider'
+import { apiFetch } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { ADDONS_LIST } from '../config/addons'
 import { K8S_VERSIONS } from '../config/versions'
@@ -97,10 +98,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                 if (config.mode === 'saas') {
                     setIsSaasMode(true)
                     setAgentCheckLoading(true)
-                    const token = localStorage.getItem('token')
-                    const agentRes = await fetch('/api/agent/has-online', {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    })
+                    const agentRes = await apiFetch('/api/agent/has-online')
                     const agentData = agentRes.ok ? await agentRes.json() : { hasOnline: false }
                     setHasOnlineAgent(agentData.hasOnline)
                 }
@@ -266,13 +264,8 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
             })
             console.log('Sending to backend:', sanitizedData)
 
-            const token = localStorage.getItem('token')
-            const response = await fetch('/api/clusters/install', {
+            const response = await apiFetch('/api/clusters/install', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify(sanitizedData)
             })
 
