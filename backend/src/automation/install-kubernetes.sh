@@ -2,8 +2,22 @@
 
 # KubeEZ - Install Kubernetes Components
 # This script installs kubeadm, kubelet, and kubectl
+# Supports: CentOS 7 (EOL), RHEL 8/9, Rocky, AlmaLinux, Ubuntu, Debian
 
 set -e
+
+# ─────────────────────────────────────────────────────────────
+# PRE-STEP: Universal OS Repo & DNS Fix
+# ─────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/fix-os-repos.sh" ]; then
+    bash "${SCRIPT_DIR}/fix-os-repos.sh"
+else
+    cat > /etc/resolv.conf <<'DNSEOF'
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+DNSEOF
+fi
 
 K8S_VERSION=${1:-"1.28"}
 
@@ -45,12 +59,8 @@ elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
     
     echo "Installing Kubernetes on RHEL/CentOS/Rocky/Fedora using $PKG_MGR..."
     
-    # CentOS 7 EOL Fix (Triple-protection)
-    if [ -f /etc/yum.repos.d/CentOS-Base.repo ] && grep -q "release 7" /etc/redhat-release; then
-        echo "Updating CentOS 7 mirrors for Kubernetes repo stability..."
-        sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
-        sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
-    fi
+    # NOTE: CentOS 7 EOL repos fully handled by fix-os-repos.sh (called above)
+    # Repos already point to vault.centos.org and DNS is configured
 
     # Disable SELinux (Required for K8s)
     setenforce 0 || true

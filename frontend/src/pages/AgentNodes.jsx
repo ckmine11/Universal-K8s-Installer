@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import {
     Server, Plus, Wifi, WifiOff, Clock, Copy, Check,
     Trash2, Loader2, RefreshCw, Shield, AlertTriangle,
-    Terminal, ChevronRight, Activity, Info
+    Terminal, ChevronRight, Activity, Info, Rocket, Zap, ArrowRight
 } from 'lucide-react'
 
 // ─── Status Badge ─────────────────────────────────────────────────
@@ -355,6 +356,7 @@ function AgentCard({ agent, onDelete }) {
 // ─── Main Page ────────────────────────────────────────────────────
 export default function AgentNodes() {
     const { user } = useAuth()
+    const navigate = useNavigate()
     const [agents, setAgents] = useState([])
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
@@ -439,6 +441,55 @@ export default function AgentNodes() {
 
             {/* Prerequisite Banner */}
             <PrerequisiteBanner />
+
+            {/* ═══════ DEPLOY CLUSTER CTA - Shows when at least 1 agent is online ═══════ */}
+            {onlineCount > 0 && (
+                <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="relative glass rounded-3xl border border-emerald-500/20 bg-gradient-to-r from-emerald-500/5 via-blue-500/5 to-purple-500/5 p-8 overflow-hidden">
+                        {/* Animated glow */}
+                        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" />
+                        <div className="absolute bottom-0 left-0 w-60 h-60 bg-blue-500/10 rounded-full blur-[80px] pointer-events-none" />
+
+                        <div className="relative z-10 flex items-center justify-between">
+                            <div className="flex items-center gap-5">
+                                <div className="relative">
+                                    <div className="absolute inset-0 bg-emerald-500 blur-xl opacity-30 animate-pulse" />
+                                    <div className="relative p-4 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-2xl shadow-2xl shadow-emerald-500/30">
+                                        <Rocket className="w-7 h-7 text-white" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black text-white uppercase tracking-tight mb-1">
+                                        Gateway Connected — Ready to Deploy!
+                                    </h3>
+                                    <p className="text-sm text-slate-400 max-w-lg">
+                                        Aapka Gateway Agent <span className="text-emerald-400 font-bold">online</span> hai. Ab aap apne local servers per Kubernetes cluster deploy kar sakte hain. Tunnel ke through SSH traffic automatically route hoga.
+                                    </p>
+                                    <div className="flex items-center gap-4 mt-3">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                            <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{onlineCount} Agent{onlineCount > 1 ? 's' : ''} Online</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <Shield className="w-3 h-3 text-blue-400" />
+                                            <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Secure SSH Tunnel Active</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => navigate('/install')}
+                                className="group relative flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white rounded-2xl font-black text-sm uppercase tracking-wider shadow-2xl shadow-emerald-600/30 hover:shadow-emerald-500/40 transition-all duration-300 active:scale-[0.97] whitespace-nowrap"
+                            >
+                                <Zap className="w-5 h-5 group-hover:animate-pulse" />
+                                <span>Deploy New Cluster</span>
+                                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

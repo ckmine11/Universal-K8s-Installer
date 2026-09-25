@@ -119,6 +119,31 @@ class AutomationEngine {
             }
         }
 
+        // CentOS 7 EOL repo failures (vault.centos.org 403 / DNS failure)
+        if (errorLog.includes('errno 256') ||
+            errorLog.includes('no more mirrors to try') ||
+            (errorLog.includes('vault.centos.org') && (errorLog.includes('errno 14') || errorLog.includes('403'))) ||
+            errorLog.includes('repodata') && errorLog.includes('from base:')) {
+            return {
+                reason: 'CentOS 7 EOL Repository Failure',
+                message: 'CentOS 7 repos are broken (EOL). Auto-healing will patch all repos to vault.centos.org and fix DNS.',
+                suggestedFix: 'Run fix-os-repos.sh to patch CentOS 7 EOL repositories and configure DNS.',
+                fixAction: 'fix_centos7_repos'
+            }
+        }
+
+        // IPv6 connectivity failure (curl#7)
+        if (errorLog.includes('curl#7') ||
+            errorLog.includes('failed to connect to') && errorLog.includes(':') ||
+            errorLog.includes('network is unreachable') && errorLog.includes('ipv6')) {
+            return {
+                reason: 'IPv6 Network Unreachable',
+                message: 'Node has no IPv6 connectivity. Auto-healing will force IPv4 for all package managers.',
+                suggestedFix: 'Disable IPv6 and force ip_resolve=4 for yum/dnf/apt.',
+                fixAction: 'fix_ipv6_force'
+            }
+        }
+
         if (errorLog.includes('running with swap on is not supported') ||
             errorLog.includes('swap is enabled') ||
             errorLog.includes('swapoff') ||
@@ -199,11 +224,38 @@ class AutomationEngine {
                 await ssh.execCommand('sudo rm -rf $HOME/.kube/config')
                 onLog('success', '✓ Kubernetes state reset. Ready for clean install.')
             }
+            else if (fixAction === 'fix_centos7_repos' || fixAction === 'fix_ipv6_force') {
+                // Run the universal fix script on the remote node
+                onLog('info', '🔧 Running universal OS repo & DNS fixer on node...')
+                const fixScript = readFileSync(
+                    join(__dirname, '../automation/fix-os-repos.sh'), 'utf8'
+                )
+                const tmpPath = `/tmp/kubeez-fix-repos-${Date.now()}.sh`
+                await ssh.execCommand(`cat > ${tmpPath} << 'EOFSCRIPT'\n${fixScript}\nEOFSCRIPT`)
+                await ssh.execCommand(`chmod +x ${tmpPath}`)
+                const fixResult = await ssh.execCommand(`sudo bash ${tmpPath}`, {
+                    onStdout: (chunk) => {
+                        chunk.toString('utf8').split('\n').forEach(l => { if (l.trim()) onLog('info', l) })
+                    },
+                    onStderr: (chunk) => {
+                        chunk.toString('utf8').split('\n').forEach(l => { if (l.trim()) onLog('warning', l) })
+                    }
+                })
+                await ssh.execCommand(`rm -f ${tmpPath}`)
+                if (fixResult.code !== 0) {
+                    throw new Error('fix-os-repos.sh failed: ' + fixResult.stderr)
+                }
+                onLog('success', '✓ CentOS 7 EOL repos patched. DNS and IPv4 configured.')
+            }
             else if (fixAction === 'fix_dns_resolv' || fixAction === 'retry_connection') {
-                // Force DNS
-                await ssh.execCommand('echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf')
-                await ssh.execCommand('echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf')
-                onLog('success', '✓ Patched /etc/resolv.conf with Public DNS.')
+                // Force DNS + IPv4
+                await ssh.execCommand(`sudo bash -c 'echo "nameserver 8.8.8.8" > /etc/resolv.conf && echo "nameserver 1.1.1.1" >> /etc/resolv.conf && echo "nameserver 8.8.4.4" >> /etc/resolv.conf'`)
+                // Also force IPv4 for yum/dnf
+                await ssh.execCommand("grep -q 'ip_resolve' /etc/yum.conf 2>/dev/null || echo 'ip_resolve=4' | sudo tee -a /etc/yum.conf || true")
+                await ssh.execCommand("grep -q 'ip_resolve' /etc/dnf/dnf.conf 2>/dev/null || echo 'ip_resolve=4' | sudo tee -a /etc/dnf/dnf.conf || true")
+                // Force IPv4 for APT
+                await ssh.execCommand("echo 'Acquire::ForceIPv4 \"true\";' | sudo tee /etc/apt/apt.conf.d/99kubeez-ipv4 2>/dev/null || true")
+                onLog('success', '✓ Patched DNS (8.8.8.8/1.1.1.1) and forced IPv4 for package managers.')
             }
             else if (fixAction === 'retry_step') {
                 onLog('info', 'Assuming transient error. Retrying...')

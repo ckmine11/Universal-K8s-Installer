@@ -20,21 +20,21 @@ let MASTER_KEY = null
 function getMasterKey() {
     if (MASTER_KEY) return MASTER_KEY
 
-    // Try to load from env
+    // Priority 1: Use APP_SECRET env var (deterministic, persistent across restarts)
     if (process.env.APP_SECRET) {
-        // Pad or truncate to 32 bytes
-        return crypto.createHash('sha256').update(process.env.APP_SECRET).digest()
+        MASTER_KEY = crypto.createHash('sha256').update(process.env.APP_SECRET).digest()
+        return MASTER_KEY
     }
 
-    // Try to load from file
+    // Priority 2: Load from persisted file
     if (fs.existsSync(KEY_FILE)) {
         const hexKey = fs.readFileSync(KEY_FILE, 'utf8').trim()
         MASTER_KEY = Buffer.from(hexKey, 'hex')
     } else {
-        // Generate new random key
+        // Generate new random key and persist it
         MASTER_KEY = crypto.randomBytes(32)
         fs.writeFileSync(KEY_FILE, MASTER_KEY.toString('hex'))
-        console.log('Generated new Master Encryption Key')
+        console.log('[CryptoUtils] Generated and saved new Master Encryption Key to', KEY_FILE)
     }
 
     return MASTER_KEY

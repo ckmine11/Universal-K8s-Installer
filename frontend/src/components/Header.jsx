@@ -1,11 +1,16 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useInstallationTracker } from '../context/InstallationTrackerContext'
 import { useState, useEffect } from 'react'
-import { Server, Github, BookOpen, LogOut, User, Settings, Wifi, Users, Zap } from 'lucide-react'
+import { Server, Github, BookOpen, LogOut, User, Settings, Wifi, Users, Zap, Terminal, Loader2, Activity } from 'lucide-react'
 
 export default function Header() {
     const { logout, user } = useAuth()
+    const navigate = useNavigate()
+    const { activeInstallations } = useInstallationTracker()
     const [isSaasMode, setIsSaasMode] = useState(false)
+
+    const runningInstallations = activeInstallations.filter(i => i.status === 'running')
 
     useEffect(() => {
         fetch('/api/config')
@@ -46,6 +51,21 @@ export default function Header() {
                     </Link>
 
                     <div className="flex items-center space-x-4">
+                        {/* Running Installations Indicator */}
+                        {runningInstallations.length > 0 && (
+                            <button
+                                onClick={() => navigate(`/dashboard/${runningInstallations[0].id}`)}
+                                className="relative flex items-center space-x-2 px-5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl text-sm font-bold transition-all active:scale-95 text-blue-400 group animate-in fade-in duration-300"
+                            >
+                                <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-4 w-4 bg-blue-500 items-center justify-center text-[8px] font-black text-white">{runningInstallations.length}</span>
+                                </span>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span className="hidden lg:inline">Installing...</span>
+                                <span className="lg:hidden">Live</span>
+                            </button>
+                        )}
                         <Link to="/docs" className="flex items-center space-x-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all active:scale-95 text-blue-400">
                             <BookOpen className="w-4 h-4" />
                             <span>Docs</span>

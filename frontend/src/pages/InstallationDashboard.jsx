@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
+import { useInstallationTracker } from '../context/InstallationTrackerContext'
 import { HealthSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
 import { K8S_VERSIONS } from '../config/versions'
@@ -30,6 +31,7 @@ import {
 export default function InstallationDashboard({ installationId, onGoHome, onScaleCluster }) {
     const { toast } = useToast()
     const navigate = useNavigate()
+    const { trackInstallation, updateInstallation } = useInstallationTracker()
     const [status, setStatus] = useState('running') // 'running', 'completed', 'failed'
     const [progress, setProgress] = useState(0)
     const [logs, setLogs] = useState([])
@@ -141,6 +143,16 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                     if (data && !data.error) {
                         setClusterInfo(prev => ({ ...prev, ...data }))
                         if (data.status) setStatus(data.status)
+                        // Track this installation globally
+                        trackInstallation({
+                            id: installationId,
+                            clusterName: data.clusterName || 'Cluster',
+                            mode: data.mode || 'install',
+                            status: data.status || 'running',
+                            progress: data.progress || 0,
+                            currentStep: data.currentStep || 'Initializing...',
+                            startedAt: data.createdAt || new Date().toISOString()
+                        })
                     }
                 })
                 .catch(err => console.error("Initial status fetch failed:", err))
@@ -195,8 +207,19 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             } else if (data.type === 'progress') {
                 setProgress(data.progress)
                 setCurrentStep(data.step)
+                // Update tracker with progress
+                updateInstallation(installationId, {
+                    progress: data.progress,
+                    currentStep: data.step,
+                    status: 'running'
+                })
             } else if (data.type === 'status') {
                 setStatus(data.status)
+                // Update tracker with final status
+                updateInstallation(installationId, {
+                    status: data.status,
+                    progress: data.status === 'completed' ? 100 : undefined
+                })
                 if (data.status === 'completed') {
                     setClusterInfo(data.clusterInfo)
                     toast({

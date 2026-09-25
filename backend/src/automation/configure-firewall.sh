@@ -2,8 +2,25 @@
 
 # KubeEZ - Configure Firewall Script
 # This script opens the required ports for Kubernetes based on node type
+# Supports: CentOS 7 (EOL), CentOS 8/9, RHEL, Rocky, AlmaLinux, Ubuntu, Debian
 
 set -e
+
+# ─────────────────────────────────────────────────────────────
+# PRE-STEP: Run Universal OS Repo & DNS fixer FIRST
+# This fixes CentOS 7 EOL repos, DNS, IPv6, SSL issues on any OS
+# ─────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/fix-os-repos.sh" ]; then
+    echo "Running Universal OS repo/DNS pre-flight fixer..."
+    bash "${SCRIPT_DIR}/fix-os-repos.sh"
+else
+    # Inline minimal DNS fix as fallback
+    cat > /etc/resolv.conf <<'DNSEOF'
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+DNSEOF
+fi
 
 NODE_TYPE=$1 # 'master' or 'worker'
 
@@ -27,23 +44,8 @@ else
     iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X >/dev/null 2>&1 || true
 fi
 
-# DNS & Repo Fix for CentOS 7 EOL
-if [ -f /etc/yum.repos.d/CentOS-Base.repo ] && grep -q "release 7" /etc/redhat-release; then
-    echo "CentOS 7 detected. Applying EOL repository and DNS fixes..."
-    
-    # Ensure DNS is working (Add Google DNS as backup)
-    if ! ping -c 1 vault.centos.org &> /dev/null; then
-        echo "Mirror host not reachable. Adding nameserver 8.8.8.8 to /etc/resolv.conf"
-        echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-    fi
-
-    # Patch Repos to use Vault
-    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
-    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
-    
-    yum clean all
-    yum makecache
-fi
+# NOTE: OS repo/DNS fixes are handled by fix-os-repos.sh (called above)
+# No inline CentOS 7 patching needed here anymore
 
 # Detect OS and Install deps
 if command -v apt-get &> /dev/null; then
