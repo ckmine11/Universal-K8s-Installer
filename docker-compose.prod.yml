@@ -32,8 +32,13 @@ services:
       - PORT=3000
       - APP_SECRET=${APP_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
-      - CORS_ORIGIN=${CORS_ORIGIN:-https://k8scluster.space}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://k8scluster.space}
       - DOMAIN=${DOMAIN:-k8scluster.space}
+      - FRONTEND_URL=${FRONTEND_URL:-https://k8scluster.space}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO}
+      - STRIPE_PRICE_UNLIMITED=${STRIPE_PRICE_UNLIMITED}
     volumes:
       - kubeez-data:/app/data
       - kubeez-logs:/app/logs

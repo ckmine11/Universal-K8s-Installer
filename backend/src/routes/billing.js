@@ -17,24 +17,12 @@ router.get('/subscription', requireAuth, (req, res) => {
     }
 })
 
+// Plan upgrades must go through Stripe — no free self-upgrade
 router.post('/upgrade', requireAuth, (req, res) => {
-    try {
-        const { plan } = req.body
-        const user = authService.getUserById(req.user.id)
-        if (!user) return res.status(404).json({ error: 'User not found' })
-
-        if (plan === 'PRO') {
-            authService.updateUserSubscription(user.id, 'PRO', 999, 999) // Mock unlimited
-            res.json({ message: 'Successfully upgraded to PRO', plan: 'PRO' })
-        } else if (plan === 'ENTERPRISE') {
-            authService.updateUserSubscription(user.id, 'ENTERPRISE', 999, 999)
-            res.json({ message: 'Successfully upgraded to ENTERPRISE', plan: 'ENTERPRISE' })
-        } else {
-            res.status(400).json({ error: 'Invalid plan' })
-        }
-    } catch (e) {
-        res.status(500).json({ error: e.message })
-    }
+    return res.status(402).json({
+        error: 'Payment required. Please use the Stripe checkout to upgrade your plan.',
+        checkoutEndpoint: '/api/stripe/create-checkout-session'
+    })
 })
 
 export default router

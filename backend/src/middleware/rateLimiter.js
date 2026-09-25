@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
  */
 export const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10000, // Limit each IP to 10000 requests per windowMs
+    max: 300, // Limit each IP to 300 requests per 15 minutes
     message: {
         success: false,
         error: 'Too many requests from this IP, please try again later.',
@@ -24,7 +24,7 @@ export const apiLimiter = rateLimit({
  */
 export const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5000, // Limit each IP to 5000 login attempts per windowMs
+    max: 15, // Limit each IP to 15 auth attempts per 15 minutes
     message: {
         success: false,
         error: 'Too many login attempts, please try again later.',
@@ -41,7 +41,7 @@ export const authLimiter = rateLimit({
  */
 export const clusterOperationLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 1000, // Limit each IP to 1000 cluster operations per hour
+    max: 20, // Limit each IP to 20 cluster operations per hour
     message: {
         success: false,
         error: 'Too many cluster operations, please try again later.',

@@ -29,10 +29,16 @@ logs/
 *.log
 backend/logs/*.log
 
-# SSH Keys (never commit these!)
+# SSH Keys and secrets (never commit these!)
 *.pem
 *.key
 id_rsa*
+
+# Sensitive runtime data — contains encrypted credentials and license keys
+backend/data/master.key
+backend/data/license.json
+backend/data/agents.json
+backend/scripts/vendor-keys/
 
 # Kubeconfig files
 *kubeconfig*

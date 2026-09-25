@@ -131,7 +131,7 @@ export class BackupService {
                     error: 'Backup file not found'
                 };
             }
-            if (!backupFilename.includes(`clusters-${userId}-`)) {
+            if (!new RegExp(`^clusters-${userId}-`).test(backupFilename)) {
                 return {
                     success: false,
                     error: 'Unauthorized to restore this backup'
@@ -184,9 +184,10 @@ export class BackupService {
      * @param {number} keepCount - Number of recent backups to keep
      * @returns {Object} Cleanup result
      */
-    static cleanupOldBackups(keepCount = 10) {
+    static cleanupOldBackups(userId, keepCount = 10) {
         try {
-            const backups = this.listBackups();
+            if (!userId) return { success: false, error: 'User ID is required for cleanup' };
+            const backups = this.listBackups(userId);
 
             if (backups.length <= keepCount) {
                 return {
@@ -251,17 +252,20 @@ export class BackupService {
      * Schedule automatic backups (call this periodically)
      * @param {number} intervalHours - Backup interval in hours
      */
-    static scheduleAutoBackup(intervalHours = 24) {
-        // Create initial backup
-        this.createBackup('auto');
+    static scheduleAutoBackup(userId, intervalHours = 24) {
+        if (!userId) {
+            console.warn('[BackupService] scheduleAutoBackup called without userId — auto-backup not started');
+            return;
+        }
 
-        // Schedule periodic backups
+        this.createBackup('auto', userId);
+
         setInterval(() => {
-            this.createBackup('auto');
-            this.cleanupOldBackups(10); // Keep last 10 backups
+            this.createBackup('auto', userId);
+            this.cleanupOldBackups(userId, 10);
         }, intervalHours * 60 * 60 * 1000);
 
-        console.log(`✓ Auto-backup scheduled every ${intervalHours} hours`);
+        console.log(`✓ Auto-backup scheduled every ${intervalHours} hours for user ${userId}`);
     }
 }
 

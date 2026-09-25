@@ -321,10 +321,17 @@ class AutomationEngine {
 
             // User needs passwordless sudo - configure it automatically
             const username = node.username
+
+            // Validate username to only allow safe characters (prevents injection via sudoers path/content)
+            if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+                throw new Error(`Invalid SSH username for sudo configuration: ${username}`)
+            }
+
             const sudoersFile = `/etc/sudoers.d/kubeez-${username}`
 
-            // Create the sudoers entry using the user's password
-            const setupCommand = `echo '${node.password}' | sudo -S bash -c "echo '${username} ALL=(ALL) NOPASSWD:ALL' > ${sudoersFile} && chmod 0440 ${sudoersFile}"`
+            // Escape single quotes in password for safe single-quote shell embedding
+            const escapedPassword = node.password.replace(/'/g, "'\\''")
+            const setupCommand = `echo '${escapedPassword}' | sudo -S bash -c "echo '${username} ALL=(ALL) NOPASSWD:ALL' > ${sudoersFile} && chmod 0440 ${sudoersFile}"`
 
             const result = await ssh.execCommand(setupCommand, {
                 options: { pty: true }
@@ -439,7 +446,9 @@ class AutomationEngine {
 
             const allNodes = [...installation.masterNodes, ...(installation.workerNodes || [])]
             const hostsEntries = allNodes.map(n => {
-                const hn = n.hostname || `node-${n.ip.replace(/\./g, '-')}`
+                const raw = n.hostname || `node-${n.ip.replace(/\./g, '-')}`
+                // Sanitize: RFC 952/1123 — only alphanumeric, hyphens, dots, max 63 chars
+                const hn = raw.replace(/[^a-zA-Z0-9\-\.]/g, '').substring(0, 63)
                 return `${n.ip} ${hn}`
             }).join('\n')
 
@@ -565,7 +574,6 @@ class AutomationEngine {
             return true
         } catch (error) {
             onLog('warning', `⚠️ Connection test failed: ${error.message}`)
-            onLog('warning', `DEBUG Info: IP=${masterNode.ip}, User=${masterNode.username}, PwdLength=${masterNode.password ? masterNode.password.length : 0}`)
             return false
         }
     }

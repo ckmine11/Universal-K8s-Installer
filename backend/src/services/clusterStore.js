@@ -59,72 +59,15 @@ class ClusterStore {
     }
 
     async saveCluster(cluster) {
-        if (this._isWriting) {
+        let waited = 0
+        while (this._isWriting) {
+            if (waited >= 5000) throw new Error('Cluster store write timeout: lock held too long')
             await new Promise(resolve => setTimeout(resolve, 100))
-            return this.saveCluster(cluster)
+            waited += 100
         }
         this._isWriting = true
         try {
-            const clusters = await this.getClusters()
-
-            // Check if cluster already exists by ID or master IP
-            const existingIndex = clusters.findIndex(c =>
-                c.id === cluster.id ||
-                (c.masterNodes && cluster.masterNodes && c.masterNodes[0]?.ip === cluster.masterNodes[0]?.ip)
-            )
-
-            // Encrypt sensitive data before saving
-            const clusterToSave = {
-                ...cluster,
-                masterNodes: this._encryptNodes(cluster.masterNodes),
-                workerNodes: this._encryptNodes(cluster.workerNodes),
-                updatedAt: new Date().toISOString(),
-            }
-
-            if (existingIndex >= 0) {
-                // If updating, we need to be careful not to double-encrypt if we just read it
-                // But getClusters() returns decrypted, so encrypting clusterToSave is correct.
-                clusters[existingIndex] = { ...clusters[existingIndex], ...clusterToSave }
-            } else {
-                clusterToSave.createdAt = new Date().toISOString()
-                clusters.push(clusterToSave)
-            }
-
-            // We need to re-encrypt ALL clusters because getClusters() decrypted them!
-            // Wait, efficiency issue. If I load all (decrypted), modify one (encrypted), and save...
-            // I need to Loop and re-encrypt everything before JSON.stringify? 
-            // OR I should use a helper that operates on raw JSON?
-
-            // Simpler: Just re-encrypt everything before saving. 
-            // Since getClusters() returns Clean objects, we should save Encrypted objects.
-
-            const rawClustersToSave = clusters.map(c => ({
-                ...c,
-                // Check if it's the one we just encrypted? No, clusterToSave is already encrypted.
-                // But the OTHERS in `clusters` array are DECRYPTED (from getClusters).
-                // So I need to re-encrypt everyone.
-
-                // OPTIMIZATION:
-                // `clusterToSave` is ALREADY encrypted by my call above.
-                // The `clusters` array contains: [Decrypted1, Decrypted2, ... EncryptedNew ... ] 
-                // (because I did clusters[i] = clusterToSave).
-
-                // So I need to iterate and encrypt if Plain? 
-                // How do I know? `decrypt` handles plain text nicely. `encrypt` blindly double-encrypts?
-                // `encrypt` adds IV. 
-
-                // Correct Logic:
-                // 1. Read Raw File (Encrypted) -> `rawClusters`
-                // 2. Find Index.
-                // 3. Encrypt `cluster` -> `encryptedCluster`
-                // 4. Update `rawClusters` array with `encryptedCluster`
-                // 5. Save `rawClusters`.
-                // This avoids decrypting/re-encrypting untouched clusters.
-
-            }))
-            // Let's rewrite the logic inside the function to use the "Read Raw" approach for safety.
-
-            // RE-READING RAW FILE inside saveCluster is safer.
+            // Read raw (encrypted) file to avoid double-encrypting untouched clusters
             const rawData = await fs.promises.readFile(CLUSTERS_FILE, 'utf8').catch(() => '[]')
             const rawClusters = JSON.parse(rawData)
 
@@ -159,10 +102,11 @@ class ClusterStore {
     }
 
     async deleteCluster(id) {
-        // Use a simple in-memory lock to prevent race conditions during file IO
-        if (this._isWriting) {
+        let waited = 0
+        while (this._isWriting) {
+            if (waited >= 5000) throw new Error('Cluster store write timeout: lock held too long')
             await new Promise(resolve => setTimeout(resolve, 100))
-            return this.deleteCluster(id)
+            waited += 100
         }
 
         this._isWriting = true

@@ -35,7 +35,9 @@ if [ -z "$JOIN_COMMAND" ]; then
     exit 1
 fi
 
-$JOIN_COMMAND --control-plane --certificate-key $CERT_KEY --ignore-preflight-errors=NumCPU,Mem
+# Parse join command into array — avoids unquoted expansion and prevents injection
+read -ra JOIN_ARGS <<< "$JOIN_COMMAND"
+"${JOIN_ARGS[@]}" --control-plane --certificate-key "$CERT_KEY" --ignore-preflight-errors=NumCPU,Mem
 
 # Wait for kubelet to start
 echo "Waiting for kubelet to start..."

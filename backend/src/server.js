@@ -41,7 +41,17 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false
 }))
 app.use(compression()) // Gzip compression
-app.use(cors())
+
+// Restrict CORS to known frontend origins — never wildcard in production
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000')
+    .split(',').map(o => o.trim())
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
+        callback(new Error('CORS: origin not allowed'))
+    },
+    credentials: true
+}))
 
 // Stripe routes MUST be before express.json() because webhook needs raw body
 app.use('/api/stripe', stripeRoutes)
@@ -272,7 +282,6 @@ app.use('/api/health/detailed', requireAuth, (req, res, next) => {
     next()
 })
 app.use('/api/health/backups', requireAuth, (req, res, next) => {
-    console.log("[DEBUG] /api/health/backups accessed by role:", req.user.role);
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') return res.status(403).json({ error: 'Admin access required' })
     next()
 })

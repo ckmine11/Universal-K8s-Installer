@@ -59,12 +59,14 @@ else
         IGNORE_FLAGS="${IGNORE_FLAGS},SystemVerification"
     fi
 
+    # Parse join command into array — avoids eval and prevents injection
+    read -ra JOIN_ARGS <<< "$JOIN_COMMAND"
     if [ "$NODE_TYPE" == "master" ]; then
         echo "Joining as Additional Control Plane..."
-        eval "$JOIN_COMMAND --control-plane --certificate-key $CERT_KEY $IGNORE_FLAGS"
+        "${JOIN_ARGS[@]}" --control-plane --certificate-key "$CERT_KEY" $IGNORE_FLAGS
     else
         echo "Joining as Worker Node..."
-        eval "$JOIN_COMMAND $IGNORE_FLAGS"
+        "${JOIN_ARGS[@]}" $IGNORE_FLAGS
     fi
 fi
 

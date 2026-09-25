@@ -9,11 +9,15 @@ class IncidentDetector {
         this.incidents = [] // In-memory store for UI
     }
 
+    getIncidents() {
+        return this.incidents
+    }
+
     async init() {
         console.log('[IncidentDetector] Initializing Real-time Event Streams...')
         const clusters = await clusterStore.getClusters()
         for (const cluster of clusters) {
-            if (cluster.status === 'ready') {
+            if (cluster.status === 'healthy') {
                 this.startWatching(cluster)
             }
         }

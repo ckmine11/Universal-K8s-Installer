@@ -1,6 +1,7 @@
 import express from 'express'
 import Stripe from 'stripe'
 import { authService } from '../services/authService.js'
+import { requireAuth } from '../middleware/authMiddleware.js'
 
 // Initialize Stripe with a dummy key for now. It will use process.env.STRIPE_SECRET_KEY
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
@@ -9,14 +10,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
 
 const router = express.Router()
 
-// Endpoint to create a checkout session
-router.post('/create-checkout-session', express.json(), async (req, res) => {
+// Endpoint to create a checkout session — requires authenticated user
+router.post('/create-checkout-session', express.json(), requireAuth, async (req, res) => {
     try {
-        const { planId, userId } = req.body
-
-        if (!userId) {
-            return res.status(401).json({ error: 'Unauthorized: User ID required.' })
-        }
+        const { planId } = req.body
+        const userId = req.user.id  // Always use the authenticated user's ID
 
         let priceId = ''
         let planName = ''
@@ -83,11 +81,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
     try {
         if (!process.env.STRIPE_WEBHOOK_SECRET) {
-            // Bypass verification in dev if no secret
-            event = JSON.parse(req.body)
-        } else {
-            event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET)
+            console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET is not configured — rejecting webhook.')
+            return res.status(500).json({ error: 'Webhook secret not configured on server' })
         }
+        event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET)
     } catch (err) {
         console.error(`Webhook Error: ${err.message}`)
         return res.status(400).send(`Webhook Error: ${err.message}`)
