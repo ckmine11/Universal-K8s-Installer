@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useInstallationTracker } from '../context/InstallationTrackerContext'
 import { useState, useEffect } from 'react'
-import { Server, Github, BookOpen, LogOut, User, Settings, Wifi, Users, Zap, Terminal, Loader2, Activity } from 'lucide-react'
+import { Server, Github, BookOpen, LogOut, User, Settings, Wifi, Users, Zap, Terminal, Loader2, Activity, Home } from 'lucide-react'
 
 export default function Header() {
     const { logout, user } = useAuth()
@@ -66,6 +66,10 @@ export default function Header() {
                                 <span className="lg:hidden">Live</span>
                             </button>
                         )}
+                        <Link to="/" className="flex items-center space-x-2 px-5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl text-sm font-bold transition-all active:scale-95 text-blue-400 group">
+                            <Home className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                            <span>Home</span>
+                        </Link>
                         <Link to="/docs" className="flex items-center space-x-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all active:scale-95 text-blue-400">
                             <BookOpen className="w-4 h-4" />
                             <span>Docs</span>

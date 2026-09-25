@@ -32,7 +32,7 @@ services:
       - PORT=3000
       - APP_SECRET=${APP_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://k8scluster.space}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://k8scluster.space,http://localhost,http://localhost:8090,http://127.0.0.1,http://127.0.0.1:8090}
       - DOMAIN=${DOMAIN:-k8scluster.space}
       - FRONTEND_URL=${FRONTEND_URL:-https://k8scluster.space}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
