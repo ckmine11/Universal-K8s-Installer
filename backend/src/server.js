@@ -417,6 +417,12 @@ wss.on('connection', (ws, req) => {
 
 import { incidentDetector } from './services/incidentDetector.js'
 
+// Global error handler — always return JSON, never HTML (prevents CORS errors becoming HTML pages)
+app.use((err, req, res, next) => {
+    const status = err.status || err.statusCode || 500
+    res.status(status).json({ error: err.message || 'Internal server error' })
+})
+
 const PORT = process.env.PORT || 3000
 
 server.listen(PORT, () => {

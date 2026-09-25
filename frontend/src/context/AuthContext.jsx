@@ -126,12 +126,12 @@ export const AuthProvider = ({ children }) => {
         setIsSetupRequired(false);
     };
 
-    const setup = async (username, password) => {
+    const setup = async (username, password, email) => {
         const res = await fetch(`${API_URL}/api/auth/setup`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ username, password, email })
         });
 
         const data = await res.json();
@@ -149,8 +149,30 @@ export const AuthProvider = ({ children }) => {
         setIsSetupRequired(false);
     };
 
+    const forgotPassword = async (email) => {
+        const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to send reset email');
+    };
+
+    const resetPassword = async (token, newPassword) => {
+        const res = await fetch(`${API_URL}/api/auth/reset-password`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, newPassword })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Password reset failed');
+    };
+
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout }}>
+        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout, forgotPassword, resetPassword }}>
             {children}
         </AuthContext.Provider>
     );

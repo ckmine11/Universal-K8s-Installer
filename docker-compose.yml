@@ -10,8 +10,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - PORT=3000
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:8090
     volumes:
       - ./backend/src:/app/src
       - ./backend/logs:/app/logs
