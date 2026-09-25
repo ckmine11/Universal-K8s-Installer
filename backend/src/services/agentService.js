@@ -210,7 +210,7 @@ class AgentService {
     }
 
     // Proxy an SSH command through a Gateway Agent
-    async relaySSH(agentId, nodeConfig, command, timeoutMs = 120000) {
+    async relaySSH(agentId, nodeConfig, command, timeoutMs = 30000) {
         const ws = this.agentSockets.get(agentId)
         if (!ws) throw new Error(`Agent ${agentId} is not online`)
 

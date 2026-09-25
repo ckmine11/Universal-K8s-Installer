@@ -7,8 +7,8 @@
     "createdAt": "2026-01-21T11:21:55.909Z",
     "subscription": {
       "plan": "PRO",
-      "maxClusters": 999,
-      "maxNodes": 999
+      "maxClusters": 5,
+      "maxNodes": 20
     },
     "orgId": "c00af38d-0c3f-4028-b0bb-b8071d4b0e68"
   },

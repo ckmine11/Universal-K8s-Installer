@@ -1,8 +1,24 @@
 import { NodeSSH } from 'node-ssh'
 import { automationEngine } from './automationEngine.js'
 
+// Total verification timeout — must stay under NGINX proxy_read_timeout (300s)
+const VERIFY_TIMEOUT_MS = 60_000  // 60s total
+// Per-command SSH relay timeout (was 120s — too long for 15+ sequential commands)
+const SSH_CMD_TIMEOUT_MS = 15_000  // 15s per command via agent
+
 class NodeVerifier {
+
     async verifyNode(nodeConfig) {
+        // Wrap entire verification in a timeout so we always respond within NGINX limits
+        return Promise.race([
+            this._doVerify(nodeConfig),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Verification timed out after 60s — check node connectivity')), VERIFY_TIMEOUT_MS)
+            )
+        ])
+    }
+
+    async _doVerify(nodeConfig) {
         const { ip, username, password, sshKey } = nodeConfig
 
         const result = {
@@ -17,9 +33,8 @@ class NodeVerifier {
         }
 
         try {
-            // Step 1: Test SSH connectivity
-            let ssh;
-
+            // ── Step 1: SSH connectivity ───────────────────────────────────────────
+            let ssh
             try {
                 if (nodeConfig.ownerId || nodeConfig.orgId) {
                     ssh = await automationEngine.connectSSH(nodeConfig)
@@ -33,7 +48,6 @@ class NodeVerifier {
                         timeout: 10000
                     })
                 }
-
                 result.reachable = true
                 result.status = 'connected'
             } catch (sshError) {
@@ -42,88 +56,77 @@ class NodeVerifier {
                 return result
             }
 
-            // Step 2: Detect OS type and version
-            try {
-                const osInfo = await this.detectOS(ssh)
-                result.osInfo = osInfo
+            // Helper: run a command with timeout, never throws
+            const run = async (cmd) => {
+                try {
+                    return await ssh.execCommand(cmd)
+                } catch (_) {
+                    return { code: 1, stdout: '', stderr: '' }
+                }
+            }
 
-                // Check if OS is supported
-                const supportedOS = ['ubuntu', 'centos', 'rhel', 'rocky', 'almalinux']
-                if (!supportedOS.includes(osInfo.id.toLowerCase())) {
-                    result.warnings.push(`OS '${osInfo.name}' may not be fully supported. Supported: Ubuntu, CentOS, RHEL, Rocky Linux`)
+            // ── Step 2: OS detection ───────────────────────────────────────────────
+            try {
+                result.osInfo = await this.detectOS(ssh)
+                const supported = ['ubuntu', 'debian', 'centos', 'rhel', 'rocky', 'almalinux', 'fedora']
+                if (result.osInfo.id && !supported.includes(result.osInfo.id.toLowerCase())) {
+                    result.warnings.push(`OS '${result.osInfo.name}' may not be fully supported. Supported: Ubuntu, CentOS, RHEL, Rocky Linux`)
                 }
             } catch (osError) {
                 result.errors.push(`Failed to detect OS: ${osError.message}`)
             }
 
-            // Step 3: Check system resources
+            // ── Step 3: System resources ───────────────────────────────────────────
             try {
-                const resources = await this.checkResources(ssh)
-                result.resources = resources
-
-                // Validate minimum requirements
-                if (resources.cpu.cores < 2) {
-                    result.errors.push(`Insufficient CPU cores: ${resources.cpu.cores} (minimum 2 required)`)
+                result.resources = await this.checkResources(ssh)
+                if (result.resources.cpu.cores > 0 && result.resources.cpu.cores < 2) {
+                    result.errors.push(`Insufficient CPU cores: ${result.resources.cpu.cores} (minimum 2 required)`)
                 }
-
-                if (resources.memory.totalGB < 2) {
-                    result.errors.push(`Insufficient memory: ${resources.memory.totalGB}GB (minimum 2GB required)`)
+                if (result.resources.memory.totalGB > 0 && result.resources.memory.totalGB < 2) {
+                    result.errors.push(`Insufficient memory: ${result.resources.memory.totalGB}GB (minimum 2GB required)`)
                 }
-
-                if (resources.disk.freeGB < 20) {
-                    result.warnings.push(`Low disk space: ${resources.disk.freeGB}GB free (20GB+ recommended)`)
+                if (result.resources.disk.freeGB > 0 && result.resources.disk.freeGB < 20) {
+                    result.warnings.push(`Low disk space: ${result.resources.disk.freeGB}GB free (20GB+ recommended)`)
                 }
-
-                if (resources.swap.enabled) {
+                if (result.resources.swap.enabled) {
                     result.warnings.push('Swap is enabled (will be disabled during installation)')
                 }
             } catch (resourceError) {
                 result.errors.push(`Failed to check resources: ${resourceError.message}`)
             }
 
-            // Step 4: Check required ports (for master nodes)
+            // ── Step 4: Required ports ─────────────────────────────────────────────
             try {
-                const portCheck = await this.checkPorts(ssh)
-                result.ports = portCheck
-
-                if (portCheck.conflicts.length > 0) {
-                    result.warnings.push(`Ports in use: ${portCheck.conflicts.join(', ')}`)
+                result.ports = await this.checkPorts(ssh)
+                if (result.ports.conflicts.length > 0) {
+                    result.warnings.push(`Ports in use: ${result.ports.conflicts.join(', ')}`)
                 }
             } catch (portError) {
                 result.warnings.push(`Could not check ports: ${portError.message}`)
             }
 
-            // Step 5: Check internet connectivity
+            // ── Step 5: Internet connectivity ─────────────────────────────────────
             try {
-                const internetCheck = await this.checkInternet(ssh)
-                result.internet = internetCheck
-
-                if (!internetCheck.connected) {
+                result.internet = await this.checkInternet(ssh)
+                if (!result.internet.connected) {
                     result.errors.push('No internet connectivity detected')
                 }
             } catch (internetError) {
                 result.warnings.push(`Could not verify internet: ${internetError.message}`)
             }
 
-            // Step 6: Check Cluster Topology (for existing masters)
+            // ── Step 6: Existing cluster topology (optional, best-effort) ─────────
             try {
                 const topology = await this.checkClusterTopology(ssh)
-                if (topology) {
-                    result.clusterTopology = topology
-                }
-            } catch (topoError) {
-                console.warn('Topology check skip:', topoError.message)
-            }
+                if (topology) result.clusterTopology = topology
+            } catch (_) { /* optional — ignore */ }
 
-            // Determine final status
-            if (result.errors.length === 0) {
-                result.status = result.warnings.length > 0 ? 'ready-with-warnings' : 'ready'
-            } else {
-                result.status = 'not-ready'
-            }
+            // ── Final status ───────────────────────────────────────────────────────
+            result.status = result.errors.length === 0
+                ? (result.warnings.length > 0 ? 'ready-with-warnings' : 'ready')
+                : 'not-ready'
 
-            // Cleanup
-            ssh.dispose()
+            try { ssh.dispose() } catch (_) {}
 
         } catch (error) {
             result.status = 'error'
@@ -134,76 +137,60 @@ class NodeVerifier {
     }
 
     async detectOS(ssh) {
-        try {
-            const { stdout } = await ssh.execCommand('cat /etc/os-release')
-
-            const osInfo = {
-                id: '',
-                name: '',
-                version: '',
-                versionId: '',
-                prettyName: ''
-            }
-
-            // Parse os-release file
-            const lines = stdout.split('\n')
-            for (const line of lines) {
-                if (line.startsWith('ID=')) {
-                    osInfo.id = line.split('=')[1].replace(/"/g, '')
-                } else if (line.startsWith('NAME=')) {
-                    osInfo.name = line.split('=')[1].replace(/"/g, '')
-                } else if (line.startsWith('VERSION_ID=')) {
-                    osInfo.versionId = line.split('=')[1].replace(/"/g, '')
-                } else if (line.startsWith('VERSION=')) {
-                    osInfo.version = line.split('=')[1].replace(/"/g, '')
-                } else if (line.startsWith('PRETTY_NAME=')) {
-                    osInfo.prettyName = line.split('=')[1].replace(/"/g, '')
-                }
-            }
-
-            return osInfo
-        } catch (error) {
-            throw new Error(`Failed to detect OS: ${error.message}`)
+        const { stdout } = await ssh.execCommand('cat /etc/os-release')
+        const osInfo = { id: '', name: '', version: '', versionId: '', prettyName: '' }
+        for (const line of (stdout || '').split('\n')) {
+            const [key, ...rest] = line.split('=')
+            const val = rest.join('=').replace(/"/g, '').trim()
+            if (key === 'ID')           osInfo.id         = val
+            else if (key === 'NAME')    osInfo.name       = val
+            else if (key === 'VERSION_ID') osInfo.versionId = val
+            else if (key === 'VERSION') osInfo.version    = val
+            else if (key === 'PRETTY_NAME') osInfo.prettyName = val
         }
+        return osInfo
     }
 
     async checkResources(ssh) {
         const resources = {
-            cpu: { cores: 0, model: '' },
+            cpu:    { cores: 0, model: '' },
             memory: { totalGB: 0, freeGB: 0, usedPercent: 0 },
-            disk: { totalGB: 0, freeGB: 0, usedPercent: 0 },
-            swap: { enabled: false, totalGB: 0 }
+            disk:   { totalGB: 0, freeGB: 0, usedPercent: 0 },
+            swap:   { enabled: false, totalGB: 0 }
         }
 
         try {
-            // CPU info
-            const cpuResult = await ssh.execCommand('nproc')
-            resources.cpu.cores = parseInt(cpuResult.stdout.trim())
+            // CPU
+            const cpuR = await ssh.execCommand('nproc')
+            resources.cpu.cores = parseInt(cpuR.stdout?.trim()) || 0
 
-            const cpuModelResult = await ssh.execCommand('cat /proc/cpuinfo | grep "model name" | head -1 | cut -d: -f2')
-            resources.cpu.model = cpuModelResult.stdout.trim()
+            const modelR = await ssh.execCommand("grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2")
+            resources.cpu.model = modelR.stdout?.trim() || ''
 
-            // Memory info
-            const memResult = await ssh.execCommand('free -g | grep Mem')
-            const memParts = memResult.stdout.trim().split(/\s+/)
-            resources.memory.totalGB = parseInt(memParts[1])
-            resources.memory.freeGB = parseInt(memParts[3])
-            resources.memory.usedPercent = Math.round((parseInt(memParts[2]) / parseInt(memParts[1])) * 100)
+            // Memory — use -m (MiB) to avoid zero values on small nodes
+            const memR = await ssh.execCommand("free -m | awk '/Mem:/ {print $2, $3, $4}'")
+            const memP = (memR.stdout?.trim() || '').split(/\s+/)
+            const memTotal = parseInt(memP[0]) || 0
+            const memUsed  = parseInt(memP[1]) || 0
+            const memFree  = parseInt(memP[2]) || 0
+            resources.memory.totalGB    = parseFloat((memTotal / 1024).toFixed(1))
+            resources.memory.freeGB     = parseFloat((memFree  / 1024).toFixed(1))
+            resources.memory.usedPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0
 
-            // Disk info
-            const diskResult = await ssh.execCommand('df -BG / | tail -1')
-            const diskParts = diskResult.stdout.trim().split(/\s+/)
-            resources.disk.totalGB = parseInt(diskParts[1].replace('G', ''))
-            resources.disk.freeGB = parseInt(diskParts[3].replace('G', ''))
-            resources.disk.usedPercent = parseInt(diskParts[4].replace('%', ''))
+            // Disk — safer parsing with explicit columns
+            const diskR = await ssh.execCommand("df -BG / | awk 'NR==2 {print $2, $4, $5}'")
+            const diskP = (diskR.stdout?.trim() || '').split(/\s+/)
+            resources.disk.totalGB      = parseInt((diskP[0] || '0').replace('G', '')) || 0
+            resources.disk.freeGB       = parseInt((diskP[1] || '0').replace('G', '')) || 0
+            resources.disk.usedPercent  = parseInt((diskP[2] || '0').replace('%', '')) || 0
 
-            // Swap info
-            const swapResult = await ssh.execCommand('swapon --show')
-            resources.swap.enabled = swapResult.stdout.trim().length > 0
+            // Swap
+            const swapR = await ssh.execCommand('swapon --show 2>/dev/null')
+            resources.swap.enabled = (swapR.stdout?.trim().length || 0) > 0
             if (resources.swap.enabled) {
-                const swapSizeResult = await ssh.execCommand('free -g | grep Swap')
-                const swapParts = swapSizeResult.stdout.trim().split(/\s+/)
-                resources.swap.totalGB = parseInt(swapParts[1])
+                const swapSR = await ssh.execCommand("free -m | awk '/Swap:/ {print $2}'")
+                const swapMB = parseInt(swapSR.stdout?.trim()) || 0
+                resources.swap.totalGB = parseFloat((swapMB / 1024).toFixed(1))
             }
 
             return resources
@@ -215,20 +202,17 @@ class NodeVerifier {
     async checkPorts(ssh) {
         const requiredPorts = [6443, 2379, 2380, 10250, 10251, 10252]
         const conflicts = []
-
         try {
+            // Check all ports in a single command to reduce relay round-trips
+            const r = await ssh.execCommand(
+                `ss -tuln 2>/dev/null | grep -E ':( ${requiredPorts.join('|')})[^0-9]' | awk '{print $5}' | grep -oE '[0-9]+$'`
+            )
             for (const port of requiredPorts) {
-                const result = await ssh.execCommand(`ss -tuln | grep :${port}`)
-                if (result.stdout.trim().length > 0) {
+                if ((r.stdout || '').split('\n').map(s => s.trim()).includes(String(port))) {
                     conflicts.push(port)
                 }
             }
-
-            return {
-                required: requiredPorts,
-                conflicts,
-                allAvailable: conflicts.length === 0
-            }
+            return { required: requiredPorts, conflicts, allAvailable: conflicts.length === 0 }
         } catch (error) {
             throw new Error(`Failed to check ports: ${error.message}`)
         }
@@ -236,40 +220,32 @@ class NodeVerifier {
 
     async checkInternet(ssh) {
         try {
-            const result = await ssh.execCommand('ping -c 1 -W 2 8.8.8.8')
-            return {
-                connected: result.code === 0,
-                latency: result.stdout.includes('time=') ? result.stdout.match(/time=([\d.]+)/)[1] + 'ms' : 'N/A'
-            }
-        } catch (error) {
-            return {
-                connected: false,
-                error: error.message
-            }
+            const r = await ssh.execCommand('ping -c 1 -W 3 8.8.8.8 2>/dev/null || curl -s --max-time 3 -o /dev/null -w "%{http_code}" https://registry.k8s.io 2>/dev/null')
+            const connected = r.code === 0 || (r.stdout?.trim() === '200')
+            const latencyMatch = (r.stdout || '').match(/time=([\d.]+)/)
+            return { connected, latency: latencyMatch ? latencyMatch[1] + 'ms' : 'N/A' }
+        } catch (_) {
+            return { connected: false, latency: 'N/A' }
         }
     }
 
     async checkClusterTopology(ssh) {
         try {
-            // Use a highly robust format with a pipe separator to avoid parsing ambiguity
-            const cmd = `if [ -f /etc/kubernetes/admin.conf ]; then export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl get nodes --no-headers -o custom-columns="NAME:.metadata.name,STATUS:.status.conditions[?(@.type=='Ready')].status,ROLES:.metadata.labels,IP:.status.addresses[?(@.type=='InternalIP')].address" | tr -s ' ' | sed 's/ /|/g'; fi`
-            const result = await ssh.execCommand(cmd)
-
-            if (result.stdout.trim()) {
-                const lines = result.stdout.trim().split('\n')
-                return lines.map(line => {
-                    const parts = line.split('|')
-                    const name = parts[0]
-                    const status = parts[1] === 'True' ? 'Ready' : 'NotReady'
-                    const labels = (parts[2] || '').toLowerCase()
-                    const ip = parts[3] || 'N/A'
-                    const isMaster = labels.includes('control-plane') || labels.includes('master')
-                    return { name, status, role: isMaster ? 'master' : 'worker', ip }
-                })
-            }
-            return null
-        } catch (error) {
-            console.error('Topology discovery error:', error.message)
+            const r = await ssh.execCommand(
+                "[ -f /etc/kubernetes/admin.conf ] && KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes --no-headers -o wide 2>/dev/null | awk '{print $1\"|\"$2\"|\"$3\"|\"$6}' || true"
+            )
+            const lines = (r.stdout || '').trim().split('\n').filter(Boolean)
+            if (!lines.length) return null
+            return lines.map(line => {
+                const [name, status, roles, ip] = line.split('|')
+                return {
+                    name,
+                    status: status === 'Ready' ? 'Ready' : 'NotReady',
+                    role: (roles || '').toLowerCase().includes('control-plane') || (roles || '').toLowerCase().includes('master') ? 'master' : 'worker',
+                    ip: ip || 'N/A'
+                }
+            })
+        } catch (_) {
             return null
         }
     }
