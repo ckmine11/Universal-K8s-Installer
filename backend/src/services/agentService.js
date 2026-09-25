@@ -112,7 +112,13 @@ class AgentService {
 
         // Mark online + update lastSeen
         await this._updateAgentStatus(agentId, 'online')
-        console.log(`[AgentService] Agent ${agentId} (${agent.label}) connected`)
+
+        // Auto-register as gateway if not already marked — any connected agent can tunnel SSH
+        if (!agent.registeredNodeIps?.includes('gateway')) {
+            await this._updateAgentIps(agentId, [...(agent.registeredNodeIps || []), 'gateway'])
+        }
+
+        console.log(`[AgentService] Agent ${agentId} (${agent.label}) connected as gateway`)
 
         // Heartbeat
         ws.on('message', async (raw) => {
@@ -187,7 +193,10 @@ class AgentService {
     async getGatewayAgentForOwner(ownerId, role, orgId) {
         const agents = await this.getAgentsByOwner(ownerId, role, orgId)
         const onlineAgents = agents.filter(a => this.isAgentOnline(a.agentId))
-        return onlineAgents.find(a => a.registeredNodeIps.includes('gateway')) || null
+        // Prefer explicitly registered gateway, fallback to any online agent
+        return onlineAgents.find(a => a.registeredNodeIps?.includes('gateway'))
+            || onlineAgents[0]
+            || null
     }
 
     // Send a command through the agent and wait for result (promise-based relay)
