@@ -380,53 +380,46 @@ export default function AgentNodes() {
     const onlineCount = agents.filter(a => a.status === 'online').length
 
     return (
-        <div className="max-w-5xl mx-auto py-4">
+        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
             {/* Header */}
-            <div className="glass rounded-3xl p-8 mb-8 relative overflow-hidden border border-white/5">
-                <div className="absolute top-0 right-0 w-72 h-72 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
-                <div className="flex items-start justify-between relative z-10">
-                    <div>
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-                                <Shield className="w-6 h-6 text-emerald-400" />
-                            </div>
-                            <div>
-                                <h1 className="text-3xl font-black text-white uppercase tracking-tight">Gateway Agents</h1>
-                                <p className="text-slate-400 text-sm mt-0.5">Local cluster deployment ke liye apni machine ko reverse tunnel gateway banayein</p>
-                            </div>
-                        </div>
+            <div className="flex items-center justify-between mb-8">
+                <div>
+                    <div className="flex items-center gap-3 mb-1">
+                        <Shield className="w-6 h-6 text-emerald-400" />
+                        <h1 className="text-2xl font-black text-white tracking-tight">Gateway Agents</h1>
                     </div>
-                    <div className="flex items-center gap-3">
-                        {onlineCount > 0 && (
-                            <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
-                                <Activity className="w-4 h-4 text-emerald-400" />
-                                <span className="text-xs font-black text-emerald-400 uppercase tracking-widest">{onlineCount} Online</span>
-                            </div>
-                        )}
-                        <button
-                            onClick={() => fetchAgents(true)}
-                            disabled={refreshing}
-                            className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all active:scale-95 text-slate-300"
-                        >
-                            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                        </button>
-                    </div>
+                    <p className="text-slate-400 text-sm mt-1">Secure reverse-tunnel gateways for local cluster deployment</p>
                 </div>
+                <div className="flex items-center gap-3">
+                    {onlineCount > 0 && (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+                            <Activity className="w-4 h-4 text-emerald-400" />
+                            <span className="text-xs font-black text-emerald-400 uppercase tracking-widest">{onlineCount} Online</span>
+                        </div>
+                    )}
+                    <button
+                        onClick={() => fetchAgents(true)}
+                        disabled={refreshing}
+                        className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all active:scale-95 text-slate-300"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    </button>
+                </div>
+            </div>
 
-                {/* Stats bar */}
-                <div className="flex gap-6 mt-6 pt-6 border-t border-white/5 relative z-10">
-                    {[
-                        { label: 'Total Agents', value: agents.length, color: 'text-white' },
-                        { label: 'Online', value: agents.filter(a => a.status === 'online').length, color: 'text-emerald-400' },
-                        { label: 'Offline', value: agents.filter(a => a.status === 'offline').length, color: 'text-rose-400' },
-                        { label: 'Pending Setup', value: agents.filter(a => a.status === 'pending').length, color: 'text-amber-400' },
-                    ].map(s => (
-                        <div key={s.label}>
-                            <p className="text-xs font-black uppercase text-slate-500 tracking-widest">{s.label}</p>
-                            <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
-                        </div>
-                    ))}
-                </div>
+            {/* Stats bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+                {[
+                    { label: 'Total Agents', value: agents.length, color: 'text-white' },
+                    { label: 'Online', value: agents.filter(a => a.status === 'online').length, color: 'text-emerald-400' },
+                    { label: 'Offline', value: agents.filter(a => a.status === 'offline').length, color: 'text-rose-400' },
+                    { label: 'Pending Setup', value: agents.filter(a => a.status === 'pending').length, color: 'text-amber-400' },
+                ].map(s => (
+                    <div key={s.label} className="glass rounded-2xl border border-white/8 p-5">
+                        <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">{s.label}</p>
+                        <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
+                    </div>
+                ))}
             </div>
 
             {/* Prerequisite Banner */}

@@ -60,25 +60,22 @@ export default function VendorPortal() {
     }
 
     return (
-        <div className="max-w-4xl mx-auto py-8">
-            <div className="glass rounded-3xl p-8 mb-8 relative overflow-hidden border border-purple-500/20">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px] pointer-events-none"></div>
-                <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
+        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
+            <div className="flex items-center justify-between mb-8">
+                <div>
+                    <div className="flex items-center gap-3 mb-1">
                         <Lock className="w-6 h-6 text-purple-400" />
+                        <h1 className="text-2xl font-black text-white tracking-tight">Vendor Portal</h1>
                     </div>
-                    <div>
-                        <h1 className="text-3xl font-black text-white uppercase tracking-tight">Vendor Portal</h1>
-                        <p className="text-purple-300 text-sm font-bold uppercase tracking-widest mt-1">Classified Secure Area</p>
-                    </div>
+                    <p className="text-slate-400 text-sm mt-1">Generate secure cryptographic JWT licenses bound to target System IDs</p>
                 </div>
-                <p className="text-slate-400 text-sm">
-                    Generate secure cryptographic JWT licenses for your customers. These keys are strictly bound to the target System ID. Do not share the master private key under any circumstances.
-                </p>
+                <span className="px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-full text-[10px] font-black text-purple-400 uppercase tracking-widest">
+                    Classified Secure Area
+                </span>
             </div>
 
-            <div className="glass rounded-3xl p-8 border border-white/5 relative">
-                <h3 className="text-xl font-black uppercase tracking-wider text-slate-200 mb-8">License Parameters</h3>
+            <div className="glass rounded-2xl border border-white/8 p-8 relative">
+                <h3 className="text-lg font-black text-white tracking-tight mb-6">License Parameters</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                     <div>
@@ -142,22 +139,24 @@ export default function VendorPortal() {
                 </button>
 
                 {vendorToken && (
-                    <div className="bg-black/50 border border-purple-500/30 rounded-xl p-6 relative group mt-6">
-                        <label className="text-[10px] font-black text-purple-400 uppercase tracking-widest block mb-3">Generated JWT Token</label>
+                    <div className="bg-black/40 border border-purple-500/20 rounded-2xl p-6 relative mt-6">
+                        <div className="flex items-center justify-between mb-3">
+                            <label className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Generated JWT Token</label>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(vendorToken)
+                                    toast({ title: 'Copied', message: 'Token copied to clipboard', type: 'success' })
+                                }}
+                                className="bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
+                            >
+                                Copy Token
+                            </button>
+                        </div>
                         <textarea
                             readOnly
                             value={vendorToken}
                             className="w-full h-32 bg-transparent text-[11px] font-mono text-slate-300 outline-none resize-none"
                         />
-                        <button
-                            onClick={() => {
-                                navigator.clipboard.writeText(vendorToken)
-                                toast({ title: 'Copied', message: 'Token copied to clipboard', type: 'success' })
-                            }}
-                            className="absolute top-4 right-4 bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-lg"
-                        >
-                            Copy Token
-                        </button>
                     </div>
                 )}
             </div>

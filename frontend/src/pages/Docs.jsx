@@ -53,12 +53,12 @@ export default function Docs() {
     ]
 
     return (
-        <div className="min-h-screen pt-24 pb-12 px-6">
+        <div className="min-h-screen py-8 px-4 sm:px-6">
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
 
                 {/* Sidebar Navigation */}
                 <div className="hidden lg:block lg:col-span-1">
-                    <div className="sticky top-28 space-y-8">
+                    <div className="sticky top-24 space-y-8">
                         {sections.map(section => (
                             <div key={section.title}>
                                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4">{section.title}</h3>
@@ -84,26 +84,26 @@ export default function Docs() {
                 </div>
 
                 {/* Main Content */}
-                <div className="lg:col-span-3 space-y-20 pb-20">
+                <div className="lg:col-span-3 space-y-16 pb-16">
 
                     {/* Introduction */}
-                    <section id="intro" className="space-y-6 scroll-mt-28">
-                        <div className="flex items-center space-x-4 mb-8">
-                            <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-3xl">
-                                <BookOpen className="w-8 h-8 text-blue-400" />
+                    <section id="intro" className="space-y-6 scroll-mt-24">
+                        <div className="flex items-center gap-4 mb-6">
+                            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
+                                <BookOpen className="w-6 h-6 text-blue-400" />
                             </div>
                             <div>
-                                <h1 className="text-4xl font-black text-white uppercase tracking-tight">KubeEZ Documentation</h1>
+                                <h1 className="text-2xl font-black text-white tracking-tight">KubeEZ Documentation</h1>
                                 <p className="text-sm text-slate-400 mt-1">The Intelligent Kubernetes Deployment Platform</p>
                             </div>
                         </div>
-                        <p className="text-lg text-slate-300 leading-relaxed max-w-3xl">
+                        <p className="text-base text-slate-300 leading-relaxed max-w-3xl">
                             Welcome to the official KubeEZ documentation. KubeEZ simplifies the complexity of Kubernetes by providing a premium, "No-Ops" platform to provision, scale, and manage production-grade clusters across any infrastructure.
                         </p>
                     </section>
 
                     {/* Modes */}
-                    <section id="modes" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-28">
+                    <section id="modes" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-24">
                         <h2 className="text-2xl font-black uppercase tracking-wide flex items-center">
                             <Cloud className="w-6 h-6 mr-3 text-purple-400" />
                             Deployment Modes
@@ -143,7 +143,7 @@ export default function Docs() {
                     </section>
 
                     {/* Node Agents */}
-                    <section id="agents" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-28">
+                    <section id="agents" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-24">
                         <div className="glass rounded-3xl p-8 border border-white/5 relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none"></div>
                             <h2 className="text-2xl font-black uppercase tracking-wide flex items-center mb-4">
@@ -179,7 +179,7 @@ export default function Docs() {
                     </section>
 
                     {/* Users & Roles */}
-                    <section id="users" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-28">
+                    <section id="users" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-24">
                         <h2 className="text-2xl font-black uppercase tracking-wide flex items-center">
                             <Users className="w-6 h-6 mr-3 text-blue-400" />
                             User & Role Management
@@ -211,7 +211,7 @@ export default function Docs() {
                     </section>
 
                     {/* Requirements */}
-                    <section id="requirements" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-28">
+                    <section id="requirements" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-24">
                         <h2 className="text-2xl font-black uppercase tracking-wide flex items-center">
                             <Cpu className="w-6 h-6 mr-3 text-orange-400" />
                             Target Node Requirements
@@ -251,7 +251,7 @@ export default function Docs() {
                     </section>
 
                     {/* Deploy */}
-                    <section id="deploy" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-28">
+                    <section id="deploy" className="space-y-6 pt-16 border-t border-white/5 scroll-mt-24">
                         <h2 className="text-2xl font-black uppercase tracking-wide flex items-center">
                             <Terminal className="w-6 h-6 mr-3 text-rose-400" />
                             Deploying a Cluster

@@ -139,8 +139,8 @@ function CreateUserModal({ onClose, onSuccess }) {
                     <input type="email" placeholder="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <input type="password" placeholder="Password (min 6 chars)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
-                        <option value="user" className="bg-[#0B1019]">Tenant User</option>
-                        <option value="admin" className="bg-[#0B1019]">Tenant Admin</option>
+                        <option value="user" className="bg-slate-950">Tenant User</option>
+                        <option value="admin" className="bg-slate-950">Tenant Admin</option>
                     </select>
                     
                     <div className="flex gap-3 pt-2">
@@ -348,50 +348,45 @@ export default function AdminUsers() {
     const userCount = users.filter(u => u.role === 'user').length
 
     return (
-        <div className="max-w-5xl mx-auto py-4">
+        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
             {/* Header */}
-            <div className="glass rounded-3xl p-8 mb-8 relative overflow-hidden border border-white/5">
-                <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/5 rounded-full blur-[100px] pointer-events-none" />
-                <div className="flex items-start justify-between relative z-10">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-amber-500/10 rounded-2xl border border-amber-500/20">
-                            <Users className="w-6 h-6 text-amber-400" />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-black text-white uppercase tracking-tight">Workspace Team</h1>
-                            <p className="text-slate-400 text-sm mt-0.5">Manage team members, roles, and access in your workspace</p>
-                        </div>
+            <div className="flex items-center justify-between mb-8">
+                <div>
+                    <div className="flex items-center gap-3 mb-1">
+                        <Users className="w-6 h-6 text-amber-400" />
+                        <h1 className="text-2xl font-black text-white tracking-tight">Workspace Team</h1>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setShowCreateModal(true)}
-                            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-all shadow-lg shadow-blue-500/20"
-                        >
-                            + Invite User
-                        </button>
-                        <button
-                            onClick={() => fetchUsers(true)}
-                            disabled={refreshing}
-                            className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all active:scale-95 text-slate-300"
-                        >
-                            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                        </button>
-                    </div>
+                    <p className="text-slate-400 text-sm mt-1">Manage team members, roles, and access in your workspace</p>
                 </div>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-all shadow-lg shadow-blue-500/20"
+                    >
+                        + Invite User
+                    </button>
+                    <button
+                        onClick={() => fetchUsers(true)}
+                        disabled={refreshing}
+                        className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all active:scale-95 text-slate-300"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    </button>
+                </div>
+            </div>
 
-                {/* Stats */}
-                <div className="flex gap-8 mt-6 pt-6 border-t border-white/5 relative z-10">
-                    {[
-                        { label: 'Total Users', value: users.length, color: 'text-white' },
-                        { label: 'Admins', value: adminCount, color: 'text-amber-400' },
-                        { label: 'Members', value: userCount, color: 'text-blue-400' },
-                    ].map(s => (
-                        <div key={s.label}>
-                            <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">{s.label}</p>
-                            <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
-                        </div>
-                    ))}
-                </div>
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-4 mb-8">
+                {[
+                    { label: 'Total Users', value: users.length, color: 'text-white' },
+                    { label: 'Admins', value: adminCount, color: 'text-amber-400' },
+                    { label: 'Members', value: userCount, color: 'text-blue-400' },
+                ].map(s => (
+                    <div key={s.label} className="glass rounded-2xl border border-white/8 p-6">
+                        <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">{s.label}</p>
+                        <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
+                    </div>
+                ))}
             </div>
 
             {/* Search & Filter */}

@@ -112,7 +112,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
         }
     }
     return (
-        <div className="relative max-w-7xl mx-auto py-8 px-4 min-h-[calc(100vh-100px)] flex flex-col justify-center items-center overflow-hidden">
+        <div className="relative max-w-7xl mx-auto py-8 px-4 sm:px-6 min-h-[calc(100vh-100px)] flex flex-col justify-center items-center overflow-hidden">
 
             {/* Add-on Selection Modal - ULTRA PREMIUM UI */}
             {isAddonModalOpen && (
@@ -319,20 +319,17 @@ export default function Home({ onStartNew, onScaleExisting }) {
             {/* Managed Fleet Section - Only shows if relevant */}
             {savedClusters.length > 0 && (
                 <div className="animate-in [animation-delay:500ms] mb-20 w-full max-w-5xl">
-                    <div className="flex items-center justify-between mb-8 px-4">
-                        <div className="flex items-center space-x-4">
-                            <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
-                            <div>
-                                <h3 className="text-2xl font-black uppercase tracking-tight text-white">Active Infrastructure</h3>
-                                <p className="text-slate-500 text-xs uppercase tracking-widest font-bold mt-1">Managed Kubernetes Fleet</p>
-                            </div>
+                    <div className="flex items-center justify-between mb-6">
+                        <div>
+                            <h3 className="text-2xl font-black text-white tracking-tight">Active Infrastructure</h3>
+                            <p className="text-slate-400 text-sm mt-1">Managed Kubernetes Fleet</p>
                         </div>
-                        <span className="px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                        <span className="px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
                             <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                             </span>
-                            {savedClusters.length} Clusters Online
+                            {savedClusters.length} Cluster{savedClusters.length !== 1 ? 's' : ''} Online
                         </span>
                     </div>
 

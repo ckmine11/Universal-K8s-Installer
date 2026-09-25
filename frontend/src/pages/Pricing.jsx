@@ -1,11 +1,15 @@
 import { useState } from 'react'
-import { CheckCircle2, Zap, Shield, ArrowRight, X, Loader2, Mail } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { CheckCircle2, Zap, Shield, ArrowRight, X, Loader2, Mail, ToggleLeft, ToggleRight } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 
+const MONTHLY_PRICE = 49
+const ANNUAL_PRICE  = 39   // billed as $468/yr
+
 export default function Pricing() {
-    const navigate = useNavigate()
+    const [annual, setAnnual]   = useState(false)
     const [loading, setLoading] = useState(false)
+
+    const price = annual ? ANNUAL_PRICE : MONTHLY_PRICE
 
     const handleUpgrade = async (planId) => {
         setLoading(true)
@@ -28,7 +32,7 @@ export default function Pricing() {
         <div className="min-h-screen pt-24 pb-20 px-4">
 
             {/* Header */}
-            <div className="max-w-5xl mx-auto text-center mb-16 relative">
+            <div className="max-w-5xl mx-auto text-center mb-10 relative">
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-blue-500/20 rounded-full blur-[120px] pointer-events-none" />
                 <h1 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tight mb-4 relative z-10">
                     Simple Pricing
@@ -37,6 +41,30 @@ export default function Pricing() {
                     Production Kubernetes on any VPS — no DevOps engineer needed.
                     Start free, scale when ready.
                 </p>
+            </div>
+
+            {/* Annual / Monthly Toggle */}
+            <div className="flex items-center justify-center gap-4 mb-12 relative z-10">
+                <span className={`text-sm font-bold transition-colors ${!annual ? 'text-white' : 'text-slate-500'}`}>
+                    Monthly
+                </span>
+                <button
+                    onClick={() => setAnnual(v => !v)}
+                    className="relative w-14 h-7 rounded-full transition-colors duration-300 focus:outline-none"
+                    style={{ background: annual ? 'rgb(245 158 11)' : 'rgba(255,255,255,0.1)' }}
+                >
+                    <span
+                        className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-all duration-300 ${annual ? 'left-8' : 'left-1'}`}
+                    />
+                </button>
+                <span className={`text-sm font-bold transition-colors ${annual ? 'text-white' : 'text-slate-500'}`}>
+                    Annual
+                </span>
+                {annual && (
+                    <span className="px-2.5 py-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-full">
+                        Save $120/yr
+                    </span>
+                )}
             </div>
 
             {/* 3-tier grid */}
@@ -62,9 +90,9 @@ export default function Pricing() {
                         <Feature text="Standard Installation Engine" />
                         <Feature text="Gateway Agent (Remote Tunnel)" />
                         <Feature text="Basic Addons (Ingress, Dashboard)" />
-                        <Feature disabled text="Auto-Healing & AI Diagnostics" />
+                        <Feature disabled text="Node crashes fix themselves" />
                         <Feature disabled text="Team Members & RBAC" />
-                        <Feature disabled text="Automated Backups" />
+                        <Feature disabled text="Daily config backups" />
                         <Feature disabled text="Priority Support" />
                     </div>
 
@@ -74,7 +102,7 @@ export default function Pricing() {
                 </div>
 
                 {/* PRO — highlighted */}
-                <div className="glass rounded-[32px] p-8 border border-amber-500/40 bg-amber-500/5 flex flex-col relative shadow-2xl shadow-amber-500/10 md:-mt-4 md:mb-0">
+                <div className="glass rounded-[32px] p-8 border border-amber-500/40 bg-amber-500/5 flex flex-col relative shadow-2xl shadow-amber-500/10 md:-mt-4">
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                         <span className="px-4 py-1.5 bg-amber-500 text-black text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg whitespace-nowrap">
                             Most Popular
@@ -85,22 +113,35 @@ export default function Pricing() {
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-widest mb-5">
                             <Zap className="w-3 h-3" /> Pro
                         </div>
+
+                        {/* Price */}
                         <div className="flex items-baseline gap-2 mb-1">
-                            <span className="text-4xl font-black text-white">$49</span>
+                            <span className="text-4xl font-black text-white">${price}</span>
                             <span className="text-slate-500 text-sm">/month</span>
+                            {annual && (
+                                <span className="text-slate-500 text-xs line-through ml-1">${MONTHLY_PRICE}</span>
+                            )}
                         </div>
-                        <p className="text-slate-500 text-sm">For startups and growing teams.</p>
+                        {annual
+                            ? <p className="text-emerald-400 text-xs font-bold">Billed as ${ANNUAL_PRICE * 12}/year</p>
+                            : <p className="text-slate-500 text-sm">For startups and growing teams.</p>
+                        }
                     </div>
 
-                    <div className="space-y-3 mb-8 flex-1">
+                    <div className="space-y-3 mb-6 flex-1">
                         <Feature color="text-amber-400" text="10 Clusters" />
                         <Feature color="text-amber-400" text="Up to 50 Nodes" />
-                        <Feature color="text-amber-400" text="5 Team Members (RBAC)" />
-                        <Feature color="text-amber-400" text="Auto-Healing & AI Diagnostics" />
-                        <Feature color="text-amber-400" text="Gateway Agents (WebSocket Tunnels)" />
-                        <Feature color="text-amber-400" text="Automated Config Backups (24h)" />
+                        <Feature color="text-amber-400" text="5 Team Members & RBAC" />
+                        <Feature color="text-amber-400" text="Node crashes fix themselves (Auto-Healing)" />
+                        <Feature color="text-amber-400" text="Connect private nodes without firewall changes" />
+                        <Feature color="text-amber-400" text="Daily config backups — restore in 1 click" />
                         <Feature color="text-amber-400" text="All Addons (ArgoCD, Longhorn, Cert-Manager)" />
-                        <Feature color="text-amber-400" text="Priority Email Support" />
+                        <Feature color="text-amber-400" text="Support response within 24 hours" />
+                    </div>
+
+                    {/* Savings callout */}
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl mb-4">
+                        <span className="text-emerald-400 text-xs font-black">💰 Save $200/mo vs AWS EKS</span>
                     </div>
 
                     <button
@@ -110,9 +151,14 @@ export default function Pricing() {
                     >
                         {loading
                             ? <Loader2 className="w-4 h-4 animate-spin" />
-                            : <>Upgrade to Pro <ArrowRight className="w-4 h-4" /></>
+                            : <>Start Pro — Cancel Anytime <ArrowRight className="w-4 h-4" /></>
                         }
                     </button>
+
+                    {/* Trust signals */}
+                    <p className="text-center text-slate-600 text-[11px] mt-3">
+                        ✓ 14-day money-back guarantee &nbsp;·&nbsp; ✓ No credit card lock-in
+                    </p>
                 </div>
 
                 {/* ENTERPRISE */}
@@ -149,7 +195,7 @@ export default function Pricing() {
 
             {/* Bottom note */}
             <p className="mt-14 text-center text-slate-600 text-sm">
-                All plans include SSL, WebSocket support, and Cloudflare compatibility. Cancel anytime.
+                All plans include SSL, WebSocket support, and Cloudflare compatibility.
             </p>
         </div>
     )

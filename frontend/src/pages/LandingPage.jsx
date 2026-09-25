@@ -71,7 +71,7 @@ function TerminalDemo() {
         })
     }, [])
     return (
-        <div className="relative rounded-2xl bg-[#0d1117] border border-white/10 overflow-hidden shadow-2xl shadow-black/50">
+        <div className="relative rounded-2xl bg-slate-950 border border-white/10 overflow-hidden shadow-2xl shadow-black/50">
             {/* Window controls */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-white/[0.02]">
                 <div className="w-3 h-3 rounded-full bg-red-500/70" />
@@ -121,10 +121,10 @@ export default function LandingPage() {
     ]
 
     return (
-        <div className="min-h-screen bg-[#060608] text-white overflow-x-hidden">
+        <div className="min-h-screen bg-slate-950 text-white overflow-x-hidden">
 
             {/* ─── NAVBAR ─────────────────────────────────────────── */}
-            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#060608]/80 backdrop-blur-xl">
+            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-slate-950/80 backdrop-blur-xl">
                 <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
@@ -267,7 +267,7 @@ export default function LandingPage() {
                             <div key={i} className="relative flex flex-col items-center text-center group">
                                 <div className="relative w-32 h-32 mb-8">
                                     <div className="absolute inset-0 bg-blue-500/10 rounded-3xl blur-xl group-hover:bg-blue-500/20 transition-all duration-500" />
-                                    <div className="relative w-full h-full bg-gradient-to-br from-[#0f1629] to-[#0a0c14] rounded-3xl border border-blue-500/20 group-hover:border-blue-500/50 flex flex-col items-center justify-center transition-all duration-300 group-hover:scale-105">
+                                    <div className="relative w-full h-full bg-gradient-to-br from-slate-900 to-slate-950 rounded-3xl border border-blue-500/20 group-hover:border-blue-500/50 flex flex-col items-center justify-center transition-all duration-300 group-hover:scale-105">
                                         <step.icon className="w-10 h-10 text-blue-400 mb-2" />
                                         <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{step.num}</span>
                                     </div>

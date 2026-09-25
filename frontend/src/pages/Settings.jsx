@@ -252,26 +252,23 @@ export default function Settings() {
     const isSuperAdmin = user.role === 'superadmin';
 
     return (
-        <div className="max-w-6xl mx-auto py-4 relative">
+        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 relative">
             {/* Header */}
-            <div className="glass rounded-3xl p-8 mb-8 relative overflow-hidden border border-white/5">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-[80px] pointer-events-none"></div>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-black text-white uppercase tracking-tight mb-2">
-                            {isSuperAdmin ? 'System Administration' : 'Workspace Settings'}
-                        </h1>
-                        <p className="text-slate-400 text-sm">
-                            {isSuperAdmin 
-                                ? 'Monitor platform metrics, manage database backups, and secure environment limits.'
-                                : 'Manage your workspace licensing, quotas, and security settings.'}
-                        </p>
-                    </div>
+            <div className="flex items-center justify-between mb-8">
+                <div>
+                    <h1 className="text-2xl font-black text-white tracking-tight">
+                        {isSuperAdmin ? 'System Administration' : 'Workspace Settings'}
+                    </h1>
+                    <p className="text-slate-400 text-sm mt-1">
+                        {isSuperAdmin
+                            ? 'Monitor platform metrics, manage database backups, and secure environment limits.'
+                            : 'Manage your workspace licensing, quotas, and security settings.'}
+                    </p>
                 </div>
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex space-x-4 mb-8">
+            <div className="flex flex-wrap gap-3 mb-8">
 
                 {isSuperAdmin && (
                     <button
@@ -529,7 +526,7 @@ export default function Settings() {
                             licenseStatus && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     {/* Plan and Status Info */}
-                                    <div className="glass rounded-[32px] p-8 border border-white/[0.08] relative overflow-hidden flex flex-col justify-between bg-[#0A0F1A]/80 backdrop-blur-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] group hover:border-white/[0.15] transition-all duration-500">
+                                    <div className="glass rounded-[32px] p-8 border border-white/8 relative overflow-hidden flex flex-col justify-between bg-slate-950/80 backdrop-blur-3xl shadow-2xl group hover:border-white/15 transition-all duration-500">
                                         {/* Premium Ambient Glow */}
                                         <div className="absolute top-0 right-0 w-[150%] h-[150%] bg-gradient-to-br from-blue-500/10 via-transparent to-transparent -translate-y-1/2 translate-x-1/4 rounded-full pointer-events-none group-hover:from-blue-500/20 transition-all duration-700"></div>
                                         
@@ -662,7 +659,7 @@ export default function Settings() {
                                     </div>
 
                                     {/* Quotas and Utilization */}
-                                    <div className="glass rounded-[32px] p-8 border border-white/[0.08] flex flex-col justify-between bg-[#0A0F1A]/80 backdrop-blur-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] group hover:border-white/[0.15] transition-all duration-500 relative overflow-hidden">
+                                    <div className="glass rounded-[32px] p-8 border border-white/8 flex flex-col justify-between bg-slate-950/80 backdrop-blur-3xl shadow-2xl group hover:border-white/15 transition-all duration-500 relative overflow-hidden">
                                         <div className="absolute top-0 right-0 w-[150%] h-[150%] bg-gradient-to-bl from-purple-500/10 via-transparent to-transparent -translate-y-1/2 translate-x-1/4 rounded-full pointer-events-none group-hover:from-purple-500/20 transition-all duration-700"></div>
                                         
                                         <div className="relative z-10">
@@ -781,7 +778,7 @@ export default function Settings() {
             {/* Restore Confirmation Dialog */}
             {confirmRestore && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-[#0f172a] border border-orange-500/30 rounded-3xl max-w-md w-full p-8 shadow-2xl relative overflow-hidden">
+                    <div className="glass border border-orange-500/30 rounded-3xl max-w-md w-full p-8 shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/10 rounded-full blur-[80px] pointer-events-none animate-pulse"></div>
 
                         <div className="relative z-10 text-center">
