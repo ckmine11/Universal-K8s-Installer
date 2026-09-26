@@ -600,7 +600,8 @@ export default function Settings() {
                                                     Upgrade your workspace to unlock more nodes and clusters. Payments are securely processed via Stripe.
                                                 </p>
                                                 {licenseStatus.plan === 'Free Tier' && (
-                                                    <div className="grid grid-cols-2 gap-4">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                        {/* PRO */}
                                                         <button
                                                             onClick={async () => {
                                                                 try {
@@ -609,40 +610,25 @@ export default function Settings() {
                                                                         body: JSON.stringify({ planId: 'pro' })
                                                                     });
                                                                     const data = await res.json();
-                                                                    if (data.url) {
-                                                                        if (data.url.startsWith('/')) window.location.href = data.url; // Mock bypass
-                                                                        else window.location.href = data.url; // Real Stripe
-                                                                    }
+                                                                    if (!res.ok) throw new Error(data.error || 'Checkout unavailable');
+                                                                    if (data.url) window.location.href = data.url;
                                                                 } catch(err) {
-                                                                    toast({ title: 'Error', message: 'Failed to initiate checkout', type: 'error' });
+                                                                    toast({ title: 'Upgrade unavailable', message: err.message, type: 'error' });
                                                                 }
                                                             }}
-                                                            className="w-full py-3.5 bg-gradient-to-br from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 border border-blue-500/30 text-white font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.2)] hover:shadow-[0_0_30px_rgba(37,99,235,0.4)] flex flex-col items-center justify-center gap-1 active:scale-95"
+                                                            className="w-full py-4 bg-gradient-to-br from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 border border-amber-500/30 text-black font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)] hover:shadow-[0_0_30px_rgba(245,158,11,0.4)] flex flex-col items-center justify-center gap-1 active:scale-95"
                                                         >
-                                                            <span>Upgrade to PRO</span>
-                                                            <span className="text-[9px] text-blue-200 opacity-80 normal-case tracking-normal font-medium">₹249/mo (5 Clusters)</span>
+                                                            <span>Upgrade to Pro</span>
+                                                            <span className="text-[9px] opacity-80 normal-case tracking-normal font-medium">$49/mo · 10 Clusters · 50 Nodes · 5 Members</span>
                                                         </button>
-                                                        <button
-                                                            onClick={async () => {
-                                                                try {
-                                                                    const res = await apiFetch('/api/stripe/create-checkout-session', {
-                                                                        method: 'POST',
-                                                                        body: JSON.stringify({ planId: 'pro' })
-                                                                    });
-                                                                    const data = await res.json();
-                                                                    if (data.url) {
-                                                                        if (data.url.startsWith('/')) window.location.href = data.url; // Mock bypass
-                                                                        else window.location.href = data.url; // Real Stripe
-                                                                    }
-                                                                } catch(err) {
-                                                                    toast({ title: 'Error', message: 'Failed to initiate checkout', type: 'error' });
-                                                                }
-                                                            }}
-                                                            className="w-full py-3.5 bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-purple-500/30 text-white font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all shadow-[0_0_20px_rgba(168,85,247,0.2)] hover:shadow-[0_0_30px_rgba(168,85,247,0.4)] flex flex-col items-center justify-center gap-1 active:scale-95"
+                                                        {/* ENTERPRISE */}
+                                                        <a
+                                                            href="mailto:sales@k8scluster.space"
+                                                            className="w-full py-4 bg-white/5 hover:bg-white/10 border border-blue-500/30 text-blue-400 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all flex flex-col items-center justify-center gap-1 active:scale-95"
                                                         >
-                                                            <span>Unlimited Tier</span>
-                                                            <span className="text-[9px] text-purple-200 opacity-80 normal-case tracking-normal font-medium">₹799/mo (Unlimited)</span>
-                                                        </button>
+                                                            <span>Enterprise</span>
+                                                            <span className="text-[9px] opacity-80 normal-case tracking-normal font-medium">Custom · Unlimited · Contact Sales</span>
+                                                        </a>
                                                     </div>
                                                 )}
                                                 {licenseStatus.plan !== 'Free Tier' && (
