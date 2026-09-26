@@ -95,16 +95,19 @@ export class BackupService {
                 .map(file => {
                     const filePath = path.join(this.BACKUP_DIR, file);
                     const stats = fs.statSync(filePath);
+                    // birthtime is unreliable on many Docker/Linux filesystems (returns
+                    // epoch 0); fall back to mtime for an accurate timestamp.
+                    const created = (stats.birthtimeMs && stats.birthtimeMs > 0) ? stats.birthtime : stats.mtime;
 
                     return {
                         filename: file,
                         path: filePath,
                         size: stats.size,
-                        created: stats.birthtime,
+                        created,
                         modified: stats.mtime
                     };
                 })
-                .sort((a, b) => b.created - a.created); // Most recent first
+                .sort((a, b) => new Date(b.created) - new Date(a.created)); // Most recent first
 
             return backups;
         } catch (error) {
@@ -230,9 +233,9 @@ export class BackupService {
      * Get backup statistics
      * @returns {Object} Backup statistics
      */
-    static getStats() {
+    static getStats(userId) {
         try {
-            const backups = this.listBackups();
+            const backups = this.listBackups(userId);
             const totalSize = backups.reduce((sum, backup) => sum + backup.size, 0);
 
             return {
@@ -249,23 +252,37 @@ export class BackupService {
     }
 
     /**
-     * Schedule automatic backups (call this periodically)
-     * @param {number} intervalHours - Backup interval in hours
+     * Run a daily backup for EVERY user that owns clusters, then prune old ones.
+     * Derives the user list from clusters.json owners — no auth dependency.
      */
-    static scheduleAutoBackup(userId, intervalHours = 24) {
-        if (!userId) {
-            console.warn('[BackupService] scheduleAutoBackup called without userId — auto-backup not started');
-            return;
+    static runDailyBackups() {
+        try {
+            if (!fs.existsSync(this.DATA_PATH)) return;
+            const all = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
+            if (!Array.isArray(all) || all.length === 0) return;
+
+            const owners = [...new Set(all.map(c => c.ownerId).filter(Boolean))];
+            let count = 0;
+            owners.forEach(uid => {
+                const r = this.createBackup('auto', uid);
+                if (r.success) { count++; this.cleanupOldBackups(uid, 10); }
+            });
+            console.log(`[BackupService] Daily auto-backup complete for ${count} user(s)`);
+        } catch (error) {
+            console.error('[BackupService] Daily backup run failed:', error.message);
         }
+    }
 
-        this.createBackup('auto', userId);
-
-        setInterval(() => {
-            this.createBackup('auto', userId);
-            this.cleanupOldBackups(userId, 10);
-        }, intervalHours * 60 * 60 * 1000);
-
-        console.log(`✓ Auto-backup scheduled every ${intervalHours} hours for user ${userId}`);
+    /**
+     * Start the global daily backup scheduler. Runs shortly after boot, then
+     * every 24h. Safe to call once at server startup.
+     */
+    static startDailyScheduler(intervalHours = 24) {
+        this.initialize();
+        // First run 30s after boot (let the app settle), then on the interval
+        setTimeout(() => this.runDailyBackups(), 30000);
+        setInterval(() => this.runDailyBackups(), intervalHours * 60 * 60 * 1000);
+        console.log(`✓ Daily auto-backup scheduler started (every ${intervalHours}h)`);
     }
 }
 

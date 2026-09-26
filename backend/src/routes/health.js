@@ -80,7 +80,7 @@ healthRouter.get('/backups', requireAuth, (req, res) => {
         if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
             return res.status(403).json({ error: 'Only admins can view backups' });
         }
-        const stats = BackupService.getStats();
+        const stats = BackupService.getStats(req.user.id);
         const backups = BackupService.listBackups(req.user.id);
 
         res.json({

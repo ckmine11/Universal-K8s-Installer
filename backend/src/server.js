@@ -445,6 +445,7 @@ const PORT = process.env.PORT || 3000
 server.listen(PORT, () => {
     // Initialize services
     BackupService.initialize()
+    BackupService.startDailyScheduler(24)  // Daily config backups for all users
     incidentDetector.init().catch(err => console.error('[IncidentDetector] Failed to init:', err))
 
     console.log(`
