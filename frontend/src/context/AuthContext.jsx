@@ -41,8 +41,10 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('user');
         setUser(null);
         setIsAuthenticated(false);
-        if (redirectToLogin && window.location.pathname !== '/login') {
-            window.location.href = '/login';
+        // Login screen renders at '/' when unauthenticated — there is no
+        // dedicated '/login' route, so redirect home to avoid a 404.
+        if (redirectToLogin && window.location.pathname !== '/') {
+            window.location.href = '/';
         }
     };
 

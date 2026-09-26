@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
-import { apiFetch } from './AuthContext'
+import { apiFetch, useAuth } from './AuthContext'
 
 const InstallationTrackerContext = createContext()
 const STORAGE_KEY = 'kubeez_active_installations'
@@ -42,6 +42,7 @@ function loadDismissed() {
  * install is never "lost".
  */
 export function InstallationTrackerProvider({ children }) {
+    const { isAuthenticated } = useAuth()
     const [activeInstallations, setActiveInstallations] = useState(loadPersisted)
     const dismissedRef = useRef(loadDismissed())
     const pollRef = useRef(null)
@@ -86,7 +87,10 @@ export function InstallationTrackerProvider({ children }) {
     }, [activeInstallations])
 
     // ── Reconcile with backend: hydrate on load + poll while anything runs ──
+    // Only runs when authenticated — avoids pre-login 401s that would trigger
+    // an unwanted logout/redirect.
     useEffect(() => {
+        if (!isAuthenticated) return
         let cancelled = false
 
         const syncFromBackend = async () => {
@@ -114,7 +118,7 @@ export function InstallationTrackerProvider({ children }) {
         // Poll every 4s so progress stays fresh even when not on the dashboard
         pollRef.current = setInterval(syncFromBackend, 4000)
         return () => { cancelled = true; clearInterval(pollRef.current) }
-    }, [])
+    }, [isAuthenticated])
 
     return (
         <InstallationTrackerContext.Provider value={{
