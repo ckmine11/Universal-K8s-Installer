@@ -330,6 +330,26 @@ class InstallationManager {
         return this.installations.get(installationId)
     }
 
+    // List all installations this user/org can see — lets the UI recover
+    // a running install after navigating away or refreshing the page.
+    getActiveInstallations(userId, orgId) {
+        const result = []
+        for (const [id, inst] of this.installations.entries()) {
+            const owned = (orgId && inst.orgId === orgId) || (userId && inst.ownerId === userId)
+            if (!owned) continue
+            result.push({
+                id,
+                clusterName: inst.clusterName || 'Cluster',
+                mode: inst.mode || 'install',
+                status: inst.status || 'running',
+                progress: inst.progress || 0,
+                currentStep: inst.currentStep || '',
+                startedAt: inst.startedAt || inst.createdAt || new Date().toISOString()
+            })
+        }
+        return result
+    }
+
     getLogs(installationId) {
         const installation = this.installations.get(installationId)
         return installation ? installation.logs : null

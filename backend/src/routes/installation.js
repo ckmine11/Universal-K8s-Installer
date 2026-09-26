@@ -10,6 +10,18 @@ import { addonAccessService } from '../services/addonAccessService.js'
 
 const router = express.Router()
 
+// List all in-progress/recent installations for the current user/org.
+// Lets the UI recover a running install after navigating away or refreshing.
+router.get('/installations/active', requireAuth, (req, res) => {
+    try {
+        const list = installationManager.getActiveInstallations(req.user.id, req.user.orgId)
+        res.json(list)
+    } catch (error) {
+        console.error('Active installations error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
 // List saved clusters
 router.get('/list', async (req, res) => {
     try {
