@@ -88,7 +88,7 @@ export default function Pricing() {
                         <Feature text="2 Nodes (1 Master + 1 Worker)" />
                         <Feature text="1 Admin User" />
                         <Feature text="Standard Installation Engine" />
-                        <Feature text="Gateway Agent (Remote Tunnel)" />
+                        <Feature text="Connect private nodes without firewall changes" />
                         <Feature text="Basic Addons (Ingress, Dashboard)" />
                         <Feature disabled text="Node crashes fix themselves" />
                         <Feature disabled text="Team Members & RBAC" />
@@ -134,7 +134,6 @@ export default function Pricing() {
                         <Feature color="text-amber-400" text="Up to 50 Nodes" />
                         <Feature color="text-amber-400" text="5 Team Members & RBAC" />
                         <Feature color="text-amber-400" text="Node crashes fix themselves (Auto-Healing)" />
-                        <Feature color="text-amber-400" text="Connect private nodes without firewall changes" />
                         <Feature color="text-amber-400" text="Daily config backups — restore in 1 click" />
                         <Feature color="text-amber-400" text="All Addons (ArgoCD, Longhorn, Cert-Manager)" />
                         <Feature color="text-amber-400" text="Support response within 24 hours" />
