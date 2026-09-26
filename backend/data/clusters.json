@@ -1,1 +1,49 @@
-[]
+[
+  {
+    "id": "70576073-4fc6-4e7a-9835-50240f569348",
+    "ownerId": "6aa9f884-dd1e-4bff-b50c-4ea0889dfca7",
+    "clusterName": "test2",
+    "k8sVersion": "1.28.0",
+    "networkPlugin": "flannel",
+    "masterNodes": [
+      {
+        "ip": "10.0.0.1",
+        "username": "root",
+        "password": "8a2e8249b823ceacce81b56253335d84:db57db640dce7f22d2a228bf87b9646c",
+        "ownerId": "6aa9f884-dd1e-4bff-b50c-4ea0889dfca7",
+        "orgId": "554dda98-f4b6-4728-87bb-84f09e848fb1"
+      }
+    ],
+    "workerNodes": [
+      {
+        "ip": "10.0.0.2",
+        "username": "root",
+        "password": "6b57872140c4d8a3dc597da2bc0f3a04:676408a597a1078082ed75848ee9d0d6",
+        "ownerId": "6aa9f884-dd1e-4bff-b50c-4ea0889dfca7",
+        "orgId": "554dda98-f4b6-4728-87bb-84f09e848fb1"
+      }
+    ],
+    "status": "healthy",
+    "name": "test2",
+    "version": "1.28.0",
+    "nodes": [
+      {
+        "name": "master-10-0-0-1",
+        "ip": "10.0.0.1",
+        "role": "master",
+        "status": "Ready"
+      },
+      {
+        "name": "worker-10-0-0-2",
+        "ip": "10.0.0.2",
+        "role": "worker",
+        "status": "Ready"
+      }
+    ],
+    "nodeCount": 2,
+    "endpoint": "https://10.0.0.1:6443",
+    "simulationMode": true,
+    "updatedAt": "2026-09-26T07:11:07.327Z",
+    "createdAt": "2026-09-26T07:11:07.327Z"
+  }
+]

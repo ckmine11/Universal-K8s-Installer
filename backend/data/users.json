@@ -47,19 +47,5 @@
       "maxNodes": 3
     },
     "createdAt": "2026-06-20T15:29:21.223Z"
-  },
-  {
-    "id": "b869d77f-e4d0-4877-9c9e-d581f8d0e825",
-    "orgId": "959ff3b8-3167-4756-ad3d-0e9bdee15378",
-    "username": "testuser",
-    "email": "test@test.com",
-    "password": "$2a$10$sOYl/nZZe1xdkZs02SeyFOentov96LeazAZFrLt6cIvZBXb0nw3O2",
-    "role": "admin",
-    "subscription": {
-      "plan": "FREE",
-      "maxClusters": 1,
-      "maxNodes": 2
-    },
-    "createdAt": "2026-09-25T20:09:07.869Z"
   }
 ]

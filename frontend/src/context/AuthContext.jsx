@@ -12,9 +12,11 @@ export async function apiFetch(url, options = {}) {
         headers: { 'Content-Type': 'application/json', ...options.headers }
     });
 
-    if (res.status === 401 || res.status === 403) {
+    // Only auto-logout on 401 (auth failure). 402 = limit/upgrade, 403 = permission —
+    // those are real API responses the caller must handle, not session expiry.
+    if (res.status === 401) {
         if (typeof window.__kubeezLogout === 'function') {
-            console.warn('[apiFetch] Received', res.status, '- logging out');
+            console.warn('[apiFetch] 401 Unauthorized — logging out');
             window.__kubeezLogout(true);
         }
     }

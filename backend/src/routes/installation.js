@@ -62,7 +62,7 @@ router.post('/install', async (req, res) => {
 
         if (!enforcement.allowed) {
             console.error('License limit check failed:', enforcement.error)
-            return res.status(403).json({ error: enforcement.error })
+            return res.status(402).json({ error: enforcement.error, limitExceeded: true })
         }
 
         // Generate installation ID
@@ -288,7 +288,7 @@ router.post('/:id/retry', requireAuth, async (req, res) => {
 
         if (!enforcement.allowed) {
             console.error('License limit check failed on retry:', enforcement.error)
-            return res.status(403).json({ error: enforcement.error })
+            return res.status(402).json({ error: enforcement.error, limitExceeded: true })
         }
 
         // Create a new installation based on the old one

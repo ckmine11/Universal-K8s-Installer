@@ -272,9 +272,18 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
             const result = await response.json()
 
             if (result.installationId) {
-                // Keep modal open for a split second to show success state if we wanted, 
+                // Keep modal open for a split second to show success state if we wanted,
                 // but navigating immediately is fine too.
                 onStartInstallation(result.installationId)
+            } else if (response.status === 402 || result.limitExceeded) {
+                // Plan limit reached — show upgrade guidance, do NOT treat as generic failure
+                toast({
+                    title: 'Plan Limit Reached',
+                    message: `${result.error} Upgrade your plan to add more.`,
+                    type: 'error',
+                    duration: 6000
+                })
+                setIsInstalling(false)
             } else {
                 throw new Error(result.error || 'Failed to start installation')
             }

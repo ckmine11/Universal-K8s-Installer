@@ -22,7 +22,7 @@ export const requireAuth = (req, res, next) => {
     if (!token) return res.status(401).json({ error: 'No token provided' });
 
     const decoded = authService.verifyToken(token);
-    if (!decoded) return res.status(403).json({ error: 'Invalid or expired token' });
+    if (!decoded) return res.status(401).json({ error: 'Invalid or expired token' });
 
     req.user = decoded;
     next();
