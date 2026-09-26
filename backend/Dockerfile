@@ -1,8 +1,9 @@
 # Backend Dockerfile
 FROM node:18-alpine
 
-# Install curl for healthchecks and debugging
-RUN apk add --no-cache curl
+# NOTE: No `apk add` — avoids dependency on the Alpine package CDN, which may be
+# blocked by firewalls/proxies on some servers. Healthchecks use node/wget
+# (busybox wget is already present in the base image).
 
 # Set working directory
 WORKDIR /app
