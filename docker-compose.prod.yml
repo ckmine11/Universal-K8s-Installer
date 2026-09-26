@@ -30,6 +30,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - KUBEEZ_MODE=${KUBEEZ_MODE:-saas}
       - APP_SECRET=${APP_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://k8scluster.space,http://localhost,http://localhost:8090,http://127.0.0.1,http://127.0.0.1:8090}

@@ -12,6 +12,7 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
+      - KUBEEZ_MODE=saas
       - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:8090
     volumes:
       - ./backend/src:/app/src

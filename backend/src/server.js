@@ -69,12 +69,13 @@ app.use('/api/auth/register', authLimiter)
 
 // Public Auth & System Config Routes
 app.get('/api/config', (req, res) => {
+    const mode = process.env.KUBEEZ_MODE || 'self-hosted'
     res.json({
-        mode: 'saas',
-        tunnelsEnabled: true,
+        mode,
+        tunnelsEnabled: mode === 'saas',
         version: '2.1.0',
         features: {
-            saasTunnels: true,
+            saasTunnels: mode === 'saas',
             incidentRemediation: true,
             licensing: true
         }

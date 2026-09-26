@@ -222,12 +222,12 @@ class LicenseService {
         let activeNodesCount = 0
 
         if (mode === 'saas') {
-            // SaaS mode: Tenant-isolated limits. Normal users are isolated.
-            if (role === 'admin') {
-                // Admin in SaaS gets unlimited or high limits
+            // Platform superadmin gets unlimited
+            if (role === 'superadmin') {
                 return { allowed: true }
             }
 
+            // SaaS mode: Tenant-isolated limits based on the USER's subscription.
             activeClusters = clusters.filter(c => c.ownerId === userId)
             activeClustersCount = activeClusters.length
             activeNodesCount = activeClusters.reduce((sum, c) => {
@@ -236,8 +236,12 @@ class LicenseService {
                 return sum + masters + workers
             }, 0)
 
-            const maxClusters = state.maxClusters
-            const maxNodes = state.maxNodes
+            // Use the user's own subscription limits (falls back to plan defaults)
+            const { authService } = await import('./authService.js')
+            const user = authService.getUserById(userId)
+            const sub = user?.subscription || {}
+            const maxClusters = sub.maxClusters ?? state.maxClusters
+            const maxNodes = sub.maxNodes ?? state.maxNodes
 
             if (activeClustersCount + newClustersCount > maxClusters) {
                 return {
