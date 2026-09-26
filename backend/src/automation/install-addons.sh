@@ -595,6 +595,10 @@ subjects:
   namespace: kubernetes-dashboard
 EOF
         
+        # Expose Dashboard via NodePort so it's reachable on the internal network
+        log "Exposing Dashboard on NodePort 30643..."
+        retry 3 kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard -p '{"spec":{"type":"NodePort","ports":[{"port":443,"targetPort":8443,"nodePort":30643}]}}' || log "NodePort patch will be applied on first access"
+
         echo "✓ Kubernetes Dashboard installed"
         echo ""
         echo "To access the dashboard:"

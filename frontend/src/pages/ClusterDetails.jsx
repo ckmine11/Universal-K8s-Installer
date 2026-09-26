@@ -25,6 +25,7 @@ import {
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
+import AddonAccessPanel from '../components/AddonAccessPanel'
 
 export default function ClusterDetails({ onScaleCluster }) {
     const { toast } = useToast()
@@ -236,6 +237,13 @@ export default function ClusterDetails({ onScaleCluster }) {
                     </p>
                 </div>
             </div>
+
+            {/* Installed Add-ons Access */}
+            {cluster.status !== 'failed' && (
+                <div className="mb-8">
+                    <AddonAccessPanel clusterId={id} />
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column: Actions & Nodes */}

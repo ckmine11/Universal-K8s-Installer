@@ -5,6 +5,7 @@ import { automationEngine } from '../services/automationEngine.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 import { licenseService } from '../services/licenseService.js'
 import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
+import { addonAccessService } from '../services/addonAccessService.js'
 
 
 const router = express.Router()
@@ -319,6 +320,26 @@ router.post('/:id/retry', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Retry error:', error)
         res.status(500).json({ error: 'Failed to retry installation' })
+    }
+})
+
+// Get access info (URLs + credentials) for all installed addons in a cluster
+router.get('/:id/addons/access', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params
+        const clusters = await installationManager.getSavedClusters()
+        const cluster = clusters.find(c => c.id === id)
+
+        if (!cluster) return res.status(404).json({ error: 'Cluster not found' })
+        if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized' })
+        }
+
+        const info = await addonAccessService.getAccessInfo(cluster)
+        res.json(info)
+    } catch (error) {
+        console.error('Addon access error:', error)
+        res.status(500).json({ error: error.message })
     }
 })
 
