@@ -368,11 +368,17 @@ class AutomationEngine {
             onLog('info', 'Starting deployment initialization...')
             onProgress(1, 'Initializing...')
             
-            // Inject ownerId into nodes for Gateway routing
+            // Inject ownerId + orgId into nodes for Gateway Agent routing
             if (installation.ownerId) {
-                installation.masterNodes.forEach(n => n.ownerId = installation.ownerId)
+                installation.masterNodes.forEach(n => {
+                    n.ownerId = installation.ownerId
+                    n.orgId   = installation.orgId
+                })
                 if (installation.workerNodes) {
-                    installation.workerNodes.forEach(n => n.ownerId = installation.ownerId)
+                    installation.workerNodes.forEach(n => {
+                        n.ownerId = installation.ownerId
+                        n.orgId   = installation.orgId
+                    })
                 }
             }
 

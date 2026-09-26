@@ -75,7 +75,10 @@ class AgentService {
 
     async getAgentsByOwner(ownerId, role, orgId) {
         const agents = await this._readAgents()
-        return agents.filter(a => (a.orgId && a.orgId === orgId) || (!a.orgId && a.ownerId === ownerId))
+        return agents.filter(a =>
+            (orgId && a.orgId === orgId) ||
+            (ownerId && a.ownerId === ownerId)
+        )
     }
 
     async deleteAgent(agentId, ownerId, role, orgId) {
