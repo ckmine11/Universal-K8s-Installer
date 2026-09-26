@@ -97,7 +97,7 @@ class AuthService {
             email,
             password: hashedPassword,
             role,
-            subscription: { plan: 'FREE', maxClusters: 1, maxNodes: 2 },
+            subscription: { plan: 'FREE', maxClusters: 1, maxNodes: 2, maxMembers: 1 },
             createdAt: new Date().toISOString()
         };
 
@@ -107,10 +107,24 @@ class AuthService {
         return this.generateToken(newUser);
     }
 
-    async createTeamMember(adminOrgId, username, password, email, role = 'user') {
+    async createTeamMember(adminOrgId, username, password, email, role = 'viewer') {
         const existing = this.users.find(u => u.username.toLowerCase() === username.toLowerCase() || (u.email && email && u.email.toLowerCase() === email.toLowerCase()));
         if (existing) {
             throw new Error('Username or email is already taken');
+        }
+
+        // Validate role — only assignable workspace roles are allowed here
+        const allowedRoles = ['admin', 'operator', 'viewer'];
+        if (!allowedRoles.includes(role)) {
+            throw new Error(`Invalid role. Choose one of: ${allowedRoles.join(', ')}`);
+        }
+
+        // Enforce the plan's team-member seat limit (counts ALL users in the org)
+        const orgAdmin = this.users.find(u => u.orgId === adminOrgId && u.role === 'admin')
+        const maxMembers = orgAdmin?.subscription?.maxMembers ?? 1
+        const currentCount = this.users.filter(u => u.orgId === adminOrgId).length
+        if (currentCount >= maxMembers) {
+            throw new Error(`Team seat limit reached (${maxMembers}). Upgrade your plan to add more members.`)
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);

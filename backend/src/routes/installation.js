@@ -2,7 +2,7 @@ import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { installationManager } from '../services/installationManager.js'
 import { automationEngine } from '../services/automationEngine.js'
-import { requireAuth } from '../middleware/authMiddleware.js'
+import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 import { licenseService } from '../services/licenseService.js'
 import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
@@ -36,7 +36,7 @@ router.get('/list', async (req, res) => {
 })
 
 // Start cluster installation
-router.post('/install', async (req, res) => {
+router.post('/install', requirePermission('cluster:create'), async (req, res) => {
     try {
         const { clusterName, k8sVersion, networkPlugin, masterNodes, workerNodes, addons, mode } = req.body
 
@@ -148,7 +148,7 @@ router.get('/:id/health', async (req, res) => {
 })
 
 // Get kubeconfig
-router.get('/:id/kubeconfig', async (req, res) => {
+router.get('/:id/kubeconfig', requirePermission('kubeconfig:download'), async (req, res) => {
     try {
         const { id } = req.params
         const clusters = await installationManager.getSavedClusters()
@@ -209,7 +209,7 @@ router.post('/:id/cancel', (req, res) => {
 })
 
 // Delete a saved cluster
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('cluster:delete'), async (req, res) => {
     const { id } = req.params
     const clusters = await installationManager.getSavedClusters()
     const cluster = clusters.find(c => c.id === id)
@@ -229,7 +229,7 @@ router.delete('/:id', async (req, res) => {
 
 // Execute Auto-Fix Action
 // Execute Auto-Fix Action
-router.post('/action/fix', requireAuth, async (req, res) => {
+router.post('/action/fix', requireAuth, requirePermission('cluster:create'), async (req, res) => {
     try {
         const { installationId, nodeIp, fixAction } = req.body
 
@@ -275,7 +275,7 @@ router.post('/action/fix', requireAuth, async (req, res) => {
 })
 
 // Retry a failed installation
-router.post('/:id/retry', requireAuth, async (req, res) => {
+router.post('/:id/retry', requireAuth, requirePermission('cluster:create'), async (req, res) => {
     try {
         const { id } = req.params
         const oldInstallation = installationManager.getStatus(id)
@@ -380,7 +380,7 @@ router.post('/:id/analyze', requireAuth, async (req, res) => {
 })
 
 // Start resume from where installation failed
-router.post('/:id/resume', requireAuth, async (req, res) => {
+router.post('/:id/resume', requireAuth, requirePermission('cluster:resume'), async (req, res) => {
     try {
         const { id } = req.params
         const { analysis } = req.body  // Pass analysis result from /analyze call
@@ -415,7 +415,7 @@ router.post('/:id/resume', requireAuth, async (req, res) => {
 })
 
 // Install Add-ons to existing cluster
-router.post('/:id/addons', requireAuth, async (req, res) => {
+router.post('/:id/addons', requireAuth, requirePermission('addon:install'), async (req, res) => {
     try {
         const { id } = req.params
         const { addons } = req.body
@@ -460,7 +460,7 @@ router.post('/:id/addons', requireAuth, async (req, res) => {
 })
 
 // Upgrade Cluster Version
-router.post('/:id/upgrade', requireAuth, async (req, res) => {
+router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const { id } = req.params
         const { targetVersion } = req.body

@@ -1,9 +1,12 @@
 import express from 'express'
 import { authService } from '../services/authService.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
+import { ROLES, PERMISSION_GROUPS, PERMISSIONS, permissionsForRole } from '../config/permissions.js'
 import bcrypt from 'bcryptjs'
 
 const router = express.Router()
+
+const ASSIGNABLE_ROLES = ['admin', 'operator', 'viewer']
 
 // ─── Middleware: Admin only ───────────────────────────────────────
 const requireAdmin = (req, res, next) => {
@@ -12,6 +15,24 @@ const requireAdmin = (req, res, next) => {
     }
     next()
 }
+
+// ─── RBAC transparency: roles, permission matrix, and MY permissions ──
+// Any authenticated user can see exactly who can do what.
+router.get('/rbac', requireAuth, (req, res) => {
+    res.json({
+        myRole: req.user.role,
+        myPermissions: permissionsForRole(req.user.role),
+        roles: Object.values(ROLES),
+        matrix: PERMISSION_GROUPS.map(g => ({
+            group: g.group,
+            items: g.items.map(item => ({
+                key: item.key,
+                label: item.label,
+                roles: ASSIGNABLE_ROLES.filter(r => (PERMISSIONS[item.key] || []).includes(r))
+            }))
+        }))
+    })
+})
 
 // ─── Password Change (any logged-in user) ────────────────────────
 router.post('/auth/change-password', requireAuth, async (req, res) => {
@@ -57,7 +78,10 @@ router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
             role: u.role,
             createdAt: u.createdAt
         }))
-        res.json(users)
+        // Seat usage so the UI can show "3 / 5 seats used"
+        const orgAdmin = authService.users.find(u => u.orgId === req.user.orgId && u.role === 'admin')
+        const maxMembers = orgAdmin?.subscription?.maxMembers ?? 1
+        res.json({ users, seats: { used: users.length, max: maxMembers } })
     } catch (err) {
         res.status(500).json({ error: err.message })
     }
@@ -68,9 +92,12 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
     try {
         const { username, password, email, role } = req.body
         if (!username || !password) return res.status(400).json({ error: 'Username and password are required' })
-        
-        const newUser = await authService.createTeamMember(req.user.orgId, username, password, email, role || 'user')
-        res.json({ success: true, message: 'Team member created', user: { id: newUser.id, username: newUser.username } })
+        if (role && !ASSIGNABLE_ROLES.includes(role)) {
+            return res.status(400).json({ error: `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` })
+        }
+
+        const newUser = await authService.createTeamMember(req.user.orgId, username, password, email, role || 'viewer')
+        res.json({ success: true, message: 'Team member created', user: { id: newUser.id, username: newUser.username, role: newUser.role } })
     } catch (err) {
         res.status(400).json({ error: err.message })
     }
@@ -80,15 +107,15 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
 router.put('/admin/users/:id/role', requireAuth, requireAdmin, async (req, res) => {
     try {
         const { role } = req.body
-        if (!['admin', 'user'].includes(role)) {
-            return res.status(400).json({ error: 'Role must be "admin" or "user"' })
+        if (!ASSIGNABLE_ROLES.includes(role)) {
+            return res.status(400).json({ error: `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` })
         }
 
         const targetId = req.params.id
 
-        // Cannot demote yourself
+        // Cannot demote yourself out of admin (prevents locking yourself out)
         if (targetId === req.user.id && role !== 'admin') {
-            return res.status(400).json({ error: 'Cannot demote your own admin account' })
+            return res.status(400).json({ error: 'You cannot change your own admin role — ask another admin.' })
         }
 
         const userIdx = authService.users.findIndex(u => u.id === targetId && u.orgId === req.user.orgId)

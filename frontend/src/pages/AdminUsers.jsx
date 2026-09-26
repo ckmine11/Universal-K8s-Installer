@@ -3,20 +3,26 @@ import { useAuth, apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import {
     Users, Shield, User, Trash2, Crown, RefreshCw, Loader2,
-    ChevronRight, Lock, AlertTriangle, Check, Clock,
-    KeyRound, Search, UserCheck, UserX, MoreVertical
+    ChevronRight, Lock, AlertTriangle, Check, Clock, Eye, Wrench,
+    KeyRound, Search, UserCheck, UserX, MoreVertical, X
 } from 'lucide-react'
+
+// Role metadata — single source for labels/colors/descriptions on the client
+const ROLE_META = {
+    admin:    { label: 'Org Admin', icon: Crown,  color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',   desc: 'Full control: clusters, team, billing.' },
+    operator: { label: 'Operator',  icon: Wrench, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20',      desc: 'Create & manage clusters/add-ons. No team or billing.' },
+    viewer:   { label: 'Viewer',    icon: Eye,    color: 'text-slate-300 bg-white/5 border-white/10',            desc: 'Read-only access to clusters & health.' }
+}
+const ASSIGNABLE_ROLES = ['admin', 'operator', 'viewer']
 
 // ─── Role Badge ───────────────────────────────────────────────────
 function RoleBadge({ role }) {
-    const styles = {
-        admin: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-        user: 'text-slate-400 bg-white/5 border-white/10'
-    }
+    const meta = ROLE_META[role] || ROLE_META.viewer
+    const Icon = meta.icon
     return (
-        <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${styles[role] || styles.user}`}>
-            {role === 'admin' ? <Crown className="w-3 h-3" /> : <User className="w-3 h-3" />}
-            {role}
+        <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${meta.color}`}>
+            <Icon className="w-3 h-3" />
+            {meta.label}
         </span>
     )
 }
@@ -93,7 +99,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
 // ─── Create User Modal ─────────────────────────────────────────────
 function CreateUserModal({ onClose, onSuccess }) {
     const { toast } = useToast()
-    const [formData, setFormData] = useState({ username: '', email: '', password: '', role: 'user' })
+    const [formData, setFormData] = useState({ username: '', email: '', password: '', role: 'viewer' })
     const [loading, setLoading] = useState(false)
 
     const handleCreate = async () => {
@@ -138,11 +144,15 @@ function CreateUserModal({ onClose, onSuccess }) {
                     <input type="text" placeholder="Username" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <input type="email" placeholder="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <input type="password" placeholder="Password (min 6 chars)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
-                    <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
-                        <option value="user" className="bg-slate-950">Tenant User</option>
-                        <option value="admin" className="bg-slate-950">Tenant Admin</option>
-                    </select>
-                    
+                    <div>
+                        <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
+                            {ASSIGNABLE_ROLES.map(r => (
+                                <option key={r} value={r} className="bg-slate-950">{ROLE_META[r].label}</option>
+                            ))}
+                        </select>
+                        <p className="text-[11px] text-slate-500 mt-1.5 px-1">{ROLE_META[formData.role]?.desc}</p>
+                    </div>
+
                     <div className="flex gap-3 pt-2">
                         <button onClick={onClose} className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-xs font-black uppercase tracking-wider text-slate-400 transition-all">Cancel</button>
                         <button onClick={handleCreate} disabled={loading} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center justify-center gap-2">
@@ -174,10 +184,9 @@ function UserCard({ userItem, currentUser, onRefresh }) {
         return new Date(isoDate).toLocaleDateString()
     }
 
-    const handleRoleToggle = async () => {
-        setMenu(false)
+    const handleRoleChange = async (newRole) => {
+        if (newRole === userItem.role) return
         setChangingRole(true)
-        const newRole = userItem.role === 'admin' ? 'user' : 'admin'
         try {
             const res = await apiFetch(`/api/admin/users/${userItem.id}/role`, {
                 method: 'PUT',
@@ -185,7 +194,7 @@ function UserCard({ userItem, currentUser, onRefresh }) {
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
-            toast({ title: 'Role Updated', message: `${userItem.username} is now ${newRole}`, type: 'success' })
+            toast({ title: 'Role Updated', message: `${userItem.username} is now ${ROLE_META[newRole]?.label || newRole}`, type: 'success' })
             onRefresh()
         } catch (err) {
             toast({ title: 'Error', message: err.message, type: 'error' })
@@ -256,19 +265,23 @@ function UserCard({ userItem, currentUser, onRefresh }) {
                 {/* Actions */}
                 {!isSelf && (
                     <div className="flex items-center gap-2 mt-5 pt-5 border-t border-white/5">
-                        {/* Role Toggle */}
-                        <button
-                            onClick={handleRoleToggle}
-                            disabled={changingRole}
-                            className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                userItem.role === 'admin'
-                                    ? 'bg-slate-500/10 hover:bg-slate-500/20 border border-slate-500/20 text-slate-400'
-                                    : 'bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400'
-                            }`}
-                        >
-                            {changingRole ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crown className="w-3 h-3" />}
-                            {userItem.role === 'admin' ? 'Demote to User' : 'Promote to Admin'}
-                        </button>
+                        {/* Role selector */}
+                        <div className="flex-1 relative">
+                            <select
+                                value={userItem.role}
+                                onChange={e => handleRoleChange(e.target.value)}
+                                disabled={changingRole}
+                                className="w-full py-2.5 pl-3 pr-8 rounded-xl text-[10px] font-black uppercase tracking-wider bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 outline-none transition-all appearance-none cursor-pointer disabled:opacity-50"
+                            >
+                                {ASSIGNABLE_ROLES.map(r => (
+                                    <option key={r} value={r} className="bg-slate-950">{ROLE_META[r].label}</option>
+                                ))}
+                            </select>
+                            {changingRole
+                                ? <Loader2 className="w-3 h-3 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                : <ChevronRight className="w-3 h-3 rotate-90 absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                            }
+                        </div>
 
                         {/* Reset Password */}
                         <button
@@ -315,6 +328,9 @@ export default function AdminUsers() {
     const { user: currentUser } = useAuth()
     const { toast } = useToast()
     const [users, setUsers] = useState([])
+    const [seats, setSeats] = useState({ used: 0, max: 1 })
+    const [rbac, setRbac] = useState(null)
+    const [showMatrix, setShowMatrix] = useState(false)
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
     const [search, setSearch] = useState('')
@@ -327,7 +343,9 @@ export default function AdminUsers() {
             const res = await apiFetch('/api/admin/users')
             if (!res.ok) throw new Error('Failed to load users')
             const data = await res.json()
-            setUsers(data)
+            // New shape: { users, seats }. Fall back to array for safety.
+            setUsers(Array.isArray(data) ? data : (data.users || []))
+            if (data.seats) setSeats(data.seats)
         } catch (err) {
             toast({ title: 'Error', message: err.message, type: 'error' })
         } finally {
@@ -336,7 +354,16 @@ export default function AdminUsers() {
         }
     }, [])
 
-    useEffect(() => { fetchUsers() }, [fetchUsers])
+    const fetchRbac = useCallback(async () => {
+        try {
+            const res = await apiFetch('/api/rbac')
+            if (res.ok) setRbac(await res.json())
+        } catch { /* non-critical */ }
+    }, [])
+
+    useEffect(() => { fetchUsers(); fetchRbac() }, [fetchUsers, fetchRbac])
+
+    const seatsFull = seats.used >= seats.max
 
     const filtered = users.filter(u => {
         const matchSearch = u.username.toLowerCase().includes(search.toLowerCase())
@@ -345,7 +372,8 @@ export default function AdminUsers() {
     })
 
     const adminCount = users.filter(u => u.role === 'admin').length
-    const userCount = users.filter(u => u.role === 'user').length
+    const operatorCount = users.filter(u => u.role === 'operator').length
+    const viewerCount = users.filter(u => u.role === 'viewer').length
 
     return (
         <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
@@ -360,8 +388,15 @@ export default function AdminUsers() {
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-all shadow-lg shadow-blue-500/20"
+                        onClick={() => setShowMatrix(true)}
+                        className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-black uppercase tracking-widest text-[10px] rounded-xl transition-all flex items-center gap-1.5"
+                    >
+                        <Shield className="w-3.5 h-3.5" /> Who can do what?
+                    </button>
+                    <button
+                        onClick={() => seatsFull ? toast({ title: 'Seat limit reached', message: `Your plan allows ${seats.max} member(s). Upgrade to add more.`, type: 'error' }) : setShowCreateModal(true)}
+                        className={`px-4 py-2.5 font-black uppercase tracking-widest text-[10px] rounded-xl transition-all shadow-lg ${seatsFull ? 'bg-white/5 text-slate-500 border border-white/10 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'}`}
+                        title={seatsFull ? 'Seat limit reached — upgrade your plan' : 'Invite a team member'}
                     >
                         + Invite User
                     </button>
@@ -376,11 +411,15 @@ export default function AdminUsers() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="glass rounded-2xl border border-white/8 p-6">
+                    <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">Seats Used</p>
+                    <p className={`text-3xl font-black ${seatsFull ? 'text-amber-400' : 'text-white'}`}>{seats.used}<span className="text-lg text-slate-600">/{seats.max}</span></p>
+                </div>
                 {[
-                    { label: 'Total Users', value: users.length, color: 'text-white' },
                     { label: 'Admins', value: adminCount, color: 'text-amber-400' },
-                    { label: 'Members', value: userCount, color: 'text-blue-400' },
+                    { label: 'Operators', value: operatorCount, color: 'text-blue-400' },
+                    { label: 'Viewers', value: viewerCount, color: 'text-slate-300' },
                 ].map(s => (
                     <div key={s.label} className="glass rounded-2xl border border-white/8 p-6">
                         <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">{s.label}</p>
@@ -402,7 +441,7 @@ export default function AdminUsers() {
                     />
                 </div>
                 <div className="flex items-center gap-2">
-                    {['all', 'admin', 'user'].map(role => (
+                    {['all', 'admin', 'operator', 'viewer'].map(role => (
                         <button
                             key={role}
                             onClick={() => setFilterRole(role)}
@@ -458,6 +497,80 @@ export default function AdminUsers() {
                     }}
                 />
             )}
+
+            {showMatrix && rbac && (
+                <PermissionsMatrixModal rbac={rbac} onClose={() => setShowMatrix(false)} />
+            )}
+        </div>
+    )
+}
+
+// ─── Permissions Matrix (transparency) ────────────────────────────
+function PermissionsMatrixModal({ rbac, onClose }) {
+    const roles = ['admin', 'operator', 'viewer']
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="glass rounded-3xl border border-white/10 w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-7 pt-7 pb-4 border-b border-white/5">
+                    <div className="flex items-center gap-3">
+                        <Shield className="w-5 h-5 text-blue-400" />
+                        <div>
+                            <h3 className="text-lg font-black text-white">Who Can Do What</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">Exactly what each role is allowed to do in your workspace</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                        <X className="w-5 h-5 text-slate-400" />
+                    </button>
+                </div>
+
+                {/* Role legend */}
+                <div className="px-7 py-4 grid grid-cols-3 gap-3 border-b border-white/5">
+                    {roles.map(r => {
+                        const meta = ROLE_META[r]; const Icon = meta.icon
+                        return (
+                            <div key={r} className={`rounded-xl border p-3 ${meta.color}`}>
+                                <div className="flex items-center gap-1.5 font-black text-xs uppercase tracking-wider"><Icon className="w-3.5 h-3.5" />{meta.label}</div>
+                                <p className="text-[10px] text-slate-400 mt-1 leading-snug">{meta.desc}</p>
+                            </div>
+                        )
+                    })}
+                </div>
+
+                {/* Matrix */}
+                <div className="overflow-y-auto px-7 py-4">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-slate-500 text-[10px] uppercase tracking-widest">
+                                <th className="text-left font-black py-2">Capability</th>
+                                {roles.map(r => <th key={r} className="text-center font-black py-2 w-24">{ROLE_META[r].label}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rbac.matrix.map(group => (
+                                <>
+                                    <tr key={group.group}>
+                                        <td colSpan={4} className="pt-4 pb-1 text-[10px] font-black uppercase tracking-widest text-blue-400">{group.group}</td>
+                                    </tr>
+                                    {group.items.map(item => (
+                                        <tr key={item.key} className="border-t border-white/5">
+                                            <td className="py-2.5 text-slate-300">{item.label}</td>
+                                            {roles.map(r => (
+                                                <td key={r} className="text-center">
+                                                    {item.roles.includes(r)
+                                                        ? <Check className="w-4 h-4 text-emerald-400 mx-auto" />
+                                                        : <X className="w-3.5 h-3.5 text-slate-700 mx-auto" />}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     )
 }

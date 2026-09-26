@@ -1,11 +1,11 @@
 import express from 'express'
 import { agentService } from '../services/agentService.js'
-import { requireAuth } from '../middleware/authMiddleware.js'
+import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
 // Generate a new agent registration token + install command
-router.post('/agent/token', requireAuth, async (req, res) => {
+router.post('/agent/token', requireAuth, requirePermission('agent:manage'), async (req, res) => {
     try {
         const { label } = req.body
         const { id: ownerId, username: ownerUsername, orgId } = req.user
@@ -89,7 +89,7 @@ router.post('/agent/check-ips', requireAuth, async (req, res) => {
 })
 
 // Delete an agent
-router.delete('/agent/:agentId', requireAuth, async (req, res) => {
+router.delete('/agent/:agentId', requireAuth, requirePermission('agent:manage'), async (req, res) => {
     try {
         await agentService.deleteAgent(req.params.agentId, req.user.id, req.user.role, req.user.orgId)
         res.json({ success: true, message: 'Agent removed successfully' })
