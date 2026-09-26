@@ -1,6 +1,6 @@
 // Addon plan-gating — keep in sync with frontend src/config/addons.js
 // Free plan may only install these basic add-ons.
-export const FREE_ADDONS = ['ingress', 'dashboard']
+export const FREE_ADDONS = ['dashboard']
 
 // Normalize the various keys the frontend may send for the same addon
 const KEY_ALIASES = {
@@ -28,7 +28,7 @@ export function checkAddonPlan(addons, plan) {
         return {
             allowed: false,
             blocked,
-            error: `Your Free plan includes only basic add-ons (Ingress, Dashboard). ` +
+            error: `Your Free plan includes only the Kubernetes Dashboard add-on. ` +
                    `Upgrade to Pro to install: ${[...new Set(blocked)].join(', ')}.`
         }
     }

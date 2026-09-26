@@ -9,7 +9,7 @@ export const ADDONS_LIST = [
         gradient: 'from-emerald-500 via-green-500 to-teal-600',
         badge: '🔥 Popular',
         badgeColor: 'text-emerald-400 border-emerald-500/30',
-        tier: 'free'
+        tier: 'pro'
     },
     {
         key: 'dashboard',

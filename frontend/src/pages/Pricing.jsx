@@ -89,7 +89,7 @@ export default function Pricing() {
                         <Feature text="1 Admin User" />
                         <Feature text="Standard Installation Engine" />
                         <Feature text="Connect private nodes without firewall changes" />
-                        <Feature text="Basic Addons (Ingress, Dashboard)" />
+                        <Feature text="Kubernetes Dashboard add-on" />
                         <Feature disabled text="Node crashes fix themselves" />
                         <Feature disabled text="Team Members & RBAC" />
                         <Feature disabled text="Daily config backups" />
@@ -135,7 +135,7 @@ export default function Pricing() {
                         <Feature color="text-amber-400" text="5 Team Members & RBAC" />
                         <Feature color="text-amber-400" text="Node crashes fix themselves (Auto-Healing)" />
                         <Feature color="text-amber-400" text="Daily config backups — restore in 1 click" />
-                        <Feature color="text-amber-400" text="All Addons (ArgoCD, Longhorn, Cert-Manager)" />
+                        <Feature color="text-amber-400" text="All Add-ons (Ingress, Monitoring, ArgoCD, Longhorn, Cert-Manager)" />
                         <Feature color="text-amber-400" text="Support response within 24 hours" />
                     </div>
 
