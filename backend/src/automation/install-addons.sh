@@ -19,6 +19,8 @@ kget() { retry 5 curl -fsSL "$1" -o "$2"; }
 k8s_minor() { kubectl version -o json 2>/dev/null | grep -oE '"minor"[: ]+"?[0-9]+' | grep -oE '[0-9]+' | head -1; }
 wait_crd() { local c=$1; for i in $(seq 1 40); do kubectl get crd "$c" >/dev/null 2>&1 && { kubectl wait --for=condition=Established "crd/$c" --timeout=60s >/dev/null 2>&1 && return 0; }; sleep 5; done; return 1; }
 wait_rollout() { retry 3 kubectl rollout status "$1" -n "$2" --timeout="${3:-300s}"; }
+# Wait for a resource to be CREATED (by an operator) before acting on it
+wait_resource() { local kind=$1 name=$2 ns=$3; for i in $(seq 1 60); do kubectl get "$kind" "$name" -n "$ns" >/dev/null 2>&1 && return 0; sleep 5; done; return 1; }
 
 MINOR=$(k8s_minor || echo "")
 log "Detected Kubernetes minor version: 1.${MINOR:-unknown}"
@@ -169,7 +171,16 @@ spec:
 EOF
 
         echo "Waiting for Prometheus to be ready..."
-        echo "Waiting for Prometheus to be ready..."
+        # RACE FIX: the operator creates the StatefulSet asynchronously after the
+        # Prometheus CR is accepted. Wait for it to EXIST before checking rollout,
+        # otherwise 'rollout status' errors with NotFound on the first run.
+        log "Waiting for operator to create the Prometheus StatefulSet..."
+        if ! wait_resource statefulset prometheus-main monitoring; then
+            echo "Error: operator did not create prometheus-main StatefulSet in time"
+            kubectl describe prometheus main -n monitoring | tail -30 || true
+            kubectl get events -n monitoring --sort-by='.lastTimestamp' | tail -20 || true
+            exit 1
+        fi
         if ! kubectl rollout status statefulset/prometheus-main -n monitoring --timeout=600s; then
             echo "Error: Prometheus failed to become ready"
             echo "--- DIAGNOSTIC INFO ---"
