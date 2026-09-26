@@ -6,6 +6,8 @@ import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 import { licenseService } from '../services/licenseService.js'
 import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
+import { checkAddonPlan } from '../config/addonTiers.js'
+import { authService } from '../services/authService.js'
 
 
 const router = express.Router()
@@ -76,6 +78,13 @@ router.post('/install', requirePermission('cluster:create'), async (req, res) =>
         if (!enforcement.allowed) {
             console.error('License limit check failed:', enforcement.error)
             return res.status(402).json({ error: enforcement.error, limitExceeded: true })
+        }
+
+        // Plan-gate add-ons: Free plan may only use basic add-ons
+        const planUser = authService.getUserById(req.user.id)
+        const addonCheck = checkAddonPlan(addons, planUser?.subscription?.plan)
+        if (!addonCheck.allowed) {
+            return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
         }
 
         // Generate installation ID
@@ -430,6 +439,13 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
 
         if (req.user.role !== 'admin' && existingCluster.ownerId !== req.user.id) {
             return res.status(403).json({ error: 'Unauthorized access to this cluster' })
+        }
+
+        // Plan-gate add-ons: Free plan may only use basic add-ons
+        const planUser = authService.getUserById(req.user.id)
+        const addonCheck = checkAddonPlan(addons, planUser?.subscription?.plan)
+        if (!addonCheck.allowed) {
+            return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
         }
 
         const newInstallationId = uuidv4()

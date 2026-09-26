@@ -21,6 +21,7 @@ import {
     ChevronLeft,
     CheckCircle2,
     Info,
+    Lock,
     AlertTriangle,
     FileCode,
     Network,
@@ -89,6 +90,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
     const [agentCheckDone, setAgentCheckDone] = useState(false)
     const [hasOnlineAgent, setHasOnlineAgent] = useState(true) // optimistic until checked
     const [agentCheckLoading, setAgentCheckLoading] = useState(false)
+    const [isFreePlan, setIsFreePlan] = useState(false)
 
     useEffect(() => {
         const checkSaasAndAgents = async () => {
@@ -101,6 +103,12 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                     const agentRes = await apiFetch('/api/agent/has-online')
                     const agentData = agentRes.ok ? await agentRes.json() : { hasOnline: false }
                     setHasOnlineAgent(agentData.hasOnline)
+                }
+                // Determine the user's plan to gate premium add-ons
+                const subRes = await apiFetch('/api/billing/subscription')
+                if (subRes.ok) {
+                    const sub = await subRes.json()
+                    setIsFreePlan(!sub.plan || String(sub.plan).toUpperCase() === 'FREE')
                 }
             } catch (e) {
                 console.warn('Agent gate check failed:', e)
@@ -976,30 +984,46 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                         Sparkles
                                     }
                                     const Icon = iconMap[addon.iconName] || Package;
-                                    const isSelected = formData.addons[addon.key];
+                                    const locked = addon.tier === 'pro' && isFreePlan;
+                                    const isSelected = formData.addons[addon.key] && !locked;
 
                                     return (
                                         <button
                                             key={addon.key}
-                                            onClick={() => setFormData({
-                                                ...formData,
-                                                addons: { ...formData.addons, [addon.key]: !formData.addons[addon.key] }
-                                            })}
-                                            className={`group relative p-6 rounded-2xl border transition-all duration-300 text-left overflow-hidden ${isSelected
+                                            disabled={locked}
+                                            onClick={() => {
+                                                if (locked) {
+                                                    toast({ title: 'Pro add-on', message: `${addon.name} is available on Pro & Enterprise plans. Upgrade to unlock.`, type: 'info' })
+                                                    return
+                                                }
+                                                setFormData({
+                                                    ...formData,
+                                                    addons: { ...formData.addons, [addon.key]: !formData.addons[addon.key] }
+                                                })
+                                            }}
+                                            className={`group relative p-6 rounded-2xl border transition-all duration-300 text-left overflow-hidden ${locked
+                                                ? 'bg-white/[0.02] border-white/5 opacity-60 cursor-not-allowed'
+                                                : isSelected
                                                 ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
                                                 : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
                                                 }`}
                                         >
-                                            {/* Selection Indicator */}
-                                            <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
-                                                ? 'bg-blue-500 border-blue-500 scale-110'
-                                                : 'border-white/20 group-hover:border-white/40'
-                                                }`}>
-                                                {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
-                                            </div>
+                                            {/* Selection Indicator / Lock */}
+                                            {locked ? (
+                                                <div className="absolute top-4 right-4 flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] font-black uppercase tracking-widest">
+                                                    <Lock className="w-3 h-3" /> Pro
+                                                </div>
+                                            ) : (
+                                                <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
+                                                    ? 'bg-blue-500 border-blue-500 scale-110'
+                                                    : 'border-white/20 group-hover:border-white/40'
+                                                    }`}>
+                                                    {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                                </div>
+                                            )}
 
                                             {/* Badge */}
-                                            {addon.badge && (
+                                            {addon.badge && !locked && (
                                                 <div className={`absolute top-4 left-4 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${addon.badgeColor} backdrop-blur-md bg-black/20`}>
                                                     {addon.badge}
                                                 </div>

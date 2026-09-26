@@ -4,13 +4,14 @@ import { useToast } from '../components/ToastProvider'
 import { apiFetch } from '../context/AuthContext'
 import { CardSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
-import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles } from 'lucide-react'
+import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock } from 'lucide-react'
 
 export default function Home({ onStartNew, onScaleExisting }) {
     const { toast } = useToast()
     const navigate = useNavigate()
     const [savedClusters, setSavedClusters] = useState([])
     const [loading, setLoading] = useState(true)
+    const [isFreePlan, setIsFreePlan] = useState(false)
 
     // Add-on Management State
     const [isAddonModalOpen, setIsAddonModalOpen] = useState(false)
@@ -69,6 +70,11 @@ export default function Home({ onStartNew, onScaleExisting }) {
 
     useEffect(() => {
         fetchSavedClusters()
+        // Determine plan to gate premium add-ons
+        apiFetch('/api/billing/subscription')
+            .then(r => r.ok ? r.json() : null)
+            .then(sub => { if (sub) setIsFreePlan(!sub.plan || String(sub.plan).toUpperCase() === 'FREE') })
+            .catch(() => {})
     }, [])
 
     const fetchSavedClusters = async () => {
@@ -156,27 +162,42 @@ export default function Home({ onStartNew, onScaleExisting }) {
                                         Sparkles
                                     };
                                     const Icon = iconMap[addon.iconName] || Package;
-                                    const isSelected = addonSelection[addon.key];
+                                    const locked = addon.tier === 'pro' && isFreePlan;
+                                    const isSelected = addonSelection[addon.key] && !locked;
 
                                     return (
                                         <div
                                             key={addon.key}
-                                            onClick={() => setAddonSelection(p => ({ ...p, [addon.key]: !p[addon.key] }))}
-                                            className={`group relative p-6 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden ${isSelected
-                                                ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10'
-                                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20'
+                                            onClick={() => {
+                                                if (locked) {
+                                                    toast({ title: 'Pro add-on', message: `${addon.name} is available on Pro & Enterprise plans. Upgrade to unlock.`, type: 'info' })
+                                                    return
+                                                }
+                                                setAddonSelection(p => ({ ...p, [addon.key]: !p[addon.key] }))
+                                            }}
+                                            className={`group relative p-6 rounded-2xl border transition-all duration-300 overflow-hidden ${locked
+                                                ? 'bg-white/[0.02] border-white/5 opacity-60 cursor-not-allowed'
+                                                : isSelected
+                                                ? 'bg-blue-500/5 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10 cursor-pointer'
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/20 cursor-pointer'
                                                 }`}
                                         >
-                                            {/* Selection Indicator */}
-                                            <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
-                                                ? 'bg-blue-500 border-blue-500 scale-110'
-                                                : 'border-white/20 group-hover:border-white/40'
-                                                }`}>
-                                                {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
-                                            </div>
+                                            {/* Selection Indicator / Lock */}
+                                            {locked ? (
+                                                <div className="absolute top-4 right-4 flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] font-black uppercase tracking-widest">
+                                                    <Lock className="w-3 h-3" /> Pro
+                                                </div>
+                                            ) : (
+                                                <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-300 ${isSelected
+                                                    ? 'bg-blue-500 border-blue-500 scale-110'
+                                                    : 'border-white/20 group-hover:border-white/40'
+                                                    }`}>
+                                                    {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                                </div>
+                                            )}
 
                                             {/* Badge */}
-                                            {addon.badge && (
+                                            {addon.badge && !locked && (
                                                 <div className={`absolute top-4 left-4 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${addon.badgeColor} backdrop-blur-md bg-black/20`}>
                                                     {addon.badge}
                                                 </div>
