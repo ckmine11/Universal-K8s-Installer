@@ -360,7 +360,23 @@ wss.on('connection', (ws, req) => {
         const id = pathname.split('/').pop()
         console.log(`WebSocket: Installation stream connected for ${id}`)
         installationManager.addClient(id, ws)
-        ws.on('close', () => installationManager.removeClient(id, ws))
+
+        // Keepalive: send a heartbeat every 25s so idle periods (60s waits,
+        // slow kubectl rollouts) don't trip Cloudflare's ~100s WS idle timeout
+        // and drop the connection with code 1006.
+        const heartbeat = setInterval(() => {
+            if (ws.readyState === 1) {
+                try {
+                    ws.ping()
+                    ws.send(JSON.stringify({ type: 'heartbeat', ts: Date.now() }))
+                } catch (_) { /* ignore */ }
+            }
+        }, 25000)
+
+        ws.on('close', () => {
+            clearInterval(heartbeat)
+            installationManager.removeClient(id, ws)
+        })
 
         ws.send(JSON.stringify({ type: 'log', level: 'info', message: 'Connected to KubeEZ installation stream' }))
     }

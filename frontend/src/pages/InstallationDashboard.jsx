@@ -172,86 +172,117 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     }, [status, installationId])
 
     useEffect(() => {
-        // Connect to WebSocket via Nginx proxy on the same port as the UI
+        let closedByUs = false
+        let reconnectAttempts = 0
+        let reconnectTimer = null
+        let statusRef = 'running'
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const host = window.location.host // This includes the port, e.g., 5173
-        const ws = new WebSocket(`${protocol}//${host}/ws/installation/${installationId}`)
-        wsRef.current = ws
+        const host = window.location.host
 
-        ws.onopen = () => {
-            console.log('WebSocket connected')
-            addLog('info', 'Connected to installation stream')
+        // Check the real backend status — used when the socket drops, so we
+        // don't falsely mark a still-running install as failed.
+        const checkBackendStatus = async () => {
+            try {
+                const res = await apiFetch(`/api/clusters/${installationId}/status`)
+                if (!res.ok) return null
+                const data = await res.json()
+                return data?.status || null
+            } catch { return null }
         }
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data)
+        const connect = () => {
+            const ws = new WebSocket(`${protocol}//${host}/ws/installation/${installationId}`)
+            wsRef.current = ws
 
-            if (data.type === 'log') {
-                addLog(data.level, data.message)
-            } else if (data.type === 'progress') {
-                setProgress(data.progress)
-                setCurrentStep(data.step)
-                // Update tracker with progress
-                updateInstallation(installationId, {
-                    progress: data.progress,
-                    currentStep: data.step,
-                    status: 'running'
-                })
-            } else if (data.type === 'status') {
-                setStatus(data.status)
-                // Update tracker with final status
-                updateInstallation(installationId, {
-                    status: data.status,
-                    progress: data.status === 'completed' ? 100 : undefined
-                })
-                if (data.status === 'completed') {
-                    setClusterInfo(data.clusterInfo)
-                    toast({
-                        title: 'Mission Accomplished',
-                        message: 'Infrastructure is now live and fully operational.',
-                        type: 'success'
-                    })
+            ws.onopen = () => {
+                if (reconnectAttempts > 0) {
+                    addLog('info', 'Reconnected to installation stream')
+                } else {
+                    addLog('info', 'Connected to installation stream')
                 }
-                if (data.status === 'failed' && data.diagnosis) {
-                    setErrorState(data.diagnosis)
-                    toast({
-                        title: 'Installation Halted',
-                        message: data.diagnosis.message || 'A critical error occurred.',
-                        type: 'error',
-                        duration: Infinity
+                reconnectAttempts = 0
+            }
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data)
+
+                if (data.type === 'heartbeat') {
+                    return // keepalive — ignore
+                } else if (data.type === 'log') {
+                    addLog(data.level, data.message)
+                } else if (data.type === 'progress') {
+                    statusRef = 'running'
+                    setProgress(data.progress)
+                    setCurrentStep(data.step)
+                    updateInstallation(installationId, {
+                        progress: data.progress,
+                        currentStep: data.step,
+                        status: 'running'
                     })
+                } else if (data.type === 'status') {
+                    statusRef = data.status
+                    setStatus(data.status)
+                    updateInstallation(installationId, {
+                        status: data.status,
+                        progress: data.status === 'completed' ? 100 : undefined
+                    })
+                    if (data.status === 'completed') {
+                        setClusterInfo(data.clusterInfo)
+                        toast({ title: 'Mission Accomplished', message: 'Infrastructure is now live and fully operational.', type: 'success' })
+                    }
+                    if (data.status === 'failed' && data.diagnosis) {
+                        setErrorState(data.diagnosis)
+                        toast({ title: 'Installation Halted', message: data.diagnosis.message || 'A critical error occurred.', type: 'error', duration: Infinity })
+                    }
+                } else if (data.type === 'milestone') {
+                    toast({ title: 'Milestone Reached', message: data.message, type: 'success' })
                 }
-            } else if (data.type === 'milestone') {
-                toast({
-                    title: 'Milestone Reached',
-                    message: data.message,
-                    type: 'success'
-                })
+            }
+
+            ws.onerror = () => {
+                // Don't fail here — let onclose decide whether to reconnect
+                console.warn('WebSocket error (will attempt recovery)')
+            }
+
+            ws.onclose = async (event) => {
+                console.log('WebSocket disconnected', event.code)
+                if (closedByUs) return
+
+                // If the install already finished, nothing to recover
+                if (statusRef === 'completed' || statusRef === 'failed') {
+                    return
+                }
+
+                // Verify real backend state before assuming the worst
+                const backendStatus = await checkBackendStatus()
+                if (backendStatus === 'completed' || backendStatus === 'failed') {
+                    statusRef = backendStatus
+                    setStatus(backendStatus)
+                    updateInstallation(installationId, { status: backendStatus })
+                    return
+                }
+                if (backendStatus === null) {
+                    // Backend truly doesn't know this install (expired/restarted)
+                    addLog('warning', 'Installation session not found on server — it may have finished or expired.')
+                    return
+                }
+
+                // Still running — auto-reconnect with backoff (backend replays logs)
+                reconnectAttempts++
+                const delay = Math.min(2000 * reconnectAttempts, 15000)
+                addLog('info', `Connection dropped — reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts})...`)
+                reconnectTimer = setTimeout(connect, delay)
             }
         }
 
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error)
-            addLog('error', 'Connection error - Installation may have expired')
-            setTimeout(() => {
-                setStatus('failed')
-                setCurrentStep('Installation not found or expired')
-            }, 2000)
-        }
-
-        ws.onclose = (event) => {
-            console.log('WebSocket disconnected', event.code)
-            if (event.code === 1006) {
-                addLog('error', 'Installation session not found')
-                setStatus('failed')
-                setCurrentStep('Installation expired or backend restarted')
-            } else {
-                addLog('info', 'Disconnected from installation stream')
-            }
-        }
+        connect()
 
         return () => {
-            if (ws.readyState === WebSocket.OPEN) {
+            closedByUs = true
+            if (reconnectTimer) clearTimeout(reconnectTimer)
+            const ws = wsRef.current
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
                 ws.close()
             }
         }

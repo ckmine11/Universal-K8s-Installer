@@ -17,7 +17,9 @@ class AgentSSHProxy {
 
     async execCommand(command, config = {}) {
         try {
-            const result = await agentService.relaySSH(this.agentId, this.nodeConfig, command)
+            // 10-min relay timeout — cluster/addon operations (kubectl rollout
+            // status, image pulls) can run for several minutes via the tunnel.
+            const result = await agentService.relaySSH(this.agentId, this.nodeConfig, command, 600000)
             
             // Handle output callbacks if provided
             if (config.onStdout && result.stdout) config.onStdout(Buffer.from(result.stdout))
@@ -936,7 +938,12 @@ class AutomationEngine {
             const addonNames = addonsToInstall.map(a => a.label).join(', ')
             onLog('info', `Installing add-ons: ${addonNames}`)
             onLog('info', 'Waiting 60 seconds for cluster networking to settle and nodes to become Ready...')
-            await this.sleep(60000)
+            // Emit periodic progress so the log stream never goes silent for 60s
+            // (keeps the WebSocket alive through proxies/Cloudflare)
+            for (let s = 15; s <= 60; s += 15) {
+                await this.sleep(15000)
+                onLog('info', `...settling (${s}s / 60s)`)
+            }
 
             const legacyScriptPath = join(__dirname, '../automation/install-addons.sh')
 
