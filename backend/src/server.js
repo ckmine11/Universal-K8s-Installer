@@ -240,7 +240,7 @@ if ! command -v node &>/dev/null; then
   NODE_BIN="$AGENT_DIR/bin/node"
 fi
 
-HOST_URL=$(echo "$SERVER" | sed 's/ws/http/')
+HOST_URL=$(echo "$SERVER" | sed 's|^wss|https|; s|^ws|http|')
 curl -sfL "$HOST_URL/agent-bundle.js" -o agent-bundle.js
 
 echo "[KubeEZ Gateway] Starting Agent in background..."

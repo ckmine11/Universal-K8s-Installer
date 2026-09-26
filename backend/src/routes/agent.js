@@ -18,7 +18,9 @@ router.post('/agent/token', requireAuth, async (req, res) => {
         const wsHost = host.replace(/^http/, 'ws')
         // Generate universal NodeJS command
         const ts = Date.now()
-        const installCommandLinux = `curl -sfL ${host}/agent-install.sh?v=${ts} | bash -s -- --token ${record.token} --agent-id ${record.agentId} --server ${wsHost}`
+        // Quote the URL — zsh (default on macOS) treats the '?' in the query string
+        // as a glob and errors with "no matches found" if left unquoted.
+        const installCommandLinux = `curl -sfL "${host}/agent-install.sh?v=${ts}" | bash -s -- --token ${record.token} --agent-id ${record.agentId} --server ${wsHost}`
         
         const psCmd = `$t="$env:TEMP\\kbagent.ps1"; Invoke-WebRequest -Uri "${host}/agent-install.ps1?v=${ts}" -OutFile $t; & $t -Token ${record.token} -AgentId ${record.agentId} -ServerUrl ${wsHost}`
         const base64Cmd = Buffer.from(psCmd, 'utf16le').toString('base64')
