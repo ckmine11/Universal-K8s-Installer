@@ -27,22 +27,23 @@ router.post('/create-checkout-session', express.json(), requireAuth, async (req,
             return res.status(400).json({ error: 'Invalid plan selected' })
         }
 
-        // Mock Checkout for Development (Bypasses Stripe if no real key is present)
+        // If Stripe isn't configured, DO NOT silently grant a paid plan.
         if (!process.env.STRIPE_SECRET_KEY) {
-            console.log(`[Stripe Mock] Upgrading user ${userId} to ${planName}`)
-            
-            // Mock Webhook Logic
+            // Production: billing is genuinely unavailable — never grant PRO for free.
+            if (process.env.NODE_ENV === 'production') {
+                return res.status(503).json({
+                    error: 'Billing is not configured yet. Please contact sales@k8scluster.space to upgrade.'
+                })
+            }
+
+            // Local/dev only: mock the upgrade so the flow can be tested.
+            console.log(`[Stripe Mock — DEV ONLY] Upgrading user ${userId} to ${planName}`)
             const user = authService.getUserById(userId)
             if (user) {
-                user.subscription = {
-                    plan: planName,
-                    maxClusters: planName === 'PRO' ? 5 : 9999,
-                    maxNodes: planName === 'PRO' ? 20 : 9999
-                }
+                user.subscription = { plan: planName, maxClusters: 10, maxNodes: 50, maxMembers: 5 }
                 authService.saveUsers()
             }
-            
-            return res.json({ url: '/settings?success=true' })
+            return res.json({ url: '/settings?success=true', mock: true })
         }
 
         // Real Stripe Checkout
