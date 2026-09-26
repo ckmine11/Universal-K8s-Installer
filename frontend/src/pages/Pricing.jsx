@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle2, Zap, Shield, ArrowRight, X, Loader2, Mail, ToggleLeft, ToggleRight } from 'lucide-react'
+import { CheckCircle2, Zap, Shield, ArrowRight, X, Loader2, Mail, ChevronDown } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 
 const MONTHLY_PRICE = 49
@@ -129,6 +129,7 @@ export default function Pricing() {
                     </div>
 
                     <div className="space-y-3 mb-6 flex-1">
+                        <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Everything in Free, plus:</p>
                         <Feature color="text-amber-400" text="10 Clusters" />
                         <Feature color="text-amber-400" text="Up to 50 Nodes" />
                         <Feature color="text-amber-400" text="5 Team Members & RBAC" />
@@ -174,10 +175,10 @@ export default function Pricing() {
                     </div>
 
                     <div className="space-y-3 mb-8 flex-1">
+                        <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Everything in Pro, plus:</p>
                         <Feature color="text-blue-400" text="Unlimited Clusters" />
                         <Feature color="text-blue-400" text="Unlimited Nodes" />
                         <Feature color="text-blue-400" text="Unlimited Team Members" />
-                        <Feature color="text-blue-400" text="Everything in Pro" />
                         <Feature color="text-blue-400" text="Dedicated Support + SLA" />
                         <Feature color="text-blue-400" text="Custom Branding / White-label" />
                         <Feature color="text-blue-400" text="On-premise License" />
@@ -193,10 +194,58 @@ export default function Pricing() {
                 </div>
             </div>
 
+            {/* Trust bar */}
+            <div className="max-w-4xl mx-auto mt-14 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[
+                    { t: 'Cancel anytime', d: 'No lock-in, no contracts' },
+                    { t: '14-day money back', d: 'Full refund, no questions' },
+                    { t: 'Your infrastructure', d: 'Runs on your own servers' }
+                ].map((item, i) => (
+                    <div key={i} className="glass rounded-2xl border border-white/8 p-5 text-center">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400 mx-auto mb-2" />
+                        <p className="text-white font-black text-sm">{item.t}</p>
+                        <p className="text-slate-500 text-xs mt-0.5">{item.d}</p>
+                    </div>
+                ))}
+            </div>
+
+            {/* FAQ */}
+            <div className="max-w-3xl mx-auto mt-16">
+                <h2 className="text-2xl font-black text-white text-center mb-8">Frequently Asked Questions</h2>
+                <div className="space-y-3">
+                    {[
+                        { q: 'What happens when I hit my plan limit?', a: 'You\'ll see a clear message and can upgrade instantly. Existing clusters keep running — nothing is deleted.' },
+                        { q: 'Can I change plans later?', a: 'Yes. Upgrade or downgrade anytime. Changes apply immediately and billing is prorated.' },
+                        { q: 'Do I need a credit card for the Free plan?', a: 'No. The Free plan is genuinely free forever — no card required.' },
+                        { q: 'Where do my clusters run?', a: 'On your own servers or VPS. KubeEZ orchestrates them via a secure agent — your data never leaves your infrastructure.' },
+                        { q: 'How does billing work?', a: 'Monthly or annual via Stripe. Annual saves you $120/year. Cancel anytime with a 14-day money-back guarantee.' }
+                    ].map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
+                </div>
+            </div>
+
             {/* Bottom note */}
-            <p className="mt-14 text-center text-slate-600 text-sm">
-                All plans include SSL, WebSocket support, and Cloudflare compatibility.
+            <p className="mt-12 text-center text-slate-600 text-sm">
+                All plans include SSL, WebSocket tunnels, and Cloudflare compatibility.
+                Questions? <a href="mailto:sales@k8scluster.space" className="text-blue-400 hover:underline">Talk to us</a>.
             </p>
+        </div>
+    )
+}
+
+function FAQItem({ q, a }) {
+    const [open, setOpen] = useState(false)
+    return (
+        <div className="glass rounded-2xl border border-white/8 overflow-hidden">
+            <button
+                onClick={() => setOpen(o => !o)}
+                className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors"
+            >
+                <span className="text-sm font-bold text-white">{q}</span>
+                <ChevronDown className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && (
+                <div className="px-5 pb-4 text-sm text-slate-400 leading-relaxed">{a}</div>
+            )}
         </div>
     )
 }
