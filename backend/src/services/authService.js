@@ -165,7 +165,7 @@ class AuthService {
 
     generateToken(user) {
         return jwt.sign(
-            { id: user.id, username: user.username, role: user.role, orgId: user.orgId },
+            { id: user.id, username: user.username, email: user.email, role: user.role, orgId: user.orgId },
             JWT_SECRET,
             { expiresIn: '24h' }
         );

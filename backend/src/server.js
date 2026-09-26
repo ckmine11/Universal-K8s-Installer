@@ -101,7 +101,7 @@ app.post('/api/auth/setup', async (req, res) => {
             sameSite: 'strict',
             maxAge: 24 * 60 * 60 * 1000
         })
-        res.json({ token, user: { id: decoded?.id, username: decoded?.username || username, role: decoded?.role || 'admin', orgId: decoded?.orgId } })
+        res.json({ token, user: { id: decoded?.id, username: decoded?.username || username, email: decoded?.email, role: decoded?.role || 'admin', orgId: decoded?.orgId } })
     } catch (e) {
         res.status(400).json({ error: e.message })
     }
@@ -119,7 +119,7 @@ app.post('/api/auth/register', async (req, res) => {
             sameSite: 'strict',
             maxAge: 24 * 60 * 60 * 1000
         })
-        res.json({ token, user: { id: decoded?.id, username: decoded?.username || username, role: decoded?.role || 'user', orgId: decoded?.orgId } })
+        res.json({ token, user: { id: decoded?.id, username: decoded?.username || username, email: decoded?.email, role: decoded?.role || 'user', orgId: decoded?.orgId } })
     } catch (e) {
         res.status(400).json({ error: e.message })
     }
@@ -158,7 +158,7 @@ app.post('/api/auth/login', async (req, res) => {
             sameSite: 'strict',
             maxAge: 24 * 60 * 60 * 1000
         })
-        res.json({ token, user: { id: decoded?.id, username: decoded?.username, role: decoded?.role, orgId: decoded?.orgId } })
+        res.json({ token, user: { id: decoded?.id, username: decoded?.username, email: decoded?.email, role: decoded?.role, orgId: decoded?.orgId } })
     } catch (e) {
         res.status(401).json({ error: e.message })
     }
@@ -170,7 +170,7 @@ app.post('/api/auth/logout', (req, res) => {
 })
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-    res.json({ id: req.user.id, username: req.user.username, role: req.user.role, orgId: req.user.orgId })
+    res.json({ id: req.user.id, username: req.user.username, email: req.user.email, role: req.user.role, orgId: req.user.orgId })
 })
 
 // Protected Routes

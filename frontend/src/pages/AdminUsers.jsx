@@ -327,6 +327,22 @@ function UserCard({ userItem, currentUser, onRefresh }) {
 export default function AdminUsers() {
     const { user: currentUser } = useAuth()
     const { toast } = useToast()
+
+    // RBAC guard — only Org Admins / Super Admins may manage the team.
+    // Operators/Viewers who type /users directly get a clear access-denied screen.
+    if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+                <div className="p-5 bg-rose-500/10 border border-rose-500/20 rounded-3xl mb-6">
+                    <Lock className="w-10 h-10 text-rose-400" />
+                </div>
+                <h1 className="text-2xl font-black text-white mb-2">Access Restricted</h1>
+                <p className="text-slate-400 max-w-md mb-1">Team &amp; role management is available to workspace admins only.</p>
+                <p className="text-slate-600 text-sm mb-8">Your role: <span className="font-bold text-slate-400">{currentUser.role}</span></p>
+                <a href="/" className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all">Back to Dashboard</a>
+            </div>
+        )
+    }
     const [users, setUsers] = useState([])
     const [seats, setSeats] = useState({ used: 0, max: 1 })
     const [rbac, setRbac] = useState(null)
