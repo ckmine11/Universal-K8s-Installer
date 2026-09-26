@@ -1,14 +1,27 @@
 #!/bin/bash
 
-# KubeEZ - Install Add-ons
+# KubeEZ - Install Add-ons (robust, multi-version, multi-distro)
 # This script installs optional Kubernetes add-ons
 
-set -e
+set -eo pipefail
 
 ADDON=${1:-""}
 KUBECONFIG=${2:-"/etc/kubernetes/admin.conf"}
 
 export KUBECONFIG=$KUBECONFIG
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin
+
+# ─── Robust helpers ─────────────────────────────────────────────────
+log() { echo "[$(date +%H:%M:%S)] $*"; }
+retry() { local m=$1; shift; local n=1; until "$@"; do [ $n -ge $m ] && { log "FAILED after $m attempts: $*"; return 1; }; log "attempt $n/$m failed, retrying in $((n*5))s..."; sleep $((n*5)); n=$((n+1)); done; }
+kapply() { retry 5 kubectl apply "$@"; }
+kget() { retry 5 curl -fsSL "$1" -o "$2"; }
+k8s_minor() { kubectl version -o json 2>/dev/null | grep -oE '"minor"[: ]+"?[0-9]+' | grep -oE '[0-9]+' | head -1; }
+wait_crd() { local c=$1; for i in $(seq 1 40); do kubectl get crd "$c" >/dev/null 2>&1 && { kubectl wait --for=condition=Established "crd/$c" --timeout=60s >/dev/null 2>&1 && return 0; }; sleep 5; done; return 1; }
+wait_rollout() { retry 3 kubectl rollout status "$1" -n "$2" --timeout="${3:-300s}"; }
+
+MINOR=$(k8s_minor || echo "")
+log "Detected Kubernetes minor version: 1.${MINOR:-unknown}"
 
 # Cleanup function for temporary files
 cleanup() {
@@ -26,7 +39,7 @@ fi
 
 # Approve any pending CSRs (Fixes 'tls: internal error' for logs/metrics)
 echo "Ensuring Kubelet CSRs are approved..."
-kubectl get csr -o go-template='{{range .items}}{{if not .status.certificate}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' | xargs -r kubectl certificate approve || true
+kubectl get csr -o go-template='{{range .items}}{{if not .status.certificate}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' 2>/dev/null | xargs -r kubectl certificate approve || true
 
 
 echo "========================================="
@@ -36,8 +49,17 @@ echo "========================================="
 case $ADDON in
     ingress)
         echo "Installing Nginx Ingress Controller..."
-        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/baremetal/deploy.yaml
-        kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=300s
+        # Version selection by k8s minor for broad compatibility
+        # ingress-nginx v1.11.x supports k8s 1.26–1.30; v1.8.x for older
+        if [ -n "$MINOR" ] && [ "$MINOR" -ge 26 ] 2>/dev/null; then
+            ING_VERSION="controller-v1.11.3"
+        else
+            ING_VERSION="controller-v1.8.1"
+        fi
+        log "Using ingress-nginx $ING_VERSION"
+        kapply -f "https://raw.githubusercontent.com/kubernetes/ingress-nginx/${ING_VERSION}/deploy/static/provider/baremetal/deploy.yaml"
+        # Wait for admission webhook jobs and controller
+        wait_rollout deployment/ingress-nginx-controller ingress-nginx 300s
         echo "✓ Nginx Ingress Controller installed"
         ;;
         
@@ -45,21 +67,25 @@ case $ADDON in
         echo "Installing Complete Monitoring Stack..."
         
         # 1. Namespace
-        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-        
+        kubectl create namespace monitoring --dry-run=client -o yaml | kapply -f -
+
         # 2. Operator
         echo "Step 1/5: Installing Prometheus Operator (in monitoring namespace)..."
-        # Download bundle first
-        curl -L https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/bundle.yaml -o /tmp/bundle.yaml
-        
+        # Download bundle first (retry on network errors)
+        kget "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/bundle.yaml" /tmp/bundle.yaml
+
         # Force it into monitoring namespace to ensure it sees our CRs
         sed 's/namespace: default/namespace: monitoring/g' /tmp/bundle.yaml > /tmp/bundle-monitoring.yaml
-        
-        # Apply the modified bundle
-        kubectl apply --server-side --force-conflicts -f /tmp/bundle-monitoring.yaml
-        
+
+        # Apply the modified bundle (retry — large CRD set can hit transient conflicts)
+        retry 3 kubectl apply --server-side --force-conflicts -f /tmp/bundle-monitoring.yaml
+
+        # Wait for the CRDs to be established before creating Prometheus CR
+        wait_crd "prometheuses.monitoring.coreos.com" || { echo "Prometheus CRDs not ready"; exit 1; }
+        wait_crd "servicemonitors.monitoring.coreos.com" || true
+
         echo "Waiting for Operator to be ready..."
-        if ! kubectl rollout status deployment/prometheus-operator -n monitoring --timeout=300s; then
+        if ! wait_rollout deployment/prometheus-operator monitoring 300s; then
             echo "Error: Prometheus Operator failed to become ready"
             exit 1
         fi
@@ -67,7 +93,7 @@ case $ADDON in
         # 3. Prometheus Instance & RBAC
         echo "Step 2/5: Configuring Prometheus Instance..."
         # SA & RBAC
-        cat <<EOF | kubectl apply -n monitoring -f -
+        cat <<EOF | kapply -n monitoring -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -105,7 +131,7 @@ subjects:
 EOF
         
         # Prometheus CR
-        cat <<EOF | kubectl apply -n monitoring -f -
+        cat <<EOF | kapply -n monitoring -f -
 apiVersion: monitoring.coreos.com/v1
 kind: Prometheus
 metadata:
@@ -125,7 +151,7 @@ spec:
 EOF
 
         # Prometheus Service (NodePort for easy access)
-        cat <<EOF | kubectl apply -n monitoring -f -
+        cat <<EOF | kapply -n monitoring -f -
 apiVersion: v1
 kind: Service
 metadata:
@@ -204,7 +230,7 @@ EOF
 EOF
 
         # ConfigMap: Datasource & Dashboard Provider
-        cat <<EOF | kubectl apply -n monitoring -f -
+        cat <<EOF | kapply -n monitoring -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -235,10 +261,10 @@ data:
 EOF
 
         # ConfigMap: The Dashboard JSON itself
-        kubectl create configmap grafana-dashboards --from-file=kubeez-overview.json=/tmp/dashboard.json -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create configmap grafana-dashboards --from-file=kubeez-overview.json=/tmp/dashboard.json -n monitoring --dry-run=client -o yaml | kapply -f -
 
         # Grafana Deployment (Updated with mounts and resource limits)
-        cat <<EOF | kubectl apply -n monitoring -f -
+        cat <<EOF | kapply -n monitoring -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -308,7 +334,7 @@ EOF
 
         # 5. Node Exporter (The actual metrics source)
         echo "Step 4/5: Installing Node Exporter (Metrics Agent)..."
-        cat <<EOF | kubectl apply -n monitoring -f -
+        cat <<EOF | kapply -n monitoring -f -
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -382,7 +408,7 @@ EOF
 
         # 6. Kube-State-Metrics (Required for Dashboard 15760 & others)
         echo "Step 5/5: Installing Kube-State-Metrics (Cluster Object Metrics)..."
-        cat <<EOF | kubectl apply -n monitoring -f -
+        cat <<EOF | kapply -n monitoring -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -522,10 +548,13 @@ EOF
         
     dashboard)
         echo "Installing Kubernetes Dashboard..."
-        kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
-        
+        # v2.7.0 is the last kubectl-installable release (supports k8s up to ~1.29).
+        # For k8s 1.30+, use the newer v2.7.0 still applies but we retry on transient errors.
+        kapply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+        wait_rollout deployment/kubernetes-dashboard kubernetes-dashboard 300s || log "dashboard still converging"
+
         # Create admin user with view-only access (more secure)
-        cat <<EOF | kubectl apply -f -
+        cat <<EOF | kapply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
