@@ -38,7 +38,8 @@ function connect() {
                     username,
                     password,
                     privateKey,
-                    readyTimeout: 30000
+                    tryKeyboard: true,
+                    readyTimeout: 60000
                 });
                 sshSessions.set(ip, ssh);
                 console.log(`[Gateway Agent] Established SSH connection to ${ip}`);

@@ -444,45 +444,50 @@ class AutomationEngine {
 
             // Step 2b: Brute Force Time Sync (Master as Source of Truth)
             onProgress(15, 'Force-Syncing clocks and hostnames...')
-            const masterNode = installation.masterNodes[0]
-            const masterSsh = await this.connectSSH(masterNode)
-            const timeResult = await masterSsh.execCommand('date +"%m%d%H%M%Y.%S"')
-            const masterTime = timeResult.stdout.trim()
-            masterSsh.dispose()
+            if (!this.simulationMode) {
+                const masterNode = installation.masterNodes[0]
+                const masterSsh = await this.connectSSH(masterNode)
+                const timeResult = await masterSsh.execCommand('date +"%m%d%H%M%Y.%S"')
+                const masterTime = timeResult.stdout.trim()
+                masterSsh.dispose()
 
-            const allNodes = [...installation.masterNodes, ...(installation.workerNodes || [])]
-            const hostsEntries = allNodes.map(n => {
-                const raw = n.hostname || `node-${n.ip.replace(/\./g, '-')}`
-                // Sanitize: RFC 952/1123 — only alphanumeric, hyphens, dots, max 63 chars
-                const hn = raw.replace(/[^a-zA-Z0-9\-\.]/g, '').substring(0, 63)
-                return `${n.ip} ${hn}`
-            }).join('\n')
+                const allNodes = [...installation.masterNodes, ...(installation.workerNodes || [])]
+                const hostsEntries = allNodes.map(n => {
+                    const raw = n.hostname || `node-${n.ip.replace(/\./g, '-')}`
+                    // Sanitize: RFC 952/1123 — only alphanumeric, hyphens, dots, max 63 chars
+                    const hn = raw.replace(/[^a-zA-Z0-9\-\.]/g, '').substring(0, 63)
+                    return `${n.ip} ${hn}`
+                }).join('\n')
 
-            for (const node of allNodes) {
-                const nodeSsh = await this.connectSSH(node)
-                // Idempotent host sync & Kernel Persistence
-                const syncCmd = `sudo bash -c '
-                    # Clean previous entries and add new ones
-                    sed -i "/# KubeEZ Managed/d" /etc/hosts
-                    echo "# KubeEZ Managed Start" >> /etc/hosts
-                    echo "${hostsEntries}" >> /etc/hosts
-                    echo "# KubeEZ Managed End" >> /etc/hosts
-                    
-                    # Persist kernel modules across reboots
-                    echo -e "overlay\nbr_netfilter" > /etc/modules-load.d/k8s.conf
-                    modprobe overlay && modprobe br_netfilter
+                for (const node of allNodes) {
+                    const nodeSsh = await this.connectSSH(node)
+                    // Idempotent host sync & Kernel Persistence
+                    const syncCmd = `sudo bash -c '
+                        # Clean previous entries and add new ones
+                        sed -i "/# KubeEZ Managed/d" /etc/hosts
+                        echo "# KubeEZ Managed Start" >> /etc/hosts
+                        echo "${hostsEntries}" >> /etc/hosts
+                        echo "# KubeEZ Managed End" >> /etc/hosts
+                        
+                        # Persist kernel modules across reboots
+                        echo -e "overlay\nbr_netfilter" > /etc/modules-load.d/k8s.conf
+                        modprobe overlay && modprobe br_netfilter
 
-                    # Set date from Master
-                    date "${masterTime}" || true
-                    hwclock -w || true
-                    
-                    # SELinux Hardening (Permissive)
-                    [ -f /etc/sysconfig/selinux ] && sed -i "s/^SELINUX=enforcing/SELINUX=permissive/" /etc/sysconfig/selinux || true
-                    [ -f /etc/selinux/config ] && sed -i "s/^SELINUX=enforcing/SELINUX=permissive/" /etc/selinux/config || true
-                    command -v setenforce &> /dev/null && setenforce 0 || true
-                '`
-                await nodeSsh.execCommand(syncCmd)
-                nodeSsh.dispose()
+                        # Set date from Master
+                        date "${masterTime}" || true
+                        hwclock -w || true
+                        
+                        # SELinux Hardening (Permissive)
+                        [ -f /etc/sysconfig/selinux ] && sed -i "s/^SELINUX=enforcing/SELINUX=permissive/" /etc/sysconfig/selinux || true
+                        [ -f /etc/selinux/config ] && sed -i "s/^SELINUX=enforcing/SELINUX=permissive/" /etc/selinux/config || true
+                        command -v setenforce &> /dev/null && setenforce 0 || true
+                    '`
+                    await nodeSsh.execCommand(syncCmd)
+                    nodeSsh.dispose()
+                }
+            } else {
+                onLog('info', '[SIMULATION] Skipping clock sync and hostname configuration.')
+                await this.sleep(1000)
             }
 
             // Step 3: Install container runtime
