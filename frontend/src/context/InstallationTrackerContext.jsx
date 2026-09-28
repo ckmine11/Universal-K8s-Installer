@@ -10,16 +10,24 @@ export function useInstallationTracker() {
     return useContext(InstallationTrackerContext)
 }
 
+const FINISHED_KEEP_MS = 10 * 60 * 1000 // keep finished installs visible ~10 min
+
+// Drop stale entries: running kept up to 24h; finished (completed/failed/
+// cancelled) kept only ~10 min so old results don't linger as "Active Processes".
+function pruneStale(list) {
+    const now = Date.now()
+    return (Array.isArray(list) ? list : []).filter(i => {
+        const age = now - new Date(i.startedAt || 0).getTime()
+        if (i.status === 'running') return age < MAX_AGE_MS
+        return age < FINISHED_KEEP_MS
+    })
+}
+
 // Load persisted installations from localStorage (survives page refresh)
 function loadPersisted() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY)
-        if (!raw) return []
-        const parsed = JSON.parse(raw)
-        const now = Date.now()
-        return Array.isArray(parsed)
-            ? parsed.filter(i => now - new Date(i.startedAt || 0).getTime() < MAX_AGE_MS)
-            : []
+        return raw ? pruneStale(JSON.parse(raw)) : []
     } catch {
         return []
     }
@@ -107,7 +115,8 @@ export function InstallationTrackerProvider({ children }) {
                         if (dismissedRef.current.has(s.id)) continue
                         byId.set(s.id, { ...byId.get(s.id), ...s })
                     }
-                    return Array.from(byId.values())
+                    // Prune stale finished entries so old results don't linger
+                    return pruneStale(Array.from(byId.values()))
                 })
             } catch { /* offline / auth — ignore, keep local state */ }
         }

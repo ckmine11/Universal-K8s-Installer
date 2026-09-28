@@ -359,18 +359,30 @@ class InstallationManager {
         return this.installations.get(installationId)
     }
 
-    // List all installations this user/org can see — lets the UI recover
-    // a running install after navigating away or refreshing the page.
+    // List installations the UI should surface: anything RUNNING, plus ones that
+    // finished (completed/failed/cancelled) within the last few minutes so the
+    // result is briefly visible. Old finished installs are NOT returned — they
+    // must not resurface as stale "Active Processes" entries.
     getActiveInstallations(userId, orgId) {
+        const RECENT_MS = 10 * 60 * 1000 // show finished installs for 10 min
+        const now = Date.now()
         const result = []
         for (const [id, inst] of this.installations.entries()) {
             const owned = (orgId && inst.orgId === orgId) || (userId && inst.ownerId === userId)
             if (!owned) continue
+
+            const status = inst.status || 'running'
+            if (status !== 'running') {
+                const finishedAt = inst.completedAt || inst.failedAt || inst.cancelledAt
+                const age = finishedAt ? (now - new Date(finishedAt).getTime()) : Infinity
+                if (age > RECENT_MS) continue // too old — don't surface
+            }
+
             result.push({
                 id,
                 clusterName: inst.clusterName || 'Cluster',
                 mode: inst.mode || 'install',
-                status: inst.status || 'running',
+                status,
                 progress: inst.progress || 0,
                 currentStep: inst.currentStep || '',
                 startedAt: inst.startedAt || inst.createdAt || new Date().toISOString()
