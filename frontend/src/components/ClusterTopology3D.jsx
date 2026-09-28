@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Text, Float, Grid, Stars, Line, Html } from '@react-three/drei'
+import { OrbitControls, Text, Grid, Stars, Line, Html } from '@react-three/drei'
 import * as THREE from 'three'
 
 // Status → visual state
@@ -23,8 +23,7 @@ function ClusterNode({ position, role, name, status, ip, onSelect, selected }) {
     useFrame((state) => {
         if (!meshRef.current) return
         const time = state.clock.getElapsedTime()
-        meshRef.current.rotation.y += 0.005
-        // Down/pending nodes pulse to grab attention
+        // No spinning — only down/pending nodes pulse (scale) to grab attention
         if (v.pulse) {
             const p = 1 + Math.sin(time * 4) * 0.12
             meshRef.current.scale.setScalar(p)
@@ -34,8 +33,7 @@ function ClusterNode({ position, role, name, status, ip, onSelect, selected }) {
     })
 
     return (
-        <Float speed={v.pulse ? 4 : 2} rotationIntensity={0.2} floatIntensity={v.pulse ? 1 : 0.5}>
-            <group position={position}>
+        <group position={position}>
                 {/* Selection halo */}
                 {selected && (
                     <mesh rotation={[Math.PI / 2, 0, 0]}>
@@ -97,7 +95,6 @@ function ClusterNode({ position, role, name, status, ip, onSelect, selected }) {
                     </Html>
                 )}
             </group>
-        </Float>
     )
 }
 
@@ -124,7 +121,7 @@ function TrafficPulse({ start, end }) {
     )
 }
 
-function Scene({ clusterInfo, pulses = [], onSelect, selected, autoRotate }) {
+function Scene({ clusterInfo, pulses = [], onSelect, selected }) {
     const masterNodes = clusterInfo?.nodes?.filter(n => n.role === 'master') || []
     const workerNodes = clusterInfo?.nodes?.filter(n => n.role === 'worker') || []
     const masterPos = [0, 1, 0]
@@ -187,7 +184,7 @@ function Scene({ clusterInfo, pulses = [], onSelect, selected, autoRotate }) {
                 <TrafficPulse key={pulse.id} start={nodePositionMap.get(pulse.from) || masterPos} end={nodePositionMap.get(pulse.to) || masterPos} />
             ))}
 
-            <OrbitControls autoRotate={autoRotate} autoRotateSpeed={0.4} enablePan enableZoom minDistance={4} maxDistance={20} minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
+            <OrbitControls autoRotate={false} enablePan enableZoom minDistance={4} maxDistance={20} minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
         </>
     )
 }
@@ -196,7 +193,6 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
     const hasData = clusterInfo?.nodes && clusterInfo.nodes.length > 0
     const [pulses, setPulses] = React.useState([])
     const [selected, setSelected] = React.useState(null)
-    const [autoRotate, setAutoRotate] = React.useState(false) // static by default — user can enable
 
     const nodes = clusterInfo?.nodes || []
     const downCount = nodes.filter(n => { const s = (n.status || '').toLowerCase(); return s && s !== 'ready' && s !== 'pending' && s !== 'running' }).length
@@ -280,18 +276,14 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
             )}
 
             {/* Controls */}
-            <div className="absolute top-16 right-4 z-10 flex flex-col gap-2">
-                <button onClick={() => setAutoRotate(r => !r)}
-                    className="bg-black/50 backdrop-blur-md rounded-lg px-3 py-1.5 border border-white/10 text-[10px] font-bold text-slate-300 hover:bg-white/10 transition-all">
-                    {autoRotate ? '⏸ Stop Rotate' : '▶ Auto Rotate'}
-                </button>
-                {selected && (
+            {selected && (
+                <div className="absolute top-16 right-4 z-10">
                     <button onClick={() => setSelected(null)}
                         className="bg-black/50 backdrop-blur-md rounded-lg px-3 py-1.5 border border-white/10 text-[10px] font-bold text-slate-300 hover:bg-white/10 transition-all">
                         ✕ Deselect
                     </button>
-                )}
-            </div>
+                </div>
+            )}
 
             {/* Selected node detail panel */}
             {selected && (
@@ -311,7 +303,7 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
             )}
 
             <Canvas camera={{ position: [0, 4, 8], fov: 60 }} onCreated={(state) => state.gl.setClearColor('#000000', 0)}>
-                <Scene clusterInfo={clusterInfo} pulses={pulses} onSelect={setSelected} selected={selected} autoRotate={autoRotate} />
+                <Scene clusterInfo={clusterInfo} pulses={pulses} onSelect={setSelected} selected={selected} />
             </Canvas>
         </div>
     )
