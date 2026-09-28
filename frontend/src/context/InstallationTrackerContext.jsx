@@ -109,11 +109,21 @@ export function InstallationTrackerProvider({ children }) {
                 if (cancelled || !Array.isArray(serverList)) return
 
                 setActiveInstallations(prev => {
+                    const serverIds = new Set(serverList.map(s => s.id))
                     const byId = new Map(prev.map(i => [i.id, i]))
                     for (const s of serverList) {
                         // Skip anything the user has explicitly dismissed
                         if (dismissedRef.current.has(s.id)) continue
                         byId.set(s.id, { ...byId.get(s.id), ...s })
+                    }
+                    // Reconcile: the backend is the source of truth for what's
+                    // actually running. A local 'running' entry the backend no
+                    // longer reports is stale (it finished, or the server
+                    // restarted) — drop it so the header stops showing 'Installing...'.
+                    for (const [id, entry] of byId) {
+                        if (entry.status === 'running' && !serverIds.has(id)) {
+                            byId.delete(id)
+                        }
                     }
                     // Prune stale finished entries so old results don't linger
                     return pruneStale(Array.from(byId.values()))
