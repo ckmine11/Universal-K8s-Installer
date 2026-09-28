@@ -7,20 +7,61 @@
 set -e
 
 # ─────────────────────────────────────────────────────────────
-# PRE-STEP: Run Universal OS Repo & DNS fixer FIRST
-# This fixes CentOS 7 EOL repos, DNS, IPv6, SSL issues on any OS
+# PRE-STEP: Universal OS Repo & DNS Fix (self-contained)
+# This is the FIRST yum/apt operation in the install flow, so the repair
+# MUST be inline (the script is uploaded standalone — no fix-os-repos.sh here).
 # ─────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "${SCRIPT_DIR}/fix-os-repos.sh" ]; then
-    echo "Running Universal OS repo/DNS pre-flight fixer..."
-    bash "${SCRIPT_DIR}/fix-os-repos.sh"
-else
-    # Inline minimal DNS fix as fallback
-    cat > /etc/resolv.conf <<'DNSEOF'
-nameserver 8.8.8.8
-nameserver 1.1.1.1
-DNSEOF
-fi
+prepare_os_repos() {
+    echo "[repo-prep] Preparing OS repositories (DNS, IPv4, EOL mirrors)..."
+    if ! grep -q '8.8.8.8' /etc/resolv.conf 2>/dev/null; then
+        cp /etc/resolv.conf /etc/resolv.conf.kubeez-bak 2>/dev/null || true
+        printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:2 attempts:3\n' > /etc/resolv.conf 2>/dev/null || true
+    fi
+    if command -v yum &>/dev/null || command -v dnf &>/dev/null; then
+        grep -q '^ip_resolve' /etc/yum.conf 2>/dev/null || echo 'ip_resolve=4' >> /etc/yum.conf 2>/dev/null || true
+        [ -f /etc/dnf/dnf.conf ] && { grep -q '^ip_resolve' /etc/dnf/dnf.conf 2>/dev/null || echo 'ip_resolve=4' >> /etc/dnf/dnf.conf 2>/dev/null || true; }
+        . /etc/os-release 2>/dev/null || true
+        if [ "${ID:-}" = "centos" ] && [ "$(echo "${VERSION_ID:-0}" | cut -d. -f1)" = "7" ]; then
+            echo "[repo-prep] CentOS 7 (EOL) — repointing to vault.centos.org"
+            rm -f /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+            cat > /etc/yum.repos.d/CentOS-Vault.repo <<'REPOEOF'
+[base]
+name=CentOS-7 - Base (Vault)
+baseurl=http://vault.centos.org/centos/7/os/$basearch/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+
+[updates]
+name=CentOS-7 - Updates (Vault)
+baseurl=http://vault.centos.org/centos/7/updates/$basearch/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+
+[extras]
+name=CentOS-7 - Extras (Vault)
+baseurl=http://vault.centos.org/centos/7/extras/$basearch/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+REPOEOF
+            yum clean all 2>/dev/null || true
+            rm -rf /var/cache/yum/* 2>/dev/null || true
+        fi
+    fi
+    if command -v apt-get &>/dev/null; then
+        mkdir -p /etc/apt/apt.conf.d
+        printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99kubeez-ipv4 2>/dev/null || true
+    fi
+}
+prepare_os_repos || echo "[repo-prep] warning: continuing despite repo prep issue"
 
 NODE_TYPE=$1 # 'master' or 'worker'
 
@@ -49,10 +90,13 @@ fi
 
 # Detect OS and Install deps
 if command -v apt-get &> /dev/null; then
-    apt-get update && apt-get install -y psmisc conntrack socat ipset chrony
+    apt-get update || true   # non-fatal: broken 3rd-party repo shouldn't abort
+    apt-get install -y psmisc conntrack socat ipset chrony || true
 elif command -v yum &> /dev/null; then
     echo "Installing dependencies via YUM..."
-    yum install -y psmisc conntrack-tools socat ipset chrony
+    # skip_if_unavailable: broken/EOL OS repos must not block dependency install
+    yum install -y psmisc conntrack-tools socat ipset chrony --setopt=*.skip_if_unavailable=1 || \
+        yum install -y psmisc conntrack-tools socat ipset chrony || true
 fi
 
 # Kernel params for any OS
