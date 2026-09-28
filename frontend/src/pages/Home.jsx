@@ -5,7 +5,7 @@ import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
-import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock } from 'lucide-react'
+import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock, Eye } from 'lucide-react'
 
 export default function Home({ onStartNew, onScaleExisting }) {
     const { toast } = useToast()
@@ -278,7 +278,8 @@ export default function Home({ onStartNew, onScaleExisting }) {
             {/* Ambient Background Glow */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/20 rounded-full blur-[120px] pointer-events-none opacity-50 animate-pulse"></div>
 
-            {/* Main Action Cards */}
+            {/* Main Action Cards — create/scale entry points (hidden for read-only viewers) */}
+            {canCreate ? (
             <div className={`grid grid-cols-1 md:grid-cols-2 gap-8 mb-20 relative z-10 w-full max-w-4xl transition-all duration-500 ${savedClusters.length > 0 ? 'scale-95 opacity-90 hover:scale-100 hover:opacity-100' : 'scale-100'}`}>
                 {/* Deployment Card */}
                 <button
@@ -352,6 +353,20 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     </div>
                 </button>
             </div>
+            ) : (
+                <div className="relative z-10 w-full max-w-4xl mb-20">
+                    <div className="glass rounded-3xl border border-white/5 p-8 text-center">
+                        <div className="w-14 h-14 rounded-2xl bg-slate-500/10 border border-slate-500/20 flex items-center justify-center mx-auto mb-4">
+                            <Eye className="w-7 h-7 text-slate-400" />
+                        </div>
+                        <h2 className="text-xl font-black text-white mb-2">Read-only Access</h2>
+                        <p className="text-slate-400 text-sm max-w-md mx-auto">
+                            Your role is <span className="text-slate-200 font-bold">Viewer</span> — you can monitor clusters, health and
+                            incidents, but cannot create, scale, upgrade or delete. Ask an Operator or Admin to make changes.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Managed Fleet Section - Only shows if relevant */}
             {savedClusters.length > 0 && (
