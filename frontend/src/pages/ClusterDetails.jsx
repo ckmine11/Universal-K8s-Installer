@@ -337,6 +337,9 @@ export default function ClusterDetails({ onScaleCluster }) {
                                             status: n.status || (health ? 'Ready' : 'Pending')
                                         }))
                                     }}
+                                    stats={health && !health.error ? {
+                                        cpu: health.cpu, mem: health.mem, disk: health.disk, pods: health.pods
+                                    } : null}
                                     height="500px"
                                 />
                             </div>
