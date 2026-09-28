@@ -8,6 +8,7 @@ import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
+import { can } from '../config/permissions.js'
 
 
 const router = express.Router()
@@ -201,7 +202,7 @@ router.get('/:id/logs', (req, res) => {
 })
 
 // Cancel installation
-router.post('/:id/cancel', (req, res) => {
+router.post('/:id/cancel', requirePermission('cluster:delete'), (req, res) => {
     const { id } = req.params
     const status = installationManager.getStatus(id)
 
@@ -357,6 +358,19 @@ router.get('/:id/addons/access', requireAuth, async (req, res) => {
         }
 
         const info = await addonAccessService.getAccessInfo(cluster)
+
+        // Viewers may see WHICH add-ons are installed + their URLs, but NOT the
+        // sensitive login credentials/tokens. Redact auth for those roles.
+        const canSeeCreds = can(req.user.role, 'addon:credentials')
+        if (!canSeeCreds && info && Array.isArray(info.addons)) {
+            info.addons = info.addons.map(a => {
+                if (!a || !a.auth) return a
+                const { auth, ...rest } = a
+                return { ...rest, credentialsHidden: true }
+            })
+            info.credentialsHidden = true
+        }
+
         res.json(info)
     } catch (error) {
         console.error('Addon access error:', error)

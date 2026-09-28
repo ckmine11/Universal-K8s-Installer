@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../context/AuthContext'
 import {
     Globe, Activity, BarChart3, LayoutDashboard, Shield, Database, GitBranch,
-    ExternalLink, Copy, Check, Eye, EyeOff, RefreshCw, Loader2, KeyRound, Package
+    ExternalLink, Copy, Check, Eye, EyeOff, RefreshCw, Loader2, KeyRound, Package, Lock
 } from 'lucide-react'
 
 const ICONS = {
@@ -78,7 +78,9 @@ export default function AddonAccessPanel({ clusterId }) {
                     <Package className="w-5 h-5 text-blue-400" />
                     <div>
                         <h3 className="text-lg font-black text-white tracking-tight">Installed Add-ons</h3>
-                        <p className="text-slate-500 text-xs mt-0.5">Access URLs & credentials — no server login needed</p>
+                        <p className="text-slate-500 text-xs mt-0.5">
+                            {data?.credentialsHidden ? 'Access URLs (credentials hidden for your role)' : 'Access URLs & credentials — no server login needed'}
+                        </p>
                     </div>
                 </div>
                 <button
@@ -187,6 +189,16 @@ export default function AddonAccessPanel({ clusterId }) {
                                                 <Secret value={addon.auth.token} />
                                             </div>
                                         )}
+                                    </div>
+                                )}
+
+                                {/* Credentials hidden for viewers */}
+                                {addon.credentialsHidden && (
+                                    <div className="flex items-start gap-2 mb-3 bg-amber-500/[0.04] border border-amber-500/20 rounded-xl p-3">
+                                        <Lock className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                                        <p className="text-[11px] text-amber-300/90 leading-relaxed">
+                                            Login credentials are hidden for your role. Ask an <span className="font-bold">Operator</span> or <span className="font-bold">Admin</span> for access.
+                                        </p>
                                     </div>
                                 )}
 

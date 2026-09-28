@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
-import { apiFetch } from '../context/AuthContext'
+import { apiFetch, useAuth } from '../context/AuthContext'
+import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
 import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock } from 'lucide-react'
 
 export default function Home({ onStartNew, onScaleExisting }) {
     const { toast } = useToast()
+    const { user } = useAuth()
     const navigate = useNavigate()
+    const canDelete = can(user?.role, 'cluster:delete')
+    const canCreate = can(user?.role, 'cluster:create')
     const [savedClusters, setSavedClusters] = useState([])
     const [loading, setLoading] = useState(true)
     const [isFreePlan, setIsFreePlan] = useState(false)
@@ -97,12 +101,24 @@ export default function Home({ onStartNew, onScaleExisting }) {
 
     const handleDeleteCluster = async (e, id) => {
         e.stopPropagation()
+        if (!canDelete) {
+            toast({ title: 'Not Allowed', message: 'Your role does not permit deleting clusters.', type: 'error' })
+            return
+        }
         if (!window.confirm('Are you sure you want to remove this cluster from management?')) return
 
         try {
-            await apiFetch(`/api/clusters/${id}`, {
+            const res = await apiFetch(`/api/clusters/${id}`, {
                 method: 'DELETE'
             })
+            // apiFetch does not throw on non-2xx — must check the status explicitly,
+            // otherwise a 403 (permission denied) would still remove it from the UI.
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                throw new Error(data.error || (res.status === 403
+                    ? 'You do not have permission to delete clusters.'
+                    : 'Failed to delete cluster record.'))
+            }
             setSavedClusters(prev => prev.filter(c => c.id !== id))
             toast({
                 title: 'Removed',
@@ -112,7 +128,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
         } catch (error) {
             toast({
                 title: 'Action Failed',
-                message: 'Failed to delete cluster record.',
+                message: error.message || 'Failed to delete cluster record.',
                 type: 'error'
             })
         }
@@ -386,27 +402,31 @@ export default function Home({ onStartNew, onScaleExisting }) {
                                 </div>
 
                                 <div className="flex items-center space-x-4">
-                                    <button
-                                        onClick={(e) => handleDeleteCluster(e, cluster.id)}
-                                        className="p-4 bg-white/5 hover:bg-red-500/10 text-slate-600 hover:text-red-400 rounded-2xl border border-white/5 hover:border-red-500/20 transition-all opacity-0 group-hover:opacity-100"
-                                        title="Remove from dashboard"
-                                    >
-                                        <Trash2 className="w-5 h-5" />
-                                    </button>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            setSelectedClusterId(cluster.id)
-                                            setIsAddonModalOpen(true)
-                                        }}
-                                        className="px-6 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 group-hover:scale-105 transition-all flex items-center gap-2"
-                                    >
-                                        <Package className="w-4 h-4" />
-                                        <span>Add-ons</span>
-                                    </button>
+                                    {canDelete && (
+                                        <button
+                                            onClick={(e) => handleDeleteCluster(e, cluster.id)}
+                                            className="p-4 bg-white/5 hover:bg-red-500/10 text-slate-600 hover:text-red-400 rounded-2xl border border-white/5 hover:border-red-500/20 transition-all opacity-0 group-hover:opacity-100"
+                                            title="Remove from dashboard"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                    {canCreate && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setSelectedClusterId(cluster.id)
+                                                setIsAddonModalOpen(true)
+                                            }}
+                                            className="px-6 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 group-hover:scale-105 transition-all flex items-center gap-2"
+                                        >
+                                            <Package className="w-4 h-4" />
+                                            <span>Add-ons</span>
+                                        </button>
+                                    )}
                                     <div className="px-8 py-4 bg-blue-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-600/20 group-hover:scale-105 transition-all flex items-center gap-2">
                                         <Settings className="w-4 h-4" />
-                                        <span>Manage & Scale</span>
+                                        <span>{canCreate ? 'Manage & Scale' : 'View Details'}</span>
                                     </div>
                                 </div>
                             </div>

@@ -31,7 +31,7 @@ export const ROLES = {
     viewer: {
         key: 'viewer',
         label: 'Viewer',
-        description: 'Read-only. Can view clusters, health, incidents and add-on access — cannot make changes.',
+        description: 'Read-only. Can view clusters, health, incidents and which add-ons are installed — but NOT their credentials/tokens, and cannot make any changes (no create, delete, scale, upgrade).',
         assignable: true
     }
 }
@@ -48,7 +48,8 @@ export const PERMISSIONS = {
     'cluster:resume':    ['admin', 'operator'],
 
     // Add-ons
-    'addon:view':        ['admin', 'operator', 'viewer'],
+    'addon:view':        ['admin', 'operator', 'viewer'],   // see which add-ons are installed + their URLs
+    'addon:credentials': ['admin', 'operator'],             // see sensitive login credentials/tokens
     'addon:install':     ['admin', 'operator'],
 
     // Access to sensitive cluster material
@@ -79,7 +80,8 @@ export const PERMISSION_GROUPS = [
         { key: 'cluster:delete',  label: 'Delete clusters' }
     ]},
     { group: 'Add-ons & Access', items: [
-        { key: 'addon:view',          label: 'View add-on access info' },
+        { key: 'addon:view',          label: 'View installed add-ons & URLs' },
+        { key: 'addon:credentials',   label: 'View add-on credentials/tokens' },
         { key: 'addon:install',       label: 'Install add-ons' },
         { key: 'kubeconfig:download', label: 'Download kubeconfig' },
         { key: 'terminal:access',     label: 'Use the cluster terminal' }
