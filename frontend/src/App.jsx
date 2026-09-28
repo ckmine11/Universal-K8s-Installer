@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { InstallationTrackerProvider } from './context/InstallationTrackerContext'
 import ActiveInstallationIndicator from './components/ActiveInstallationIndicator'
+import IncidentNotifier from './components/IncidentNotifier'
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
@@ -64,6 +65,7 @@ function AuthenticatedApp() {
         <div className="min-h-screen">
             <Header />
             <ActiveInstallationIndicator />
+            <IncidentNotifier />
 
             <main className="container mx-auto px-4 py-8">
                 <Routes>
