@@ -73,6 +73,26 @@ log "Detected Package Manager: $PKG_MGR"
 if [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
     log "Preparing OS repositories (DNS, IPv4, EOL mirrors)..."
 
+    # ── FIRST: heal the RPM database BEFORE any rpm/yum command runs ──────────
+    # A prior crash (SIGBUS) can leave Berkeley DB in DB_RUNRECOVERY state, which
+    # makes every subsequent rpm/yum call fail with 'rpmdb open failed'. Recover
+    # it up front so nothing downstream trips over a corrupt DB.
+    heal_rpmdb() {
+        if rpm -q rpm >/dev/null 2>&1; then
+            return 0   # DB opens fine — nothing to do
+        fi
+        log "🔧 RPM database is corrupt — running recovery..."
+        rm -f /var/lib/rpm/__db.* 2>/dev/null || true
+        # Berkeley DB recovery (package name differs across versions)
+        (command -v db_recover >/dev/null 2>&1 && db_recover -h /var/lib/rpm) 2>/dev/null || \
+        (command -v /usr/lib/rpm/rpmdb_recover >/dev/null 2>&1 && /usr/lib/rpm/rpmdb_recover -h /var/lib/rpm) 2>/dev/null || true
+        rpm --rebuilddb 2>/dev/null || true
+        yum clean all 2>/dev/null || true
+        rm -rf /var/cache/yum/* 2>/dev/null || true
+        log "✓ RPM database recovery attempted"
+    }
+    heal_rpmdb
+
     # Force IPv4 (fixes curl#7 on nodes without IPv6)
     grep -q '^ip_resolve' /etc/yum.conf 2>/dev/null || echo 'ip_resolve=4' >> /etc/yum.conf 2>/dev/null || true
     [ -f /etc/dnf/dnf.conf ] && { grep -q '^ip_resolve' /etc/dnf/dnf.conf 2>/dev/null || echo 'ip_resolve=4' >> /etc/dnf/dnf.conf 2>/dev/null || true; }
@@ -187,6 +207,8 @@ EOF
     rpmdb_repair() {
         echo "🔧 Repairing RPM database..."
         rm -f /var/lib/rpm/__db.* 2>/dev/null || true
+        (command -v db_recover >/dev/null 2>&1 && db_recover -h /var/lib/rpm) 2>/dev/null || \
+        (command -v /usr/lib/rpm/rpmdb_recover >/dev/null 2>&1 && /usr/lib/rpm/rpmdb_recover -h /var/lib/rpm) 2>/dev/null || true
         rpm --rebuilddb 2>/dev/null || true
         yum clean all 2>/dev/null || true
         rm -rf /var/cache/yum/* 2>/dev/null || true

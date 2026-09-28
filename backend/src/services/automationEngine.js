@@ -1103,13 +1103,21 @@ class AutomationEngine {
                     } catch (err) {
                         // Auto-heal: if the failure is a broken/EOL OS repo, fix it and retry once
                         const diag = err.diagnosis?.fixAction
+                        const msg = err.message || ''
                         const isRepoIssue = diag === 'fix_centos7_repos' || diag === 'fix_ipv6_force' || diag === 'fix_dns_resolv'
-                            || /vault\.centos\.org|no more mirrors|403 - forbidden|could not resolve/i.test(err.message || '')
-                        if (!isRepoIssue) throw err
+                            || /vault\.centos\.org|no more mirrors|403 - forbidden|could not resolve/i.test(msg)
+                        // RPM DB corruption (Berkeley DB) / package-manager crash
+                        const isRpmDbIssue = /rpmdb|BDB\d|DB_RUNRECOVERY|bus error|core dumped|rpmdb open failed/i.test(msg)
+                        if (!isRepoIssue && !isRpmDbIssue) throw err
 
-                        onLog('warning', `⚠️ Repository issue detected on ${node.ip}. Auto-healing OS repos and retrying...`)
-                        await this.runFix('fix_centos7_repos', node, onLog)
+                        if (isRpmDbIssue) {
+                            onLog('warning', `⚠️ RPM database corruption detected on ${node.ip}. The script will rebuild it and retry...`)
+                        } else {
+                            onLog('warning', `⚠️ Repository issue detected on ${node.ip}. Auto-healing OS repos and retrying...`)
+                            await this.runFix('fix_centos7_repos', node, onLog)
+                        }
                         onLog('info', `Retrying upgrade on ${node.ip}...`)
+                        // Re-running the script re-runs its built-in RPM DB recovery first
                         await this.executeScript(ssh, scriptPath, args, onLog)
                     }
 
