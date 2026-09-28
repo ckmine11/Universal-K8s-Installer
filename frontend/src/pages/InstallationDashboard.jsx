@@ -466,6 +466,22 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                     )}
                                 </button>
                             </div>
+
+                            {/* Live transparency during fixing */}
+                            {isFixing && (
+                                <div className="mt-5 p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl">
+                                    <p className="text-blue-300 text-sm font-bold mb-2 flex items-center gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin" /> Auto-Doctor is repairing the node
+                                    </p>
+                                    <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+                                        <li>Setting reliable DNS (8.8.8.8, 1.1.1.1)</li>
+                                        <li>Forcing IPv4 for package downloads</li>
+                                        <li>Repointing EOL repositories to the working archive</li>
+                                        <li>Clearing stale cache, then resuming the installation</li>
+                                    </ul>
+                                    <p className="text-[11px] text-slate-500 mt-2">Watch the live log below for step-by-step progress.</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -227,27 +227,43 @@ class AutomationEngine {
                 onLog('success', '✓ Kubernetes state reset. Ready for clean install.')
             }
             else if (fixAction === 'fix_centos7_repos' || fixAction === 'fix_ipv6_force') {
-                // Run the universal fix script on the remote node
-                onLog('info', '🔧 Running universal OS repo & DNS fixer on node...')
-                const fixScript = readFileSync(
-                    join(__dirname, '../automation/fix-os-repos.sh'), 'utf8'
-                )
-                const tmpPath = `/tmp/kubeez-fix-repos-${Date.now()}.sh`
-                await ssh.execCommand(`cat > ${tmpPath} << 'EOFSCRIPT'\n${fixScript}\nEOFSCRIPT`)
-                await ssh.execCommand(`chmod +x ${tmpPath}`)
-                const fixResult = await ssh.execCommand(`sudo bash ${tmpPath}`, {
-                    onStdout: (chunk) => {
-                        chunk.toString('utf8').split('\n').forEach(l => { if (l.trim()) onLog('info', l) })
-                    },
-                    onStderr: (chunk) => {
-                        chunk.toString('utf8').split('\n').forEach(l => { if (l.trim()) onLog('warning', l) })
-                    }
-                })
-                await ssh.execCommand(`rm -f ${tmpPath}`)
-                if (fixResult.code !== 0) {
-                    throw new Error('fix-os-repos.sh failed: ' + fixResult.stderr)
+                // Fast, transparent, step-by-step repo repair (no slow makecache —
+                // skip_if_unavailable in the repo files handles broken mirrors, and
+                // the retried install fetches only what it needs).
+                onLog('info', '🩺 Auto-Doctor: Repairing OS package repositories...')
+
+                onLog('info', '  → Step 1/4: Setting reliable DNS (8.8.8.8, 1.1.1.1)...')
+                await ssh.execCommand(`sudo bash -c 'grep -q 8.8.8.8 /etc/resolv.conf 2>/dev/null || printf "nameserver 8.8.8.8\\nnameserver 1.1.1.1\\noptions timeout:2 attempts:3\\n" > /etc/resolv.conf' || true`)
+
+                onLog('info', '  → Step 2/4: Forcing IPv4 for package managers...')
+                await ssh.execCommand(`sudo bash -c 'grep -q ^ip_resolve /etc/yum.conf 2>/dev/null || echo ip_resolve=4 >> /etc/yum.conf' || true`)
+                await ssh.execCommand(`sudo bash -c '[ -f /etc/dnf/dnf.conf ] && { grep -q ^ip_resolve /etc/dnf/dnf.conf || echo ip_resolve=4 >> /etc/dnf/dnf.conf; }' || true`)
+
+                onLog('info', '  → Step 3/4: Detecting OS version...')
+                const osCheck = await ssh.execCommand('. /etc/os-release 2>/dev/null; echo "${ID:-unknown} ${VERSION_ID:-0}"')
+                const osStr = (osCheck.stdout || '').trim()
+                onLog('info', `      Detected: ${osStr}`)
+
+                if (/^centos 7/i.test(osStr)) {
+                    onLog('info', '  → Step 4/4: CentOS 7 is End-of-Life — repointing repos to vault.centos.org archive...')
+                    const vaultRepo = [
+                        '[base]', 'name=CentOS-7 - Base (Vault)', 'baseurl=http://vault.centos.org/centos/7/os/$basearch/', 'gpgcheck=0', 'enabled=1', 'skip_if_unavailable=1', 'timeout=15', 'ip_resolve=4', '',
+                        '[updates]', 'name=CentOS-7 - Updates (Vault)', 'baseurl=http://vault.centos.org/centos/7/updates/$basearch/', 'gpgcheck=0', 'enabled=1', 'skip_if_unavailable=1', 'timeout=15', 'ip_resolve=4', '',
+                        '[extras]', 'name=CentOS-7 - Extras (Vault)', 'baseurl=http://vault.centos.org/centos/7/extras/$basearch/', 'gpgcheck=0', 'enabled=1', 'skip_if_unavailable=1', 'timeout=15', 'ip_resolve=4'
+                    ].join('\n')
+                    await ssh.execCommand(`sudo rm -f /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true`)
+                    await ssh.execCommand(`sudo bash -c 'cat > /etc/yum.repos.d/CentOS-Vault.repo <<"VAULTEOF"\n${vaultRepo}\nVAULTEOF'`)
+                    onLog('info', '      Clearing stale package cache...')
+                    await ssh.execCommand('sudo yum clean all 2>/dev/null || true')
+                    await ssh.execCommand('sudo rm -rf /var/cache/yum/* 2>/dev/null || true')
+                    onLog('success', '✓ CentOS 7 repos repaired → vault archive, broken mirrors will be skipped automatically.')
+                } else if (/ubuntu|debian/i.test(osStr)) {
+                    onLog('info', '  → Step 4/4: Forcing IPv4 + retries for APT...')
+                    await ssh.execCommand(`sudo bash -c 'mkdir -p /etc/apt/apt.conf.d; printf "Acquire::ForceIPv4 \\"true\\";\\nAcquire::Retries \\"3\\";\\n" > /etc/apt/apt.conf.d/99kubeez-ipv4' || true`)
+                    onLog('success', '✓ APT configured for reliable IPv4 downloads.')
+                } else {
+                    onLog('success', '✓ DNS and IPv4 configured for package downloads.')
                 }
-                onLog('success', '✓ CentOS 7 EOL repos patched. DNS and IPv4 configured.')
             }
             else if (fixAction === 'fix_dns_resolv' || fixAction === 'retry_connection') {
                 // Force DNS + IPv4
