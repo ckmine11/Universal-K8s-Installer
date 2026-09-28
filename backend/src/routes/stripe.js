@@ -40,7 +40,8 @@ router.post('/create-checkout-session', express.json(), requireAuth, async (req,
             console.log(`[Stripe Mock — DEV ONLY] Upgrading user ${userId} to ${planName}`)
             const user = authService.getUserById(userId)
             if (user) {
-                user.subscription = { plan: planName, maxClusters: 10, maxNodes: 50, maxMembers: 5 }
+                const renewsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+                user.subscription = { plan: planName, maxClusters: 10, maxNodes: 50, maxMembers: 5, billingCycle: 'monthly', renewsAt }
                 authService.saveUsers()
             }
             return res.json({ url: '/settings?success=true', mock: true })
@@ -98,11 +99,17 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
         const user = authService.getUserById(userId)
         if (user) {
+            // Prefer the real Stripe billing-period end when available
+            let renewsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+            const periodEnd = session.subscription_details?.current_period_end || session.expires_at
+            if (periodEnd) renewsAt = new Date(periodEnd * 1000).toISOString()
             user.subscription = {
                 plan: planName,
                 maxClusters: 10,
                 maxNodes: 50,
-                maxMembers: 5
+                maxMembers: 5,
+                billingCycle: 'monthly',
+                renewsAt
             }
             authService.saveUsers()
             console.log(`[Stripe Webhook] Successfully upgraded user ${user.username}`)

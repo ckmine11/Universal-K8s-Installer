@@ -579,16 +579,27 @@ export default function Settings() {
                                                         </span>
                                                     )}
                                                 </div>
-                                                {licenseStatus.expiresAt && (
+                                                {/* Subscription lifecycle — accurate to the plan */}
+                                                {licenseStatus.autoRenew ? (
+                                                    <div className="flex items-center justify-between pb-2">
+                                                        <span className="text-slate-500 font-bold uppercase tracking-[0.15em] text-[10px]">Billing</span>
+                                                        <span className="font-bold text-emerald-400 tracking-wide text-xs">
+                                                            {licenseStatus.expiresAt
+                                                                ? `Renews ${new Date(licenseStatus.expiresAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`
+                                                                : `Auto-renews ${licenseStatus.billingCycle || 'monthly'}`}
+                                                        </span>
+                                                    </div>
+                                                ) : licenseStatus.expiresAt ? (
                                                     <div className="flex items-center justify-between pb-2">
                                                         <span className="text-slate-500 font-bold uppercase tracking-[0.15em] text-[10px]">Expires On</span>
                                                         <span className="font-bold text-slate-300 tracking-wide text-xs">
-                                                            {new Date(licenseStatus.expiresAt).toLocaleDateString(undefined, {
-                                                                year: 'numeric',
-                                                                month: 'long',
-                                                                day: 'numeric'
-                                                            })}
+                                                            {new Date(licenseStatus.expiresAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
                                                         </span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-between pb-2">
+                                                        <span className="text-slate-500 font-bold uppercase tracking-[0.15em] text-[10px]">Expiry</span>
+                                                        <span className="font-bold text-slate-300 tracking-wide text-xs">Free — no expiry</span>
                                                     </div>
                                                 )}
                                             </div>

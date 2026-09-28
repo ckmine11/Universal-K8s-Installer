@@ -31,8 +31,17 @@ router.get('/license/status', requireAuth, async (req, res) => {
             state.maxClusters = sub.maxClusters;
             state.maxNodes = sub.maxNodes;
             state.status = 'active';
+
+            // Reflect the real subscription lifecycle instead of a fixed date:
+            //  - FREE  → no expiry (free forever)
+            //  - Paid  → auto-renewing; show the next renewal date if we track it
             if (sub.plan === 'FREE') {
                 state.expiresAt = null;
+                state.autoRenew = false;
+            } else {
+                state.expiresAt = sub.renewsAt || null; // next billing date (if known)
+                state.autoRenew = true;
+                state.billingCycle = sub.billingCycle || 'monthly';
             }
 
             if (req.user.role === 'admin') {
