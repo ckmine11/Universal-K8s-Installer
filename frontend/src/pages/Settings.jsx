@@ -19,7 +19,8 @@ import {
     EyeOff,
     Check,
     Users,
-    ArrowRight
+    ArrowRight,
+    Zap
 } from 'lucide-react'
 
 
@@ -85,6 +86,11 @@ export default function Settings() {
         fetchConfig()
     }, [])
 
+    // Always know the plan (needed to gate the Backups tab) — cheap call.
+    useEffect(() => {
+        if (user) fetchLicenseStatus()
+    }, [user])
+
     useEffect(() => {
         if (user) {
             if (user.role === 'superadmin' && activeTab === 'licensing') {
@@ -92,8 +98,6 @@ export default function Settings() {
             }
             if (activeTab === 'health' && user.role === 'superadmin') {
                 fetchHealth()
-            } else if (activeTab === 'backups' && user.role === 'superadmin') {
-                fetchBackups()
             } else if (activeTab === 'licensing') {
                 fetchLicenseStatus()
             }
@@ -104,13 +108,18 @@ export default function Settings() {
         if (user) {
             if (activeTab === 'health' && user.role === 'superadmin') {
                 fetchHealth()
-            } else if (activeTab === 'backups' && user.role === 'superadmin') {
-                fetchBackups()
             } else if (activeTab === 'licensing') {
                 fetchLicenseStatus()
             }
         }
     }, [activeTab])
+
+    // Fetch backups once the user is on the Backups tab AND is entitled (Pro/Enterprise/superadmin)
+    useEffect(() => {
+        const entitled = user && (user.role === 'superadmin' ||
+            ['PRO', 'ENTERPRISE'].includes(String(licenseStatus?.planCode || '').toUpperCase()))
+        if (activeTab === 'backups' && entitled) fetchBackups()
+    }, [activeTab, licenseStatus, user])
 
     const handlePasswordChange = async () => {
         if (!pwdForm.current || !pwdForm.newPwd || !pwdForm.confirm) {
@@ -250,6 +259,10 @@ export default function Settings() {
     }
 
     const isSuperAdmin = user.role === 'superadmin';
+    const isAdmin = user.role === 'admin' || isSuperAdmin;
+    const planCode = String(licenseStatus?.planCode || '').toUpperCase();
+    const isPaidPlan = planCode === 'PRO' || planCode === 'ENTERPRISE';
+    const canBackup = isSuperAdmin || isPaidPlan; // Daily backups = Pro feature
 
     return (
         <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 relative">
@@ -283,7 +296,7 @@ export default function Settings() {
                         <span>Global Tenants</span>
                     </button>
                 )}
-                {isSuperAdmin && (
+                {isAdmin && (
                     <button
                         onClick={() => setActiveTab('backups')}
                         className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
@@ -294,6 +307,7 @@ export default function Settings() {
                     >
                         <Database className="w-4 h-4" />
                         <span>Config Backups</span>
+                        {!canBackup && <Lock className="w-3 h-3 text-amber-400" />}
                     </button>
                 )}
                 <button
@@ -421,7 +435,37 @@ export default function Settings() {
                     </div>
                 )}
 
-                {activeTab === 'backups' && (
+                {/* Free plan: feature locked — upsell to Pro */}
+                {activeTab === 'backups' && !canBackup && (
+                    <div className="glass rounded-3xl border border-amber-500/20 bg-amber-500/[0.03] p-10 text-center animate-in fade-in duration-300 max-w-2xl mx-auto">
+                        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-5">
+                            <Lock className="w-8 h-8 text-amber-400" />
+                        </div>
+                        <h2 className="text-2xl font-black text-white mb-2">Daily Config Backups is a Pro Feature</h2>
+                        <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
+                            Automatically snapshot your cluster configuration every day and restore any previous
+                            state in one click. Never lose your setup to an accidental change or a failed upgrade.
+                        </p>
+                        <div className="grid sm:grid-cols-3 gap-3 mb-8 text-left">
+                            {[
+                                { t: 'Automatic Daily Snapshots', d: 'Your config is saved every 24h — hands-off.' },
+                                { t: '1-Click Restore', d: 'Roll back to any earlier snapshot instantly.' },
+                                { t: 'Safe Pre-Restore Backup', d: 'Current state is saved before every restore.' },
+                            ].map(f => (
+                                <div key={f.t} className="bg-white/5 border border-white/5 rounded-2xl p-4">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-400 mb-2" />
+                                    <p className="text-xs font-black text-white">{f.t}</p>
+                                    <p className="text-[11px] text-slate-500 mt-1">{f.d}</p>
+                                </div>
+                            ))}
+                        </div>
+                        <a href="/pricing" className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition-colors">
+                            <Zap className="w-4 h-4" /> Upgrade to Pro — $49/mo
+                        </a>
+                    </div>
+                )}
+
+                {activeTab === 'backups' && canBackup && (
                     <div className="space-y-6">
                         {/* Stats & Actions */}
                         {backupData && (

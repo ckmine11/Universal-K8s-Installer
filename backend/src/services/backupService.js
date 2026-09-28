@@ -255,19 +255,25 @@ export class BackupService {
      * Run a daily backup for EVERY user that owns clusters, then prune old ones.
      * Derives the user list from clusters.json owners — no auth dependency.
      */
-    static runDailyBackups() {
+    static async runDailyBackups() {
         try {
             if (!fs.existsSync(this.DATA_PATH)) return;
             const all = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
             if (!Array.isArray(all) || all.length === 0) return;
 
+            // Daily auto-backups are a Pro feature — only back up paid-plan owners.
+            const { authService } = await import('./authService.js');
+            const { canUseBackups } = await import('../config/planFeatures.js');
+
             const owners = [...new Set(all.map(c => c.ownerId).filter(Boolean))];
-            let count = 0;
+            let count = 0, skipped = 0;
             owners.forEach(uid => {
+                const u = authService.getUserById(uid);
+                if (!canUseBackups(u?.subscription?.plan, u?.role)) { skipped++; return; }
                 const r = this.createBackup('auto', uid);
                 if (r.success) { count++; this.cleanupOldBackups(uid, 10); }
             });
-            console.log(`[BackupService] Daily auto-backup complete for ${count} user(s)`);
+            console.log(`[BackupService] Daily auto-backup complete for ${count} paid user(s), skipped ${skipped} free user(s)`);
         } catch (error) {
             console.error('[BackupService] Daily backup run failed:', error.message);
         }

@@ -28,6 +28,7 @@ router.get('/license/status', requireAuth, async (req, res) => {
             const sub = user?.subscription || { plan: 'FREE', maxClusters: 1, maxNodes: 2 };
             
             state.plan = sub.plan === 'FREE' ? 'Free Tier' : `${sub.plan} Subscription`;
+            state.planCode = String(sub.plan || 'FREE').toUpperCase(); // raw code for reliable UI gating
             state.maxClusters = sub.maxClusters;
             state.maxNodes = sub.maxNodes;
             state.status = 'active';

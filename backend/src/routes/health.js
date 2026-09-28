@@ -2,8 +2,31 @@ import express from 'express';
 import os from 'os';
 import { BackupService } from '../services/backupService.js';
 import { requireAuth } from '../middleware/authMiddleware.js';
+import { authService } from '../services/authService.js';
+import { canUseBackups } from '../config/planFeatures.js';
 
 export const healthRouter = express.Router();
+
+/**
+ * Gate for the backups feature: must be an admin/superadmin AND on a paid plan.
+ * Returns true if allowed; otherwise writes the appropriate response and returns false.
+ */
+function ensureBackupAccess(req, res) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+        res.status(403).json({ error: 'Only workspace admins can manage backups' });
+        return false;
+    }
+    const plan = authService.getUserById(req.user.id)?.subscription?.plan;
+    if (!canUseBackups(plan, req.user.role)) {
+        res.status(402).json({
+            error: 'Daily config backups & 1-click restore are a Pro feature. Upgrade to Pro to enable automatic backups.',
+            upgradeRequired: true,
+            feature: 'backups'
+        });
+        return false;
+    }
+    return true;
+}
 
 /**
  * Basic health check endpoint
@@ -77,9 +100,7 @@ healthRouter.get('/detailed', requireAuth, (req, res) => {
  */
 healthRouter.get('/backups', requireAuth, (req, res) => {
     try {
-        if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
-            return res.status(403).json({ error: 'Only admins can view backups' });
-        }
+        if (!ensureBackupAccess(req, res)) return;
         const stats = BackupService.getStats(req.user.id);
         const backups = BackupService.listBackups(req.user.id);
 
@@ -109,9 +130,7 @@ healthRouter.get('/backups', requireAuth, (req, res) => {
  */
 healthRouter.post('/backups', requireAuth, (req, res) => {
     try {
-        if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
-            return res.status(403).json({ error: 'Only admins can create backups' });
-        }
+        if (!ensureBackupAccess(req, res)) return;
         const result = BackupService.createBackup('manual', req.user.id);
         if (result.success) {
             res.json(result);
@@ -129,9 +148,7 @@ healthRouter.post('/backups', requireAuth, (req, res) => {
  */
 healthRouter.post('/backups/restore', requireAuth, (req, res) => {
     try {
-        if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
-            return res.status(403).json({ error: 'Only admins can restore backups' });
-        }
+        if (!ensureBackupAccess(req, res)) return;
         const { filename } = req.body;
         if (!filename) return res.status(400).json({ success: false, error: 'Missing backup filename' });
 
