@@ -47,5 +47,20 @@
       "maxNodes": 3
     },
     "createdAt": "2026-06-20T15:29:21.223Z"
+  },
+  {
+    "id": "d346bf94-f9f0-4896-b80d-c85872d6dd4b",
+    "orgId": "019c27f8-6dbc-4975-8ec7-464b898263cf",
+    "username": "mineck11",
+    "email": "",
+    "password": "$2a$10$M2y/nsO32GvEMxJLtLyowuUyBDWYzM.EXGx2LnpA6a0djnxGSq43m",
+    "role": "superadmin",
+    "subscription": {
+      "plan": "ENTERPRISE",
+      "maxClusters": 9999,
+      "maxNodes": 9999,
+      "maxMembers": 9999
+    },
+    "createdAt": "2026-09-28T17:11:15.570Z"
   }
 ]
