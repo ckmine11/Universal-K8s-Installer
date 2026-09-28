@@ -56,6 +56,8 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     })
     const [installingAddons, setInstallingAddons] = useState(false)
     const [isFreePlan, setIsFreePlan] = useState(false)
+    const [isCancelling, setIsCancelling] = useState(false)
+    const [isResuming, setIsResuming] = useState(false)
     const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false)
     const [targetVersion, setTargetVersion] = useState('')
     const [isUpgrading, setIsUpgrading] = useState(false)
@@ -330,6 +332,44 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
         } catch (error) {
             console.error('Download error:', error)
             alert('Failed to download Kubeconfig: ' + error.message)
+        }
+    }
+
+    const handleCancel = async () => {
+        if (!confirm('Cancel this installation? It will stop after the current step. You can Resume later to continue where it left off.')) return
+        setIsCancelling(true)
+        addLog('warning', '⛔ Requesting cancellation...')
+        try {
+            const res = await apiFetch(`/api/clusters/${installationId}/cancel`, { method: 'POST' })
+            if (!res.ok) throw new Error('Cancel request failed')
+            setStatus('cancelled')
+        } catch (err) {
+            addLog('error', `Cancel failed: ${err.message}`)
+        } finally {
+            setIsCancelling(false)
+        }
+    }
+
+    const handleResumeFromDashboard = async () => {
+        setIsResuming(true)
+        try {
+            // Analyze current cluster state, then resume from where it stopped
+            const clusterId = clusterInfo?.originalClusterId || installationId
+            const aRes = await apiFetch(`/api/clusters/${clusterId}/analyze`, { method: 'POST' })
+            const analysis = await aRes.json()
+            if (!aRes.ok) throw new Error(analysis.error || 'Analysis failed')
+
+            const rRes = await apiFetch(`/api/clusters/${clusterId}/resume`, {
+                method: 'POST',
+                body: JSON.stringify({ analysis })
+            })
+            const rData = await rRes.json()
+            if (!rRes.ok) throw new Error(rData.error || 'Resume failed')
+            navigate(`/dashboard/${rData.resumeInstallationId}`, { replace: true })
+        } catch (err) {
+            addLog('error', `Resume failed: ${err.message}`)
+            alert('Resume failed: ' + err.message)
+            setIsResuming(false)
         }
     }
 
@@ -684,19 +724,45 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                             {status === 'running' && (clusterInfo?.mode === 'upgrade' ? 'Upgrading Kubernetes Cluster...' : 'Installing Kubernetes Cluster...')}
                             {status === 'completed' && (clusterInfo?.mode === 'upgrade' ? '✅ Cluster Upgrade Complete!' : '✅ Cluster Installation Complete!')}
                             {status === 'failed' && '❌ Installation Failed'}
+                            {status === 'cancelled' && '⛔ Installation Cancelled'}
                         </h1>
                         <p className="text-gray-400">Installation ID: {installationId}</p>
                     </div>
 
-                    {status === 'completed' && (
-                        <button
-                            onClick={onGoHome}
-                            className="flex items-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                        >
-                            <RefreshCw className="w-5 h-5" />
-                            <span>Go Home</span>
-                        </button>
-                    )}
+                    <div className="flex items-center gap-3">
+                        {/* Cancel — only while running */}
+                        {status === 'running' && (
+                            <button
+                                onClick={handleCancel}
+                                disabled={isCancelling}
+                                className="flex items-center space-x-2 px-5 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl font-bold transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                                <span>{isCancelling ? 'Cancelling...' : 'Cancel Installation'}</span>
+                            </button>
+                        )}
+
+                        {/* Resume — after cancel or failure (skips completed steps) */}
+                        {(status === 'cancelled' || status === 'failed') && (
+                            <button
+                                onClick={handleResumeFromDashboard}
+                                disabled={isResuming}
+                                className="flex items-center space-x-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-xl font-bold transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                {isResuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                                <span>{isResuming ? 'Analyzing...' : 'Resume Installation'}</span>
+                            </button>
+                        )}
+
+                        {(status === 'completed' || status === 'cancelled') && (
+                            <button
+                                onClick={onGoHome}
+                                className="flex items-center space-x-2 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors"
+                            >
+                                <span>Go Home</span>
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 

@@ -191,6 +191,9 @@ export default function ClusterDetails({ onScaleCluster }) {
                             if (cluster.status === 'failed') {
                                 return <span className="flex items-center text-red-400"><AlertTriangle className="w-4 h-4 mr-1" /> Installation Failed</span>
                             }
+                            if (cluster.status === 'cancelled') {
+                                return <span className="flex items-center text-amber-400"><AlertTriangle className="w-4 h-4 mr-1" /> Installation Cancelled</span>
+                            }
                             if (health?.error) {
                                 return <span className="flex items-center text-red-400"><AlertTriangle className="w-4 h-4 mr-1" /> Unreachable</span>
                             }
@@ -206,8 +209,8 @@ export default function ClusterDetails({ onScaleCluster }) {
                     </div>
                 </div>
 
-                {/* Resume button — only for failed clusters */}
-                {cluster.status === 'failed' && (
+                {/* Resume button — for failed OR cancelled clusters */}
+                {(cluster.status === 'failed' || cluster.status === 'cancelled') && (
                     <button
                         onClick={() => setResumeModalOpen(true)}
                         className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
@@ -258,7 +261,7 @@ export default function ClusterDetails({ onScaleCluster }) {
             </div>
 
             {/* Installed Add-ons Access */}
-            {cluster.status !== 'failed' && (
+            {cluster.status !== 'failed' && cluster.status !== 'cancelled' && (
                 <div className="mb-8">
                     <AddonAccessPanel clusterId={id} />
                 </div>

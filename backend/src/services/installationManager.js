@@ -8,6 +8,7 @@ class InstallationManager {
     constructor() {
         this.installations = new Map()
         this.clients = new Map() // WebSocket clients per installation
+        this.cancelRequests = new Set() // installationIds requested to cancel
 
         // Auto-cleanup stale installations every hour
         setInterval(() => this.cleanupStaleInstallations(), 60 * 60 * 1000)
@@ -130,6 +131,12 @@ class InstallationManager {
                     })
                 },
                 onError: (error) => {
+                    // If the user cancelled, keep the 'cancelled' state (don't mark failed)
+                    if (this.cancelRequests.has(id)) {
+                        this.addLog(id, 'warning', '⛔ Installation cancelled by user')
+                        this.broadcast(id, { type: 'status', status: 'cancelled' })
+                        return
+                    }
                     this.failInstallation(id, error)
                     this.broadcast(id, {
                         type: 'status',
@@ -137,6 +144,12 @@ class InstallationManager {
                         error: error.message,
                         diagnosis: error.diagnosis
                     })
+                },
+                // Cancellation checkpoint — automationEngine calls this between steps
+                checkCancel: () => {
+                    if (this.cancelRequests.has(id)) {
+                        throw new Error('Installation cancelled by user')
+                    }
                 }
             }
 
@@ -147,6 +160,11 @@ class InstallationManager {
             }
 
         } catch (error) {
+            if (this.cancelRequests.has(id)) {
+                this.addLog(id, 'warning', '⛔ Installation cancelled by user')
+                this.broadcast(id, { type: 'status', status: 'cancelled' })
+                return
+            }
             this.failInstallation(id, error)
             this.broadcast(id, {
                 type: 'status',
@@ -368,18 +386,35 @@ class InstallationManager {
 
     cancelInstallation(installationId) {
         const installation = this.installations.get(installationId)
-        if (installation && installation.status === 'running') {
-            installation.status = 'cancelled'
-            installation.cancelledAt = new Date().toISOString()
+        if (!installation) return false
 
-            this.broadcast(installationId, {
-                type: 'status',
-                status: 'cancelled'
-            })
+        // Flag for the automation engine's checkCancel() to abort mid-run
+        this.cancelRequests.add(installationId)
+        installation.status = 'cancelled'
+        installation.cancelledAt = new Date().toISOString()
 
-            return true
-        }
-        return false
+        this.addLog(installationId, 'warning', '⛔ Cancellation requested — stopping after the current step...')
+        this.broadcast(installationId, { type: 'status', status: 'cancelled' })
+
+        // Persist as 'cancelled' so the user can Resume later (skips completed steps)
+        clusterStore.saveCluster({
+            id:            installation.originalClusterId || installationId,
+            ownerId:       installation.ownerId,
+            orgId:         installation.orgId,
+            clusterName:   installation.clusterName,
+            k8sVersion:    installation.k8sVersion,
+            networkPlugin: installation.networkPlugin,
+            masterNodes:   installation.masterNodes,
+            workerNodes:   installation.workerNodes,
+            addons:        installation.addons,
+            mode:          installation.mode,
+            status:        'cancelled',
+            cancelledAt:   installation.cancelledAt
+        }).catch(e => console.error('[InstallationManager] Could not persist cancelled cluster:', e.message))
+
+        // Clear the cancel flag after a grace period (engine will have aborted by then)
+        setTimeout(() => this.cancelRequests.delete(installationId), 60000)
+        return true
     }
 
     async getSavedClusters() {
@@ -391,6 +426,16 @@ class InstallationManager {
         // CLEANUP: Force close any active sessions before deleting data
         try {
             console.log(`[Cleanup] Closing active sessions for cluster ${id}`)
+
+            // Cancel any in-progress installation/upgrade/resume for this cluster
+            for (const [instId, inst] of this.installations.entries()) {
+                const belongs = instId === id || inst.originalClusterId === id
+                if (belongs && inst.status === 'running') {
+                    console.log(`[Cleanup] Cancelling running installation ${instId} for deleted cluster ${id}`)
+                    this.cancelInstallation(instId)
+                }
+            }
+
             await terminalService.closeSession(id)
             trafficSniffer.stopSniffing(id)
             // Stop auto-healing watchers so we don't keep polling a deleted cluster

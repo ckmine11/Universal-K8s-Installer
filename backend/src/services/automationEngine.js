@@ -381,6 +381,8 @@ class AutomationEngine {
 
     async install(installation, callbacks) {
         const { onProgress, onLog, onComplete, onError } = callbacks
+        // Cancellation checkpoint — throws if the user cancelled (no-op if not provided)
+        const ck = () => { if (typeof callbacks.checkCancel === 'function') callbacks.checkCancel() }
 
         try {
             onLog('info', 'Starting deployment initialization...')
@@ -449,14 +451,17 @@ class AutomationEngine {
             }
 
             // Step 1: Validate connectivity
+            ck()
             onProgress(5, 'Validating node connectivity...')
             await this.validateConnectivity(installation, onLog)
 
             // Step 1.5: Pre-flight checks
+            ck()
             onProgress(8, 'Running pre-flight checks...')
             await this.preFlightChecks(installation, onLog)
 
             // Step 2: Configure Firewall
+            ck()
             onProgress(12, 'Configuring firewall rules...')
             await this.configureFirewall(installation, onLog)
 
@@ -509,14 +514,17 @@ class AutomationEngine {
             }
 
             // Step 3: Install container runtime
+            ck()
             onProgress(20, 'Installing container runtime (containerd)...')
             await this.installContainerRuntime(installation, onLog)
 
             // Step 4: Install Kubernetes components
+            ck()
             onProgress(35, 'Installing kubeadm, kubelet, kubectl...')
             await this.installKubernetesComponents(installation, onLog)
 
             // Step 5: Initialize control plane
+            ck()
             onProgress(50, 'Initializing Kubernetes control plane...')
             const joinCommand = await this.initializeControlPlane(installation, onLog)
 
@@ -529,6 +537,7 @@ class AutomationEngine {
             }
 
             // Step 7: Join additional Master and Worker nodes
+            ck()
             onProgress(75, 'Joining nodes to cluster...')
             await this.joinNodes(installation, joinCommand, onLog)
 
@@ -536,6 +545,7 @@ class AutomationEngine {
             if (installation.mode === 'scale') {
                 onLog('info', '⏭️ Scaling Mode: Skipping add-on installation (Cluster already configured)')
             } else {
+                ck()
                 onProgress(85, 'Installing add-ons...')
                 await this.installAddons(installation, onLog)
             }
