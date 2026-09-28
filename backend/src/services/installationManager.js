@@ -237,6 +237,17 @@ class InstallationManager {
 
             // Persist
             await clusterStore.saveCluster(finalCluster)
+
+            // Start auto-healing on the freshly completed cluster immediately
+            // (no need to wait for a server restart). Only for real clusters.
+            if (!finalCluster.simulationMode && finalCluster.status === 'healthy') {
+                try {
+                    const { incidentDetector } = await import('./incidentDetector.js')
+                    incidentDetector.watchCluster(finalCluster)
+                } catch (e) {
+                    console.error('[InstallationManager] Failed to start auto-healing:', e.message)
+                }
+            }
         }
     }
 
@@ -382,6 +393,9 @@ class InstallationManager {
             console.log(`[Cleanup] Closing active sessions for cluster ${id}`)
             await terminalService.closeSession(id)
             trafficSniffer.stopSniffing(id)
+            // Stop auto-healing watchers so we don't keep polling a deleted cluster
+            const { incidentDetector } = await import('./incidentDetector.js')
+            incidentDetector.stopWatching(id)
         } catch (err) {
             console.warn(`[Cleanup] Warning during session cleanup for ${id}:`, err.message)
         }

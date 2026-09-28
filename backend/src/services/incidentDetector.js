@@ -2,272 +2,252 @@ import { clusterStore } from './clusterStore.js'
 import { automationEngine } from './automationEngine.js'
 import { remediationEngine } from './remediationEngine.js'
 
-const NODE_POLL_INTERVAL  = 60  * 1000   // 60s
-const POD_POLL_INTERVAL   = 90  * 1000   // 90s
-const RECONNECT_BASE_MS   = 10  * 1000   // 10s
-const RECONNECT_MAX_MS    = 5   * 60 * 1000 // 5min cap
-const INCIDENT_TTL_MS     = 24  * 60 * 60 * 1000 // 24h
-const DEDUP_WINDOW_MS     = 5   * 60 * 1000 // 5min — same incident won't be created twice
+const EVENT_POLL_INTERVAL = 60 * 1000       // 60s — cluster events
+const NODE_POLL_INTERVAL  = 60 * 1000       // 60s — node conditions
+const POD_POLL_INTERVAL   = 90 * 1000       // 90s — pod states
+const RECONNECT_BASE_MS   = 10 * 1000
+const RECONNECT_MAX_MS    = 5 * 60 * 1000
+const INCIDENT_TTL_MS     = 24 * 60 * 60 * 1000
+const DEDUP_WINDOW_MS     = 5 * 60 * 1000     // don't re-create the same incident within 5min
+const EVENT_FRESH_MS      = 3 * 60 * 1000     // only act on events seen in the last 3min
+const MAX_POLL_FAILURES   = 3                 // consecutive failures before reconnect
 
+const cname = (c) => c.clusterName || c.name || 'cluster'
+
+/**
+ * Detects cluster anomalies via lightweight polling (events, nodes, pods) over
+ * a single reused SSH connection — routed through a Gateway Agent when present.
+ * Polling (not a long-lived `kubectl --watch`) is used deliberately: it works
+ * identically over direct SSH and agent relays, and can't silently die.
+ */
 class IncidentDetector {
     constructor() {
-        this.automationEngine   = automationEngine
-        this.eventStreams        = new Map()   // clusterId -> { ssh, lineBuffer }
-        this.pollers            = new Map()   // clusterId -> { nodeTimer, podTimer }
-        this.reconnectAttempts  = new Map()   // clusterId -> number
-        this.incidents          = []
+        this.automationEngine = automationEngine
+        this.streams   = new Map()   // clusterId -> { ssh, timers:[], failCount, cluster }
+        this.reconnect = new Map()   // clusterId -> attempt count
+        this.incidents = []
     }
 
-    getIncidents() {
-        return this.incidents
-    }
+    getIncidents() { return this.incidents }
 
     async init() {
         console.log('[AutoHealing] Initializing Auto-Healing Engine...')
-        const clusters = await clusterStore.getClusters()
-        for (const cluster of clusters) {
-            if (cluster.status === 'healthy') {
-                this.startWatching(cluster)
+        try {
+            const clusters = await clusterStore.getClusters()
+            for (const cluster of clusters) {
+                if (cluster.status === 'healthy') this.startWatching(cluster)
             }
+        } catch (e) {
+            console.error('[AutoHealing] init failed:', e.message)
         }
     }
 
-    // Called externally when a cluster finishes installation
+    // Called when a cluster finishes installing/resuming so it's watched immediately
     watchCluster(cluster) {
+        if (!cluster?.id) return
         this.startWatching(cluster)
     }
 
     async startWatching(cluster) {
-        if (this.eventStreams.has(cluster.id)) return
+        if (!cluster?.id) return
+        if (this.streams.has(cluster.id)) return // already watching
 
-        const masterNode = cluster.masterNodes?.[0]
-        if (!masterNode) return
+        const master = cluster.masterNodes?.[0]
+        if (!master) return
 
-        const attempt = this.reconnectAttempts.get(cluster.id) || 0
-        console.log(`[AutoHealing] Connecting to ${cluster.name} (attempt ${attempt + 1})`)
+        // Ensure Gateway-Agent routing works — connectSSH needs ownerId/orgId on the node
+        const node = { ...master, ownerId: cluster.ownerId, orgId: cluster.orgId }
 
+        const attempt = this.reconnect.get(cluster.id) || 0
+        console.log(`[AutoHealing] Connecting to ${cname(cluster)} (attempt ${attempt + 1})`)
+
+        let ssh
         try {
-            const ssh = await this.automationEngine.connectSSH(masterNode)
-            this.reconnectAttempts.set(cluster.id, 0)
-
-            // ── 1. Event stream watcher ──────────────────────────────────────
-            let lineBuffer = ''
-            this.eventStreams.set(cluster.id, { ssh })
-
-            ssh.execCommand('kubectl get events --watch -A -o json 2>/dev/null', {
-                onStdout: (chunk) => {
-                    lineBuffer += chunk.toString('utf8')
-                    const lines = lineBuffer.split('\n')
-                    lineBuffer = lines.pop() // Hold incomplete last line
-                    for (const line of lines) {
-                        if (!line.trim()) continue
-                        try {
-                            const event = JSON.parse(line)
-                            if (event.type && event.type !== 'Normal') {
-                                this._createIncident(cluster,
-                                    event.reason,
-                                    event.message,
-                                    event.involvedObject?.name
-                                )
-                            }
-                        } catch (_) { /* partial chunk — skip */ }
-                    }
-                },
-                onStderr: () => {}
-            }).catch(err => {
-                console.warn(`[AutoHealing] Event stream lost for ${cluster.name}: ${err.message}`)
-                this._scheduleReconnect(cluster)
-            })
-
-            // ── 2. Node health poller ────────────────────────────────────────
-            const nodeTimer = setInterval(
-                () => this._pollNodeHealth(cluster),
-                NODE_POLL_INTERVAL
-            )
-
-            // ── 3. Pod health poller ─────────────────────────────────────────
-            const podTimer = setInterval(
-                () => this._pollPodHealth(cluster),
-                POD_POLL_INTERVAL
-            )
-
-            this.pollers.set(cluster.id, { nodeTimer, podTimer })
-
-            // Run first poll immediately without waiting for interval
-            this._pollNodeHealth(cluster)
-            this._pollPodHealth(cluster)
-
-            console.log(`[AutoHealing] Watching ${cluster.name} — event stream + node/pod pollers active`)
-
+            ssh = await this.automationEngine.connectSSH(node)
         } catch (err) {
-            console.error(`[AutoHealing] Failed to connect to ${cluster.name}: ${err.message}`)
-            this._scheduleReconnect(cluster)
+            console.error(`[AutoHealing] Connect failed for ${cname(cluster)}: ${err.message}`)
+            return this._scheduleReconnect(cluster)
         }
+
+        this.reconnect.set(cluster.id, 0)
+        const stream = { ssh, timers: [], failCount: 0, cluster }
+        this.streams.set(cluster.id, stream)
+
+        // Schedule the three pollers
+        stream.timers.push(setInterval(() => this._pollEvents(cluster), EVENT_POLL_INTERVAL))
+        stream.timers.push(setInterval(() => this._pollNodes(cluster),  NODE_POLL_INTERVAL))
+        stream.timers.push(setInterval(() => this._pollPods(cluster),   POD_POLL_INTERVAL))
+
+        // Run immediately so we don't wait a full interval on first watch
+        this._pollEvents(cluster)
+        this._pollNodes(cluster)
+        this._pollPods(cluster)
+
+        console.log(`[AutoHealing] Watching ${cname(cluster)} — event/node/pod pollers active`)
     }
 
     _scheduleReconnect(cluster) {
         this._cleanup(cluster.id)
-
-        const attempt = this.reconnectAttempts.get(cluster.id) || 0
-        this.reconnectAttempts.set(cluster.id, attempt + 1)
-
-        // Exponential backoff: 10s → 20s → 40s → ... → 5min
+        const attempt = this.reconnect.get(cluster.id) || 0
+        this.reconnect.set(cluster.id, attempt + 1)
         const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS)
-        console.log(`[AutoHealing] Will reconnect to ${cluster.name} in ${Math.round(delay / 1000)}s`)
+        console.log(`[AutoHealing] Reconnecting to ${cname(cluster)} in ${Math.round(delay / 1000)}s`)
         setTimeout(() => this.startWatching(cluster), delay)
     }
 
     _cleanup(clusterId) {
-        const stream = this.eventStreams.get(clusterId)
-        if (stream?.ssh?.dispose) {
-            try { stream.ssh.dispose() } catch (_) {}
-        }
-        this.eventStreams.delete(clusterId)
-
-        const pollers = this.pollers.get(clusterId)
-        if (pollers) {
-            clearInterval(pollers.nodeTimer)
-            clearInterval(pollers.podTimer)
-            this.pollers.delete(clusterId)
+        const stream = this.streams.get(clusterId)
+        if (stream) {
+            stream.timers.forEach(t => clearInterval(t))
+            try { stream.ssh?.dispose?.() } catch (_) {}
+            this.streams.delete(clusterId)
         }
     }
 
-    // ── Node health poller ─────────────────────────────────────────────────────
-    async _pollNodeHealth(cluster) {
-        // Reuse the existing event-stream SSH connection — no new connection needed
-        const stream = this.eventStreams.get(cluster.id)
-        if (!stream?.ssh) return
-        const ssh = stream.ssh
-
+    // Run a poll against the shared SSH; reconnect after repeated failures
+    async _run(cluster, fn) {
+        const stream = this.streams.get(cluster.id)
+        if (!stream?.ssh) return null
         try {
-            const result = await ssh.execCommand('kubectl get nodes -o json 2>/dev/null')
-            if (result.code !== 0 || !result.stdout?.trim()) return
-
-            const data = JSON.parse(result.stdout)
-            for (const node of (data.items || [])) {
-                const name = node.metadata.name
-                for (const cond of (node.status?.conditions || [])) {
-                    if (cond.type === 'Ready' && cond.status !== 'True') {
-                        this._createIncident(cluster, 'NodeNotReady',
-                            `Node ${name} is not Ready: ${cond.message}`, name)
-                    }
-                    if (cond.type === 'DiskPressure' && cond.status === 'True') {
-                        this._createIncident(cluster, 'DiskPressure',
-                            `Node ${name} has DiskPressure: ${cond.message}`, name)
-                    }
-                    if (cond.type === 'MemoryPressure' && cond.status === 'True') {
-                        this._createIncident(cluster, 'MemoryPressure',
-                            `Node ${name} has MemoryPressure: ${cond.message}`, name)
-                    }
-                    if (cond.type === 'PIDPressure' && cond.status === 'True') {
-                        this._createIncident(cluster, 'PIDPressure',
-                            `Node ${name} has PIDPressure: ${cond.message}`, name)
-                    }
-                }
+            const out = await fn(stream.ssh)
+            stream.failCount = 0
+            return out
+        } catch (e) {
+            stream.failCount++
+            if (stream.failCount >= MAX_POLL_FAILURES) {
+                console.warn(`[AutoHealing] ${cname(cluster)} SSH unhealthy (${stream.failCount}x) — reconnecting`)
+                this._scheduleReconnect(cluster)
             }
-        } catch (_) { /* transient — next poll will retry */ }
-        // No dispose — SSH connection is shared with event stream
+            return null
+        }
     }
 
-    // ── Pod health poller ──────────────────────────────────────────────────────
-    async _pollPodHealth(cluster) {
-        const stream = this.eventStreams.get(cluster.id)
-        if (!stream?.ssh) return
-        const ssh = stream.ssh
+    // ── Event poller ─────────────────────────────────────────────────────────
+    async _pollEvents(cluster) {
+        const result = await this._run(cluster, ssh =>
+            ssh.execCommand('kubectl get events -A -o json 2>/dev/null'))
+        if (!result || result.code !== 0 || !result.stdout?.trim()) return
 
-        try {
-            const result = await ssh.execCommand('kubectl get pods -A -o json 2>/dev/null')
-            if (result.code !== 0 || !result.stdout?.trim()) return
+        let data
+        try { data = JSON.parse(result.stdout) } catch { return }
 
-            const data = JSON.parse(result.stdout)
-            for (const pod of (data.items || [])) {
-                const podName = pod.metadata.name
-                const ns      = pod.metadata.namespace
+        for (const ev of (data.items || [])) {
+            if (!ev.type || ev.type === 'Normal') continue
+            // Only act on recent events to avoid re-alerting on stale history
+            const ts = ev.lastTimestamp || ev.eventTime || ev.firstTimestamp
+            if (ts && Date.now() - new Date(ts).getTime() > EVENT_FRESH_MS) continue
+            this._createIncident(cluster, ev.reason, ev.message, ev.involvedObject?.name)
+        }
+    }
 
-                for (const c of (pod.status?.containerStatuses || [])) {
-                    const waiting = c.state?.waiting
-                    if (!waiting) continue
+    // ── Node poller ──────────────────────────────────────────────────────────
+    async _pollNodes(cluster) {
+        const result = await this._run(cluster, ssh =>
+            ssh.execCommand('kubectl get nodes -o json 2>/dev/null'))
+        if (!result || result.code !== 0 || !result.stdout?.trim()) return
 
-                    if (waiting.reason === 'CrashLoopBackOff') {
-                        this._createIncident(cluster, 'CrashLoopBackOff',
-                            `${ns}/${podName} (${c.name}) is in CrashLoopBackOff`, podName)
-                    }
-                    if (waiting.reason === 'OOMKilled') {
-                        this._createIncident(cluster, 'OOMKilled',
-                            `${ns}/${podName} (${c.name}) was OOMKilled`, podName)
-                    }
-                    if (waiting.reason === 'ImagePullBackOff' || waiting.reason === 'ErrImagePull') {
-                        this._createIncident(cluster, 'ImagePullBackOff',
-                            `${ns}/${podName} (${c.name}) cannot pull image: ${waiting.message || ''}`, podName)
-                    }
-                }
+        let data
+        try { data = JSON.parse(result.stdout) } catch { return }
 
-                // Pod stuck Pending > 5 min
-                if (pod.status?.phase === 'Pending') {
-                    const age = Date.now() - new Date(pod.metadata.creationTimestamp).getTime()
-                    if (age > 5 * 60 * 1000) {
-                        this._createIncident(cluster, 'PodPendingTooLong',
-                            `${ns}/${podName} has been Pending for ${Math.round(age / 60000)} minutes`, podName)
-                    }
-                }
+        for (const n of (data.items || [])) {
+            const name = n.metadata?.name
+            for (const cond of (n.status?.conditions || [])) {
+                if (cond.type === 'Ready' && cond.status !== 'True')
+                    this._createIncident(cluster, 'NodeNotReady', `Node ${name} not Ready: ${cond.message}`, name)
+                if (cond.type === 'DiskPressure' && cond.status === 'True')
+                    this._createIncident(cluster, 'DiskPressure', `Node ${name} DiskPressure: ${cond.message}`, name)
+                if (cond.type === 'MemoryPressure' && cond.status === 'True')
+                    this._createIncident(cluster, 'MemoryPressure', `Node ${name} MemoryPressure: ${cond.message}`, name)
+                if (cond.type === 'PIDPressure' && cond.status === 'True')
+                    this._createIncident(cluster, 'PIDPressure', `Node ${name} PIDPressure: ${cond.message}`, name)
             }
-        } catch (_) { /* transient — next poll retries */ }
-        // No dispose — SSH connection is shared with event stream
+        }
+    }
+
+    // ── Pod poller ───────────────────────────────────────────────────────────
+    async _pollPods(cluster) {
+        const result = await this._run(cluster, ssh =>
+            ssh.execCommand('kubectl get pods -A -o json 2>/dev/null'))
+        if (!result || result.code !== 0 || !result.stdout?.trim()) return
+
+        let data
+        try { data = JSON.parse(result.stdout) } catch { return }
+
+        for (const pod of (data.items || [])) {
+            const podName = pod.metadata?.name
+            const ns = pod.metadata?.namespace
+            for (const c of (pod.status?.containerStatuses || [])) {
+                const w = c.state?.waiting
+                const t = c.state?.terminated
+                if (w?.reason === 'CrashLoopBackOff')
+                    this._createIncident(cluster, 'CrashLoopBackOff', `${ns}/${podName} (${c.name}) in CrashLoopBackOff`, podName)
+                if (w?.reason === 'ImagePullBackOff' || w?.reason === 'ErrImagePull')
+                    this._createIncident(cluster, 'ImagePullBackOff', `${ns}/${podName} (${c.name}) cannot pull image: ${w.message || ''}`, podName)
+                if (t?.reason === 'OOMKilled' || w?.reason === 'OOMKilled')
+                    this._createIncident(cluster, 'OOMKilled', `${ns}/${podName} (${c.name}) was OOMKilled`, podName)
+            }
+            if (pod.status?.phase === 'Pending' && pod.metadata?.creationTimestamp) {
+                const age = Date.now() - new Date(pod.metadata.creationTimestamp).getTime()
+                if (age > 5 * 60 * 1000)
+                    this._createIncident(cluster, 'PodPendingTooLong', `${ns}/${podName} Pending for ${Math.round(age / 60000)}m`, podName)
+            }
+        }
     }
 
     // ── Incident factory ───────────────────────────────────────────────────────
     _createIncident(cluster, reason, message, target) {
+        if (!reason) return
         const key = `${cluster.id}:${reason}:${target}`
 
-        // Dedup — same issue within 5 min = same incident
         const recent = this.incidents.find(i =>
-            i._key === key &&
-            Date.now() - new Date(i.timestamp).getTime() < DEDUP_WINDOW_MS
-        )
+            i._key === key && Date.now() - new Date(i.timestamp).getTime() < DEDUP_WINDOW_MS)
         if (recent) return
 
         const incident = {
             id:          `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             _key:        key,
             clusterId:   cluster.id,
-            clusterName: cluster.name,
+            clusterName: cname(cluster),
             orgId:       cluster.orgId,
             ownerId:     cluster.ownerId,
             reason,
-            message,
+            message:     message || '',
             timestamp:   new Date().toISOString(),
             status:      'detecting',
             target:      target || 'cluster-wide'
         }
 
-        console.log(`[AutoHealing] Incident detected — [${reason}] target=${target} cluster=${cluster.name}`)
+        console.log(`[AutoHealing] Incident — [${reason}] target=${target} cluster=${cname(cluster)}`)
 
         this.incidents.unshift(incident)
-
-        // Keep last 200, expire older than 24h
         this.incidents = this.incidents
             .slice(0, 200)
             .filter(i => Date.now() - new Date(i.timestamp).getTime() < INCIDENT_TTL_MS)
 
-        remediationEngine.handleAnomaly(
-            cluster,
-            { reason, message, involvedObject: { name: target } },
-            incident
-        )
+        // Dispatch to remediation — never let a failure here break detection
+        try {
+            remediationEngine.handleAnomaly(
+                cluster,
+                { reason, message, involvedObject: { name: target } },
+                incident
+            )
+        } catch (e) {
+            console.error(`[AutoHealing] Remediation dispatch failed: ${e.message}`)
+        }
     }
 
     updateIncidentStatus(incidentId, status, details) {
         const inc = this.incidents.find(i => i.id === incidentId)
         if (inc) {
-            inc.status    = status
-            inc.details   = details
+            inc.status = status
+            inc.details = details
             inc.updatedAt = new Date().toISOString()
         }
     }
 
     stopWatching(clusterId) {
         this._cleanup(clusterId)
-        this.reconnectAttempts.delete(clusterId)
+        this.reconnect.delete(clusterId)
         console.log(`[AutoHealing] Stopped watching cluster ${clusterId}`)
     }
 }

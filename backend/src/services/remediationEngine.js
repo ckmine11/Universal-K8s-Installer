@@ -46,33 +46,40 @@ class RemediationEngine {
         this.activeIncidents.set(key, state)
 
         const attempt = state.retries
-        console.log(`[AutoHealing] Playbook [${event.reason}] — attempt ${attempt}/${MAX_RETRIES} — cluster: ${cluster.name}`)
+        console.log(`[AutoHealing] Playbook [${event.reason}] — attempt ${attempt}/${MAX_RETRIES} — cluster: ${cluster.clusterName || cluster.name || cluster.id}`)
 
         await this._updateStatus(incident, 'remediating',
             `${playbook.label} (attempt ${attempt}/${MAX_RETRIES})`)
 
         try {
-            const allNodes  = [...(cluster.masterNodes || []), ...(cluster.workerNodes || [])]
+            // Enrich nodes with ownerId/orgId so SSH routes through the Gateway Agent
+            const enrich = (n) => n ? { ...n, ownerId: cluster.ownerId, orgId: cluster.orgId } : n
+            const enrichedCluster = {
+                ...cluster,
+                masterNodes: (cluster.masterNodes || []).map(enrich),
+                workerNodes: (cluster.workerNodes || []).map(enrich)
+            }
+            const allNodes  = [...enrichedCluster.masterNodes, ...enrichedCluster.workerNodes]
             const targetName = event.involvedObject?.name
             const targetNode = allNodes.find(n =>
                 n.ip === targetName || n.hostname === targetName || n.name === targetName
             )
 
-            // Run the fix
-            await playbook.fix(this.automationEngine, cluster, targetNode, incident,
+            // Run the fix (pass enriched cluster so master-based fixes route correctly too)
+            await playbook.fix(this.automationEngine, enrichedCluster, targetNode, incident,
                 this._updateStatus.bind(this))
 
             // Verify the fix actually worked
             await this._updateStatus(incident, 'remediating',
                 `Fix applied — verifying recovery...`)
 
-            const verified = await this._verify(playbook, cluster, targetNode)
+            const verified = await this._verify(playbook, enrichedCluster, targetNode)
 
             if (verified) {
                 await this._updateStatus(incident, 'resolved',
                     `${playbook.label} — confirmed healthy after ${attempt} attempt(s)`)
                 this.activeIncidents.delete(key) // Reset on success
-                console.log(`[AutoHealing] Resolved [${event.reason}] on ${cluster.name}`)
+                console.log(`[AutoHealing] Resolved [${event.reason}] on ${cluster.clusterName || cluster.id}`)
             } else {
                 await this._updateStatus(incident, 'remediating',
                     `Fix applied but node/pod not yet healthy — will retry if issue persists`)
