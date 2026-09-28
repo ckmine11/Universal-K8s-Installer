@@ -354,13 +354,14 @@ export default function AgentNodes() {
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
 
-    const fetchAgents = useCallback(async (isRefresh = false) => {
-        if (isRefresh) setRefreshing(true)
+    const fetchAgents = useCallback(async ({ silent = false } = {}) => {
+        if (!silent) setRefreshing(true)
         try {
             const res = await apiFetch('/api/agent/list')
             if (res.ok) {
                 const data = await res.json()
                 setAgents(data)
+                return data
             }
         } catch (e) {
             console.error('Failed to fetch agents:', e)
@@ -368,13 +369,31 @@ export default function AgentNodes() {
             setLoading(false)
             setRefreshing(false)
         }
+        return null
     }, [])
 
+    // Adaptive real-time polling: while any agent is 'pending' (just registered,
+    // waiting to connect), poll fast (every 3s) so it flips to 'connected'
+    // automatically — no manual refresh. Otherwise poll slowly (every 15s).
     useEffect(() => {
-        fetchAgents()
-        // Poll every 15s to update online/offline status
-        const interval = setInterval(() => fetchAgents(true), 15000)
-        return () => clearInterval(interval)
+        let timer
+        let cancelled = false
+
+        const tick = async () => {
+            const data = await fetchAgents({ silent: true })
+            if (cancelled) return
+            const hasPending = (data || []).some(a => a.status === 'pending')
+            timer = setTimeout(tick, hasPending ? 3000 : 15000)
+        }
+
+        // initial load (with spinner), then start the adaptive loop
+        fetchAgents().then(data => {
+            if (cancelled) return
+            const hasPending = (data || []).some(a => a.status === 'pending')
+            timer = setTimeout(tick, hasPending ? 3000 : 15000)
+        })
+
+        return () => { cancelled = true; clearTimeout(timer) }
     }, [fetchAgents])
 
     const onlineCount = agents.filter(a => a.status === 'online').length
@@ -398,7 +417,7 @@ export default function AgentNodes() {
                         </div>
                     )}
                     <button
-                        onClick={() => fetchAgents(true)}
+                        onClick={() => fetchAgents()}
                         disabled={refreshing}
                         className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all active:scale-95 text-slate-300"
                     >
@@ -478,7 +497,7 @@ export default function AgentNodes() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Left: Generate Agent */}
                 <div>
-                    <GenerateAgentCard onGenerated={() => setTimeout(() => fetchAgents(true), 1500)} />
+                    <GenerateAgentCard onGenerated={() => setTimeout(() => fetchAgents(), 1500)} />
                 </div>
 
                 {/* Right: Existing Agents */}
@@ -488,7 +507,7 @@ export default function AgentNodes() {
                         <div className="flex items-center gap-3">
                             <span className="text-xs font-bold text-slate-600">{agents.length} total</span>
                             <button
-                                onClick={() => fetchAgents(true)}
+                                onClick={() => fetchAgents()}
                                 disabled={refreshing}
                                 className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg transition-all active:scale-95 text-slate-300"
                                 title="Refresh Agents"
@@ -517,7 +536,7 @@ export default function AgentNodes() {
                                 <AgentCard
                                     key={agent.agentId}
                                     agent={agent}
-                                    onDelete={() => fetchAgents(true)}
+                                    onDelete={() => fetchAgents()}
                                 />
                             ))}
                         </div>
