@@ -2,14 +2,12 @@ import { clusterStore } from './clusterStore.js'
 import { automationEngine } from './automationEngine.js'
 import { remediationEngine } from './remediationEngine.js'
 
-const EVENT_POLL_INTERVAL = 60 * 1000       // 60s — cluster events
 const NODE_POLL_INTERVAL  = 60 * 1000       // 60s — node conditions
 const POD_POLL_INTERVAL   = 90 * 1000       // 90s — pod states
 const RECONNECT_BASE_MS   = 10 * 1000
 const RECONNECT_MAX_MS    = 5 * 60 * 1000
 const INCIDENT_TTL_MS     = 24 * 60 * 60 * 1000
 const DEDUP_WINDOW_MS     = 5 * 60 * 1000     // don't re-create the same incident within 5min
-const EVENT_FRESH_MS      = 3 * 60 * 1000     // only act on events seen in the last 3min
 const MAX_POLL_FAILURES   = 3                 // consecutive failures before reconnect
 
 const cname = (c) => c.clusterName || c.name || 'cluster'
@@ -73,17 +71,18 @@ class IncidentDetector {
         const stream = { ssh, timers: [], failCount: 0, cluster }
         this.streams.set(cluster.id, stream)
 
-        // Schedule the three pollers
-        stream.timers.push(setInterval(() => this._pollEvents(cluster), EVENT_POLL_INTERVAL))
-        stream.timers.push(setInterval(() => this._pollNodes(cluster),  NODE_POLL_INTERVAL))
-        stream.timers.push(setInterval(() => this._pollPods(cluster),   POD_POLL_INTERVAL))
+        // Schedule structured pollers (node + pod). We intentionally do NOT poll
+        // raw cluster events — a single node-down produces dozens of warning
+        // events (node + every pod on it), which floods incidents/notifications.
+        // Node & pod pollers give clean, de-duplicated, actionable signals.
+        stream.timers.push(setInterval(() => this._pollNodes(cluster), NODE_POLL_INTERVAL))
+        stream.timers.push(setInterval(() => this._pollPods(cluster),  POD_POLL_INTERVAL))
 
         // Run immediately so we don't wait a full interval on first watch
-        this._pollEvents(cluster)
         this._pollNodes(cluster)
         this._pollPods(cluster)
 
-        console.log(`[AutoHealing] Watching ${cname(cluster)} — event/node/pod pollers active`)
+        console.log(`[AutoHealing] Watching ${cname(cluster)} — node/pod pollers active`)
     }
 
     _scheduleReconnect(cluster) {
@@ -119,24 +118,6 @@ class IncidentDetector {
                 this._scheduleReconnect(cluster)
             }
             return null
-        }
-    }
-
-    // ── Event poller ─────────────────────────────────────────────────────────
-    async _pollEvents(cluster) {
-        const result = await this._run(cluster, ssh =>
-            ssh.execCommand('kubectl get events -A -o json 2>/dev/null'))
-        if (!result || result.code !== 0 || !result.stdout?.trim()) return
-
-        let data
-        try { data = JSON.parse(result.stdout) } catch { return }
-
-        for (const ev of (data.items || [])) {
-            if (!ev.type || ev.type === 'Normal') continue
-            // Only act on recent events to avoid re-alerting on stale history
-            const ts = ev.lastTimestamp || ev.eventTime || ev.firstTimestamp
-            if (ts && Date.now() - new Date(ts).getTime() > EVENT_FRESH_MS) continue
-            this._createIncident(cluster, ev.reason, ev.message, ev.involvedObject?.name)
         }
     }
 
