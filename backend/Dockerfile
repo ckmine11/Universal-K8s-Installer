@@ -16,6 +16,7 @@ RUN npm install
 
 # Copy source code and build script
 COPY src ./src
+COPY scripts ./scripts
 COPY build-agent.js ./
 
 # Build agent bundle into public/agent-bundle.js
