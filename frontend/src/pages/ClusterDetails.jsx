@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
-import { apiFetch } from '../context/AuthContext'
+import { apiFetch, useAuth } from '../context/AuthContext'
+import { can } from '../config/permissions'
 import Skeleton from '../components/Skeleton'
 import {
     Activity,
@@ -29,8 +30,16 @@ import AddonAccessPanel from '../components/AddonAccessPanel'
 
 export default function ClusterDetails({ onScaleCluster }) {
     const { toast } = useToast()
+    const { user } = useAuth()
     const { id } = useParams()
     const navigate = useNavigate()
+
+    // RBAC UI gating (backend enforces the real checks)
+    const canUpgrade = can(user?.role, 'cluster:upgrade')
+    const canScale = can(user?.role, 'cluster:scale')
+    const canResume = can(user?.role, 'cluster:resume')
+    const canKubeconfig = can(user?.role, 'kubeconfig:download')
+    const canTerminal = can(user?.role, 'terminal:access')
     const [cluster, setCluster] = useState(null)
     const [loading, setLoading] = useState(true)
     const [health, setHealth] = useState(null)
@@ -216,7 +225,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                 </div>
 
                 {/* Resume button — for failed OR cancelled clusters */}
-                {(cluster.status === 'failed' || cluster.status === 'cancelled') && (
+                {canResume && (cluster.status === 'failed' || cluster.status === 'cancelled') && (
                     <button
                         onClick={() => setResumeModalOpen(true)}
                         className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
@@ -286,15 +295,17 @@ export default function ClusterDetails({ onScaleCluster }) {
                             </span>
                         </div>
                         <div className="flex items-center space-x-3">
-                            <button
-                                onClick={downloadKubeconfig}
-                                className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-bold transition-all border border-white/5"
-                            >
-                                <Download className="w-4 h-4 mr-2" />
-                                Kubeconfig
-                            </button>
+                            {canKubeconfig && (
+                                <button
+                                    onClick={downloadKubeconfig}
+                                    className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-bold transition-all border border-white/5"
+                                >
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Kubeconfig
+                                </button>
+                            )}
 
-                            {availableUpgrades.length > 0 && (
+                            {canUpgrade && availableUpgrades.length > 0 && (
                                 <button
                                     onClick={() => setUpgradeModalOpen(true)}
                                     className="flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/20"
@@ -304,21 +315,30 @@ export default function ClusterDetails({ onScaleCluster }) {
                                 </button>
                             )}
 
-                            <button
-                                onClick={() => setIsTerminalOpen(true)}
-                                className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-bold transition-all shadow-lg"
-                            >
-                                <Terminal className="w-4 h-4 mr-2" />
-                                Orbital Terminal
-                            </button>
+                            {canTerminal && (
+                                <button
+                                    onClick={() => setIsTerminalOpen(true)}
+                                    className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-bold transition-all shadow-lg"
+                                >
+                                    <Terminal className="w-4 h-4 mr-2" />
+                                    Orbital Terminal
+                                </button>
+                            )}
 
-                            <button
-                                onClick={() => onScaleCluster(cluster)}
-                                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20"
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Scale Cluster
-                            </button>
+                            {canScale && (
+                                <button
+                                    onClick={() => onScaleCluster(cluster)}
+                                    className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20"
+                                >
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Scale Cluster
+                                </button>
+                            )}
+
+                            {/* Read-only note when no actions are available */}
+                            {!canKubeconfig && !canUpgrade && !canTerminal && !canScale && (
+                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Read-only — view access</span>
+                            )}
                         </div>
                     </div>
 

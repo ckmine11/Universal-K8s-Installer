@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth, apiFetch } from '../context/AuthContext'
+import { can } from '../config/permissions'
 import { useToast } from '../components/ToastProvider'
 import {
     Server, Plus, Wifi, WifiOff, Clock, Copy, Check,
     Trash2, Loader2, RefreshCw, Shield, AlertTriangle,
-    Terminal, ChevronRight, Activity, Info, Rocket, Zap, ArrowRight
+    Terminal, ChevronRight, Activity, Info, Rocket, Zap, ArrowRight, Lock
 } from 'lucide-react'
 
 // ─── Status Badge ─────────────────────────────────────────────────
@@ -230,7 +231,7 @@ function GenerateAgentCard({ onGenerated }) {
 }
 
 // ─── Agent Card ───────────────────────────────────────────────────
-function AgentCard({ agent, onDelete }) {
+function AgentCard({ agent, onDelete, canManage = true }) {
     const { toast } = useToast()
     const [deleting, setDeleting] = useState(false)
     const [confirm, setConfirm] = useState(false)
@@ -316,7 +317,7 @@ function AgentCard({ agent, onDelete }) {
                     Last seen: {timeSince(agent.lastSeen)}
                 </div>
 
-                {!confirm ? (
+                {!canManage ? null : !confirm ? (
                     <button
                         onClick={() => setConfirm(true)}
                         className="p-2 rounded-xl text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all"
@@ -349,6 +350,7 @@ function AgentCard({ agent, onDelete }) {
 // ─── Main Page ────────────────────────────────────────────────────
 export default function AgentNodes() {
     const { user } = useAuth()
+    const canManageAgents = can(user?.role, 'agent:manage')
     const navigate = useNavigate()
     const [agents, setAgents] = useState([])
     const [loading, setLoading] = useState(true)
@@ -495,9 +497,19 @@ export default function AgentNodes() {
 
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Left: Generate Agent */}
+                {/* Left: Generate Agent (manage permission required) */}
                 <div>
-                    <GenerateAgentCard onGenerated={() => setTimeout(() => fetchAgents(), 1500)} />
+                    {canManageAgents ? (
+                        <GenerateAgentCard onGenerated={() => setTimeout(() => fetchAgents(), 1500)} />
+                    ) : (
+                        <div className="glass rounded-3xl border border-white/5 p-10 text-center">
+                            <div className="p-4 bg-white/5 rounded-2xl border border-white/5 inline-flex mb-4">
+                                <Lock className="w-8 h-8 text-slate-600" />
+                            </div>
+                            <p className="text-slate-400 font-bold mb-1">Read-only access</p>
+                            <p className="text-xs text-slate-600">Your role can view agents but cannot create or remove them.</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right: Existing Agents */}
@@ -536,6 +548,7 @@ export default function AgentNodes() {
                                 <AgentCard
                                     key={agent.agentId}
                                     agent={agent}
+                                    canManage={canManageAgents}
                                     onDelete={() => fetchAgents()}
                                 />
                             ))}

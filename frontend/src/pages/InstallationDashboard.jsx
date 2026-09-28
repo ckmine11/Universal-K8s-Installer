@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
-import { apiFetch } from '../context/AuthContext'
+import { apiFetch, useAuth } from '../context/AuthContext'
+import { can } from '../config/permissions'
 import { useInstallationTracker } from '../context/InstallationTrackerContext'
 import { HealthSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
@@ -32,6 +33,9 @@ import {
 
 export default function InstallationDashboard({ installationId, onGoHome, onScaleCluster }) {
     const { toast } = useToast()
+    const { user } = useAuth()
+    const canCancel = can(user?.role, 'cluster:delete')
+    const canResume = can(user?.role, 'cluster:resume')
     const navigate = useNavigate()
     const { trackInstallation, updateInstallation } = useInstallationTracker()
     const [status, setStatus] = useState('running') // 'running', 'completed', 'failed'
@@ -731,7 +735,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
                     <div className="flex items-center gap-3">
                         {/* Cancel — only while running */}
-                        {status === 'running' && (
+                        {canCancel && status === 'running' && (
                             <button
                                 onClick={handleCancel}
                                 disabled={isCancelling}
@@ -743,7 +747,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         )}
 
                         {/* Resume — after cancel or failure (skips completed steps) */}
-                        {(status === 'cancelled' || status === 'failed') && (
+                        {canResume && (status === 'cancelled' || status === 'failed') && (
                             <button
                                 onClick={handleResumeFromDashboard}
                                 disabled={isResuming}

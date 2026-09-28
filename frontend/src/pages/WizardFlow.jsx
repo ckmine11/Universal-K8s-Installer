@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../components/ToastProvider'
-import { apiFetch } from '../context/AuthContext'
+import { apiFetch, useAuth } from '../context/AuthContext'
+import { can } from '../config/permissions'
 import { useNavigate } from 'react-router-dom'
 import { ADDONS_LIST } from '../config/addons'
 import { K8S_VERSIONS } from '../config/versions'
@@ -38,6 +39,11 @@ import DeploymentPlan from '../components/DeploymentPlan'
 
 export default function WizardFlow({ onStartInstallation, onCancel, mode = 'install', initialData = null }) {
     const { toast } = useToast()
+    const { user } = useAuth()
+    // RBAC guard flag (const only — no hook; the actual return happens after all hooks)
+    const requiredPerm = mode === 'scale' ? 'cluster:scale' : 'cluster:create'
+    const accessDenied = user && !can(user.role, requiredPerm)
+
     const [currentStep, setCurrentStep] = useState(mode === 'scale' ? 2 : 1)
     const [formData, setFormData] = useState({
         clusterName: mode === 'scale' ? 'Existing Cluster' : '',
@@ -354,6 +360,23 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                         </ol>
                     </div>
                 </div>
+            </div>
+        )
+    }
+
+    // RBAC: read-only roles cannot reach the create/scale wizard (backend also enforces)
+    if (accessDenied) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+                <Lock className="w-14 h-14 text-red-500 mb-4" />
+                <h1 className="text-2xl font-black text-white mb-2">Access Denied</h1>
+                <p className="text-slate-400 max-w-sm mb-6">
+                    Your role is read-only. You don't have permission to {mode === 'scale' ? 'scale' : 'create'} clusters.
+                    Ask an Operator or Admin.
+                </p>
+                <button onClick={() => navigate('/')} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold">
+                    Back to Home
+                </button>
             </div>
         )
     }
