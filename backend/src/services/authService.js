@@ -204,6 +204,15 @@ class AuthService {
         throw new Error('User not found');
     }
 
+    deleteUser(id) {
+        const idx = this.users.findIndex(u => u.id === id);
+        if (idx === -1) throw new Error('User not found');
+        const [removed] = this.users.splice(idx, 1);
+        this.saveUsers();
+        const { password, resetToken, resetTokenExpiry, ...safe } = removed;
+        return safe;
+    }
+
     updateUserRole(id, role) {
         const user = this.getUserById(id);
         if (user) {

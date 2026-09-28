@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useToast } from './ToastProvider'
 import { apiFetch } from '../context/AuthContext'
-import { Loader2, Users, Shield, AlertTriangle, CheckCircle2, ShieldOff, Edit3, X, CreditCard, ExternalLink, Building2 } from 'lucide-react'
+import { Loader2, Users, Shield, AlertTriangle, CheckCircle2, ShieldOff, Edit3, X, CreditCard, ExternalLink, Building2, Trash2 } from 'lucide-react'
 
 const EMPTY_BILLING = { amount: '', cycle: 'monthly', currency: 'USD', paymentLink: '', notes: '' }
 
@@ -100,6 +100,19 @@ export default function TenantManager() {
             toast({ title: 'Error', message: err.message, type: 'error' })
         } finally {
             setSaving(false)
+        }
+    }
+
+    const handleDelete = async (tenant) => {
+        if (!window.confirm(`Permanently DELETE ${tenant.username}? This removes the account and cannot be undone. Their clusters/data are not auto-deleted.`)) return
+        try {
+            const res = await apiFetch(`/api/superadmin/users/${tenant.id}`, { method: 'DELETE' })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Failed to delete user')
+            toast({ title: 'Deleted', message: data.message, type: 'success' })
+            fetchTenants()
+        } catch (err) {
+            toast({ title: 'Error', message: err.message, type: 'error' })
         }
     }
 
@@ -251,6 +264,15 @@ export default function TenantManager() {
                                         >
                                             {tenant.isSuspended ? <CheckCircle2 className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
                                         </button>
+                                        {tenant.role !== 'superadmin' && (
+                                            <button
+                                                onClick={() => handleDelete(tenant)}
+                                                className="p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-colors"
+                                                title="Delete User"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

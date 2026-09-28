@@ -14,6 +14,7 @@ import Docs from './pages/Docs'
 import Settings from './pages/Settings'
 import AgentNodes from './pages/AgentNodes'
 import AdminUsers from './pages/AdminUsers'
+import AdminConsole from './pages/AdminConsole'
 import Pricing from './pages/Pricing'
 import VendorPortal from './pages/VendorPortal'
 import Incidents from './pages/Incidents'
@@ -133,6 +134,10 @@ function AuthenticatedApp() {
                     <Route
                         path="/users"
                         element={<AdminUsers />}
+                    />
+                    <Route
+                        path="/admin"
+                        element={<AdminConsole />}
                     />
                     <Route path="*" element={
                         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">

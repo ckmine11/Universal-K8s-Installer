@@ -26,6 +26,7 @@ export default function Header() {
 
     // RBAC-driven UI gating
     const isAdmin = user && (user.role === 'admin' || user.role === 'superadmin')
+    const isSuperAdmin = user && user.role === 'superadmin'
     const canManageAgents = user && ['admin', 'operator', 'superadmin'].includes(user.role)
 
     // Close the profile menu on outside click
@@ -80,6 +81,7 @@ export default function Header() {
                         <NavLink to="/docs" icon={BookOpen} label="Docs" className="text-slate-300" />
                         <NavLink to="/pricing" icon={Zap} label="Pricing" className="text-emerald-400" />
                         {canManageAgents && <NavLink to="/agents" icon={Wifi} label="Tunnels" className="text-emerald-400" />}
+                        {isSuperAdmin && <NavLink to="/admin" icon={Crown} label="Admin" className="text-purple-400" />}
 
                         {/* Profile dropdown — shows the logged-in account's info + role-based links */}
                         {user && (
@@ -117,6 +119,7 @@ export default function Header() {
 
                                         {/* Links (role-gated) */}
                                         <div className="p-2">
+                                            {isSuperAdmin && <MenuLink to="/admin" icon={Crown} label="Admin Console" onClick={() => setMenuOpen(false)} />}
                                             <MenuLink to="/incidents" icon={Shield} label="Incidents & Auto-Healing" onClick={() => setMenuOpen(false)} />
                                             {isAdmin && <MenuLink to="/users" icon={Users} label="Team & Roles" onClick={() => setMenuOpen(false)} />}
                                             {isAdmin && <MenuLink to="/settings" icon={Settings} label="Workspace Settings" onClick={() => setMenuOpen(false)} />}
