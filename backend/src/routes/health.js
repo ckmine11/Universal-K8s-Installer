@@ -164,6 +164,42 @@ healthRouter.post('/backups/restore', requireAuth, (req, res) => {
 });
 
 /**
+ * Preview what a restore would change (no mutation)
+ * GET /api/health/backups/preview?filename=...
+ */
+healthRouter.get('/backups/preview', requireAuth, (req, res) => {
+    try {
+        if (!ensureBackupAccess(req, res)) return;
+        const { filename } = req.query;
+        if (!filename) return res.status(400).json({ success: false, error: 'Missing backup filename' });
+        const result = BackupService.previewRestore(filename, req.user.id);
+        if (result.success) res.json(result);
+        else res.status(404).json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Download a backup file (credentials remain encrypted in the file)
+ * GET /api/health/backups/download?filename=...
+ */
+healthRouter.get('/backups/download', requireAuth, (req, res) => {
+    try {
+        if (!ensureBackupAccess(req, res)) return;
+        const { filename } = req.query;
+        if (!filename) return res.status(400).json({ error: 'Missing backup filename' });
+
+        const filePath = BackupService.getBackupPath(filename, req.user.id);
+        if (!filePath) return res.status(404).json({ error: 'Backup not found or access denied' });
+
+        res.download(filePath, filename);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * Helper function to format bytes to human-readable format
  */
 function formatBytes(bytes) {

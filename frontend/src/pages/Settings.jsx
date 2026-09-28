@@ -20,8 +20,20 @@ import {
     Check,
     Users,
     ArrowRight,
-    Zap
+    Zap,
+    Download
 } from 'lucide-react'
+
+// Compact row used in the restore preview diff
+function DiffRow({ sym, color, name, detail }) {
+    return (
+        <div className="flex items-center gap-2 text-xs bg-white/[0.02] border border-white/5 rounded-lg px-3 py-2">
+            <span className={`font-black ${color} w-3`}>{sym}</span>
+            <span className="font-bold text-white truncate">{name}</span>
+            <span className="text-slate-500 truncate">— {detail}</span>
+        </div>
+    )
+}
 
 
 export default function Settings() {
@@ -39,6 +51,8 @@ export default function Settings() {
     const [isBackingUp, setIsBackingUp] = useState(false)
     const [isRestoring, setIsRestoring] = useState(null) // holds filename of restore target
     const [confirmRestore, setConfirmRestore] = useState(false)
+    const [restorePreview, setRestorePreview] = useState(null)
+    const [previewLoading, setPreviewLoading] = useState(false)
 
     // Licensing state
     const [configMode, setConfigMode] = useState('self-hosted')
@@ -234,6 +248,7 @@ export default function Settings() {
                 type: 'success'
             })
             setConfirmRestore(false)
+            setRestorePreview(null)
             setIsRestoring(null)
             fetchBackups()
         } catch (err) {
@@ -243,6 +258,44 @@ export default function Settings() {
                 type: 'error'
             })
             setIsRestoring(null)
+        }
+    }
+
+    // Download a backup file (credentials stay encrypted inside the file)
+    const handleDownloadBackup = async (filename) => {
+        try {
+            const res = await apiFetch(`/api/health/backups/download?filename=${encodeURIComponent(filename)}`)
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                throw new Error(data.error || 'Download failed')
+            }
+            const blob = await res.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = filename
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            window.URL.revokeObjectURL(url)
+        } catch (err) {
+            toast({ title: 'Download Failed', message: err.message, type: 'error' })
+        }
+    }
+
+    // Open the restore modal and load a preview of what will change
+    const openRestore = async (filename) => {
+        setConfirmRestore(filename)
+        setRestorePreview(null)
+        setPreviewLoading(true)
+        try {
+            const res = await apiFetch(`/api/health/backups/preview?filename=${encodeURIComponent(filename)}`)
+            const data = await res.json()
+            if (res.ok && data.success) setRestorePreview(data)
+        } catch {
+            // Preview is best-effort; restore still works without it
+        } finally {
+            setPreviewLoading(false)
         }
     }
 
@@ -517,7 +570,12 @@ export default function Settings() {
                         {/* Backup Table */}
                         <div className="glass rounded-3xl border border-white/5 overflow-hidden">
                             <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                                <h3 className="text-lg font-black uppercase tracking-wider text-slate-200">Snapshot Registry</h3>
+                                <div className="flex items-center gap-3">
+                                    <h3 className="text-lg font-black uppercase tracking-wider text-slate-200">Snapshot Registry</h3>
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
+                                        <Lock className="w-3 h-3" /> Credentials Encrypted
+                                    </span>
+                                </div>
                                 <button onClick={fetchBackups} className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all text-slate-300">
                                     <RefreshCw className="w-4 h-4" />
                                 </button>
@@ -554,14 +612,21 @@ export default function Settings() {
                                                             <td className="px-6 py-4 font-medium text-slate-300">{backup.size}</td>
                                                             <td className="px-6 py-4 text-slate-400">{new Date(backup.created).toLocaleString()}</td>
                                                             <td className="px-6 py-4 text-right">
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setConfirmRestore(backup.filename)
-                                                                    }}
-                                                                    className="px-4 py-2 border border-blue-500/20 hover:border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/10 text-blue-400 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95"
-                                                                >
-                                                                    Restore
-                                                                </button>
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <button
+                                                                        onClick={() => handleDownloadBackup(backup.filename)}
+                                                                        title="Download backup (credentials encrypted)"
+                                                                        className="px-3 py-2 border border-white/10 hover:border-white/25 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95 flex items-center gap-1.5"
+                                                                    >
+                                                                        <Download className="w-3.5 h-3.5" /> Download
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => openRestore(backup.filename)}
+                                                                        className="px-4 py-2 border border-blue-500/20 hover:border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/10 text-blue-400 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95"
+                                                                    >
+                                                                        Restore
+                                                                    </button>
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     ))
@@ -835,7 +900,7 @@ export default function Settings() {
             {/* Restore Confirmation Dialog */}
             {confirmRestore && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="glass border border-orange-500/30 rounded-3xl max-w-md w-full p-8 shadow-2xl relative overflow-hidden">
+                    <div className="glass border border-orange-500/30 rounded-3xl max-w-lg w-full p-8 shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/10 rounded-full blur-[80px] pointer-events-none animate-pulse"></div>
 
                         <div className="relative z-10 text-center">
@@ -843,14 +908,51 @@ export default function Settings() {
                                 <AlertTriangle className="w-8 h-8 text-orange-500" />
                             </div>
                             <h2 className="text-xl font-black text-white uppercase mb-2">Confirm Restore</h2>
-                            <p className="text-slate-400 text-sm mb-6 leading-relaxed">
-                                Are you sure you want to restore the snapshot: <span className="font-mono text-white text-xs block mt-1">{confirmRestore}</span>
-                                <strong className="text-orange-400 mt-2 block">Warning: This will overwrite the current cluster definitions.</strong>
+                            <p className="text-slate-400 text-sm mb-4 leading-relaxed">
+                                Restoring snapshot: <span className="font-mono text-white text-xs block mt-1 break-all">{confirmRestore}</span>
                             </p>
+
+                            {/* Preview diff — exactly what will change */}
+                            <div className="text-left mb-6">
+                                {previewLoading ? (
+                                    <div className="flex items-center justify-center gap-2 py-6 text-slate-500 text-xs">
+                                        <Loader2 className="w-4 h-4 animate-spin" /> Analyzing changes...
+                                    </div>
+                                ) : restorePreview ? (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold">
+                                            <span className="px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">+{restorePreview.counts.added} added</span>
+                                            <span className="px-2 py-1 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">~{restorePreview.counts.changed} changed</span>
+                                            <span className="px-2 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20">-{restorePreview.counts.removed} removed</span>
+                                            <span className="px-2 py-1 rounded-lg bg-white/5 text-slate-400 border border-white/10">{restorePreview.counts.unchanged} unchanged</span>
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                                            {restorePreview.added.map((c, i) => (
+                                                <DiffRow key={'a' + i} sym="+" color="text-emerald-400" name={c.clusterName} detail={`${c.nodeCount} nodes · ${c.k8sVersion} · will be re-created`} />
+                                            ))}
+                                            {restorePreview.changed.map((c, i) => (
+                                                <DiffRow key={'c' + i} sym="~" color="text-blue-400" name={c.to.clusterName} detail={`overwrite: ${c.from.nodeCount}→${c.to.nodeCount} nodes, ${c.to.addons.length} addons`} />
+                                            ))}
+                                            {restorePreview.removed.map((c, i) => (
+                                                <DiffRow key={'r' + i} sym="−" color="text-red-400" name={c.clusterName} detail={`${c.nodeCount} nodes · NOT in snapshot → will be dropped`} />
+                                            ))}
+                                            {restorePreview.counts.added === 0 && restorePreview.counts.changed === 0 && restorePreview.counts.removed === 0 && (
+                                                <p className="text-xs text-slate-500 py-2 text-center">No differences — your current state already matches this snapshot.</p>
+                                            )}
+                                        </div>
+                                        <div className="flex items-start gap-2 text-[11px] text-slate-500 bg-white/[0.03] border border-white/5 rounded-xl p-3">
+                                            <Shield className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                                            A safety backup of your current state is taken automatically before restoring, so this is reversible.
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="text-[11px] text-orange-400 text-center py-2">Preview unavailable — restore will still overwrite current cluster definitions.</p>
+                                )}
+                            </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <button
-                                    onClick={() => setConfirmRestore(null)}
+                                    onClick={() => { setConfirmRestore(null); setRestorePreview(null) }}
                                     disabled={isRestoring === confirmRestore}
                                     className="px-4 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 font-bold text-xs uppercase tracking-wider transition-colors"
                                 >

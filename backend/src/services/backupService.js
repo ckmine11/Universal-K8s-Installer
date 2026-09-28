@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { encrypt, decrypt } from '../utils/cryptoUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +21,36 @@ export class BackupService {
             fs.mkdirSync(this.BACKUP_DIR, { recursive: true });
             console.log('✓ Backup directory created');
         }
+    }
+
+    // Sensitive node fields that must never sit in a backup file as plain text.
+    static SENSITIVE_NODE_FIELDS = ['password', 'sshKey'];
+
+    /** Apply fn (encrypt/decrypt) to sensitive node credentials across clusters. */
+    static mapCredentials(clusters, fn) {
+        const mapNode = (n) => {
+            const node = { ...n };
+            for (const f of this.SENSITIVE_NODE_FIELDS) {
+                if (node[f]) node[f] = fn(node[f]);
+            }
+            return node;
+        };
+        return clusters.map(c => {
+            const clone = { ...c };
+            if (Array.isArray(clone.masterNodes)) clone.masterNodes = clone.masterNodes.map(mapNode);
+            if (Array.isArray(clone.workerNodes)) clone.workerNodes = clone.workerNodes.map(mapNode);
+            return clone;
+        });
+    }
+
+    /** Resolve a backup file path after validating ownership + rejecting traversal. */
+    static getBackupPath(filename, userId) {
+        if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+            return null;
+        }
+        if (!new RegExp(`^clusters-${userId}-`).test(filename)) return null;
+        const p = path.join(this.BACKUP_DIR, filename);
+        return fs.existsSync(p) ? p : null;
     }
 
     /**
@@ -45,13 +76,16 @@ export class BackupService {
             const allClusters = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
             const userClusters = allClusters.filter(c => c.ownerId === userId);
 
+            // Encrypt node credentials (password/sshKey) at rest in the backup file
+            const securedClusters = this.mapCredentials(userClusters, encrypt);
+
             // Create timestamp-based filename isolated by user
             const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
             const backupFilename = `clusters-${userId}-${timestamp}-${reason}.json`;
             const backupPath = path.join(this.BACKUP_DIR, backupFilename);
 
-            // Write only this user's clusters to the backup file
-            fs.writeFileSync(backupPath, JSON.stringify(userClusters, null, 2));
+            // Write only this user's clusters (credentials encrypted) to the backup file
+            fs.writeFileSync(backupPath, JSON.stringify(securedClusters, null, 2));
 
             // Get file stats
             const stats = fs.statSync(backupPath);
@@ -144,9 +178,10 @@ export class BackupService {
             // Create a backup of current state before restoring
             const currentBackup = this.createBackup('pre-restore', userId);
 
-            // Read the backup clusters
-            const restoredClusters = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
-            
+            // Read the backup clusters and decrypt credentials back to usable form
+            const rawBackup = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+            const restoredClusters = this.mapCredentials(rawBackup, decrypt);
+
             // Validate that the restored clusters belong to the user
             if (restoredClusters.some(c => c.ownerId !== userId)) {
                 return { success: false, error: 'Backup contains data belonging to another user' };
@@ -248,6 +283,68 @@ export class BackupService {
         } catch (error) {
             console.error('Failed to get stats:', error);
             return null;
+        }
+    }
+
+    /**
+     * Preview what a restore would change, WITHOUT touching anything.
+     * Compares the user's current clusters against the backup's clusters.
+     * @returns {Object} { added, removed, changed, unchanged } summaries
+     */
+    static previewRestore(backupFilename, userId) {
+        try {
+            const backupPath = this.getBackupPath(backupFilename, userId);
+            if (!backupPath) return { success: false, error: 'Backup file not found' };
+
+            const backupClusters = JSON.parse(fs.readFileSync(backupPath, 'utf-8')); // creds stay encrypted; not needed here
+            let allClusters = [];
+            if (fs.existsSync(this.DATA_PATH)) {
+                allClusters = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
+            }
+            const currentClusters = allClusters.filter(c => c.ownerId === userId);
+
+            const summarize = (c) => ({
+                id: c.id,
+                clusterName: c.clusterName,
+                k8sVersion: c.k8sVersion,
+                nodeCount: (c.masterNodes?.length || 0) + (c.workerNodes?.length || 0),
+                addons: c.addons || [],
+                status: c.status
+            });
+            const fingerprint = (c) => JSON.stringify([
+                c.clusterName, c.k8sVersion, c.networkPlugin,
+                (c.masterNodes?.length || 0) + (c.workerNodes?.length || 0),
+                [...(c.addons || [])].sort()
+            ]);
+
+            const curById = new Map(currentClusters.map(c => [c.id, c]));
+            const bakById = new Map(backupClusters.map(c => [c.id, c]));
+
+            const added = [];      // in backup, not currently present → will be re-created
+            const removed = [];    // currently present, not in backup → will be dropped
+            const changed = [];    // same id, different config → will be overwritten
+            const unchanged = [];
+
+            for (const b of backupClusters) {
+                const cur = curById.get(b.id);
+                if (!cur) added.push(summarize(b));
+                else if (fingerprint(cur) !== fingerprint(b)) changed.push({ from: summarize(cur), to: summarize(b) });
+                else unchanged.push(summarize(b));
+            }
+            for (const c of currentClusters) {
+                if (!bakById.has(c.id)) removed.push(summarize(c));
+            }
+
+            return {
+                success: true,
+                filename: backupFilename,
+                counts: { current: currentClusters.length, backup: backupClusters.length,
+                          added: added.length, removed: removed.length, changed: changed.length, unchanged: unchanged.length },
+                added, removed, changed, unchanged
+            };
+        } catch (error) {
+            console.error('Preview restore failed:', error);
+            return { success: false, error: error.message };
         }
     }
 
