@@ -99,7 +99,7 @@ export default function ClusterDetails({ onScaleCluster }) {
 
         // 2. Fetch Real Health Data
         fetchHealthData()
-        const interval = setInterval(fetchHealthData, 30000) // Poll every 30s
+        const interval = setInterval(fetchHealthData, 15000) // Poll every 15s — catch transient node states
         return () => clearInterval(interval)
     }, [id, navigate])
 
@@ -141,15 +141,26 @@ export default function ClusterDetails({ onScaleCluster }) {
     const workerNodes = cluster.workerNodes || []
     let allNodes = [...masterNodes.map(n => ({ ...n, role: 'master' })), ...workerNodes.map(n => ({ ...n, role: 'worker' }))]
 
-    if (health?.nodes) {
-        // Update status based on real data
+    if (health?.nodes && health.nodes.length) {
+        // Reliably map each configured node to its live kubectl status.
+        // Old code matched on role ('worker') which mismapped multiple workers,
+        // so a downed node could still show 'Ready'. Now: exact hostname match →
+        // hostname substring → role+order fallback, each live node used once.
+        const live = health.nodes.map(n => ({ ...n, _used: false }))
+        const matchByHost = (node) => {
+            if (!node.hostname) return null
+            const h = node.hostname.toLowerCase()
+            return live.find(n => !n._used && n.name.toLowerCase() === h)
+                || live.find(n => !n._used && (n.name.toLowerCase().includes(h) || h.includes(n.name.toLowerCase())))
+        }
         allNodes = allNodes.map(node => {
-            // Match by name or IP (simple heuristic)
-            const realNode = health.nodes.find(n => n.name.includes(node.hostname) || n.name.includes(node.ip) || n.name.includes(node.role))
-            return {
-                ...node,
-                status: realNode ? realNode.status : 'Unknown'
+            let rn = matchByHost(node)
+            if (!rn) {
+                // Fallback: pair by role in order
+                rn = live.find(n => !n._used && ((node.role === 'master') === (n.role === 'master')))
             }
+            if (rn) rn._used = true
+            return { ...node, status: rn ? rn.status : 'Unknown' }
         })
     }
 

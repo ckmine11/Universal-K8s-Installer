@@ -196,7 +196,7 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
     const hasData = clusterInfo?.nodes && clusterInfo.nodes.length > 0
     const [pulses, setPulses] = React.useState([])
     const [selected, setSelected] = React.useState(null)
-    const [autoRotate, setAutoRotate] = React.useState(true)
+    const [autoRotate, setAutoRotate] = React.useState(false) // static by default — user can enable
 
     const nodes = clusterInfo?.nodes || []
     const downCount = nodes.filter(n => { const s = (n.status || '').toLowerCase(); return s && s !== 'ready' && s !== 'pending' && s !== 'running' }).length
