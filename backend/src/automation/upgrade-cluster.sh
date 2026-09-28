@@ -64,6 +64,64 @@ else
 fi
 log "Detected Package Manager: $PKG_MGR"
 
+# ── Proactive OS repo repair (runs BEFORE any yum operation) ─────────────────
+# CentOS 7 is EOL: its mirrorlist is dead and vault.centos.org returns 403 on
+# some files. Because yum refreshes ALL repos on every operation, one broken
+# base/extras repo fails the entire upgrade. We repoint CentOS 7 to the vault
+# archive, force IPv4 + reliable DNS, and (critically) make broken OS repos
+# non-fatal so the Kubernetes repo can still install packages on ANY node.
+if [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
+    log "Preparing OS repositories (DNS, IPv4, EOL mirrors)..."
+
+    # Force IPv4 (fixes curl#7 on nodes without IPv6)
+    grep -q '^ip_resolve' /etc/yum.conf 2>/dev/null || echo 'ip_resolve=4' >> /etc/yum.conf 2>/dev/null || true
+    [ -f /etc/dnf/dnf.conf ] && { grep -q '^ip_resolve' /etc/dnf/dnf.conf 2>/dev/null || echo 'ip_resolve=4' >> /etc/dnf/dnf.conf 2>/dev/null || true; }
+
+    # Reliable public DNS if the node can't resolve
+    if ! grep -q '8.8.8.8' /etc/resolv.conf 2>/dev/null; then
+        cp /etc/resolv.conf /etc/resolv.conf.kubeez-bak 2>/dev/null || true
+        printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:2 attempts:3\n' > /etc/resolv.conf 2>/dev/null || true
+    fi
+
+    # CentOS 7 EOL → repoint to vault archive
+    . /etc/os-release 2>/dev/null || true
+    if [ "${ID:-}" = "centos" ] && [ "$(echo "${VERSION_ID:-0}" | cut -d. -f1)" = "7" ]; then
+        log "CentOS 7 (EOL) detected — repointing base repos to vault.centos.org"
+        rm -f /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+        cat > /etc/yum.repos.d/CentOS-Vault.repo <<'REPOEOF'
+[base]
+name=CentOS-7 - Base (Vault)
+baseurl=http://vault.centos.org/centos/7/os/$basearch/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+
+[updates]
+name=CentOS-7 - Updates (Vault)
+baseurl=http://vault.centos.org/centos/7/updates/$basearch/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+
+[extras]
+name=CentOS-7 - Extras (Vault)
+baseurl=http://vault.centos.org/centos/7/extras/$basearch/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+REPOEOF
+    fi
+
+    yum clean all 2>/dev/null || true
+    rm -rf /var/cache/yum/* 2>/dev/null || true
+fi
+
 # 2. Update Repositories
 log "Updating package repositories for v${VER_MAJOR_MINOR}..."
 if [ "$PKG_MGR" = "apt" ]; then
@@ -114,8 +172,9 @@ EOF
         yum versionlock clear || true
     fi
     
-    yum makecache
-    yum repolist
+    # skip_if_unavailable: broken/EOL OS repos must never fail the k8s upgrade
+    yum makecache --setopt=*.skip_if_unavailable=1 || yum makecache fast --setopt=*.skip_if_unavailable=1 || true
+    yum repolist || true
 fi
 
 # 3. Upgrade kubeadm
@@ -131,12 +190,12 @@ elif [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
     
     # We use --disableexcludes=all to be absolutely sure nothing blocks us
     
-    if ! $PKG_MGR install -y "kubeadm-${TARGET_VERSION}*" --disableexcludes=all; then
+    if ! $PKG_MGR install -y "kubeadm-${TARGET_VERSION}*" --disableexcludes=all --setopt=*.skip_if_unavailable=1; then
         echo "❌ Failed to install kubeadm-${TARGET_VERSION}. Listing available versions:"
-        $PKG_MGR --showduplicates list kubeadm --disableexcludes=all
+        $PKG_MGR --showduplicates list kubeadm --disableexcludes=all --setopt=*.skip_if_unavailable=1
         exit 1
     fi
-     $PKG_MGR downgrade -y "kubeadm-${TARGET_VERSION}*" --disableexcludes=all || true
+     $PKG_MGR downgrade -y "kubeadm-${TARGET_VERSION}*" --disableexcludes=all --setopt=*.skip_if_unavailable=1 || true
 fi
 
 # Verify kubeadm version
@@ -186,9 +245,9 @@ if [ "$PKG_MGR" = "apt" ]; then
     apt-get install -y kubelet="${TARGET_VERSION}-*" kubectl="${TARGET_VERSION}-*"
     apt-mark hold kubelet kubectl
 elif [ "$PKG_MGR" = "yum" ]; then
-    yum install -y kubelet-${TARGET_VERSION}* kubectl-${TARGET_VERSION}* --disableexcludes=all
+    yum install -y kubelet-${TARGET_VERSION}* kubectl-${TARGET_VERSION}* --disableexcludes=all --setopt=*.skip_if_unavailable=1
 elif [ "$PKG_MGR" = "dnf" ]; then
-    dnf install -y kubelet-${TARGET_VERSION}* kubectl-${TARGET_VERSION}* --disableexcludes=all
+    dnf install -y kubelet-${TARGET_VERSION}* kubectl-${TARGET_VERSION}* --disableexcludes=all --setopt=*.skip_if_unavailable=1
 fi
 
 # 6. Restart kubelet

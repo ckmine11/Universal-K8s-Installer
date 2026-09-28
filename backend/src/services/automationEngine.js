@@ -1072,7 +1072,20 @@ class AutomationEngine {
                     const args = [targetVersion, node.role, isFirstMaster ? 'true' : 'false']
 
                     onLog('info', `Step: Upgrading node components...`)
-                    await this.executeScript(ssh, scriptPath, args, onLog)
+                    try {
+                        await this.executeScript(ssh, scriptPath, args, onLog)
+                    } catch (err) {
+                        // Auto-heal: if the failure is a broken/EOL OS repo, fix it and retry once
+                        const diag = err.diagnosis?.fixAction
+                        const isRepoIssue = diag === 'fix_centos7_repos' || diag === 'fix_ipv6_force' || diag === 'fix_dns_resolv'
+                            || /vault\.centos\.org|no more mirrors|403 - forbidden|could not resolve/i.test(err.message || '')
+                        if (!isRepoIssue) throw err
+
+                        onLog('warning', `⚠️ Repository issue detected on ${node.ip}. Auto-healing OS repos and retrying...`)
+                        await this.runFix('fix_centos7_repos', node, onLog)
+                        onLog('info', `Retrying upgrade on ${node.ip}...`)
+                        await this.executeScript(ssh, scriptPath, args, onLog)
+                    }
 
                     if (isFirstMaster) firstMasterUpgraded = true
 
