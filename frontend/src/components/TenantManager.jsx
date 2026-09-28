@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useToast } from './ToastProvider'
 import { apiFetch } from '../context/AuthContext'
-import { Loader2, Users, Shield, AlertTriangle, CheckCircle2, ShieldOff, Edit3, X } from 'lucide-react'
+import { Loader2, Users, Shield, AlertTriangle, CheckCircle2, ShieldOff, Edit3, X, CreditCard, ExternalLink, Building2 } from 'lucide-react'
+
+const EMPTY_BILLING = { amount: '', cycle: 'monthly', currency: 'USD', paymentLink: '', notes: '' }
 
 export default function TenantManager() {
     const { toast } = useToast()
@@ -10,7 +12,7 @@ export default function TenantManager() {
 
     // Edit modal state
     const [editingTenant, setEditingTenant] = useState(null)
-    const [editForm, setEditForm] = useState({ plan: '', maxClusters: 1, maxNodes: 2, maxMembers: 1 })
+    const [editForm, setEditForm] = useState({ plan: '', maxClusters: 1, maxNodes: 2, maxMembers: 1, billing: { ...EMPTY_BILLING } })
     const [saving, setSaving] = useState(false)
 
     // Plan presets — selecting a plan auto-fills the standard quotas
@@ -70,7 +72,8 @@ export default function TenantManager() {
             plan: tenant.subscription?.plan || 'FREE',
             maxClusters: tenant.subscription?.maxClusters ?? 1,
             maxNodes: tenant.subscription?.maxNodes ?? 2,
-            maxMembers: tenant.subscription?.maxMembers ?? 1
+            maxMembers: tenant.subscription?.maxMembers ?? 1,
+            billing: { ...EMPTY_BILLING, ...(tenant.subscription?.billing || {}) }
         })
     }
 
@@ -184,10 +187,27 @@ export default function TenantManager() {
                                         {tenant.orgId}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="font-black text-blue-400 text-xs mb-1">{tenant.subscription?.plan || 'FREE'}</div>
+                                        <div className={`font-black text-xs mb-1 ${tenant.subscription?.plan === 'ENTERPRISE' ? 'text-purple-400' : 'text-blue-400'}`}>{tenant.subscription?.plan || 'FREE'}</div>
                                         <div className="text-[10px] text-slate-400">
                                             {tenant.subscription?.maxClusters} Clusters • {tenant.subscription?.maxNodes} Nodes • {tenant.subscription?.maxMembers ?? 1} Members
                                         </div>
+                                        {tenant.subscription?.billing?.amount && (
+                                            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded px-1.5 py-0.5">
+                                                    <CreditCard className="w-3 h-3" />
+                                                    {({ USD: '$', EUR: '€', INR: '₹', GBP: '£' }[tenant.subscription.billing.currency] || '$')}{tenant.subscription.billing.amount}/{tenant.subscription.billing.cycle === 'annual' ? 'yr' : 'mo'}
+                                                </span>
+                                                {tenant.subscription.billing.paymentLink && (
+                                                    <a href={tenant.subscription.billing.paymentLink} target="_blank" rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 hover:text-blue-300">
+                                                        <ExternalLink className="w-3 h-3" /> Invoice
+                                                    </a>
+                                                )}
+                                                {tenant.subscription.renewsAt && (
+                                                    <span className="text-[10px] text-slate-500">renews {new Date(tenant.subscription.renewsAt).toLocaleDateString()}</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4">
                                         {tenant.isSuspended ? (
@@ -296,6 +316,76 @@ export default function TenantManager() {
                                 </div>
                             </div>
                             <p className="text-[10px] text-slate-500">Use <span className="text-slate-300 font-mono">9999</span> for "Unlimited" (Enterprise). Do not use 0 — it blocks the resource.</p>
+
+                            {/* Enterprise Billing — negotiated deal record */}
+                            {editForm.plan === 'ENTERPRISE' && (
+                                <div className="rounded-2xl border border-purple-500/20 bg-purple-500/[0.03] p-4 space-y-4">
+                                    <div className="flex items-center gap-2">
+                                        <Building2 className="w-4 h-4 text-purple-400" />
+                                        <span className="text-xs font-black uppercase tracking-wider text-purple-300">Enterprise Billing</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Amount</label>
+                                            <div className="flex items-center gap-2">
+                                                <select
+                                                    value={editForm.billing.currency}
+                                                    onChange={(e) => setEditForm(f => ({ ...f, billing: { ...f.billing, currency: e.target.value } }))}
+                                                    className="bg-black/40 border border-white/10 rounded-xl px-2 py-3 text-white outline-none focus:border-purple-500 text-xs"
+                                                >
+                                                    <option value="USD">$</option>
+                                                    <option value="EUR">€</option>
+                                                    <option value="INR">₹</option>
+                                                    <option value="GBP">£</option>
+                                                </select>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    placeholder="499"
+                                                    value={editForm.billing.amount}
+                                                    onChange={(e) => setEditForm(f => ({ ...f, billing: { ...f.billing, amount: e.target.value } }))}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-white outline-none focus:border-purple-500 font-mono"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Billing Cycle</label>
+                                            <select
+                                                value={editForm.billing.cycle}
+                                                onChange={(e) => setEditForm(f => ({ ...f, billing: { ...f.billing, cycle: e.target.value } }))}
+                                                className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-white outline-none focus:border-purple-500"
+                                            >
+                                                <option value="monthly">Monthly</option>
+                                                <option value="annual">Annual</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Stripe Payment / Invoice Link</label>
+                                        <input
+                                            type="url"
+                                            placeholder="https://invoice.stripe.com/..."
+                                            value={editForm.billing.paymentLink}
+                                            onChange={(e) => setEditForm(f => ({ ...f, billing: { ...f.billing, paymentLink: e.target.value } }))}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-white outline-none focus:border-purple-500 text-xs font-mono"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Contract Notes</label>
+                                        <textarea
+                                            rows="2"
+                                            placeholder="SLA tier, PO number, contact person, contract term..."
+                                            value={editForm.billing.notes}
+                                            onChange={(e) => setEditForm(f => ({ ...f, billing: { ...f.billing, notes: e.target.value } }))}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-white outline-none focus:border-purple-500 text-xs resize-none"
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                                        Negotiate the deal → create a Stripe Payment Link / Invoice in the Stripe Dashboard → paste it here → Save.
+                                        Renewal auto-sets to <span className="text-slate-300 font-mono">{editForm.billing.cycle === 'annual' ? '+365 days' : '+30 days'}</span> from now.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                         <div className="p-6 border-t border-white/5 flex gap-3">
                             <button 

@@ -20,7 +20,7 @@ router.get('/users', (req, res) => {
 // ─── Super Admin: Update user limits/subscription ──────────────────────────────────────
 router.put('/users/:id/limits', (req, res) => {
     try {
-        const { plan, maxClusters, maxNodes, maxMembers } = req.body;
+        const { plan, maxClusters, maxNodes, maxMembers, billing } = req.body;
         if (!plan) {
             return res.status(400).json({ error: 'Plan name is required' });
         }
@@ -30,7 +30,8 @@ router.put('/users/:id/limits', (req, res) => {
             plan,
             parseInt(maxClusters) || 0,
             parseInt(maxNodes) || 0,
-            maxMembers  // optional — service picks a sensible per-plan default if omitted
+            maxMembers,  // optional — service picks a sensible per-plan default if omitted
+            billing      // optional — Enterprise billing record { amount, cycle, currency, paymentLink, notes }
         );
         res.json({ success: true, message: 'Limits updated successfully', user: updatedUser });
     } catch (err) {

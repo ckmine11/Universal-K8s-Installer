@@ -225,19 +225,40 @@ class AuthService {
         });
     }
 
-    updateUserSubscription(id, plan, maxClusters, maxNodes, maxMembers) {
+    updateUserSubscription(id, plan, maxClusters, maxNodes, maxMembers, billing) {
         const user = this.getUserById(id);
-        if (user) {
-            // Sensible team-seat default per plan when not explicitly provided
-            const seats = (maxMembers != null && maxMembers !== '')
-                ? parseInt(maxMembers)
-                : (String(plan).toUpperCase() === 'ENTERPRISE' ? 9999
-                    : String(plan).toUpperCase() === 'PRO' ? 5 : 1);
-            user.subscription = { plan, maxClusters, maxNodes, maxMembers: seats };
-            this.saveUsers();
-            return user;
+        if (!user) throw new Error('User not found');
+
+        const planU = String(plan).toUpperCase();
+        // Sensible team-seat default per plan when not explicitly provided
+        const seats = (maxMembers != null && maxMembers !== '')
+            ? parseInt(maxMembers)
+            : (planU === 'ENTERPRISE' ? 9999 : planU === 'PRO' ? 5 : 1);
+
+        const sub = { plan, maxClusters, maxNodes, maxMembers: seats };
+
+        // Enterprise billing record (negotiated deal) — tracked for the superadmin
+        if (billing && (billing.amount || billing.paymentLink || billing.notes)) {
+            const cycle = billing.cycle === 'annual' ? 'annual' : 'monthly';
+            const days = cycle === 'annual' ? 365 : 30;
+            sub.billing = {
+                amount: billing.amount || '',
+                cycle,
+                currency: billing.currency || 'USD',
+                paymentLink: billing.paymentLink || '',
+                notes: billing.notes || '',
+                provisionedAt: new Date().toISOString()
+            };
+            sub.billingCycle = cycle;
+            sub.renewsAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+        } else if (planU === 'PRO') {
+            sub.billingCycle = 'monthly';
+            sub.renewsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
         }
-        throw new Error('User not found');
+
+        user.subscription = sub;
+        this.saveUsers();
+        return user;
     }
 
     async forgotPassword(email) {
