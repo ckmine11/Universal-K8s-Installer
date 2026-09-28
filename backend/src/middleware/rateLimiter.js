@@ -6,7 +6,10 @@ import rateLimit from 'express-rate-limit';
  */
 export const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 300, // Limit each IP to 300 requests per 15 minutes
+    // The UI polls several endpoints (incidents, active installs, health), so a
+    // single active user makes many requests. 2000/15min per IP is generous for
+    // real usage while still stopping abuse. Per-IP works because trust proxy is on.
+    max: 2000,
     message: {
         success: false,
         error: 'Too many requests from this IP, please try again later.',
@@ -14,8 +17,10 @@ export const apiLimiter = rateLimit({
     },
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-    // Skip rate limiting for health checks
+    // Skip lightweight, high-frequency polling + health endpoints
     skip: (req) => req.path === '/api/health'
+        || req.path === '/api/incidents'
+        || req.path === '/api/clusters/installations/active'
 });
 
 /**

@@ -28,6 +28,11 @@ import superadminRoutes from './routes/superadmin.js'
 
 
 const app = express()
+// Trust the reverse proxy (nginx) so req.ip is the REAL client IP from
+// X-Forwarded-For. Without this, every user shares one rate-limit bucket
+// (the proxy's IP) and everyone gets throttled almost immediately.
+// Value 1 = one proxy hop (nginx) directly in front of the backend.
+app.set('trust proxy', 1)
 const server = createServer(app)
 const wss = new WebSocketServer({ server }) // Allow all paths, we filter below
 
