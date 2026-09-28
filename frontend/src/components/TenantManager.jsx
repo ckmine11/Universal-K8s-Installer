@@ -5,6 +5,23 @@ import { Loader2, Users, Shield, AlertTriangle, CheckCircle2, ShieldOff, Edit3, 
 
 const EMPTY_BILLING = { amount: '', cycle: 'monthly', currency: 'USD', paymentLink: '', notes: '' }
 
+// Human-readable role label + color (mirrors backend RBAC roles)
+const ROLE_META = {
+    superadmin: { label: 'Super Admin', cls: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+    admin:      { label: 'Org Admin',   cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+    operator:   { label: 'Operator',    cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+    viewer:     { label: 'Viewer',      cls: 'bg-slate-500/10 text-slate-400 border-slate-500/30' },
+}
+function RoleBadge({ role }) {
+    const m = ROLE_META[role] || { label: role || 'Member', cls: 'bg-slate-500/10 text-slate-400 border-slate-500/30' }
+    return <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${m.cls}`}>{m.label}</span>
+}
+function StatusBadge({ suspended }) {
+    return suspended
+        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20"><ShieldOff className="w-3 h-3" /> Suspended</span>
+        : null
+}
+
 export default function TenantManager() {
     const { toast } = useToast()
     const [tenants, setTenants] = useState([])
@@ -135,6 +152,16 @@ export default function TenantManager() {
         }
     }
 
+    // Group users by workspace (orgId): owner = the account that holds the
+    // subscription (plan !== MEMBER); everyone else is a team member.
+    const groups = {}
+    tenants.forEach(t => { (groups[t.orgId] = groups[t.orgId] || []).push(t) })
+    const workspaces = Object.entries(groups).map(([orgId, members]) => {
+        const owner = members.find(m => String(m.subscription?.plan || 'FREE').toUpperCase() !== 'MEMBER') || members[0]
+        const team = members.filter(m => m.id !== owner.id)
+        return { orgId, owner, members: team }
+    }).sort((a, b) => b.members.length - a.members.length) // workspaces with teams first
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -157,10 +184,10 @@ export default function TenantManager() {
                 </div>
                 <div className="glass rounded-3xl p-6 border border-white/5">
                     <div className="flex items-center justify-between mb-4">
-                        <span className="text-xs font-black uppercase text-slate-500 tracking-wider">Active Workspaces</span>
+                        <span className="text-xs font-black uppercase text-slate-500 tracking-wider">Workspaces</span>
                         <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                     </div>
-                    <h2 className="text-3xl font-black text-white">{tenants.filter(t => !t.isSuspended).length}</h2>
+                    <h2 className="text-3xl font-black text-white">{workspaces.length}</h2>
                 </div>
                 <div className="glass rounded-3xl p-6 border border-white/5">
                     <div className="flex items-center justify-between mb-4">
@@ -171,114 +198,112 @@ export default function TenantManager() {
                 </div>
             </div>
 
-            {/* Tenants Table */}
-            <div className="glass rounded-3xl border border-white/5 overflow-hidden">
-                <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                    <h3 className="text-lg font-black uppercase tracking-wider text-slate-200">Registered Users</h3>
-                </div>
-                
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-300">
-                        <thead className="bg-black/20 text-slate-500 border-b border-white/5 text-[10px] font-black uppercase tracking-widest">
-                            <tr>
-                                <th className="px-6 py-4">User</th>
-                                <th className="px-6 py-4">Workspace ID</th>
-                                <th className="px-6 py-4">Plan & Quotas</th>
-                                <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4">Role</th>
-                                <th className="px-6 py-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {tenants.map(tenant => (
-                                <tr key={tenant.id} className="hover:bg-white/[0.02] transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="font-bold text-white">{tenant.username}</div>
-                                        <div className="text-xs text-slate-500">{tenant.email || 'No email'}</div>
-                                    </td>
-                                    <td className="px-6 py-4 font-mono text-[10px] text-slate-400 select-all">
-                                        {tenant.orgId}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className={`font-black text-xs mb-1 ${tenant.subscription?.plan === 'ENTERPRISE' ? 'text-purple-400' : 'text-blue-400'}`}>{tenant.subscription?.plan || 'FREE'}</div>
-                                        <div className="text-[10px] text-slate-400">
-                                            {tenant.subscription?.maxClusters} Clusters • {tenant.subscription?.maxNodes} Nodes • {tenant.subscription?.maxMembers ?? 1} Members
+            {/* Workspaces — grouped by org, owner + their team members */}
+            <div className="space-y-5">
+                <h3 className="text-lg font-black uppercase tracking-wider text-slate-200">Workspaces & Members</h3>
+                {workspaces.map(ws => (
+                    <div key={ws.orgId} className="glass rounded-3xl border border-white/5 overflow-hidden">
+                        {/* Owner header */}
+                        <div className="p-5 border-b border-white/5 bg-white/[0.02]">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-black shrink-0">
+                                        {ws.owner.username?.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-black text-white">{ws.owner.username}</span>
+                                            <RoleBadge role={ws.owner.role} />
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                                                <Building2 className="w-3 h-3" /> Owner
+                                            </span>
+                                            {ws.owner.isSuspended && <StatusBadge suspended />}
                                         </div>
-                                        {tenant.subscription?.billing?.amount && (
-                                            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded px-1.5 py-0.5">
-                                                    <CreditCard className="w-3 h-3" />
-                                                    {({ USD: '$', EUR: '€', INR: '₹', GBP: '£' }[tenant.subscription.billing.currency] || '$')}{tenant.subscription.billing.amount}/{tenant.subscription.billing.cycle === 'annual' ? 'yr' : 'mo'}
-                                                </span>
-                                                {tenant.subscription.billing.paymentLink && (
-                                                    <a href={tenant.subscription.billing.paymentLink} target="_blank" rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 hover:text-blue-300">
-                                                        <ExternalLink className="w-3 h-3" /> Invoice
-                                                    </a>
-                                                )}
-                                                {tenant.subscription.renewsAt && (
-                                                    <span className="text-[10px] text-slate-500">renews {new Date(tenant.subscription.renewsAt).toLocaleDateString()}</span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        {tenant.isSuspended ? (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
-                                                <ShieldOff className="w-3 h-3" /> Suspended
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                                <CheckCircle2 className="w-3 h-3" /> Active
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <button 
-                                            onClick={() => handleRoleToggle(tenant)}
-                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border transition-all ${
-                                                tenant.role === 'superadmin' 
-                                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/30 hover:border-purple-500/60' 
-                                                : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20 hover:text-white'
-                                            }`}
-                                        >
-                                            {tenant.role === 'superadmin' ? 'Super Admin' : 'Admin'}
-                                        </button>
-                                    </td>
-                                    <td className="px-6 py-4 text-right space-x-2 flex justify-end">
-                                        <button 
-                                            onClick={() => openEditModal(tenant)}
-                                            className="p-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg transition-colors"
-                                            title="Edit Quotas"
-                                        >
+                                        <div className="text-xs text-slate-500">{ws.owner.email || 'No email'}</div>
+                                        <div className="text-[10px] font-mono text-slate-600 mt-0.5 select-all">org: {ws.orgId}</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="text-right">
+                                        <div className={`font-black text-xs ${ws.owner.subscription?.plan === 'ENTERPRISE' ? 'text-purple-400' : ws.owner.subscription?.plan === 'PRO' ? 'text-blue-400' : 'text-slate-400'}`}>
+                                            {ws.owner.subscription?.plan || 'FREE'}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500">
+                                            {ws.owner.subscription?.maxClusters} Clusters • {ws.owner.subscription?.maxNodes} Nodes
+                                        </div>
+                                        <div className="text-[10px] text-slate-500">
+                                            Seats: <span className="text-slate-300 font-bold">{ws.members.length}/{ws.owner.subscription?.maxMembers ?? 1}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => openEditModal(ws.owner)} title="Edit Plan & Quotas"
+                                            className="p-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg transition-colors">
                                             <Edit3 className="w-4 h-4" />
                                         </button>
-                                        <button 
-                                            onClick={() => handleStatusToggle(tenant)}
-                                            className={`p-2 border rounded-lg transition-colors ${
-                                                tenant.isSuspended 
-                                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400'
-                                                : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red-400'
-                                            }`}
-                                            title={tenant.isSuspended ? "Activate User" : "Suspend User"}
-                                        >
-                                            {tenant.isSuspended ? <CheckCircle2 className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
+                                        <button onClick={() => handleStatusToggle(ws.owner)} title={ws.owner.isSuspended ? 'Activate' : 'Suspend'}
+                                            className={`p-2 border rounded-lg transition-colors ${ws.owner.isSuspended ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red-400'}`}>
+                                            {ws.owner.isSuspended ? <CheckCircle2 className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
                                         </button>
-                                        {tenant.role !== 'superadmin' && (
-                                            <button
-                                                onClick={() => handleDelete(tenant)}
-                                                className="p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-colors"
-                                                title="Delete User"
-                                            >
+                                        {ws.owner.role !== 'superadmin' && (
+                                            <button onClick={() => handleDelete(ws.owner)} title="Delete User"
+                                                className="p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-colors">
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Enterprise billing line */}
+                            {ws.owner.subscription?.billing?.amount && (
+                                <div className="mt-2 flex items-center gap-2 flex-wrap pl-14">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded px-1.5 py-0.5">
+                                        <CreditCard className="w-3 h-3" />
+                                        {({ USD: '$', EUR: '€', INR: '₹', GBP: '£' }[ws.owner.subscription.billing.currency] || '$')}{ws.owner.subscription.billing.amount}/{ws.owner.subscription.billing.cycle === 'annual' ? 'yr' : 'mo'}
+                                    </span>
+                                    {ws.owner.subscription.renewsAt && (
+                                        <span className="text-[10px] text-slate-500">renews {new Date(ws.owner.subscription.renewsAt).toLocaleDateString()}</span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Team members */}
+                        {ws.members.length === 0 ? (
+                            <div className="px-5 py-3 text-[11px] text-slate-600">No team members in this workspace.</div>
+                        ) : (
+                            <div className="divide-y divide-white/5">
+                                <div className="px-5 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-slate-600">Team Members ({ws.members.length})</div>
+                                {ws.members.map(m => (
+                                    <div key={m.id} className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02]">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 font-bold text-xs shrink-0">
+                                                {m.username?.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-bold text-white text-sm">{m.username}</span>
+                                                    <RoleBadge role={m.role} />
+                                                    {m.isSuspended && <StatusBadge suspended />}
+                                                </div>
+                                                <div className="text-[11px] text-slate-500">{m.email || 'No email'}</div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => handleStatusToggle(m)} title={m.isSuspended ? 'Activate' : 'Suspend'}
+                                                className={`p-2 border rounded-lg transition-colors ${m.isSuspended ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red-400'}`}>
+                                                {m.isSuspended ? <CheckCircle2 className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
+                                            </button>
+                                            <button onClick={() => handleDelete(m)} title="Delete User"
+                                                className="p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-colors">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ))}
             </div>
 
             {/* Edit Limits Modal */}
