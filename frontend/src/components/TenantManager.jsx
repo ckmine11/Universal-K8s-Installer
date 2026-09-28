@@ -10,8 +10,16 @@ export default function TenantManager() {
 
     // Edit modal state
     const [editingTenant, setEditingTenant] = useState(null)
-    const [editForm, setEditForm] = useState({ plan: '', maxClusters: 1, maxNodes: 3 })
+    const [editForm, setEditForm] = useState({ plan: '', maxClusters: 1, maxNodes: 2, maxMembers: 1 })
     const [saving, setSaving] = useState(false)
+
+    // Plan presets — selecting a plan auto-fills the standard quotas
+    // (Unlimited = 9999, NOT 0 — the backend treats 0 as "block everything")
+    const PLAN_PRESETS = {
+        FREE:       { maxClusters: 1,    maxNodes: 2,    maxMembers: 1 },
+        PRO:        { maxClusters: 10,   maxNodes: 50,   maxMembers: 5 },
+        ENTERPRISE: { maxClusters: 9999, maxNodes: 9999, maxMembers: 9999 }
+    }
 
     const fetchTenants = async () => {
         setLoading(true)
@@ -60,9 +68,16 @@ export default function TenantManager() {
         setEditingTenant(tenant)
         setEditForm({
             plan: tenant.subscription?.plan || 'FREE',
-            maxClusters: tenant.subscription?.maxClusters || 0,
-            maxNodes: tenant.subscription?.maxNodes || 0
+            maxClusters: tenant.subscription?.maxClusters ?? 1,
+            maxNodes: tenant.subscription?.maxNodes ?? 2,
+            maxMembers: tenant.subscription?.maxMembers ?? 1
         })
+    }
+
+    // When the plan changes, snap quotas to that plan's preset (editable after)
+    const handlePlanChange = (plan) => {
+        const preset = PLAN_PRESETS[plan] || {}
+        setEditForm(f => ({ ...f, plan, ...preset }))
     }
 
     const handleSaveLimits = async () => {
@@ -171,7 +186,7 @@ export default function TenantManager() {
                                     <td className="px-6 py-4">
                                         <div className="font-black text-blue-400 text-xs mb-1">{tenant.subscription?.plan || 'FREE'}</div>
                                         <div className="text-[10px] text-slate-400">
-                                            {tenant.subscription?.maxClusters} Clusters • {tenant.subscription?.maxNodes} Nodes
+                                            {tenant.subscription?.maxClusters} Clusters • {tenant.subscription?.maxNodes} Nodes • {tenant.subscription?.maxMembers ?? 1} Members
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -237,40 +252,50 @@ export default function TenantManager() {
                         <div className="p-6 space-y-6">
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Subscription Plan</label>
-                                <select 
+                                <select
                                     value={editForm.plan}
-                                    onChange={(e) => setEditForm({...editForm, plan: e.target.value})}
+                                    onChange={(e) => handlePlanChange(e.target.value)}
                                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500"
                                 >
                                     <option value="FREE">FREE</option>
                                     <option value="PRO">PRO</option>
-                                    <option value="ENTERPRISE">ENTERPRISE</option>
+                                    <option value="ENTERPRISE">ENTERPRISE (Custom)</option>
                                 </select>
+                                <p className="text-[10px] text-slate-500 mt-1.5">Selecting a plan fills its standard quotas — adjust below for custom Enterprise deals.</p>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-3">
                                 <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Max Clusters</label>
-                                    <input 
+                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Clusters</label>
+                                    <input
                                         type="number"
-                                        min="0"
+                                        min="1"
                                         value={editForm.maxClusters}
                                         onChange={(e) => setEditForm({...editForm, maxClusters: parseInt(e.target.value) || 0})}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 font-mono"
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-white outline-none focus:border-blue-500 font-mono"
                                     />
-                                    <p className="text-[10px] text-slate-500 mt-1">0 = Unlimited</p>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Max Nodes</label>
-                                    <input 
+                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Nodes</label>
+                                    <input
                                         type="number"
-                                        min="0"
+                                        min="1"
                                         value={editForm.maxNodes}
                                         onChange={(e) => setEditForm({...editForm, maxNodes: parseInt(e.target.value) || 0})}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 font-mono"
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-white outline-none focus:border-blue-500 font-mono"
                                     />
-                                    <p className="text-[10px] text-slate-500 mt-1">0 = Unlimited</p>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Members</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={editForm.maxMembers}
+                                        onChange={(e) => setEditForm({...editForm, maxMembers: parseInt(e.target.value) || 0})}
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-white outline-none focus:border-blue-500 font-mono"
+                                    />
                                 </div>
                             </div>
+                            <p className="text-[10px] text-slate-500">Use <span className="text-slate-300 font-mono">9999</span> for "Unlimited" (Enterprise). Do not use 0 — it blocks the resource.</p>
                         </div>
                         <div className="p-6 border-t border-white/5 flex gap-3">
                             <button 

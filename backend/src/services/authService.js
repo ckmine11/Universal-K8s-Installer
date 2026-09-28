@@ -225,10 +225,15 @@ class AuthService {
         });
     }
 
-    updateUserSubscription(id, plan, maxClusters, maxNodes) {
+    updateUserSubscription(id, plan, maxClusters, maxNodes, maxMembers) {
         const user = this.getUserById(id);
         if (user) {
-            user.subscription = { plan, maxClusters, maxNodes };
+            // Sensible team-seat default per plan when not explicitly provided
+            const seats = (maxMembers != null && maxMembers !== '')
+                ? parseInt(maxMembers)
+                : (String(plan).toUpperCase() === 'ENTERPRISE' ? 9999
+                    : String(plan).toUpperCase() === 'PRO' ? 5 : 1);
+            user.subscription = { plan, maxClusters, maxNodes, maxMembers: seats };
             this.saveUsers();
             return user;
         }
