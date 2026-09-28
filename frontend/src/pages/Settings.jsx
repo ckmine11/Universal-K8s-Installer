@@ -21,7 +21,8 @@ import {
     Users,
     ArrowRight,
     Zap,
-    Download
+    Download,
+    X
 } from 'lucide-react'
 
 // Compact row used in the restore preview diff
@@ -520,6 +521,73 @@ export default function Settings() {
 
                 {activeTab === 'backups' && canBackup && (
                     <div className="space-y-6">
+                        {/* Transparency panel — exactly what is and isn't backed up */}
+                        <div className="glass rounded-3xl border border-white/5 p-6 animate-in fade-in duration-300">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Database className="w-4 h-4 text-blue-400" />
+                                <h3 className="text-sm font-black uppercase tracking-wider text-slate-200">What This Backup Includes</h3>
+                            </div>
+                            <p className="text-xs text-slate-400 mb-5 leading-relaxed">
+                                Config Backups save your <span className="text-slate-200 font-bold">cluster setup & connection records</span> managed by KubeEZ —
+                                <span className="text-slate-200 font-bold"> not the data running inside your Kubernetes cluster</span>.
+                                Use it to recover your cluster definitions after an accidental change, deletion, or a failed upgrade.
+                            </p>
+                            <div className="grid md:grid-cols-2 gap-5">
+                                {/* Included */}
+                                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.03] p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                        <span className="text-xs font-black uppercase tracking-wider text-emerald-300">Backed Up</span>
+                                    </div>
+                                    <ul className="space-y-2">
+                                        {[
+                                            'Cluster name, ID & creation date',
+                                            'Kubernetes version & network plugin (CNI)',
+                                            'Master & worker nodes — IP, hostname, username',
+                                            'Node SSH credentials (encrypted at rest)',
+                                            'Installed add-ons list (Dashboard, Ingress, etc.)',
+                                            'Cluster status & KubeEZ configuration record',
+                                        ].map(item => (
+                                            <li key={item} className="flex items-start gap-2 text-xs text-slate-300">
+                                                <Check className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                                                <span>{item}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                {/* Not included */}
+                                <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.03] p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <AlertTriangle className="w-4 h-4 text-red-400" />
+                                        <span className="text-xs font-black uppercase tracking-wider text-red-300">NOT Backed Up</span>
+                                    </div>
+                                    <ul className="space-y-2">
+                                        {[
+                                            'Your pods, deployments & running workloads',
+                                            'Persistent volumes & database data',
+                                            'Kubernetes secrets & configmaps',
+                                            'Application data inside the cluster',
+                                            'Container images',
+                                            'Cluster etcd state / live resources',
+                                        ].map(item => (
+                                            <li key={item} className="flex items-start gap-2 text-xs text-slate-400">
+                                                <X className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+                                                <span>{item}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                            <div className="flex items-start gap-2 mt-5 text-[11px] text-slate-500 bg-white/[0.03] border border-white/5 rounded-xl p-3">
+                                <Shield className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
+                                <span>
+                                    For backing up <span className="text-slate-300 font-bold">in-cluster data</span> (volumes, databases),
+                                    use a workload backup tool like <span className="text-slate-300 font-bold">Velero</span> or storage snapshots
+                                    (e.g. <span className="text-slate-300 font-bold">Longhorn</span>). This feature protects your KubeEZ cluster definitions only.
+                                </span>
+                            </div>
+                        </div>
+
                         {/* Stats & Actions */}
                         {backupData && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 align-stretch animate-in fade-in duration-300">
