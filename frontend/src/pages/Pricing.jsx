@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle2, Zap, Shield, ArrowRight, X, Loader2, Mail, ChevronDown } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 
@@ -8,8 +8,20 @@ const ANNUAL_PRICE  = 39   // billed as $468/yr
 export default function Pricing() {
     const [annual, setAnnual]   = useState(false)
     const [loading, setLoading] = useState(false)
+    const [currentPlan, setCurrentPlan] = useState('FREE')
 
     const price = annual ? ANNUAL_PRICE : MONTHLY_PRICE
+
+    // Fetch the user's real plan so we mark the correct tier as "Current Plan"
+    useEffect(() => {
+        apiFetch('/api/billing/subscription')
+            .then(r => r.ok ? r.json() : null)
+            .then(sub => { if (sub?.plan) setCurrentPlan(String(sub.plan).toUpperCase()) })
+            .catch(() => {})
+    }, [])
+
+    const isFree = currentPlan === 'FREE'
+    const isPro  = currentPlan === 'PRO'
 
     const handleUpgrade = async (planId) => {
         setLoading(true)
@@ -97,7 +109,7 @@ export default function Pricing() {
                     </div>
 
                     <button className="w-full py-3.5 rounded-2xl bg-white/5 border border-white/10 text-slate-500 font-black text-xs uppercase tracking-wider cursor-default">
-                        Current Plan
+                        {isFree ? '✓ Current Plan' : 'Free'}
                     </button>
                 </div>
 
@@ -144,20 +156,29 @@ export default function Pricing() {
                         <span className="text-emerald-400 text-xs font-black">💰 Save $200/mo vs AWS EKS</span>
                     </div>
 
-                    <button
-                        onClick={() => handleUpgrade('pro')}
-                        disabled={loading}
-                        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/25 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                        {loading
-                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                            : <>Start Pro — Cancel Anytime <ArrowRight className="w-4 h-4" /></>
-                        }
-                    </button>
+                    {isPro ? (
+                        <button
+                            disabled
+                            className="w-full py-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-default"
+                        >
+                            <CheckCircle2 className="w-4 h-4" /> Current Plan
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => handleUpgrade('pro')}
+                            disabled={loading}
+                            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/25 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                            {loading
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <>Upgrade to Pro <ArrowRight className="w-4 h-4" /></>
+                            }
+                        </button>
+                    )}
 
                     {/* Trust signals */}
                     <p className="text-center text-slate-600 text-[11px] mt-3">
-                        ✓ 14-day money-back guarantee &nbsp;·&nbsp; ✓ No credit card lock-in
+                        ✓ 14-day money-back guarantee &nbsp;·&nbsp; ✓ Secure Stripe billing
                     </p>
                 </div>
 
@@ -196,7 +217,7 @@ export default function Pricing() {
             {/* Trust bar */}
             <div className="max-w-4xl mx-auto mt-14 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
-                    { t: 'Cancel anytime', d: 'No lock-in, no contracts' },
+                    { t: 'Flexible billing', d: 'Monthly or annual, via Stripe' },
                     { t: '14-day money back', d: 'Full refund, no questions' },
                     { t: 'Your infrastructure', d: 'Runs on your own servers' }
                 ].map((item, i) => (
@@ -217,7 +238,7 @@ export default function Pricing() {
                         { q: 'Can I change plans later?', a: 'Yes. Upgrade or downgrade anytime. Changes apply immediately and billing is prorated.' },
                         { q: 'Do I need a credit card for the Free plan?', a: 'No. The Free plan is genuinely free forever — no card required.' },
                         { q: 'Where do my clusters run?', a: 'On your own servers or VPS. KubeEZ orchestrates them via a secure agent — your data never leaves your infrastructure.' },
-                        { q: 'How does billing work?', a: 'Monthly or annual via Stripe. Annual saves you $120/year. Cancel anytime with a 14-day money-back guarantee.' }
+                        { q: 'How does billing work?', a: 'Monthly or annual via Stripe. Annual saves you $120/year, with a 14-day money-back guarantee.' }
                     ].map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
                 </div>
             </div>
