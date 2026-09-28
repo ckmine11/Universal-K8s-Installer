@@ -28,12 +28,12 @@ echo "========================================="
 # 1. Install Mandatory Dependencies (Multi-OS)
 echo "Installing core dependencies (socat, conntrack, ipset)..."
 if command -v apt-get &> /dev/null; then
-    apt-get update -y
+    apt-get update -y || true   # non-fatal: a broken 3rd-party repo must not abort
     apt-get install -y socat conntrack ipset curl gnupg jq
 elif command -v dnf &> /dev/null; then
-    dnf install -y socat conntrack ipset curl jq
+    dnf install -y socat conntrack ipset curl jq --setopt=*.skip_if_unavailable=1 || dnf install -y socat conntrack ipset curl jq
 elif command -v yum &> /dev/null; then
-    yum install -y socat conntrack ipset curl jq
+    yum install -y socat conntrack ipset curl jq --setopt=*.skip_if_unavailable=1 || yum install -y socat conntrack ipset curl jq
 else
     echo "Warning: No supported package manager found. High risk of failure."
 fi
@@ -49,7 +49,7 @@ if command -v apt-get &> /dev/null; then
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg || true
     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
-    apt-get update
+    apt-get update || true   # non-fatal: unrelated broken repos shouldn't block k8s
     apt-get install -y kubelet kubeadm kubectl
     apt-mark hold kubelet kubeadm kubectl
 
@@ -74,8 +74,8 @@ enabled=1
 gpgcheck=1
 gpgkey=https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/rpm/repodata/repomd.xml.key
 EOF
-    # Use timeout and increase verbosity
-    $PKG_MGR install -y kubelet kubeadm kubectl --disableexcludes=kubernetes --setopt=timeout=30 --setopt=minrate=100
+    # Use timeout; skip_if_unavailable so a broken/EOL OS repo can't block k8s
+    $PKG_MGR install -y kubelet kubeadm kubectl --disableexcludes=kubernetes --setopt=timeout=30 --setopt=minrate=100 --setopt=*.skip_if_unavailable=1
     systemctl enable --now kubelet
 fi
 

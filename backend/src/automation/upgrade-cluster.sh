@@ -125,12 +125,21 @@ fi
 # 2. Update Repositories
 log "Updating package repositories for v${VER_MAJOR_MINOR}..."
 if [ "$PKG_MGR" = "apt" ]; then
-    apt-get update
-    # Ensure the repo for the NEW version exists
-    # Note: Upgrades usually require adding the new repo first if it calls for a new major.minor
-    # For simplicity in this script, we assume the user/system has added the repo for the target version
-    # OR we add it dynamically here.
-    
+    # Force IPv4 + retries for APT (avoids IPv6 stalls on many nodes)
+    mkdir -p /etc/apt/apt.conf.d
+    cat > /etc/apt/apt.conf.d/99kubeez-ipv4 <<'APTEOF'
+Acquire::ForceIPv4 "true";
+Acquire::Retries "3";
+APTEOF
+    # Reliable DNS if the node can't resolve
+    if ! grep -q '8.8.8.8' /etc/resolv.conf 2>/dev/null; then
+        cp /etc/resolv.conf /etc/resolv.conf.kubeez-bak 2>/dev/null || true
+        printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:2 attempts:3\n' > /etc/resolv.conf 2>/dev/null || true
+    fi
+
+    # Non-fatal: a broken/EOL third-party OS repo must not abort the k8s upgrade
+    apt-get update -o Acquire::AllowInsecureRepositories=true || apt-get update || true
+
     # Dynamic Repo Add for Target Version (Vital for pkgs.k8s.io)
     DIR_NAME="/etc/apt/keyrings"
     mkdir -p $DIR_NAME
@@ -138,7 +147,8 @@ if [ "$PKG_MGR" = "apt" ]; then
          curl -fsSL https://pkgs.k8s.io/core:/stable:/v${VER_MAJOR_MINOR}/deb/Release.key | gpg --dearmor -o $DIR_NAME/kubernetes-apt-keyring.gpg
     fi
     echo "deb [signed-by=$DIR_NAME/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VER_MAJOR_MINOR}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
-    apt-get update
+    # Update just the Kubernetes list reliably; ignore unrelated broken repos
+    apt-get update -o Dir::Etc::sourcelist="sources.list.d/kubernetes.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0" || apt-get update || true
 elif [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
     # Overwrite repo file with new version
     # Standardize on 'kubernetes.repo' and '[kubernetes]' ID to play nice with existing yum history

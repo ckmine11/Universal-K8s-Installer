@@ -61,12 +61,15 @@ sysctl --system
 # Install containerd based on package manager
 if command -v apt-get &> /dev/null; then
     echo "Detected Debian/Ubuntu system..."
-    apt-get update
+    # Force IPv4 + retries for APT
+    mkdir -p /etc/apt/apt.conf.d
+    printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99kubeez-ipv4
+    apt-get update || true   # non-fatal: broken 3rd-party repos shouldn't abort
     apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || true
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    apt-get update
+    apt-get update || true
     apt-get install -y containerd.io
 
 elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
@@ -108,7 +111,7 @@ elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
          sed -i 's/enabled=1/enabled=1\nsslverify=0/' /etc/yum.repos.d/docker-ce.repo
     fi
 
-    $PKG_MGR install -y containerd.io
+    $PKG_MGR install -y containerd.io --setopt=*.skip_if_unavailable=1 || $PKG_MGR install -y containerd.io
 
     # Ensure CNI plugins (Missing in some RHEL packages)
     if [ ! -d "/opt/cni/bin" ] || [ -z "$(ls -A /opt/cni/bin)" ]; then
