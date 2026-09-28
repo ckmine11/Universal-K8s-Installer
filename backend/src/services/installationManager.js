@@ -572,22 +572,23 @@ users:
                 ssh.execCommand("free -m | awk 'NR==2{printf \"%.2f\", $3*100/$2 }'"),
                 // Disk Usage (root partition)
                 ssh.execCommand("df -h / | awk 'NR==2 {print $5}' | sed 's/%//'"),
-                // Node Status (kubectl) - Get Name, Status, Role
-                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get nodes --no-headers | awk '{print $1,$2,$3}'"),
+                // Node Status (kubectl -o wide) - Name, Status, Roles, and INTERNAL-IP (col 6)
+                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get nodes -o wide --no-headers | awk '{print $1,$2,$3,$6}'"),
                 // Pods Running count
                 ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get pods -A --field-selector=status.phase=Running --no-headers | wc -l")
             ])
 
             ssh.dispose()
 
-            // Parse Nodes
+            // Parse Nodes (name, status, roles, internal-ip)
             const nodesList = nodesResult.stdout.split('\n').filter(Boolean).map(line => {
-                const [name, status, rawRole] = line.split(/\s+/)
+                const [name, status, rawRole, ip] = line.split(/\s+/)
                 const isMaster = rawRole && (rawRole.includes('master') || rawRole.includes('control-plane'))
                 return {
                     name,
                     status,
-                    role: isMaster ? 'master' : 'worker'
+                    role: isMaster ? 'master' : 'worker',
+                    ip: ip && ip !== '<none>' ? ip : undefined
                 }
             })
 

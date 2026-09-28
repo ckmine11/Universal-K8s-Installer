@@ -160,7 +160,13 @@ export default function ClusterDetails({ onScaleCluster }) {
                 rn = live.find(n => !n._used && ((node.role === 'master') === (n.role === 'master')))
             }
             if (rn) rn._used = true
-            return { ...node, status: rn ? rn.status : 'Unknown' }
+            return {
+                ...node,
+                status: rn ? rn.status : 'Unknown',
+                // Fill IP/hostname from live cluster data if the stored config lacks it
+                ip: node.ip || rn?.ip || node.host,
+                hostname: node.hostname || rn?.name
+            }
         })
     }
 
@@ -367,7 +373,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                                             </div>
                                             <div>
                                                 <p className="font-bold text-white">{node.hostname || `${node.role.charAt(0).toUpperCase() + node.role.slice(1)} Node`}</p>
-                                                <p className="text-xs text-slate-500 font-mono">{node.ip}</p>
+                                                <p className="text-xs text-slate-500 font-mono">{node.ip || 'IP pending...'}</p>
                                             </div>
                                         </div>
                                         <div className="flex items-center space-x-6">
