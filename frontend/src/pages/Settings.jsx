@@ -88,7 +88,7 @@ export default function Settings() {
     useEffect(() => {
         if (user) {
             if (user.role === 'superadmin' && activeTab === 'licensing') {
-                setActiveTab('backups'); // Default to backups for superadmin
+                setActiveTab('tenants'); // Default to Global Tenants for superadmin
             }
             if (activeTab === 'health' && user.role === 'superadmin') {
                 fetchHealth()
@@ -272,6 +272,19 @@ export default function Settings() {
 
                 {isSuperAdmin && (
                     <button
+                        onClick={() => setActiveTab('tenants')}
+                        className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                            activeTab === 'tenants'
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                                : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5'
+                        }`}
+                    >
+                        <Users className="w-4 h-4" />
+                        <span>Global Tenants</span>
+                    </button>
+                )}
+                {isSuperAdmin && (
+                    <button
                         onClick={() => setActiveTab('backups')}
                         className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
                             activeTab === 'backups'
@@ -309,6 +322,9 @@ export default function Settings() {
 
             {/* Tab Views */}
             <div className="space-y-6">
+                {activeTab === 'tenants' && isSuperAdmin && (
+                    <TenantManager />
+                )}
                 {activeTab === 'health' && (
                     <div className="space-y-6">
                         {healthLoading ? (
