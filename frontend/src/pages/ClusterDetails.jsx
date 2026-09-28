@@ -173,13 +173,21 @@ export default function ClusterDetails({ onScaleCluster }) {
                 <div className="flex-1">
                     <h1 className="text-3xl font-black text-white tracking-tight">{cluster.clusterName}</h1>
                     <div className="flex items-center space-x-3 text-slate-400 text-sm mt-1">
-                        {cluster.status === 'failed' ? (
-                            <span className="flex items-center text-red-400">
-                                <AlertTriangle className="w-4 h-4 mr-1" /> Installation Failed
-                            </span>
-                        ) : (
-                            <span className="flex items-center"><Activity className="w-4 h-4 mr-1 text-green-400" /> Active</span>
-                        )}
+                        {(() => {
+                            // Live health badge — derived from real node status, not the static field
+                            const liveNodes = health?.nodes || []
+                            const notReady = liveNodes.filter(n => n.status && n.status !== 'Ready')
+                            if (cluster.status === 'failed') {
+                                return <span className="flex items-center text-red-400"><AlertTriangle className="w-4 h-4 mr-1" /> Installation Failed</span>
+                            }
+                            if (health?.error) {
+                                return <span className="flex items-center text-red-400"><AlertTriangle className="w-4 h-4 mr-1" /> Unreachable</span>
+                            }
+                            if (notReady.length > 0) {
+                                return <span className="flex items-center text-amber-400"><AlertTriangle className="w-4 h-4 mr-1" /> Degraded — {notReady.length} node(s) not ready</span>
+                            }
+                            return <span className="flex items-center"><Activity className="w-4 h-4 mr-1 text-green-400" /> Active</span>
+                        })()}
                         <span>•</span>
                         <span>ID: {cluster.id}</span>
                         <span>•</span>
