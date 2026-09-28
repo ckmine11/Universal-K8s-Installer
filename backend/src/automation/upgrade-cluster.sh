@@ -138,6 +138,41 @@ ip_resolve=4
 REPOEOF
     fi
 
+    # CentOS 8 (non-Stream) is also EOL → repoint to vault. CentOS Stream 8 is
+    # still supported, so skip it (NAME contains "Stream").
+    if [ "${ID:-}" = "centos" ] && [ "$(echo "${VERSION_ID:-0}" | cut -d. -f1)" = "8" ] && ! echo "${NAME:-}" | grep -qi stream; then
+        log "CentOS 8 (EOL) detected — repointing base repos to vault.centos.org"
+        rm -f /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+        cat > /etc/yum.repos.d/CentOS-Vault.repo <<'REPOEOF8'
+[baseos]
+name=CentOS-8 - BaseOS (Vault)
+baseurl=http://vault.centos.org/8.5.2111/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+
+[appstream]
+name=CentOS-8 - AppStream (Vault)
+baseurl=http://vault.centos.org/8.5.2111/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+
+[extras]
+name=CentOS-8 - Extras (Vault)
+baseurl=http://vault.centos.org/8.5.2111/extras/$basearch/os/
+gpgcheck=0
+enabled=1
+skip_if_unavailable=1
+timeout=15
+ip_resolve=4
+REPOEOF8
+    fi
+
     yum clean all 2>/dev/null || true
     rm -rf /var/cache/yum/* 2>/dev/null || true
 fi
@@ -156,6 +191,10 @@ APTEOF
         cp /etc/resolv.conf /etc/resolv.conf.kubeez-bak 2>/dev/null || true
         printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:2 attempts:3\n' > /etc/resolv.conf 2>/dev/null || true
     fi
+
+    # Heal dpkg if a previous run was interrupted (locks / half-configured state)
+    rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null || true
+    dpkg --configure -a 2>/dev/null || true
 
     # Non-fatal: a broken/EOL third-party OS repo must not abort the k8s upgrade
     apt-get update -o Acquire::AllowInsecureRepositories=true || apt-get update || true
