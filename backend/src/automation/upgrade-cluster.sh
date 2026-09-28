@@ -182,8 +182,29 @@ EOF
         yum versionlock clear || true
     fi
     
+    # Repair a corrupted RPM DB up front (a common CentOS 7 cause of
+    # 'Bus error (core dumped)' during yum install)
+    rpmdb_repair() {
+        echo "🔧 Repairing RPM database..."
+        rm -f /var/lib/rpm/__db.* 2>/dev/null || true
+        rpm --rebuilddb 2>/dev/null || true
+        yum clean all 2>/dev/null || true
+        rm -rf /var/cache/yum/* 2>/dev/null || true
+    }
+
+    # Resilient install: on ANY failure (incl. SIGBUS/segfault crash from a
+    # corrupted RPM DB), rebuild the DB once and retry.
+    yum_install_safe() {
+        if $PKG_MGR install -y "$@" --disableexcludes=all --setopt=*.skip_if_unavailable=1; then
+            return 0
+        fi
+        echo "⚠️ install failed (possible RPM DB corruption). Rebuilding DB and retrying..."
+        rpmdb_repair
+        $PKG_MGR install -y "$@" --disableexcludes=all --setopt=*.skip_if_unavailable=1
+    }
+
     # skip_if_unavailable: broken/EOL OS repos must never fail the k8s upgrade
-    yum makecache --setopt=*.skip_if_unavailable=1 || yum makecache fast --setopt=*.skip_if_unavailable=1 || true
+    yum makecache --setopt=*.skip_if_unavailable=1 || { rpmdb_repair; yum makecache --setopt=*.skip_if_unavailable=1 || true; }
     yum repolist || true
 fi
 
@@ -200,9 +221,9 @@ elif [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
     
     # We use --disableexcludes=all to be absolutely sure nothing blocks us
     
-    if ! $PKG_MGR install -y "kubeadm-${TARGET_VERSION}*" --disableexcludes=all --setopt=*.skip_if_unavailable=1; then
+    if ! yum_install_safe "kubeadm-${TARGET_VERSION}*"; then
         echo "❌ Failed to install kubeadm-${TARGET_VERSION}. Listing available versions:"
-        $PKG_MGR --showduplicates list kubeadm --disableexcludes=all --setopt=*.skip_if_unavailable=1
+        $PKG_MGR --showduplicates list kubeadm --disableexcludes=all --setopt=*.skip_if_unavailable=1 || true
         exit 1
     fi
      $PKG_MGR downgrade -y "kubeadm-${TARGET_VERSION}*" --disableexcludes=all --setopt=*.skip_if_unavailable=1 || true
@@ -254,10 +275,8 @@ if [ "$PKG_MGR" = "apt" ]; then
     apt-mark unhold kubelet kubectl
     apt-get install -y kubelet="${TARGET_VERSION}-*" kubectl="${TARGET_VERSION}-*"
     apt-mark hold kubelet kubectl
-elif [ "$PKG_MGR" = "yum" ]; then
-    yum install -y kubelet-${TARGET_VERSION}* kubectl-${TARGET_VERSION}* --disableexcludes=all --setopt=*.skip_if_unavailable=1
-elif [ "$PKG_MGR" = "dnf" ]; then
-    dnf install -y kubelet-${TARGET_VERSION}* kubectl-${TARGET_VERSION}* --disableexcludes=all --setopt=*.skip_if_unavailable=1
+elif [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
+    yum_install_safe "kubelet-${TARGET_VERSION}*" "kubectl-${TARGET_VERSION}*"
 fi
 
 # 6. Restart kubelet
