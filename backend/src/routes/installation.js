@@ -6,6 +6,7 @@ import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 import { licenseService } from '../services/licenseService.js'
 import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
+import { etcdBackupService } from '../services/etcdBackupService.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
@@ -375,6 +376,69 @@ router.get('/:id/addons/access', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Addon access error:', error)
         res.status(500).json({ error: error.message })
+    }
+})
+
+// ─── etcd backups ─────────────────────────────────────────────────────────────
+// Helper: load a cluster and enforce org ownership.
+async function loadOwnedCluster(req, res) {
+    const clusters = await installationManager.getSavedClusters()
+    const cluster = clusters.find(c => c.id === req.params.id)
+    if (!cluster) { res.status(404).json({ error: 'Cluster not found' }); return null }
+    if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
+        res.status(403).json({ error: 'Unauthorized' }); return null
+    }
+    return cluster
+}
+
+// List etcd snapshots on the cluster (any org member who can view the cluster)
+router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
+    try {
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
+        const result = await etcdBackupService.listBackups(cluster)
+        res.json(result)
+    } catch (error) {
+        console.error('etcd list error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Take an on-demand etcd snapshot (control-plane maintenance → operator/admin)
+router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
+        const result = await etcdBackupService.createBackup(cluster)
+        if (result.success) res.json(result)
+        else res.status(500).json(result)
+    } catch (error) {
+        console.error('etcd backup error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Restore etcd from a snapshot (DESTRUCTIVE → operator/admin, single control-plane only)
+router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
+        const { filename } = req.body
+        if (!filename || /[\/\\]|\.\./.test(filename)) {
+            return res.status(400).json({ error: 'Invalid or missing snapshot filename' })
+        }
+        // Safety: automated restore is only supported for a single control-plane.
+        if ((cluster.masterNodes?.length || 0) > 1) {
+            return res.status(400).json({
+                error: 'Automated restore is only supported for single control-plane clusters. For HA clusters, restore etcd manually on each member.'
+            })
+        }
+        const logs = []
+        await etcdBackupService.restoreBackup(cluster, filename, (level, msg) => logs.push({ level, msg }))
+        res.json({ success: true, message: 'etcd restore completed', logs })
+    } catch (error) {
+        console.error('etcd restore error:', error)
+        res.status(500).json({ success: false, error: error.message })
     }
 })
 

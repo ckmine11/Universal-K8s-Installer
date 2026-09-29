@@ -28,6 +28,7 @@ import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
+import EtcdBackupPanel from '../components/EtcdBackupPanel'
 
 export default function ClusterDetails({ onScaleCluster }) {
     const { toast } = useToast()
@@ -281,6 +282,13 @@ export default function ClusterDetails({ onScaleCluster }) {
             {cluster.status !== 'failed' && cluster.status !== 'cancelled' && (
                 <div className="mb-8">
                     <AddonAccessPanel clusterId={id} />
+                </div>
+            )}
+
+            {/* etcd Snapshots (cluster-state backups) */}
+            {cluster.status !== 'failed' && cluster.status !== 'cancelled' && (
+                <div className="mb-8">
+                    <EtcdBackupPanel clusterId={id} canManage={canUpgrade} />
                 </div>
             )}
 
