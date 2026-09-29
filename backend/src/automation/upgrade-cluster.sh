@@ -416,6 +416,18 @@ elif [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
     yum_install_safe "kubelet-${TARGET_VERSION}*" "kubectl-${TARGET_VERSION}*"
 fi
 
+# 5.5 Strip kubelet flags removed in newer Kubernetes.
+# k8s 1.35 REMOVED --pod-infra-container-image. If an older kubeadm wrote it into
+# kubeadm-flags.env, the upgraded kubelet crash-loops with
+# "unknown flag: --pod-infra-container-image" → node goes NotReady. Remove any
+# such obsolete flags so kubelet starts cleanly on every version.
+if [ -f /var/lib/kubelet/kubeadm-flags.env ]; then
+    log "Cleaning obsolete kubelet flags (kubeadm-flags.env)..."
+    sed -i 's/--pod-infra-container-image=[^" ]*//g' /var/lib/kubelet/kubeadm-flags.env || true
+    # Collapse any leftover double spaces for cleanliness.
+    sed -i 's/  */ /g' /var/lib/kubelet/kubeadm-flags.env || true
+fi
+
 # 6. Restart the container runtime + kubelet.
 # Restarting containerd (or docker) too is important: after a minor upgrade the
 # CRI can be left in a stale state, which makes kubelet report the node NotReady
