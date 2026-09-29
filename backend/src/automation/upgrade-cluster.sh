@@ -358,6 +358,22 @@ if [ "$NODE_ROLE" = "master" ]; then
     done
 fi
 
+# ── Sync containerd's sandbox (pause) image to what this kubeadm expects ──────
+# kubeadm flagged: sandbox "pause:3.9" inconsistent with expected "pause:3.10.1".
+# An inconsistent/absent sandbox image can stall pod-sandbox creation during the
+# etcd/control-plane static-pod swap → "context deadline exceeded". Fix it first.
+if [ "$NODE_ROLE" = "master" ] && [ -f /etc/containerd/config.toml ]; then
+    PAUSE_IMG=$(kubeadm config images list --kubernetes-version "v${TARGET_VERSION}" 2>/dev/null | grep -m1 '/pause:')
+    [ -z "$PAUSE_IMG" ] && PAUSE_IMG=$(kubeadm config images list 2>/dev/null | grep -m1 '/pause:')
+    if [ -n "$PAUSE_IMG" ] && ! grep -qF "$PAUSE_IMG" /etc/containerd/config.toml; then
+        log "Syncing containerd sandbox image → $PAUSE_IMG (was inconsistent)"
+        sed -i "s#sandbox_image = .*#sandbox_image = \"$PAUSE_IMG\"#" /etc/containerd/config.toml
+        crictl pull "$PAUSE_IMG" >/dev/null 2>&1 || ctr -n k8s.io images pull "$PAUSE_IMG" >/dev/null 2>&1 || true
+        systemctl restart containerd 2>/dev/null || true
+        sleep 5
+    fi
+fi
+
 # 4. Apply Upgrade (Cluster-level or Node-level)
 
 # Preflight errors to bypass for universal compatibility on old/slow nodes:
