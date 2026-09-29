@@ -31,6 +31,22 @@ fi
 
 K8S_VERSION=${1:-"1.28"}
 
+# ── OS / kernel compatibility gate (BEFORE any change) ────────────────────────
+# Kubernetes 1.35+ needs a 5.x kernel + cgroups v2. On old kernels (3.x, e.g.
+# CentOS 7) kubelet 1.35 will not run reliably. Stop now with a clear message
+# so we never build a half-broken cluster.
+KMINOR=$(echo "$K8S_VERSION" | cut -d. -f2)
+KMAJOR=$(uname -r | cut -d. -f1)
+if [ "${KMAJOR:-0}" -lt 4 ] 2>/dev/null && [ "${KMINOR:-0}" -ge 35 ] 2>/dev/null; then
+    echo "=================================================================="
+    echo "⛔ Kubernetes v1.${KMINOR} is not supported on this node's kernel ($(uname -r))."
+    echo "   v1.35+ requires a 5.x kernel with cgroups v2 (Rocky/Alma 9, Ubuntu 22.04+)."
+    echo "   ✅ Highest version supported here (CentOS 7 / RHEL 7): Kubernetes v1.34"
+    echo "   Please choose v1.34 or older, or use a newer OS. Nothing was installed."
+    echo "=================================================================="
+    exit 1
+fi
+
 echo "========================================="
 echo "Installing Kubernetes Components v${K8S_VERSION}"
 echo "========================================="

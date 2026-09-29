@@ -51,6 +51,28 @@ if [ "$TARGET_MINOR" -le "$CURRENT_MINOR" ]; then
    log "⚠️ Warning: Target version v${TARGET_VERSION} is not newer than current v${CURRENT_KUBEADM}. Continuing anyway..."
 fi
 
+# ── 0.1 OS / kernel compatibility gate (runs BEFORE ANY change) ───────────────
+# Kubernetes 1.35+ requires a modern kernel (5.x) with cgroups v2 and a recent
+# container runtime. On old kernels (3.x, e.g. CentOS 7) the etcd/control-plane
+# upgrade fails and kubeadm rolls back. We STOP here — before taking a snapshot
+# or touching a single file — so the cluster is left completely untouched and
+# healthy, with a clear explanation, instead of failing halfway.
+KERNEL_MAJOR_CHK=$(uname -r | cut -d. -f1)
+if [ "$KERNEL_MAJOR_CHK" -lt 4 ] && [ "$TARGET_MINOR" -ge 35 ]; then
+    log "=================================================================="
+    log "⛔ Upgrade blocked for your safety — the cluster was NOT modified."
+    log "   This node's kernel is $(uname -r) (cgroups v1)."
+    log "   Kubernetes v1.${TARGET_MINOR} requires a 5.x kernel with cgroups v2,"
+    log "   which this OS (CentOS 7 / RHEL 7 family) does not provide."
+    log ""
+    log "   ✅ Highest version this node supports: Kubernetes v1.34"
+    log "   ➜  To run v1.35+, migrate to Rocky/AlmaLinux 9 or Ubuntu 22.04+."
+    log ""
+    log "   Your cluster is untouched and still healthy on its current version."
+    log "=================================================================="
+    exit 1
+fi
+
 # ── 0.5 Automatic etcd snapshot (first control-plane only) ────────────────────
 # etcd stores ALL cluster state. Snapshot it BEFORE changing anything so a
 # failed upgrade is recoverable. Best-effort: a snapshot failure logs a loud
