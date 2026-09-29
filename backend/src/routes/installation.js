@@ -10,6 +10,7 @@ import { etcdBackupService } from '../services/etcdBackupService.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
+import { isPaidPlan } from '../config/planFeatures.js'
 
 
 const router = express.Router()
@@ -379,7 +380,7 @@ router.get('/:id/addons/access', requireAuth, async (req, res) => {
     }
 })
 
-// ─── etcd backups ─────────────────────────────────────────────────────────────
+// ─── etcd backups (Pro/Enterprise feature) ─────────────────────────────────────
 // Helper: load a cluster and enforce org ownership.
 async function loadOwnedCluster(req, res) {
     const clusters = await installationManager.getSavedClusters()
@@ -391,11 +392,26 @@ async function loadOwnedCluster(req, res) {
     return cluster
 }
 
+// etcd backup & restore is a paid feature. superadmin always allowed.
+function requireEtcdPlan(req, res) {
+    if (req.user.role === 'superadmin') return true
+    if (!isPaidPlan(authService.getOrgPlan(req.user.orgId))) {
+        res.status(402).json({
+            error: 'etcd cluster-state backup & restore is a Pro feature. Upgrade to Pro to enable it.',
+            upgradeRequired: true,
+            feature: 'etcd-backup'
+        })
+        return false
+    }
+    return true
+}
+
 // List etcd snapshots on the cluster (any org member who can view the cluster)
 router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
     try {
         const cluster = await loadOwnedCluster(req, res)
         if (!cluster) return
+        if (!requireEtcdPlan(req, res)) return
         const result = await etcdBackupService.listBackups(cluster)
         res.json(result)
     } catch (error) {
@@ -409,6 +425,7 @@ router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade
     try {
         const cluster = await loadOwnedCluster(req, res)
         if (!cluster) return
+        if (!requireEtcdPlan(req, res)) return
         const result = await etcdBackupService.createBackup(cluster)
         if (result.success) res.json(result)
         else res.status(500).json(result)
@@ -423,6 +440,7 @@ router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade
     try {
         const cluster = await loadOwnedCluster(req, res)
         if (!cluster) return
+        if (!requireEtcdPlan(req, res)) return
         const { filename } = req.body
         if (!filename || /[\/\\]|\.\./.test(filename)) {
             return res.status(400).json({ error: 'Invalid or missing snapshot filename' })

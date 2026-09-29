@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../context/AuthContext'
 import {
     Database, RefreshCw, Loader2, ShieldCheck, HardDriveDownload,
-    RotateCcw, AlertTriangle, Clock, Zap, X
+    RotateCcw, AlertTriangle, Clock, Zap, X, Lock, Info, CheckCircle2
 } from 'lucide-react'
 
 function fmtBytes(b) {
@@ -20,13 +20,17 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
     const [restoreTarget, setRestoreTarget] = useState(null) // filename pending confirm
     const [restoring, setRestoring] = useState(false)
     const [notice, setNotice] = useState(null)
+    const [locked, setLocked] = useState(false)     // true when plan doesn't include etcd backup
+    const [showInfo, setShowInfo] = useState(false)
 
     const fetchBackups = async () => {
         setLoading(true); setError(null)
         try {
             const res = await apiFetch(`/api/clusters/${clusterId}/etcd/backups`)
-            const json = await res.json()
+            const json = await res.json().catch(() => ({}))
+            if (res.status === 402 || json.upgradeRequired) { setLocked(true); return }
             if (!res.ok) throw new Error(json.error || 'Failed to load etcd backups')
+            setLocked(false)
             setData(json)
         } catch (err) {
             setError(err.message)
@@ -82,7 +86,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {canManage && (
+                    {canManage && !locked && (
                         <button
                             onClick={handleBackupNow}
                             disabled={backingUp}
@@ -92,12 +96,52 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                             {backingUp ? 'Backing up...' : 'Backup Now'}
                         </button>
                     )}
+                    <button onClick={() => setShowInfo(s => !s)} title="What is backed up & how restore works"
+                        className={`p-2 rounded-xl border transition-all active:scale-95 ${showInfo ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}>
+                        <Info className="w-3.5 h-3.5" />
+                    </button>
                     <button onClick={fetchBackups} disabled={loading}
                         className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all active:scale-95 disabled:opacity-50">
                         <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
             </div>
+
+            {/* Transparency: what is backed up & how restore works */}
+            {showInfo && (
+                <div className="mb-5 rounded-2xl border border-blue-500/20 bg-blue-500/[0.03] p-4 text-xs animate-in fade-in duration-200">
+                    <p className="text-slate-300 leading-relaxed mb-3">
+                        An <span className="font-bold text-white">etcd snapshot</span> captures the <span className="font-bold text-white">entire Kubernetes cluster state</span> —
+                        it's the cluster's database. Use it to roll the whole cluster back after a bad change or a failed upgrade.
+                    </p>
+                    <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3">
+                            <div className="flex items-center gap-1.5 mb-2 text-emerald-300 font-black uppercase tracking-wider text-[10px]"><CheckCircle2 className="w-3.5 h-3.5" /> Backed Up</div>
+                            <ul className="space-y-1 text-slate-400">
+                                <li>• Deployments, Pods, Services, Ingress</li>
+                                <li>• ConfigMaps & Secrets</li>
+                                <li>• Namespaces, RBAC, ServiceAccounts</li>
+                                <li>• CRDs & custom resources</li>
+                                <li>• All object metadata & cluster config</li>
+                            </ul>
+                        </div>
+                        <div className="rounded-xl border border-red-500/20 bg-red-500/[0.04] p-3">
+                            <div className="flex items-center gap-1.5 mb-2 text-red-300 font-black uppercase tracking-wider text-[10px]"><AlertTriangle className="w-3.5 h-3.5" /> NOT Backed Up</div>
+                            <ul className="space-y-1 text-slate-400">
+                                <li>• Persistent Volume DATA (DB/app files on disk)</li>
+                                <li>• Container images</li>
+                                <li>• Anything outside etcd</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-slate-400 leading-relaxed">
+                        <div className="flex items-center gap-1.5 mb-1.5 text-slate-200 font-black uppercase tracking-wider text-[10px]"><RotateCcw className="w-3.5 h-3.5" /> How Restore Works</div>
+                        <p>Click <span className="text-white font-bold">Restore</span> on a snapshot → KubeEZ safely: (1) stops the API server &amp; etcd,
+                        (2) keeps your current data as a rollback copy on the node, (3) restores the snapshot, (4) restarts the control plane and waits until it's healthy.</p>
+                        <p className="mt-1.5 text-amber-300/90">⚠️ Changes made <span className="font-bold">after</span> the snapshot are lost. A snapshot is also taken <span className="font-bold">automatically before every upgrade</span>. Automated restore supports single control-plane clusters.</p>
+                    </div>
+                </div>
+            )}
 
             {notice && (
                 <div className={`mb-4 flex items-start gap-2 rounded-xl p-3 text-xs ${notice.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border border-red-500/20 text-red-300'}`}>
@@ -106,7 +150,21 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                 </div>
             )}
 
-            {loading ? (
+            {locked ? (
+                <div className="py-8 text-center max-w-lg mx-auto">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4">
+                        <Lock className="w-7 h-7 text-amber-400" />
+                    </div>
+                    <h2 className="text-lg font-black text-white mb-2">etcd Backup & Restore is a Pro Feature</h2>
+                    <p className="text-slate-400 text-sm mb-5">
+                        Snapshot your entire cluster state on demand and restore it in one click — plus automatic
+                        snapshots before every upgrade. Available on <span className="text-amber-400 font-bold">Pro</span> and <span className="text-purple-400 font-bold">Enterprise</span>.
+                    </p>
+                    <a href="/pricing" className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition-colors">
+                        <Zap className="w-4 h-4" /> Upgrade to Pro
+                    </a>
+                </div>
+            ) : loading ? (
                 <div className="py-10 flex flex-col items-center gap-3 text-slate-500">
                     <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
                     <p className="text-sm">Reading snapshots from the control-plane...</p>

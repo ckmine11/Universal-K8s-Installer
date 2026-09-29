@@ -227,6 +227,15 @@ class AuthService {
         return this.users.find(u => u.id === id);
     }
 
+    // Resolve a workspace's plan from its owner (the admin/superadmin account
+    // that holds the subscription). Team members have plan 'MEMBER', so we must
+    // look at the org owner to know the real plan for feature gating.
+    getOrgPlan(orgId) {
+        const owner = this.users.find(u => u.orgId === orgId && (u.role === 'admin' || u.role === 'superadmin'))
+            || this.users.find(u => u.orgId === orgId && String(u.subscription?.plan || '').toUpperCase() !== 'MEMBER')
+        return String(owner?.subscription?.plan || 'FREE').toUpperCase()
+    }
+
     getUsersByOrgId(orgId) {
         return this.users.filter(u => u.orgId === orgId).map(u => {
             const { password, resetToken, resetTokenExpiry, ...safeUser } = u;
