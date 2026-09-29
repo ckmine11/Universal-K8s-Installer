@@ -99,8 +99,39 @@ fi
         const ssh = await automationEngine.connectSSH(master)
         try {
             const scriptPath = join(__dirname, '../automation/etcd-restore.sh')
-            await automationEngine.executeScript(ssh, scriptPath, [filename], onLog)
-            return { success: true }
+            let scriptError = null
+            try {
+                await automationEngine.executeScript(ssh, scriptPath, [filename], onLog)
+            } catch (e) {
+                // The control-plane restart can drop the SSH stream mid-run — don't
+                // trust the stream alone; the log file on the node is authoritative.
+                scriptError = e
+            }
+
+            // Read the full log back from the node (survives stream drops).
+            let logText = ''
+            try {
+                const r = await ssh.execCommand('sudo cat /var/lib/etcd-backup/last-restore.log 2>/dev/null')
+                logText = (r.stdout || '').trim()
+            } catch { /* ignore */ }
+
+            // Re-emit any log lines the stream missed, so the UI shows the full log.
+            if (logText) {
+                for (const line of logText.split('\n')) {
+                    if (!line.trim() || line.includes('RESULT=')) continue
+                    const level = /❌|error|fail/i.test(line) ? 'warning' : 'info'
+                    onLog(level, line)
+                }
+            }
+
+            const succeeded = /RESULT=OK/.test(logText)
+            if (succeeded) return { success: true }
+
+            const failedMarker = /RESULT=FAILED/.test(logText)
+            const reason = failedMarker
+                ? (logText.split('\n').reverse().find(l => l.includes('❌')) || 'etcd restore failed')
+                : (scriptError?.message?.trim() || 'etcd restore did not complete (no result marker). Check the node log /var/lib/etcd-backup/last-restore.log')
+            throw new Error(reason.replace('[etcd-restore] ❌', '').trim())
         } finally {
             ssh.dispose?.()
         }

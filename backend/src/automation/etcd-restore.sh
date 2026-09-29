@@ -8,11 +8,16 @@
 # log exactly what failed, so the UI shows a precise reason instead of a generic
 # "Remote command failed".
 
-log()  { echo "[etcd-restore] $1"; }
-fail() { echo "[etcd-restore] ❌ $1"; exit 1; }
+# Log to BOTH stdout and a file. The control plane restart can drop the SSH
+# stream mid-run, so the backend reads this file back to show the full log.
+BK_DIR="/var/lib/etcd-backup"
+mkdir -p "$BK_DIR" 2>/dev/null || true
+LOG_FILE="$BK_DIR/last-restore.log"
+: > "$LOG_FILE" 2>/dev/null || true
+log()  { echo "[etcd-restore] $1" | tee -a "$LOG_FILE"; }
+fail() { echo "[etcd-restore] ❌ $1" | tee -a "$LOG_FILE"; echo "[etcd-restore] RESULT=FAILED" >> "$LOG_FILE"; exit 1; }
 
 SNAP_NAME="${1:-}"
-BK_DIR="/var/lib/etcd-backup"
 SNAP="${BK_DIR}/${SNAP_NAME}"
 MANIFESTS="/etc/kubernetes/manifests"
 HELD="/etc/kubernetes/manifests-held"
@@ -98,18 +103,24 @@ mv -f "$HELD/etcd.yaml"           "$MANIFESTS/" 2>/dev/null || true
 mv -f "$HELD/kube-apiserver.yaml" "$MANIFESTS/" 2>/dev/null || true
 systemctl restart kubelet 2>/dev/null || true
 
-# ── 6. Wait for the API server to become healthy ──────────────────────────────
-log "Waiting for the control plane to become healthy..."
+# ── 6. Snapshot is restored; control plane is coming back. ────────────────────
+# We do a SHORT health wait only (long waits risk the SSH stream dropping). The
+# backend/UI keeps polling cluster health after this returns.
+log "Snapshot restored. Control plane is restarting..."
 KC=/etc/kubernetes/admin.conf
-for i in $(seq 1 36); do   # up to ~3 min
+HEALTHY=""
+for i in $(seq 1 12); do   # up to ~60s
     if KUBECONFIG=$KC kubectl get --raw='/healthz' >/dev/null 2>&1; then
-        log "✓ Control plane healthy. Restore complete."
-        log "   Previous data preserved at: /var/lib/etcd-prerestore-${TS}"
-        exit 0
+        HEALTHY=1; break
     fi
     sleep 5
 done
-
-log "⚠️ Restore applied but the API server has not reported healthy yet (it may still be starting)."
-log "   Previous data preserved at: /var/lib/etcd-prerestore-${TS}"
+if [ -n "$HEALTHY" ]; then
+    log "✓ Control plane healthy. Restore complete."
+else
+    log "Restore applied. Control plane still starting — it should be healthy shortly."
+fi
+log "Previous data preserved at: /var/lib/etcd-prerestore-${TS}"
+echo "[etcd-restore] RESULT=OK" >> "$LOG_FILE"
+exit 0
 exit 0
