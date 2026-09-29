@@ -19,6 +19,16 @@ nameserver 1.1.1.1
 DNSEOF
 fi
 
+# Release the yum lock on RHEL/CentOS: PackageKit (background updater) grabs
+# /var/run/yum.pid on boot and stalls every yum call for minutes. Harmless on
+# systems without it.
+if command -v systemctl &>/dev/null; then
+    systemctl stop packagekit 2>/dev/null || true
+    systemctl mask packagekit 2>/dev/null || true
+    pkill -9 -f PackageKit 2>/dev/null || true
+    rm -f /var/run/yum.pid 2>/dev/null || true
+fi
+
 K8S_VERSION=${1:-"1.28"}
 
 echo "========================================="

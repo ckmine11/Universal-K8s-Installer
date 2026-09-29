@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
+import { MAX_K8S_MINOR } from '../config/versions'
 import Skeleton from '../components/Skeleton'
 import {
     Activity,
@@ -57,8 +58,9 @@ export default function ClusterDetails({ onScaleCluster }) {
     const minorVersion = parseInt(currentVersion.split('.')[1])
     const availableUpgrades = []
     // STRICT SAFETY: Only allow next minor version (n+1) to prevent skip-level failures
-    // Kubeadm cannot upgrade across multiple minor versions (e.g. 1.28 -> 1.30 is forbidden)
-    if (minorVersion < 35) availableUpgrades.push(`1.${minorVersion + 1}.0`)
+    // Kubeadm cannot upgrade across multiple minor versions (e.g. 1.28 -> 1.30 is forbidden).
+    // Cap at the highest supported minor (derived from K8S_VERSIONS, not hardcoded).
+    if (minorVersion < MAX_K8S_MINOR) availableUpgrades.push(`1.${minorVersion + 1}.0`)
 
     const handleUpgrade = () => {
         if (!targetVersion) return
