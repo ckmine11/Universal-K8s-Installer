@@ -32,10 +32,32 @@ log "Restoring etcd from: $SNAP"
 # IMPORTANT: etcd 3.6+ REMOVED `etcdctl snapshot restore` — restore now lives in
 # the separate `etcdutl` binary. So we must prefer etcdutl; only very old
 # clusters (<=3.5) use `etcdctl snapshot restore`.
-EV=$(grep -oE 'etcd:[0-9]+\.[0-9]+\.[0-9]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | head -1 | cut -d: -f2)
+EV=$(grep -oE 'etcd:[0-9]+\.[0-9]+\.[0-9]+' "$MANIFESTS/etcd.yaml" "$HELD/etcd.yaml" 2>/dev/null | head -1 | cut -d: -f2)
 [ -z "$EV" ] && EV=$(grep -oE 'image:.*etcd:[0-9.]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 ARCH=amd64; [ "$(uname -m)" = "aarch64" ] && ARCH=arm64
 
+# Method A (PREFERRED, offline): extract etcdutl/etcdctl straight out of the
+# etcd image that is ALREADY on this node — no internet, exact version match.
+extract_from_image() {
+    command -v ctr >/dev/null 2>&1 || return 1
+    local IMG
+    IMG=$(grep -oE 'image: *[^ ]*etcd:[^ ]+' "$MANIFESTS/etcd.yaml" "$HELD/etcd.yaml" 2>/dev/null | head -1 | awk '{print $2}')
+    [ -z "$IMG" ] && IMG=$(ctr -n k8s.io images ls -q 2>/dev/null | grep -m1 '/etcd:')
+    [ -z "$IMG" ] && return 1
+    log "Extracting etcd tools from image: $IMG (offline)..."
+    local MNT=/mnt/kubeez-etcdimg
+    mkdir -p "$MNT"
+    ctr -n k8s.io images mount "$IMG" "$MNT" >/dev/null 2>&1 || ctr -n k8s.io image mount "$IMG" "$MNT" >/dev/null 2>&1 || return 1
+    for b in etcdutl etcdctl; do
+        for p in "$MNT/usr/local/bin/$b" "$MNT/usr/bin/$b" "$MNT/$b"; do
+            [ -f "$p" ] && cp -f "$p" /usr/local/bin/$b && chmod +x /usr/local/bin/$b && break
+        done
+    done
+    ctr -n k8s.io images unmount "$MNT" >/dev/null 2>&1 || ctr -n k8s.io image unmount "$MNT" >/dev/null 2>&1 || true
+    command -v etcdutl >/dev/null 2>&1
+}
+
+# Method B (fallback): download from the GitHub release (needs internet).
 download_tools() {
     local V="${1:-$EV}"
     [ -z "$V" ] && V="3.5.16"
@@ -49,8 +71,10 @@ download_tools() {
     return 0
 }
 
-# Get etcdutl if it's not already on the host (matches the running etcd version).
-command -v etcdutl >/dev/null 2>&1 || download_tools "$EV" || true
+# Ensure etcdutl: host → extract from image (offline) → download.
+if ! command -v etcdutl >/dev/null 2>&1; then
+    extract_from_image || download_tools "$EV" || true
+fi
 
 # Pick the restore command: etcdutl (3.6+ and 3.5) → else legacy etcdctl.
 RESTORE_CMD=""
