@@ -15,6 +15,18 @@ if [ -z "$MASTER_IP" ]; then
     exit 1
 fi
 
+# CRITICAL: pin the control-plane version to the ACTUALLY INSTALLED kubeadm.
+# install-kubernetes.sh installs the latest patch of the chosen minor (e.g. the
+# repo may ship 1.37.1 while the wizard requested 1.37.0). If kubeadm-config says
+# v1.37.0 but the binaries are 1.37.1, kubeadm init hits a version-mismatch
+# preflight error. Using the installed version keeps everything consistent and
+# always pulls images that exist.
+DETECTED_VER=$(kubeadm version -o short 2>/dev/null | sed 's/^v//')
+if [ -n "$DETECTED_VER" ]; then
+    echo "Detected installed kubeadm: v$DETECTED_VER (requested: v$K8S_VERSION)"
+    K8S_VERSION="$DETECTED_VER"
+fi
+
 echo "========================================="
 echo "Initializing Kubernetes Control Plane"
 echo "========================================="

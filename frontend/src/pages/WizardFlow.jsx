@@ -444,7 +444,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                     >
                                         {K8S_VERSIONS.map(v => (
                                             <option key={v.value} value={v.value} className="bg-slate-900">
-                                                {v.label}
+                                                {v.label}{v.badge ? ` — ${v.badge}` : ''} {v.status === 'eol' ? '(EOL)' : '(Supported)'}
                                             </option>
                                         ))}
                                     </select>
