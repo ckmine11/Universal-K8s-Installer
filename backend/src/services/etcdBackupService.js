@@ -55,28 +55,35 @@ class EtcdBackupService {
         const master = this.firstMaster(cluster)
         const ssh = await automationEngine.connectSSH(master)
         try {
+            // Use HOST etcdctl (with an explicit PATH so /usr/local/bin is found,
+            // and a download fallback). The old pod-exec path used `sh -c`, which
+            // fails on the distroless etcd image ("sh: not found").
             const cmd = `sudo bash -c '
-set -e
+export PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 BK=${BK_DIR}; mkdir -p "$BK"
 SNAP="$BK/etcd-manual-$(date +%Y%m%d-%H%M%S).db"
 C="${ETCD_CERTS}"
-if command -v etcdctl >/dev/null 2>&1; then
-  ETCDCTL_API=3 etcdctl $C snapshot save "$SNAP" >/dev/null
-else
-  KC="--kubeconfig=/etc/kubernetes/admin.conf"
-  POD=$(kubectl $KC -n kube-system get pods -l component=etcd -o jsonpath="{.items[0].metadata.name}")
-  [ -n "$POD" ] || { echo "NO_ETCD_POD"; exit 1; }
-  kubectl $KC -n kube-system exec "$POD" -- sh -c "ETCDCTL_API=3 etcdctl $C snapshot save /var/lib/etcd/kubeez-manual.db" >/dev/null
-  mv -f /var/lib/etcd/kubeez-manual.db "$SNAP"
+if ! command -v etcdctl >/dev/null 2>&1; then
+  EV=$(grep -oE "etcd:[0-9]+\\.[0-9]+\\.[0-9]+" /etc/kubernetes/manifests/etcd.yaml 2>/dev/null | head -1 | cut -d: -f2)
+  [ -z "$EV" ] && EV=3.5.16
+  A=amd64; [ "$(uname -m)" = "aarch64" ] && A=arm64
+  curl -fsSL --retry 3 -m 120 "https://github.com/etcd-io/etcd/releases/download/v$EV/etcd-v$EV-linux-$A.tar.gz" -o /tmp/etcd.tgz 2>/dev/null && \
+    tar xzf /tmp/etcd.tgz -C /tmp 2>/dev/null && \
+    install -m0755 /tmp/etcd-v$EV-linux-$A/etcdctl /usr/local/bin/etcdctl 2>/dev/null
 fi
-echo "SNAPSHOT_OK:$SNAP"
+command -v etcdctl >/dev/null 2>&1 || { echo "NO_ETCDCTL: could not find or download etcdctl"; exit 1; }
+if ETCDCTL_API=3 etcdctl $C snapshot save "$SNAP" >/tmp/etcd-save.log 2>&1; then
+  echo "SNAPSHOT_OK:$SNAP"
+else
+  echo "SAVE_FAILED:"; cat /tmp/etcd-save.log; exit 1
+fi
 '`
             const r = await run(ssh, cmd)
             if (r.ok && /SNAPSHOT_OK:/.test(r.out)) {
                 const path = r.out.split('SNAPSHOT_OK:')[1]?.trim()
                 return { success: true, filename: path?.split('/').pop(), path }
             }
-            return { success: false, error: r.err || r.out || 'Snapshot failed' }
+            return { success: false, error: (r.out || r.err || 'Snapshot failed').replace('SAVE_FAILED:', '').trim() }
         } finally {
             ssh.dispose?.()
         }

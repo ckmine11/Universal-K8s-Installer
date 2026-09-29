@@ -437,6 +437,7 @@ router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade
 
 // Restore etcd from a snapshot (DESTRUCTIVE → operator/admin, single control-plane only)
 router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    const logs = []
     try {
         const cluster = await loadOwnedCluster(req, res)
         if (!cluster) return
@@ -451,12 +452,12 @@ router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade
                 error: 'Automated restore is only supported for single control-plane clusters. For HA clusters, restore etcd manually on each member.'
             })
         }
-        const logs = []
         await etcdBackupService.restoreBackup(cluster, filename, (level, msg) => logs.push({ level, msg }))
         res.json({ success: true, message: 'etcd restore completed', logs })
     } catch (error) {
         console.error('etcd restore error:', error)
-        res.status(500).json({ success: false, error: error.message })
+        // Return the collected step-by-step logs even on failure (transparency).
+        res.status(500).json({ success: false, error: error.message, logs })
     }
 })
 

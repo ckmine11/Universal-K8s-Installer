@@ -19,6 +19,8 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
     const [backingUp, setBackingUp] = useState(false)
     const [restoreTarget, setRestoreTarget] = useState(null) // filename pending confirm
     const [restoring, setRestoring] = useState(false)
+    const [restoreLogs, setRestoreLogs] = useState([])
+    const [restoreDone, setRestoreDone] = useState(false)
     const [notice, setNotice] = useState(null)
     const [locked, setLocked] = useState(false)     // true when plan doesn't include etcd backup
     const [showInfo, setShowInfo] = useState(false)
@@ -57,16 +59,17 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
     }
 
     const handleRestore = async () => {
-        setRestoring(true); setNotice(null)
+        setRestoring(true); setNotice(null); setRestoreLogs([]); setRestoreDone(false)
         try {
             const res = await apiFetch(`/api/clusters/${clusterId}/etcd/restore`, {
                 method: 'POST',
                 body: JSON.stringify({ filename: restoreTarget })
             })
-            const json = await res.json()
-            if (!res.ok) throw new Error(json.error || 'Restore failed')
-            setNotice({ type: 'success', msg: 'etcd restore completed. The control plane has been restarted on the restored data.' })
-            setRestoreTarget(null)
+            const json = await res.json().catch(() => ({}))
+            if (Array.isArray(json.logs)) setRestoreLogs(json.logs)   // backend step-by-step logs
+            setRestoreDone(true)
+            if (!res.ok || !json.success) throw new Error(json.error || 'Restore failed')
+            setNotice({ type: 'success', msg: 'etcd restore completed. The control plane was restarted on the restored data.' })
             fetchBackups()
         } catch (err) {
             setNotice({ type: 'error', msg: err.message })
@@ -218,33 +221,79 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
             {/* Restore confirmation */}
             {restoreTarget && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="glass border border-amber-500/30 rounded-3xl max-w-md w-full p-8 shadow-2xl relative">
-                        <button onClick={() => !restoring && setRestoreTarget(null)} className="absolute top-5 right-5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-                        <div className="text-center">
-                            <div className="p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20 inline-block mb-4">
-                                <AlertTriangle className="w-8 h-8 text-amber-500" />
+                    <div className="glass border border-amber-500/30 rounded-3xl max-w-lg w-full p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+                        <button onClick={() => { if (!restoring) { setRestoreTarget(null); setRestoreLogs([]); setRestoreDone(false) } }} className="absolute top-5 right-5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+
+                        {/* Phase 1 — confirm */}
+                        {!restoring && !restoreDone && (
+                            <div className="text-center">
+                                <div className="p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20 inline-block mb-4">
+                                    <AlertTriangle className="w-8 h-8 text-amber-500" />
+                                </div>
+                                <h2 className="text-xl font-black text-white uppercase mb-2">Restore etcd?</h2>
+                                <p className="text-slate-400 text-sm mb-3 leading-relaxed">
+                                    This rolls the ENTIRE cluster state back to:
+                                    <span className="font-mono text-white text-xs block mt-1 break-all">{restoreTarget}</span>
+                                </p>
+                                <div className="text-left text-[11px] text-amber-300/90 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-3 mb-6 space-y-1">
+                                    <p>• The control plane (api-server + etcd) restarts during restore.</p>
+                                    <p>• Any changes made AFTER this snapshot are lost.</p>
+                                    <p>• Your current data is kept as a rollback copy on the node.</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button onClick={() => setRestoreTarget(null)}
+                                        className="px-4 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 font-bold text-xs uppercase tracking-wider transition-colors">
+                                        Cancel
+                                    </button>
+                                    <button onClick={handleRestore}
+                                        className="px-4 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs uppercase tracking-wider transition-colors">
+                                        Confirm Restore
+                                    </button>
+                                </div>
                             </div>
-                            <h2 className="text-xl font-black text-white uppercase mb-2">Restore etcd?</h2>
-                            <p className="text-slate-400 text-sm mb-3 leading-relaxed">
-                                This rolls the ENTIRE cluster state back to:
-                                <span className="font-mono text-white text-xs block mt-1 break-all">{restoreTarget}</span>
-                            </p>
-                            <div className="text-left text-[11px] text-amber-300/90 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-3 mb-6 space-y-1">
-                                <p>• The control plane (api-server + etcd) restarts during restore.</p>
-                                <p>• Any changes made AFTER this snapshot are lost.</p>
-                                <p>• Your current data is kept as a rollback copy on the node.</p>
+                        )}
+
+                        {/* Phase 2/3 — progress + backend transparency logs */}
+                        {(restoring || restoreDone) && (
+                            <div>
+                                <div className="flex items-center gap-3 mb-4">
+                                    {restoring
+                                        ? <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                                        : (notice?.type === 'success' ? <ShieldCheck className="w-6 h-6 text-emerald-400" /> : <AlertTriangle className="w-6 h-6 text-red-400" />)}
+                                    <div>
+                                        <h2 className="text-lg font-black text-white">
+                                            {restoring ? 'Restoring etcd…' : (notice?.type === 'success' ? 'Restore Complete' : 'Restore Failed')}
+                                        </h2>
+                                        <p className="text-[11px] text-slate-500">
+                                            {restoring ? 'This can take 1–3 minutes — the control plane is restarting.' : 'Backend step-by-step log below.'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {restoring && (
+                                    <div className="mb-4 space-y-1.5 text-[11px] text-slate-400">
+                                        {['Preparing etcdutl (restore tool)', 'Stopping API server + etcd', 'Preserving current data (rollback copy)', 'Restoring snapshot', 'Restarting control plane', 'Waiting for cluster healthy'].map((s, i) => (
+                                            <div key={i} className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />{s}</div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {restoreLogs.length > 0 && (
+                                    <div className="bg-black/50 border border-white/10 rounded-xl p-3 max-h-64 overflow-y-auto font-mono text-[10px] leading-relaxed">
+                                        {restoreLogs.map((l, i) => (
+                                            <div key={i} className={l.level === 'warning' ? 'text-amber-400' : l.level === 'error' ? 'text-red-400' : 'text-slate-300'}>{l.msg}</div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {restoreDone && (
+                                    <button onClick={() => { setRestoreTarget(null); setRestoreLogs([]); setRestoreDone(false); fetchBackups() }}
+                                        className="mt-4 w-full px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs uppercase tracking-wider">
+                                        Close
+                                    </button>
+                                )}
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button onClick={() => setRestoreTarget(null)} disabled={restoring}
-                                    className="px-4 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 font-bold text-xs uppercase tracking-wider transition-colors">
-                                    Cancel
-                                </button>
-                                <button onClick={handleRestore} disabled={restoring}
-                                    className="px-4 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2">
-                                    {restoring ? <><Loader2 className="w-4 h-4 animate-spin" /> Restoring...</> : 'Confirm Restore'}
-                                </button>
-                            </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             )}

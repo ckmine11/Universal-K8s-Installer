@@ -62,28 +62,24 @@ if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
     SNAP="$BK_DIR/etcd-pre-upgrade-$(date +%Y%m%d-%H%M%S).db"
     ETCD_CERTS="--cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key --endpoints=https://127.0.0.1:2379"
 
+    # Ensure host etcdctl (download the matching version if missing). We avoid
+    # exec-ing inside the etcd pod because distroless etcd images have no shell.
+    if ! command -v etcdctl >/dev/null 2>&1; then
+        EV=$(grep -oE 'etcd:[0-9]+\.[0-9]+\.[0-9]+' /etc/kubernetes/manifests/etcd.yaml 2>/dev/null | head -1 | cut -d: -f2)
+        [ -z "$EV" ] && EV=3.5.16
+        A=amd64; [ "$(uname -m)" = "aarch64" ] && A=arm64
+        curl -fsSL --retry 3 -m 120 "https://github.com/etcd-io/etcd/releases/download/v${EV}/etcd-v${EV}-linux-${A}.tar.gz" -o /tmp/etcd.tgz 2>/dev/null \
+            && tar xzf /tmp/etcd.tgz -C /tmp 2>/dev/null \
+            && install -m0755 "/tmp/etcd-v${EV}-linux-${A}/etcdctl" /usr/local/bin/etcdctl 2>/dev/null
+    fi
     if command -v etcdctl >/dev/null 2>&1; then
-        # Host has etcdctl → save straight to the backup dir.
         if ETCDCTL_API=3 etcdctl $ETCD_CERTS snapshot save "$SNAP" >/dev/null 2>&1; then
             log "✓ etcd snapshot saved: $SNAP"
         else
-            log "⚠️ etcd snapshot failed (host etcdctl) — continuing WITHOUT a backup."
+            log "⚠️ etcd snapshot failed — continuing WITHOUT a backup."
         fi
     else
-        # No host etcdctl → run it inside the etcd static pod. /var/lib/etcd is a
-        # hostPath mount, so a file written there lands on the host filesystem.
-        KC="--kubeconfig=/etc/kubernetes/admin.conf"
-        ETCD_POD=$(kubectl $KC -n kube-system get pods -l component=etcd -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-        if [ -n "$ETCD_POD" ]; then
-            if kubectl $KC -n kube-system exec "$ETCD_POD" -- sh -c "ETCDCTL_API=3 etcdctl $ETCD_CERTS snapshot save /var/lib/etcd/kubeez-pre-upgrade.db" >/dev/null 2>&1; then
-                mv -f /var/lib/etcd/kubeez-pre-upgrade.db "$SNAP" 2>/dev/null || true
-                log "✓ etcd snapshot saved: $SNAP"
-            else
-                log "⚠️ etcd snapshot failed (pod exec) — continuing WITHOUT a backup."
-            fi
-        else
-            log "⚠️ Could not locate the etcd pod — skipping snapshot (continuing)."
-        fi
+        log "⚠️ etcdctl unavailable (and download failed) — skipping snapshot (continuing)."
     fi
     # Retain only the 5 most recent snapshots to bound disk usage.
     ls -1t "$BK_DIR"/etcd-pre-upgrade-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f 2>/dev/null || true
