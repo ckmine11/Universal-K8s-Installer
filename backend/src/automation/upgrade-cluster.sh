@@ -51,6 +51,44 @@ if [ "$TARGET_MINOR" -le "$CURRENT_MINOR" ]; then
    log "⚠️ Warning: Target version v${TARGET_VERSION} is not newer than current v${CURRENT_KUBEADM}. Continuing anyway..."
 fi
 
+# ── 0.5 Automatic etcd snapshot (first control-plane only) ────────────────────
+# etcd stores ALL cluster state. Snapshot it BEFORE changing anything so a
+# failed upgrade is recoverable. Best-effort: a snapshot failure logs a loud
+# warning but does not abort the upgrade (so upgrades never get blocked by it).
+if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
+    log "🛟 Taking etcd snapshot before upgrade (safety backup)..."
+    BK_DIR="/var/lib/etcd-backup"
+    mkdir -p "$BK_DIR"
+    SNAP="$BK_DIR/etcd-pre-upgrade-$(date +%Y%m%d-%H%M%S).db"
+    ETCD_CERTS="--cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key --endpoints=https://127.0.0.1:2379"
+
+    if command -v etcdctl >/dev/null 2>&1; then
+        # Host has etcdctl → save straight to the backup dir.
+        if ETCDCTL_API=3 etcdctl $ETCD_CERTS snapshot save "$SNAP" >/dev/null 2>&1; then
+            log "✓ etcd snapshot saved: $SNAP"
+        else
+            log "⚠️ etcd snapshot failed (host etcdctl) — continuing WITHOUT a backup."
+        fi
+    else
+        # No host etcdctl → run it inside the etcd static pod. /var/lib/etcd is a
+        # hostPath mount, so a file written there lands on the host filesystem.
+        KC="--kubeconfig=/etc/kubernetes/admin.conf"
+        ETCD_POD=$(kubectl $KC -n kube-system get pods -l component=etcd -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        if [ -n "$ETCD_POD" ]; then
+            if kubectl $KC -n kube-system exec "$ETCD_POD" -- sh -c "ETCDCTL_API=3 etcdctl $ETCD_CERTS snapshot save /var/lib/etcd/kubeez-pre-upgrade.db" >/dev/null 2>&1; then
+                mv -f /var/lib/etcd/kubeez-pre-upgrade.db "$SNAP" 2>/dev/null || true
+                log "✓ etcd snapshot saved: $SNAP"
+            else
+                log "⚠️ etcd snapshot failed (pod exec) — continuing WITHOUT a backup."
+            fi
+        else
+            log "⚠️ Could not locate the etcd pod — skipping snapshot (continuing)."
+        fi
+    fi
+    # Retain only the 5 most recent snapshots to bound disk usage.
+    ls -1t "$BK_DIR"/etcd-pre-upgrade-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f 2>/dev/null || true
+fi
+
 # 1. Detect OS and Package Manager
 if command -v apt-get &> /dev/null; then
     PKG_MGR="apt"

@@ -1058,7 +1058,7 @@ class AutomationEngine {
 
         try {
             onLog('info', `🚀 Starting Cluster Upgrade to v${targetVersion}...`)
-            onLog('info', '⚠️ Ensure you have a backup of etcd before proceeding.')
+            onLog('info', '🛟 A safety etcd snapshot will be taken automatically on the primary control-plane before any changes (saved to /var/lib/etcd-backup).')
 
             if (this.simulationMode) {
                 onLog('info', '[SIMULATION] Upgrading cluster components...')
