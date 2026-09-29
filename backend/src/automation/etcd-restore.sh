@@ -29,51 +29,67 @@ case "$SNAP_NAME" in */*|*..*) fail "Invalid snapshot name";; esac
 log "Restoring etcd from: $SNAP"
 
 # ── 1. Ensure a usable RESTORE tool ───────────────────────────────────────────
-# IMPORTANT: etcd 3.6+ REMOVED `etcdctl snapshot restore` — restore now lives in
-# the separate `etcdutl` binary. So we must prefer etcdutl; only very old
-# clusters (<=3.5) use `etcdctl snapshot restore`.
-EV=$(grep -oE 'etcd:[0-9]+\.[0-9]+\.[0-9]+' "$MANIFESTS/etcd.yaml" "$HELD/etcd.yaml" 2>/dev/null | head -1 | cut -d: -f2)
-[ -z "$EV" ] && EV=$(grep -oE 'image:.*etcd:[0-9.]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+# etcd 3.6+ REMOVED `etcdctl snapshot restore` — restore lives in `etcdutl`.
+# Detect the etcd IMAGE + VERSION from the manifest.  Use -h so grep does NOT
+# prefix "filename:" (that broke the version parse before).
+IMG=$(grep -hoE 'image: *[^ ]*etcd:[^ ]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | head -1 | awk '{print $2}')
+[ -z "$IMG" ] && IMG=$(grep -hoE '[^ "]*etcd:[^ "]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | head -1)
+EV=$(printf '%s' "$IMG" | sed -n 's/.*etcd:\([0-9][0-9.]*\).*/\1/p')
 ARCH=amd64; [ "$(uname -m)" = "aarch64" ] && ARCH=arm64
+log "Detected etcd image=$IMG version=${EV:-unknown}"
 
-# Method A (PREFERRED, offline): extract etcdutl/etcdctl straight out of the
-# etcd image that is ALREADY on this node — no internet, exact version match.
-extract_from_image() {
-    command -v ctr >/dev/null 2>&1 || return 1
-    local IMG
-    IMG=$(grep -oE 'image: *[^ ]*etcd:[^ ]+' "$MANIFESTS/etcd.yaml" "$HELD/etcd.yaml" 2>/dev/null | head -1 | awk '{print $2}')
-    [ -z "$IMG" ] && IMG=$(ctr -n k8s.io images ls -q 2>/dev/null | grep -m1 '/etcd:')
-    [ -z "$IMG" ] && return 1
-    log "Extracting etcd tools from image: $IMG (offline)..."
-    local MNT=/mnt/kubeez-etcdimg
-    mkdir -p "$MNT"
-    ctr -n k8s.io images mount "$IMG" "$MNT" >/dev/null 2>&1 || ctr -n k8s.io image mount "$IMG" "$MNT" >/dev/null 2>&1 || return 1
+# Copy etcdutl/etcdctl out of a root filesystem directory.
+copy_tools() {
+    local root="$1" b p
     for b in etcdutl etcdctl; do
-        for p in "$MNT/usr/local/bin/$b" "$MNT/usr/bin/$b" "$MNT/$b"; do
-            [ -f "$p" ] && cp -f "$p" /usr/local/bin/$b && chmod +x /usr/local/bin/$b && break
+        for p in "$root/usr/local/bin/$b" "$root/usr/bin/$b" "$root/bin/$b"; do
+            if [ -f "$p" ]; then cp -f "$p" /usr/local/bin/$b 2>/dev/null && chmod +x /usr/local/bin/$b 2>/dev/null; break; fi
         done
     done
+}
+
+# Method 1 (BEST, offline): the etcd container is RUNNING — grab etcdutl straight
+# from its live filesystem via /proc/<pid>/root. No internet, no mounts, no tar.
+from_proc() {
+    command -v crictl >/dev/null 2>&1 || return 1
+    local CID PID
+    CID=$(crictl ps --name etcd -q 2>/dev/null | head -1)
+    [ -z "$CID" ] && return 1
+    PID=$(crictl inspect "$CID" 2>/dev/null | grep -m1 '"pid"' | grep -oE '[0-9]+' | head -1)
+    [ -z "$PID" ] && return 1
+    [ -e "/proc/$PID/root/usr/local/bin/etcdutl" ] || return 1
+    log "Extracting etcdutl from the running etcd container (pid $PID)..."
+    copy_tools "/proc/$PID/root"
+    command -v etcdutl >/dev/null 2>&1
+}
+
+# Method 2 (offline): mount the etcd image.
+from_image_mount() {
+    command -v ctr >/dev/null 2>&1 || return 1
+    local ref="$IMG"; [ -z "$ref" ] && ref=$(ctr -n k8s.io images ls -q 2>/dev/null | grep -m1 '/etcd:')
+    [ -z "$ref" ] && return 1
+    local MNT=/mnt/kubeez-etcdimg; mkdir -p "$MNT"
+    log "Extracting etcdutl from image $ref (offline mount)..."
+    ctr -n k8s.io images mount "$ref" "$MNT" >/dev/null 2>&1 || ctr -n k8s.io image mount "$ref" "$MNT" >/dev/null 2>&1 || return 1
+    copy_tools "$MNT"
     ctr -n k8s.io images unmount "$MNT" >/dev/null 2>&1 || ctr -n k8s.io image unmount "$MNT" >/dev/null 2>&1 || true
     command -v etcdutl >/dev/null 2>&1
 }
 
-# Method B (fallback): download from the GitHub release (needs internet).
+# Method 3 (fallback): download from GitHub (needs internet + valid version).
 download_tools() {
-    local V="${1:-$EV}"
-    [ -z "$V" ] && V="3.5.16"
-    local URL="https://github.com/etcd-io/etcd/releases/download/v${V}/etcd-v${V}-linux-${ARCH}.tar.gz"
-    log "Downloading etcd tools v${V} (${ARCH})..."
+    [ -z "$EV" ] && return 1
+    local URL="https://github.com/etcd-io/etcd/releases/download/v${EV}/etcd-v${EV}-linux-${ARCH}.tar.gz"
+    log "Downloading etcd tools v${EV} (${ARCH})..."
     curl -fsSL --retry 3 -m 120 "$URL" -o /tmp/etcd.tgz 2>/dev/null || return 1
     tar xzf /tmp/etcd.tgz -C /tmp 2>/dev/null || return 1
-    local D="/tmp/etcd-v${V}-linux-${ARCH}"
-    [ -f "$D/etcdutl" ] && install -m0755 "$D/etcdutl" /usr/local/bin/etcdutl 2>/dev/null
-    [ -f "$D/etcdctl" ] && install -m0755 "$D/etcdctl" /usr/local/bin/etcdctl 2>/dev/null
-    return 0
+    copy_tools "/tmp/etcd-v${EV}-linux-${ARCH}"
+    command -v etcdutl >/dev/null 2>&1
 }
 
-# Ensure etcdutl: host → extract from image (offline) → download.
+# Ensure etcdutl: host → running container → image mount → download.
 if ! command -v etcdutl >/dev/null 2>&1; then
-    extract_from_image || download_tools "$EV" || true
+    from_proc || from_image_mount || download_tools || true
 fi
 
 # Pick the restore command: etcdutl (3.6+ and 3.5) → else legacy etcdctl.
