@@ -23,36 +23,40 @@ case "$SNAP_NAME" in */*|*..*) fail "Invalid snapshot name";; esac
 
 log "Restoring etcd from: $SNAP"
 
-# ── 1. Ensure an etcdctl binary is available on the host ──────────────────────
-ensure_etcdctl() {
-    command -v etcdctl >/dev/null 2>&1 && { log "Using host etcdctl."; return 0; }
+# ── 1. Ensure a usable RESTORE tool ───────────────────────────────────────────
+# IMPORTANT: etcd 3.6+ REMOVED `etcdctl snapshot restore` — restore now lives in
+# the separate `etcdutl` binary. So we must prefer etcdutl; only very old
+# clusters (<=3.5) use `etcdctl snapshot restore`.
+EV=$(grep -oE 'etcd:[0-9]+\.[0-9]+\.[0-9]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | head -1 | cut -d: -f2)
+[ -z "$EV" ] && EV=$(grep -oE 'image:.*etcd:[0-9.]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+ARCH=amd64; [ "$(uname -m)" = "aarch64" ] && ARCH=arm64
 
-    # Determine the etcd version from the static-pod manifest (no kubectl needed).
-    local EV ARCH URL
-    EV=$(grep -oE 'etcd:[0-9]+\.[0-9]+\.[0-9]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | head -1 | cut -d: -f2)
-    [ -z "$EV" ] && EV=$(grep -oE 'image:.*etcd:[0-9.]+' "$MANIFESTS/etcd.yaml" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    if [ -z "$EV" ]; then
-        log "⚠️ Could not detect etcd version from manifest — defaulting to 3.5.15"
-        EV="3.5.15"
-    fi
-    ARCH=amd64; [ "$(uname -m)" = "aarch64" ] && ARCH=arm64
-
-    log "Downloading etcdctl v${EV} (${ARCH})..."
-    URL="https://github.com/etcd-io/etcd/releases/download/v${EV}/etcd-v${EV}-linux-${ARCH}.tar.gz"
-    if curl -fsSL --retry 3 -m 120 "$URL" -o /tmp/etcdctl.tgz 2>/dev/null; then
-        if tar xzf /tmp/etcdctl.tgz -C /tmp 2>/dev/null; then
-            install -m0755 "/tmp/etcd-v${EV}-linux-${ARCH}/etcdctl" /usr/local/bin/etcdctl 2>/dev/null \
-                || cp "/tmp/etcd-v${EV}-linux-${ARCH}/etcdctl" /usr/local/bin/etcdctl
-            chmod +x /usr/local/bin/etcdctl 2>/dev/null || true
-        fi
-    fi
-    command -v etcdctl >/dev/null 2>&1
+download_tools() {
+    local V="${1:-$EV}"
+    [ -z "$V" ] && V="3.5.16"
+    local URL="https://github.com/etcd-io/etcd/releases/download/v${V}/etcd-v${V}-linux-${ARCH}.tar.gz"
+    log "Downloading etcd tools v${V} (${ARCH})..."
+    curl -fsSL --retry 3 -m 120 "$URL" -o /tmp/etcd.tgz 2>/dev/null || return 1
+    tar xzf /tmp/etcd.tgz -C /tmp 2>/dev/null || return 1
+    local D="/tmp/etcd-v${V}-linux-${ARCH}"
+    [ -f "$D/etcdutl" ] && install -m0755 "$D/etcdutl" /usr/local/bin/etcdutl 2>/dev/null
+    [ -f "$D/etcdctl" ] && install -m0755 "$D/etcdctl" /usr/local/bin/etcdctl 2>/dev/null
+    return 0
 }
 
-if ! ensure_etcdctl; then
-    fail "Could not obtain an etcdctl binary (no host etcdctl and download failed). Cluster untouched."
+# Get etcdutl if it's not already on the host (matches the running etcd version).
+command -v etcdutl >/dev/null 2>&1 || download_tools "$EV" || true
+
+# Pick the restore command: etcdutl (3.6+ and 3.5) → else legacy etcdctl.
+RESTORE_CMD=""
+if command -v etcdutl >/dev/null 2>&1; then
+    RESTORE_CMD="etcdutl snapshot restore"
+elif command -v etcdctl >/dev/null 2>&1 && etcdctl snapshot restore --help >/dev/null 2>&1; then
+    RESTORE_CMD="etcdctl snapshot restore"
+else
+    fail "No usable restore tool: etcd ${EV:-unknown} needs 'etcdutl', which could not be found or downloaded. Cluster untouched."
 fi
-log "etcdctl ready: $(etcdctl version 2>/dev/null | head -1 || echo unknown)"
+log "Restore tool: $RESTORE_CMD (etcd v${EV:-unknown})"
 
 TS=$(date +%s)
 
@@ -78,7 +82,7 @@ fi
 
 # ── 4. Restore the snapshot (offline op — NO cert/endpoint flags) ─────────────
 log "Restoring snapshot into /var/lib/etcd ..."
-if ! ETCDCTL_API=3 etcdctl snapshot restore "$SNAP" --data-dir /var/lib/etcd; then
+if ! ETCDCTL_API=3 $RESTORE_CMD "$SNAP" --data-dir /var/lib/etcd; then
     log "⚠️ Restore failed — rolling back to the previous data dir."
     rm -rf /var/lib/etcd 2>/dev/null || true
     mv "/var/lib/etcd-prerestore-${TS}" /var/lib/etcd 2>/dev/null || true
