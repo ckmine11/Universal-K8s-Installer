@@ -294,6 +294,27 @@ fi
 KUBEADM_VER=$(kubeadm version -o short)
 log "kubeadm upgraded to: $KUBEADM_VER"
 
+# ── Pre-pull control-plane images BEFORE the upgrade (critical) ───────────────
+# ROOT CAUSE of "first upgrade fails, retry works":
+# 'kubeadm upgrade apply' swaps each static-pod manifest and then waits (with a
+# fixed timeout) for the new component to become healthy. If the new-version
+# image isn't on the node yet, it must download WHILE that timer runs — on a
+# slow pull the API server doesn't come back in time and the upgrade aborts.
+# The retry then succeeds only because the images got cached on the first try.
+# Pre-pulling here makes the manifest swap near-instant, so it works first time.
+if [ "$NODE_ROLE" = "master" ]; then
+    log "Pre-pulling Kubernetes v${TARGET_VERSION} control-plane images (prevents first-attempt timeout)..."
+    # Retry the pull a couple of times to absorb transient registry hiccups.
+    for i in 1 2 3; do
+        if kubeadm config images pull --kubernetes-version "v${TARGET_VERSION}"; then
+            log "✓ Images pre-pulled."
+            break
+        fi
+        log "⚠️ Image pull attempt $i failed — retrying in 5s..."
+        sleep 5
+    done
+fi
+
 # 4. Apply Upgrade (Cluster-level or Node-level)
 
 # FIX: Check for Legacy Kernel (Kernel < 4.x) and ignore SystemVerification globally
