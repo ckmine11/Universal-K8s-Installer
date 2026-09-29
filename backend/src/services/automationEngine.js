@@ -319,7 +319,19 @@ class AutomationEngine {
 
         // Auto-configure passwordless sudo for non-root users
         if (node.username !== 'root') {
-            await this.ensurePasswordlessSudo(ssh, node)
+            try {
+                await this.ensurePasswordlessSudo(ssh, node)
+            } catch (err) {
+                // If it fails here, it might be due to SSH connectivity issues
+                // being delayed until the first execCommand
+                if (err.message.includes('ECONNREFUSED')) {
+                    throw new Error(`SSH Connection Refused on ${node.ip}:22.\n\nFIX (Ubuntu/Debian):\n  sudo apt update && sudo apt install openssh-server -y\n  sudo systemctl enable --now ssh\n  sudo ufw allow ssh`)
+                }
+                if (err.message.includes('Timed out while waiting for handshake')) {
+                    throw new Error(`SSH Handshake Timeout on ${node.ip}.\n\nFIX: Verify the IP is correct and Port 22 is open on the host's firewall.`)
+                }
+                throw err
+            }
         }
 
         return ssh
@@ -366,7 +378,15 @@ class AutomationEngine {
             }
 
         } catch (error) {
-            // If auto-setup fails, throw a helpful error
+            // Intercept common SSH networking errors that surface here
+            if (error.message.includes('ECONNREFUSED')) {
+                throw new Error(`SSH Connection Refused on ${node.ip}:22.\n\nFIX (Ubuntu/Debian):\n  sudo apt update && sudo apt install openssh-server -y\n  sudo systemctl enable --now ssh\n  sudo ufw allow ssh`)
+            }
+            if (error.message.includes('Timed out while waiting for handshake')) {
+                throw new Error(`SSH Handshake Timeout on ${node.ip}.\n\nFIX: Verify the IP is correct and Port 22 is open on the host's firewall.`)
+            }
+
+            // If auto-setup fails for auth/permission reasons, throw a helpful error
             throw new Error(
                 `Cannot configure passwordless sudo for user '${node.username}' on ${node.ip}. ` +
                 `Please either: (1) Use 'root' user, or (2) Manually configure passwordless sudo. ` +

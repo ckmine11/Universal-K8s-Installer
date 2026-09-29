@@ -52,7 +52,13 @@ class NodeVerifier {
                 result.status = 'connected'
             } catch (sshError) {
                 result.status = 'unreachable'
-                result.errors.push(`SSH connection failed: ${sshError.message}`)
+                let errMessage = sshError.message
+                if (errMessage.includes('ECONNREFUSED')) {
+                    errMessage = `Connection Refused on Port 22.\nFIX (Ubuntu/Debian):\n  sudo apt update && sudo apt install openssh-server -y\n  sudo systemctl enable --now ssh`
+                } else if (errMessage.includes('Timed out while waiting for handshake')) {
+                    errMessage = `SSH Handshake Timeout.\nFIX: Verify IP is correct and firewall allows Port 22.`
+                }
+                result.errors.push(`SSH connection failed: ${errMessage}`)
                 return result
             }
 
