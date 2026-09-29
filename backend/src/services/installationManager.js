@@ -207,12 +207,18 @@ class InstallationManager {
             installation.clusterInfo = clusterInfo
             installation.completedAt = new Date().toISOString()
 
+            // On upgrade, the cluster version must reflect the TARGET version —
+            // installation.k8sVersion is a copy of the OLD cluster's version.
+            const effectiveVersion = (installation.mode === 'upgrade' && installation.targetVersion)
+                ? installation.targetVersion
+                : installation.k8sVersion
+
             // Prepare data to save
             let finalCluster = {
                 id: installationId,
                 ownerId: installation.ownerId, // Save the ownerId to the cluster data
                 clusterName: installation.clusterName,
-                k8sVersion: installation.k8sVersion,
+                k8sVersion: effectiveVersion,
                 networkPlugin: installation.networkPlugin,
                 masterNodes: installation.masterNodes,
                 workerNodes: installation.workerNodes,

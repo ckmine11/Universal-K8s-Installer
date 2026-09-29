@@ -416,10 +416,49 @@ elif [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
     yum_install_safe "kubelet-${TARGET_VERSION}*" "kubectl-${TARGET_VERSION}*"
 fi
 
-# 6. Restart kubelet
-log "Restarting kubelet..."
+# 6. Restart the container runtime + kubelet.
+# Restarting containerd (or docker) too is important: after a minor upgrade the
+# CRI can be left in a stale state, which makes kubelet report the node NotReady
+# with "container runtime network not ready / cni plugin not initialized".
+log "Restarting container runtime + kubelet..."
 systemctl daemon-reload
+systemctl restart containerd 2>/dev/null || systemctl restart docker 2>/dev/null || true
+sleep 3
 systemctl restart kubelet
+
+# 7. Verify the node actually becomes Ready — self-heal if not.
+# Masters have admin.conf; workers have kubelet.conf. Either can query this node.
+NODE_NAME=$(hostname | tr '[:upper:]' '[:lower:]')
+KUBECFG=""
+[ -f /etc/kubernetes/admin.conf ] && KUBECFG=/etc/kubernetes/admin.conf
+[ -z "$KUBECFG" ] && [ -f /etc/kubernetes/kubelet.conf ] && KUBECFG=/etc/kubernetes/kubelet.conf
+
+if [ -n "$KUBECFG" ]; then
+    log "Waiting for node '${NODE_NAME}' to report Ready..."
+    READY=""
+    for i in $(seq 1 24); do   # up to ~4 minutes
+        ST=$(KUBECONFIG=$KUBECFG kubectl get node "$NODE_NAME" --no-headers 2>/dev/null | awk '{print $2}')
+        case "$ST" in
+            Ready|Ready,SchedulingDisabled) READY=1; log "✓ Node is Ready."; break;;
+        esac
+        # Half-way through, actively remediate a stuck runtime/CNI.
+        if [ "$i" = "6" ]; then
+            log "Node still not Ready — remediating (restart runtime + kubelet)..."
+            systemctl restart containerd 2>/dev/null || systemctl restart docker 2>/dev/null || true
+            sleep 3
+            systemctl restart kubelet 2>/dev/null || true
+        fi
+        sleep 10
+    done
+    if [ -z "$READY" ]; then
+        log "⚠️ Node '${NODE_NAME}' has not reported Ready yet after upgrade."
+        log "   kubelet status:"; systemctl is-active kubelet 2>/dev/null || true
+        # Non-fatal: the CNI DaemonSet may still be rolling out. The backend
+        # health check will keep polling and auto-healing will kick in.
+    fi
+else
+    log "No kubeconfig on this node to verify readiness (kubelet restarted)."
+fi
 
 log "========================================="
 log "Upgrade Complete! Node is now running v${TARGET_VERSION}"
