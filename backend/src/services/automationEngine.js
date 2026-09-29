@@ -1078,6 +1078,34 @@ class AutomationEngine {
                 ...(cluster.workerNodes || []).map(n => ({ ...n, role: 'worker' }))
             ]
 
+            // ── OS / kernel compatibility preflight (BEFORE touching anything) ──
+            // k8s 1.35+ needs a 5.x kernel + cgroups v2. On old kernels (3.x, e.g.
+            // CentOS 7) the etcd/control-plane upgrade fails. We detect this up
+            // front over SSH and refuse cleanly, so the cluster is never modified.
+            const targetMinor = parseInt(String(targetVersion).split('.')[1]) || 0
+            if (targetMinor >= 35) {
+                onLog('info', '🔎 Checking node OS/kernel compatibility...')
+                try {
+                    const probe = await this.connectSSH(allNodes[0])
+                    const kr = await probe.execCommand('uname -r')
+                    probe.dispose?.()
+                    const kernelStr = (kr.stdout || '').trim()
+                    const kernelMajor = parseInt(kernelStr.split('.')[0]) || 0
+                    if (kernelMajor > 0 && kernelMajor < 4) {
+                        const msg = `Kubernetes v${targetVersion} is not supported on this node's kernel (${kernelStr}). ` +
+                            `v1.35+ requires a 5.x kernel with cgroups v2 (e.g. Rocky/AlmaLinux 9 or Ubuntu 22.04+). ` +
+                            `The highest version supported on this OS (CentOS 7 / RHEL 7 family) is v1.34. ` +
+                            `Your cluster was NOT modified and is still healthy — please choose v1.34 or migrate the OS.`
+                        onLog('error', `⛔ ${msg}`)
+                        onError(new Error(msg))
+                        return
+                    }
+                    onLog('info', `✓ Kernel ${kernelStr} is compatible.`)
+                } catch (e) {
+                    onLog('warning', `Could not probe kernel version (${e.message}); proceeding.`)
+                }
+            }
+
             let firstMasterUpgraded = false
 
             for (let i = 0; i < allNodes.length; i++) {
