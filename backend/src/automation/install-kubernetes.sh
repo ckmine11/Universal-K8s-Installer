@@ -89,6 +89,20 @@ EOF
     systemctl enable --now kubelet
 fi
 
+# Sync containerd's pause (sandbox) image to what THIS kubeadm version expects.
+# Since we no longer pass --pod-infra-container-image to kubelet, containerd's
+# sandbox_image is the single source of truth for the pause image — it must
+# match the k8s version (e.g. 1.35 → pause:3.10) or pods fail to get a sandbox.
+if command -v kubeadm >/dev/null 2>&1 && [ -f /etc/containerd/config.toml ]; then
+    PAUSE_IMG=$(kubeadm config images list 2>/dev/null | grep -m1 '/pause:')
+    if [ -n "$PAUSE_IMG" ]; then
+        echo "Setting containerd sandbox_image → $PAUSE_IMG"
+        sed -i "s#sandbox_image = .*#sandbox_image = \"$PAUSE_IMG\"#" /etc/containerd/config.toml
+        systemctl restart containerd 2>/dev/null || true
+        sleep 2
+    fi
+fi
+
 # Node Stabilization (Skip if already active)
 if [ -f /etc/kubernetes/kubelet.conf ] && systemctl is-active --quiet kubelet; then
     echo "Kubelet is already active and configured. Skipping restart..."
@@ -122,9 +136,14 @@ EOF
     sysctl --system
 
     # 4. Configure Kubelet (Production Mode)
-    # Removed --fail-swap-on=false because we strictly disabled swap above
+    # Removed --fail-swap-on=false because we strictly disabled swap above.
+    # IMPORTANT: do NOT set --pod-infra-container-image here. That flag was
+    # REMOVED in Kubernetes 1.35 and makes the kubelet crash-loop with
+    # "unknown flag: --pod-infra-container-image" → node NotReady. The pause
+    # (sandbox) image is set on containerd's sandbox_image instead, which works
+    # for every version.
     echo "Configuring kubelet for stability..."
-    K_ARGS="--cgroup-driver=systemd --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock --pod-infra-container-image=registry.k8s.io/pause:3.9"
+    K_ARGS="--cgroup-driver=systemd --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock"
 
     # Handle different config paths
     if [ -d /etc/sysconfig ]; then
