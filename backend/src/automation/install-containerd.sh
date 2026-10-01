@@ -91,6 +91,7 @@ fi
 
 # Setup modules and sysctl
 echo "Setting up kernel modules and sysctl..."
+mkdir -p /etc/modules-load.d   # absent on some minimal installs
 cat <<EOF | tee /etc/modules-load.d/k8s.conf
 overlay
 br_netfilter
@@ -101,6 +102,7 @@ EOF
 modprobe overlay || echo "Warning: 'overlay' module loading failed."
 modprobe br_netfilter || echo "Warning: 'br_netfilter' module loading failed."
 
+mkdir -p /etc/sysctl.d
 cat <<EOF | tee /etc/sysctl.d/k8s.conf
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1

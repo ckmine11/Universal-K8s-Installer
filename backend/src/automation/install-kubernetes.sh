@@ -77,7 +77,7 @@ if command -v apt-get &> /dev/null; then
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg || true
     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
     apt-get update || true   # non-fatal: unrelated broken repos shouldn't block k8s
-    apt-get install -y kubelet kubeadm kubectl
+    apt-get install -y kubelet kubeadm kubectl cri-tools   # cri-tools = crictl (used for diagnostics + upgrades)
     apt-mark hold kubelet kubeadm kubectl
 
 elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
@@ -102,7 +102,10 @@ gpgcheck=1
 gpgkey=https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/rpm/repodata/repomd.xml.key
 EOF
     # Use timeout; skip_if_unavailable so a broken/EOL OS repo can't block k8s
-    $PKG_MGR install -y kubelet kubeadm kubectl --disableexcludes=kubernetes --setopt=timeout=30 --setopt=minrate=100 --setopt=*.skip_if_unavailable=1
+    # dnf5 (Fedora 41+) dropped --disableexcludes; it takes --setopt=disable_excludes
+    NOEXCL="--disableexcludes=kubernetes"
+    dnf --version 2>/dev/null | grep -q dnf5 && NOEXCL="--setopt=disable_excludes=kubernetes"
+    $PKG_MGR install -y kubelet kubeadm kubectl cri-tools $NOEXCL --setopt=timeout=30 --setopt=minrate=100 --setopt=*.skip_if_unavailable=1
     systemctl enable --now kubelet
 fi
 
@@ -137,14 +140,18 @@ else
 
     # 2. Persist Kernel Modules
     echo "Persisting kernel modules..."
+    mkdir -p /etc/modules-load.d
     cat <<EOF > /etc/modules-load.d/k8s.conf
 overlay
 br_netfilter
 EOF
-    modprobe overlay
-    modprobe br_netfilter
+    # Built-in modules (or LXC-style hosts without a module tree) make modprobe
+    # fail even though the feature is present — only stop if it's really missing.
+    modprobe overlay 2>/dev/null || grep -qw overlay /proc/filesystems || { echo "❌ Kernel feature 'overlay' is not available on this node."; exit 1; }
+    modprobe br_netfilter 2>/dev/null || [ -d /proc/sys/net/bridge ] || { echo "❌ Kernel feature 'br_netfilter' is not available on this node."; exit 1; }
 
     # 3. Apply Sysctl Params (Persistence)
+    mkdir -p /etc/sysctl.d
     cat <<EOF > /etc/sysctl.d/k8s.conf
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1

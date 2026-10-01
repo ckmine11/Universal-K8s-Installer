@@ -41,7 +41,10 @@ fi
 
 # Approve any pending CSRs (Fixes 'tls: internal error' for logs/metrics)
 echo "Ensuring Kubelet CSRs are approved..."
-kubectl get csr -o go-template='{{range .items}}{{if not .status.certificate}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' 2>/dev/null | xargs -r kubectl certificate approve || true
+# Only kubelet SERVING certs requested by a node itself — never blanket-approve
+# arbitrary pending CSRs (that would let anyone mint client certificates).
+kubectl get csr -o go-template='{{range .items}}{{if and (not .status.certificate) (eq .spec.signerName "kubernetes.io/kubelet-serving")}}{{.metadata.name}} {{.spec.username}}{{"\n"}}{{end}}{{end}}' 2>/dev/null \
+    | awk '$2 ~ /^system:node:/ {print $1}' | xargs -r kubectl certificate approve || true
 
 
 echo "========================================="

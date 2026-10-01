@@ -97,6 +97,9 @@ else
     STEP="OS detection"
     fail "UNSUPPORTED_OS" "No supported package manager (apt, dnf or yum) found on this node." "Use Ubuntu/Debian, Rocky/AlmaLinux/RHEL or CentOS."
 fi
+# "Ignore excludes" flag: yum/dnf4 take --disableexcludes, dnf5 (Fedora 41+) only --setopt
+NOEXCL="--disableexcludes=all"
+dnf --version 2>/dev/null | grep -q dnf5 && NOEXCL="--setopt=disable_excludes=*"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. PREFLIGHT GATE — read-only. Every known blocker for the target version is
@@ -451,12 +454,12 @@ EOF
     # Resilient install: on ANY failure (incl. SIGBUS/segfault crash from a
     # corrupted RPM DB), rebuild the DB once and retry.
     yum_install_safe() {
-        if $PKG_MGR install -y "$@" --disableexcludes=all --setopt=*.skip_if_unavailable=1; then
+        if $PKG_MGR install -y "$@" $NOEXCL --setopt=*.skip_if_unavailable=1; then
             return 0
         fi
         echo "⚠️ install failed (possible RPM DB corruption). Rebuilding DB and retrying..."
         rpmdb_repair
-        $PKG_MGR install -y "$@" --disableexcludes=all --setopt=*.skip_if_unavailable=1
+        $PKG_MGR install -y "$@" $NOEXCL --setopt=*.skip_if_unavailable=1
     }
 
     # skip_if_unavailable: broken/EOL OS repos must never fail the k8s upgrade
@@ -508,10 +511,10 @@ if [ "$PKG_MGR" = "apt" ]; then
 else
     if ! yum_install_safe "kubeadm-${TARGET_VERSION}*"; then
         echo "Available kubeadm versions:"
-        $PKG_MGR --showduplicates list kubeadm --disableexcludes=all --setopt=*.skip_if_unavailable=1 || true
+        $PKG_MGR --showduplicates list kubeadm $NOEXCL --setopt=*.skip_if_unavailable=1 || true
         fail "PKG_INSTALL_FAILED" "yum/dnf could not install kubeadm ${TARGET_VERSION}." "Look at the package error above, then retry."
     fi
-    $PKG_MGR downgrade -y "kubeadm-${TARGET_VERSION}*" --disableexcludes=all --setopt=*.skip_if_unavailable=1 >/dev/null 2>&1 || true
+    $PKG_MGR downgrade -y "kubeadm-${TARGET_VERSION}*" $NOEXCL --setopt=*.skip_if_unavailable=1 >/dev/null 2>&1 || true
 fi
 
 KUBEADM_VER=$(kubeadm version -o short 2>/dev/null)
@@ -765,6 +768,20 @@ if [ -z "$KUBELET_UP" ]; then
     fi
 fi
 log "✓ kubelet is running."
+
+# Clusters created by older KubeEZ versions run the kubelet with
+# serverTLSBootstrap=true; its serving-cert CSRs stay Pending (breaking
+# 'kubectl logs/exec') unless approved. Approve ONLY kubelet-serving CSRs
+# requested by nodes. Masters have admin.conf; workers are covered when the
+# master is upgraded/re-run.
+if [ -f "$ADMIN_KUBECONFIG" ]; then
+    sleep 5
+    PENDING=$(kubectl --kubeconfig="$ADMIN_KUBECONFIG" get csr -o go-template='{{range .items}}{{if and (not .status.certificate) (eq .spec.signerName "kubernetes.io/kubelet-serving")}}{{.metadata.name}} {{.spec.username}}{{"\n"}}{{end}}{{end}}' 2>/dev/null | awk '$2 ~ /^system:node:/ {print $1}')
+    if [ -n "$PENDING" ]; then
+        echo "$PENDING" | xargs -r kubectl --kubeconfig="$ADMIN_KUBECONFIG" certificate approve >/dev/null 2>&1 \
+            && log "✓ Approved pending kubelet serving certificates (fixes 'kubectl logs/exec')."
+    fi
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. Verify the node reports Ready (self-heal once if not)

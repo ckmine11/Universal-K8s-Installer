@@ -100,6 +100,7 @@ elif command -v yum &> /dev/null; then
 fi
 
 # Kernel params for any OS
+mkdir -p /etc/sysctl.d   # absent on some minimal installs
 cat <<EOF > /etc/sysctl.d/k8s-firewall.conf
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1

@@ -891,7 +891,7 @@ class AutomationEngine {
             // In install mode, we run the full init script
             scriptPath = join(__dirname, '../automation/init-control-plane.sh')
             const k8sVersion = installation.k8sVersion
-            const podNetworkCidr = installation.networkPlugin === 'calico' ? '192.168.0.0/16' : '10.244.0.0/16'
+            const podNetworkCidr = this.podNetworkCidr(installation)
 
             onLog('info', `Control plane endpoint: ${masterNode.ip}:6443`)
             onLog('info', `Pod network CIDR: ${podNetworkCidr}`)
@@ -917,6 +917,12 @@ class AutomationEngine {
         }
     }
 
+    // One source of truth for the pod CIDR — kubeadm init and the CNI must agree,
+    // otherwise Calico pods get IPs outside the cluster's podSubnet.
+    podNetworkCidr(installation) {
+        return installation.podNetworkCidr || (installation.networkPlugin === 'calico' ? '192.168.0.0/16' : '10.244.0.0/16')
+    }
+
     async installNetworkPlugin(installation, onLog) {
         const plugin = installation.networkPlugin
 
@@ -934,7 +940,8 @@ class AutomationEngine {
 
         const scriptPath = join(__dirname, '../automation/install-network-plugin.sh')
 
-        const cidr = installation.podNetworkCidr || '10.244.0.0/16'
+        // Must match the podSubnet kubeadm init used (calico: 192.168.0.0/16)
+        const cidr = this.podNetworkCidr(installation)
 
         try {
             await this.executeScript(ssh, scriptPath, [plugin, cidr], onLog)

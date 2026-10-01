@@ -58,10 +58,25 @@ else
     systemctl start containerd
 fi
 
-# 2. Force v1beta3 API for Universal Compatibility
-# v1beta3 works across all Kubernetes versions (1.28 - 1.32+)
-KUBEADM_API_VERSION="kubeadm.k8s.io/v1beta3"
-echo "Using v1beta3 API for universal compatibility across all K8s versions"
+# 2. Pick the kubeadm config API for the INSTALLED kubeadm:
+#   v1beta4 → kubeadm 1.31+ (REQUIRED from 1.37, which removed v1beta3)
+#   v1beta3 → kubeadm 1.22 – 1.30
+# v1beta4 also changed extraArgs from a map to a list of {name, value}.
+KUBEADM_MINOR=$(kubeadm version -o short 2>/dev/null | sed 's/^v//' | cut -d. -f2)
+if [ "${KUBEADM_MINOR:-0}" -ge 31 ]; then
+    KUBEADM_API_VERSION="kubeadm.k8s.io/v1beta4"
+    ETCD_EXTRA_ARGS='    extraArgs:
+    - name: heartbeat-interval
+      value: "250"
+    - name: election-timeout
+      value: "2500"'
+else
+    KUBEADM_API_VERSION="kubeadm.k8s.io/v1beta3"
+    ETCD_EXTRA_ARGS='    extraArgs:
+      heartbeat-interval: "250"
+      election-timeout: "2500"'
+fi
+echo "Using kubeadm config API ${KUBEADM_API_VERSION} (kubeadm v1.${KUBEADM_MINOR:-?})"
 
 echo "Creating Kubeadm Configuration..."
 cat <<EOF > /tmp/kubeadm-config.yaml
@@ -83,15 +98,16 @@ networking:
   podSubnet: $POD_NETWORK_CIDR
 etcd:
   local:
-    extraArgs:
-      heartbeat-interval: "250"
-      election-timeout: "2500"
+$ETCD_EXTRA_ARGS
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 cgroupDriver: systemd
-serverTLSBootstrap: true
 EOF
+# NOTE: serverTLSBootstrap is deliberately NOT enabled. With it, every kubelet
+# waits for a manually approved serving-cert CSR, and until then
+# 'kubectl logs/exec' fail with "tls: internal error" (and again on every
+# yearly cert rotation). kubeadm's default self-signed serving cert just works.
 
 # 3. Initialize Control Plane (HA-Ready)
 if [ -f /etc/kubernetes/admin.conf ] && kubectl get nodes &> /dev/null; then

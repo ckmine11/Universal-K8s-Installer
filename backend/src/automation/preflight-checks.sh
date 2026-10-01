@@ -70,22 +70,29 @@ else
 fi
 
 # Check 6: Network Connectivity & DNS
+# Test what the install actually needs — DNS + HTTPS to the package repos —
+# without relying on ping/host: ICMP is blocked by many clouds/firewalls and
+# minimal images ship neither tool. getent (glibc) and bash's /dev/tcp are
+# always present.
 echo -n "Checking internet and DNS... "
-if ping -c 1 8.8.8.8 &> /dev/null; then
-    if host google.com &> /dev/null || ping -c 1 vault.centos.org &> /dev/null; then
-        echo -e "${GREEN}✓ DNS & Internet accessible${NC}"
-    else
-        echo -e "${YELLOW}⚠ DNS Resolution failed. Attempting automatic fix...${NC}"
-        echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-        if ping -c 1 vault.centos.org &> /dev/null; then
-             echo -e "${GREEN}✓ DNS Fixed (Nameserver 8.8.8.8 added)${NC}"
-        else
-             echo -e "${RED}✗ DNS still failing after fix. System cannot resolve mirrors.${NC}"
-             exit 1
-        fi
+dns_ok()   { getent hosts pkgs.k8s.io &> /dev/null; }
+https_ok() { timeout 10 bash -c 'exec 3<>/dev/tcp/pkgs.k8s.io/443' &> /dev/null; }
+if ! dns_ok; then
+    echo -e "${YELLOW}⚠ DNS resolution failed. Adding public resolvers (8.8.8.8, 1.1.1.1)...${NC}"
+    cp /etc/resolv.conf /etc/resolv.conf.kubeez-bak 2>/dev/null || true
+    printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > /etc/resolv.conf
+    if ! dns_ok; then
+        echo -e "${RED}✗ DNS still failing — this node cannot resolve pkgs.k8s.io. Check /etc/resolv.conf and outbound UDP/TCP 53.${NC}"
+        exit 1
     fi
+fi
+if https_ok; then
+    echo -e "${GREEN}✓ DNS & HTTPS to pkgs.k8s.io OK${NC}"
+elif ping -c 1 -W 3 8.8.8.8 &> /dev/null; then
+    echo -e "${RED}✗ Internet works but HTTPS (port 443) to pkgs.k8s.io is blocked. Allow outbound 443 to pkgs.k8s.io, registry.k8s.io and download.docker.com.${NC}"
+    exit 1
 else
-    echo -e "${RED}✗ No internet connectivity (Ping 8.8.8.8 failed)${NC}"
+    echo -e "${RED}✗ No internet connectivity — cannot reach pkgs.k8s.io:443. Check the node's gateway/firewall/proxy.${NC}"
     exit 1
 fi
 
@@ -126,6 +133,10 @@ echo -n "Checking kernel and modules... "
 KERNEL_VER=$(uname -r)
 if [ -d "/lib/modules/$KERNEL_VER" ]; then
     echo -e "${GREEN}✓ Kernel $KERNEL_VER (Modules found)${NC}"
+elif grep -qw overlay /proc/filesystems 2>/dev/null && [ -d /proc/sys/net/bridge ]; then
+    # Container/LXC-style hosts have no module tree, but what Kubernetes needs
+    # (overlayfs + bridge netfilter) is already loaded by the host kernel.
+    echo -e "${GREEN}✓ Kernel $KERNEL_VER (overlay + br_netfilter already available)${NC}"
 else
     echo -e "${RED}✗ Kernel modules not found for $KERNEL_VER. Did you update the kernel recently? REBOOT may be required.${NC}"
     exit 1
