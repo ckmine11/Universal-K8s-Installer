@@ -16,16 +16,26 @@ const ips = Object.values(os.networkInterfaces()).flat().filter(n => !n.internal
 const sshSessions = new Map();
 
 function connect() {
-  const ws = new WebSocket(`${server}/ws/agent/${agentId}?token=${token}`);
-  
+  const ws = new WebSocket(`${server}/ws/agent/${agentId}?token=${encodeURIComponent(token)}`);
+  let pingTimer = null;
+
   ws.on('open', () => {
     console.log('[Gateway Agent] Connected to SaaS. Bridging local network...');
     ws.send(JSON.stringify({ type: 'register-ips', ips: ['gateway'] })); // Mark as gateway
-    setInterval(() => ws.send(JSON.stringify({ type: 'ping' })), 20000);
+    // One heartbeat per connection — cleared on close so reconnects don't pile up timers
+    pingTimer = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+    }, 20000);
   });
 
   ws.on('message', async (data) => {
-    const msg = JSON.parse(data);
+    let msg;
+    try {
+      msg = JSON.parse(data);
+    } catch (e) {
+      console.error('[Gateway Agent] Ignoring malformed message:', e.message);
+      return;
+    }
     
     if (msg.type === 'execute-ssh') {
         const { commandId, ip, username, password, command, privateKey } = msg;
@@ -51,12 +61,14 @@ function connect() {
                 options: { pty: true }
             });
 
+            // code is null when the process was killed by a signal — that's a failure, not success
+            const exitCode = typeof result.code === 'number' ? result.code : (result.signal ? 1 : 0);
             ws.send(JSON.stringify({ 
                 type: 'command-result', 
                 commandId, 
                 stdout: result.stdout, 
                 stderr: result.stderr, 
-                exitCode: result.code || 0 
+                exitCode
             }));
 
         } catch (error) {
@@ -75,6 +87,8 @@ function connect() {
 
   ws.on('close', () => { 
       console.log('[Gateway Agent] Disconnected. Reconnecting in 5s...'); 
+      if (pingTimer) clearInterval(pingTimer);
+      for (const ssh of sshSessions.values()) { try { ssh.dispose(); } catch (_) {} }
       sshSessions.clear();
       setTimeout(connect, 5000);
   });

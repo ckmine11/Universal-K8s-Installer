@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 import { clusterStore } from './clusterStore.js'
+import { canAccessResource } from '../utils/access.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -212,7 +213,7 @@ class LicenseService {
         return token
     }
 
-    async checkEnforcementLimit(userId, role, newClustersCount = 0, newNodesCount = 0) {
+    async checkEnforcementLimit(userId, role, newClustersCount = 0, newNodesCount = 0, orgId = null) {
         const mode = this.getMode()
         const state = await this.getLicenseState()
         const clusters = await clusterStore.getClusters()
@@ -227,8 +228,10 @@ class LicenseService {
                 return { allowed: true }
             }
 
-            // SaaS mode: Tenant-isolated limits based on the USER's subscription.
-            activeClusters = clusters.filter(c => c.ownerId === userId)
+            // SaaS mode: limits are per WORKSPACE (org) and come from the
+            // workspace owner's subscription — team members (plan 'MEMBER',
+            // 0 clusters) consume their org's quota, not their own.
+            activeClusters = clusters.filter(c => canAccessResource({ id: userId, orgId }, c))
             activeClustersCount = activeClusters.length
             activeNodesCount = activeClusters.reduce((sum, c) => {
                 const masters = c.masterNodes?.length || 0
@@ -238,8 +241,8 @@ class LicenseService {
 
             // Use the user's own subscription limits (falls back to plan defaults)
             const { authService } = await import('./authService.js')
-            const user = authService.getUserById(userId)
-            const sub = user?.subscription || {}
+            const owner = authService.getOrgOwner(orgId) || authService.getUserById(userId)
+            const sub = owner?.subscription || {}
             const maxClusters = sub.maxClusters ?? state.maxClusters
             const maxNodes = sub.maxNodes ?? state.maxNodes
 

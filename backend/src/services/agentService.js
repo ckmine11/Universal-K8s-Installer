@@ -39,9 +39,22 @@ class AgentService {
         await fs.promises.writeFile(AGENTS_FILE, JSON.stringify(agents, null, 2))
     }
 
+    // Serialize every read-modify-write of agents.json. Pings arrive every 20s
+    // per agent; without this a concurrent status update could overwrite a
+    // freshly created (or deleted) agent record.
+    async _mutate(fn) {
+        const run = (this._lock || Promise.resolve()).then(async () => {
+            const agents = await this._readAgents()
+            const result = await fn(agents)
+            await this._writeAgents(agents)
+            return result
+        })
+        this._lock = run.catch(() => {})
+        return run
+    }
+
     // ─── Token / Registration ────────────────────────────────────
     async generateToken(ownerId, ownerUsername, orgId, label = '') {
-        const agents = await this._readAgents()
         const agentId = uuidv4()
         const token = uuidv4()
 
@@ -58,8 +71,7 @@ class AgentService {
             createdAt: new Date().toISOString()
         }
 
-        agents.push(record)
-        await this._writeAgents(agents)
+        await this._mutate(agents => { agents.push(record) })
         return record
     }
 
@@ -82,24 +94,23 @@ class AgentService {
     }
 
     async deleteAgent(agentId, ownerId, role, orgId) {
-        const agents = await this._readAgents()
-        const agent = agents.find(a => a.agentId === agentId)
+        await this._mutate(agents => {
+            const idx = agents.findIndex(a => a.agentId === agentId)
+            if (idx < 0) throw new Error('Agent not found')
 
-        if (!agent) throw new Error('Agent not found')
-        
-        const isAuthorized = (agent.orgId && agent.orgId === orgId) || (!agent.orgId && agent.ownerId === ownerId)
-        if (!isAuthorized) {
-            throw new Error('Unauthorized')
-        }
+            const agent = agents[idx]
+            const isAuthorized = (agent.orgId && agent.orgId === orgId) || (!agent.orgId && agent.ownerId === ownerId)
+            if (!isAuthorized) {
+                throw new Error('Unauthorized')
+            }
+            agents.splice(idx, 1)
+        })
 
         // Disconnect active socket if online
         if (this.agentSockets.has(agentId)) {
             try { this.agentSockets.get(agentId).close(1000, 'Agent removed') } catch { }
             this.agentSockets.delete(agentId)
         }
-
-        const remaining = agents.filter(a => a.agentId !== agentId)
-        await this._writeAgents(remaining)
         return true
     }
 
@@ -111,6 +122,12 @@ class AgentService {
             return false
         }
 
+        // A reconnect replaces the previous socket — close the stale one so it
+        // can't keep receiving jobs.
+        const previous = this.agentSockets.get(agentId)
+        if (previous && previous !== ws) {
+            try { previous.close(4000, 'Replaced by a newer connection') } catch { }
+        }
         this.agentSockets.set(agentId, ws)
 
         // Mark online + update lastSeen
@@ -131,7 +148,7 @@ class AgentService {
                     ws.send(JSON.stringify({ type: 'pong' }))
                     await this._updateAgentStatus(agentId, 'online')
                 } else if (msg.type === 'command-result') {
-                    this._resolveCommand(msg.commandId, msg)
+                    this._resolveCommand(agentId, msg.commandId, msg)
                 } else if (msg.type === 'register-ips') {
                     await this._updateAgentIps(agentId, msg.ips || [])
                 }
@@ -141,7 +158,11 @@ class AgentService {
         })
 
         ws.on('close', async () => {
+            // Only tear down if THIS socket is still the active one — the close of
+            // a replaced socket must not unregister its newer reconnection.
+            if (this.agentSockets.get(agentId) !== ws) return
             this.agentSockets.delete(agentId)
+            this._rejectPendingForAgent(agentId, new Error(`Agent ${agentId} disconnected`))
             await this._updateAgentStatus(agentId, 'offline')
             console.log(`[AgentService] Agent ${agentId} disconnected`)
         })
@@ -155,13 +176,13 @@ class AgentService {
 
     async _updateAgentStatus(agentId, status) {
         try {
-            const agents = await this._readAgents()
-            const idx = agents.findIndex(a => a.agentId === agentId)
-            if (idx >= 0) {
-                agents[idx].status = status
-                agents[idx].lastSeen = new Date().toISOString()
-                await this._writeAgents(agents)
-            }
+            await this._mutate(agents => {
+                const agent = agents.find(a => a.agentId === agentId)
+                if (agent) {
+                    agent.status = status
+                    agent.lastSeen = new Date().toISOString()
+                }
+            })
         } catch (e) {
             console.error('[AgentService] Failed to update agent status:', e.message)
         }
@@ -169,12 +190,10 @@ class AgentService {
 
     async _updateAgentIps(agentId, ips) {
         try {
-            const agents = await this._readAgents()
-            const idx = agents.findIndex(a => a.agentId === agentId)
-            if (idx >= 0) {
-                agents[idx].registeredNodeIps = ips
-                await this._writeAgents(agents)
-            }
+            await this._mutate(agents => {
+                const agent = agents.find(a => a.agentId === agentId)
+                if (agent) agent.registeredNodeIps = Array.isArray(ips) ? ips : []
+            })
         } catch (e) {
             console.error('[AgentService] Failed to update agent IPs:', e.message)
         }
@@ -216,7 +235,7 @@ class AgentService {
                 reject(new Error(`Command relay timeout after ${timeoutMs}ms`))
             }, timeoutMs)
 
-            this.pendingCommands.set(commandId, { resolve, reject, timeout })
+            this.pendingCommands.set(commandId, { agentId, resolve, reject, timeout })
             ws.send(JSON.stringify(payload))
         })
     }
@@ -243,14 +262,24 @@ class AgentService {
                 reject(new Error(`SSH relay timeout after ${timeoutMs}ms`))
             }, timeoutMs)
 
-            this.pendingCommands.set(commandId, { resolve, reject, timeout })
+            this.pendingCommands.set(commandId, { agentId, resolve, reject, timeout })
             ws.send(JSON.stringify(payload))
         })
     }
 
-    _resolveCommand(commandId, result) {
+    _rejectPendingForAgent(agentId, error) {
+        for (const [commandId, pending] of this.pendingCommands) {
+            if (pending.agentId !== agentId) continue
+            clearTimeout(pending.timeout)
+            this.pendingCommands.delete(commandId)
+            pending.reject(error)
+        }
+    }
+
+    _resolveCommand(agentId, commandId, result) {
         const pending = this.pendingCommands.get(commandId)
-        if (pending) {
+        // An agent may only answer commands that were sent to IT
+        if (pending && pending.agentId === agentId) {
             clearTimeout(pending.timeout)
             this.pendingCommands.delete(commandId)
             if (result.exitCode !== 0) {

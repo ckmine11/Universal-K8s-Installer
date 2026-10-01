@@ -1,40 +1,35 @@
-import { NodeSSH } from 'node-ssh';
-import { decrypt } from '../utils/cryptoUtils.js';
+import { automationEngine } from './automationEngine.js';
 
+/**
+ * Orbital Terminal SSH sessions.
+ *
+ * Sessions are keyed by a per-WebSocket-connection id (never by a
+ * client-supplied clusterId), and the nodes always come from the server-side
+ * cluster record — callers must pass nodes they loaded and authorized.
+ */
 class TerminalService {
     constructor() {
-        this.sessions = new Map(); // clusterId -> { nodeIp -> ssh }
+        this.sessions = new Map(); // sessionKey -> Map(nodeIp -> ssh)
     }
 
-    async getSession(clusterId, nodes) {
-        if (!this.sessions.has(clusterId)) {
-            const nodeSessions = new Map();
-            for (const node of nodes) {
-                const ssh = new NodeSSH();
-                try {
-                    await ssh.connect({
-                        host: node.ip,
-                        username: node.username || 'root',
-                        password: node.password ? decrypt(node.password) : undefined,
-                        privateKey: node.sshKey ? decrypt(node.sshKey) : node.privateKeyPath
-                    });
-                    nodeSessions.set(node.ip, ssh);
-                } catch (err) {
-                    console.error(`Failed to connect to ${node.ip}:`, err);
-                }
-            }
-            this.sessions.set(clusterId, nodeSessions);
+    async getConnection(sessionKey, node) {
+        if (!this.sessions.has(sessionKey)) this.sessions.set(sessionKey, new Map());
+        const nodeSessions = this.sessions.get(sessionKey);
+        if (!nodeSessions.has(node.ip)) {
+            // Routes through the tenant's Gateway Agent when one is online
+            nodeSessions.set(node.ip, await automationEngine.connectSSH(node));
         }
-        return this.sessions.get(clusterId);
+        return nodeSessions.get(node.ip);
     }
 
-    async broadcastCommand(clusterId, nodes, command, onOutput) {
-        const session = await this.getSession(clusterId, nodes);
-        const promises = nodes.map(async (node) => {
+    async broadcastCommand(sessionKey, nodes, command, onOutput) {
+        await Promise.all(nodes.map(async (node) => {
             const ip = node.ip;
-            const ssh = session.get(ip);
-
-            if (!ssh) {
+            let ssh;
+            try {
+                ssh = await this.getConnection(sessionKey, node);
+            } catch (err) {
+                console.error(`[Terminal] Failed to connect to ${ip}:`, err.message);
                 onOutput(ip, 'error', `Connection failed: Unable to authenticate with ${ip}. Check credentials.`);
                 return;
             }
@@ -47,17 +42,16 @@ class TerminalService {
             } catch (err) {
                 onOutput(ip, 'error', err.message);
             }
-        });
-        await Promise.all(promises);
+        }));
     }
 
-    async closeSession(clusterId) {
-        const session = this.sessions.get(clusterId);
+    async closeSession(sessionKey) {
+        const session = this.sessions.get(sessionKey);
         if (session) {
             for (const ssh of session.values()) {
-                ssh.dispose();
+                try { ssh.dispose?.(); } catch (_) { /* ignore */ }
             }
-            this.sessions.delete(clusterId);
+            this.sessions.delete(sessionKey);
         }
     }
 }

@@ -14,7 +14,7 @@ export default function VendorPortal() {
     const [vendorGenerating, setVendorGenerating] = useState(false)
 
     // Security check
-    if (user?.role !== 'admin') {
+    if (user?.role !== 'superadmin') {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
                 <ShieldAlert className="w-16 h-16 text-rose-500 mb-6" />

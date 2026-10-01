@@ -25,6 +25,9 @@ import incidentsRoutes from './routes/incidents.js'
 import stripeRoutes from './routes/stripe.js'
 import { agentService } from './services/agentService.js'
 import superadminRoutes from './routes/superadmin.js'
+import { canAccessResource } from './utils/access.js'
+import { clusterStore } from './services/clusterStore.js'
+import { can } from './config/permissions.js'
 
 
 const app = express()
@@ -91,10 +94,25 @@ app.get('/api/auth/status', (req, res) => {
     res.json({ setupRequired: authService.isSetupRequired() })
 })
 
+// Shared signup validation (setup + register + reset)
+function validatePassword(password) {
+    // Same minimum as change-password / admin reset (and the UI hints)
+    if (typeof password !== 'string' || password.length < 6) return 'Password must be at least 6 characters'
+    if (password.length > 128) return 'Password is too long'
+    return null
+}
+function validateUsername(username) {
+    if (typeof username !== 'string' || username.length < 3 || username.length > 32) return 'Username must be 3-32 characters'
+    if (!/^[a-zA-Z0-9_.-]+$/.test(username)) return 'Username can only contain letters, numbers, ".", "-" and "_"'
+    return null
+}
+
 app.post('/api/auth/setup', async (req, res) => {
     try {
         const { username, password, email } = req.body
         if (!username || !password) return res.status(400).json({ error: 'Missing credentials' })
+        const inputError = validateUsername(username) || validatePassword(password)
+        if (inputError) return res.status(400).json({ error: inputError })
         if (!authService.isSetupRequired()) {
             return res.status(400).json({ error: 'Setup already completed. Please register or login.' })
         }
@@ -116,6 +134,9 @@ app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password, email } = req.body
         if (!username || !password || !email) return res.status(400).json({ error: 'Username, password, and email are required' })
+        const inputError = validateUsername(username) || validatePassword(password)
+            || (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'Please enter a valid email address' : null)
+        if (inputError) return res.status(400).json({ error: inputError })
         const token = await authService.registerUser(username, password, email)
         const decoded = authService.verifyToken(token)
         res.cookie('token', token, {
@@ -143,9 +164,11 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
 
 app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     try {
-        const { token, newPassword } = req.body;
-        if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password are required' });
-        await authService.resetPassword(token, newPassword);
+        const { email, token, newPassword } = req.body;
+        if (!email || !token || !newPassword) return res.status(400).json({ error: 'Email, reset code and new password are required' });
+        const pwError = validatePassword(newPassword);
+        if (pwError) return res.status(400).json({ error: pwError });
+        await authService.resetPassword(email, token, newPassword);
         res.json({ message: 'Password reset successfully. You can now login.' });
     } catch (e) {
         res.status(400).json({ error: e.message });
@@ -345,10 +368,11 @@ wss.on('connection', (ws, req) => {
         return
     }
 
+    let user = null
     if (!pathname.startsWith('/ws/agent')) {
         try {
-            const decoded = authService.verifyToken(token)
-            if (!decoded) {
+            user = authService.verifyToken(token)
+            if (!user) {
                 console.log('WebSocket connection rejected: Invalid token')
                 ws.close(4001, 'Unauthorized: Invalid token')
                 return
@@ -360,9 +384,16 @@ wss.on('connection', (ws, req) => {
         }
     }
 
+    const forbid = () => ws.close(4003, 'Forbidden')
+
     // Routing based on pathname
     if (pathname.startsWith('/ws/installation')) {
         const id = pathname.split('/').pop()
+        const inst = installationManager.getStatus(id)
+        if (!inst || !canAccessResource(user, inst)) {
+            console.log(`WebSocket: Installation stream rejected for ${id} (not found or not owned)`)
+            return forbid()
+        }
         console.log(`WebSocket: Installation stream connected for ${id}`)
         installationManager.addClient(id, ws)
 
@@ -387,16 +418,41 @@ wss.on('connection', (ws, req) => {
     }
     else if (pathname.startsWith('/ws/orbital')) {
         const id = pathname.split('/').pop()
+        if (!can(user.role, 'terminal:access')) {
+            console.log(`WebSocket: Orbital Terminal rejected for ${user.username} (no terminal:access)`)
+            return forbid()
+        }
         console.log(`WebSocket: Orbital Terminal connected for ${id}`)
+
+        // SSH sessions belong to THIS connection only — never shared by clusterId
+        const sessionKey = uuidv4()
+        const send = (payload) => { if (ws.readyState === 1) ws.send(JSON.stringify(payload)) }
 
         ws.on('message', async (message) => {
             try {
                 const data = JSON.parse(message)
-                if (data.type === 'command' && data.clusterId && data.nodes) {
-                    await terminalService.broadcastCommand(data.clusterId, data.nodes, data.command, (nodeIp, type, chunk) => {
-                        ws.send(JSON.stringify({ type: 'terminal-output', nodeIp, streamType: type, content: chunk }))
-                    })
+                if (data.type !== 'command' || typeof data.command !== 'string' || !data.command.trim()) return
+
+                // Re-check on every command: role may have changed, cluster may be gone
+                const current = authService.verifyToken(token)
+                if (!current || !can(current.role, 'terminal:access')) return ws.close(4003, 'Forbidden')
+
+                // Nodes + credentials come ONLY from the server-side cluster record
+                const clusters = await installationManager.getSavedClusters()
+                const cluster = clusters.find(c => c.id === (data.clusterId || id))
+                if (!cluster || !canAccessResource(current, cluster)) {
+                    return send({ type: 'terminal-output', nodeIp: 'system', streamType: 'error', content: 'Unauthorized access to this cluster\n' })
                 }
+
+                const requestedIps = new Set((Array.isArray(data.nodes) ? data.nodes : [])
+                    .map(n => (typeof n === 'string' ? n : n?.ip)).filter(Boolean))
+                const targets = [...(cluster.masterNodes || []), ...(cluster.workerNodes || [])]
+                    .filter(n => requestedIps.size === 0 || requestedIps.has(n.ip))
+                    .map(n => ({ ...n, ownerId: cluster.ownerId, orgId: cluster.orgId }))
+
+                await terminalService.broadcastCommand(sessionKey, targets, data.command, (nodeIp, type, chunk) => {
+                    send({ type: 'terminal-output', nodeIp, streamType: type, content: chunk })
+                })
             } catch (err) {
                 console.error('Orbital command failed:', err)
             }
@@ -404,7 +460,7 @@ wss.on('connection', (ws, req) => {
 
         ws.on('close', () => {
             console.log(`WebSocket: Orbital Terminal disconnected for ${id}`)
-            terminalService.closeSession(id)
+            terminalService.closeSession(sessionKey)
         })
     }
     else if (pathname.startsWith('/ws/agent')) {
@@ -417,23 +473,38 @@ wss.on('connection', (ws, req) => {
         })()
     }
     else if (pathname.startsWith('/ws/traffic')) {
-        const id = pathname.split('/').pop()
-        console.log(`WebSocket: Traffic stream connected for ${id}`)
-
-        const onPulse = (data) => {
-            if (data.clusterId === id) {
-                ws.send(JSON.stringify({ type: 'traffic-pulse', ...data }))
+        const id = pathname.split('/').pop();
+        (async () => {
+            const clusters = await installationManager.getSavedClusters()
+            const cluster = clusters.find(c => c.id === id)
+            if (!cluster || !canAccessResource(user, cluster)) {
+                console.log(`WebSocket: Traffic stream rejected for ${id} (not found or not owned)`)
+                return forbid()
             }
-        }
+            if (ws.readyState !== 1) return
+            console.log(`WebSocket: Traffic stream connected for ${id}`)
 
-        trafficSniffer.on('traffic-pulse', onPulse)
-        trafficSniffer.startSniffing(id)
+            const onPulse = (data) => {
+                if (data.clusterId === id && ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: 'traffic-pulse', ...data }))
+                }
+            }
 
-        ws.on('close', () => {
-            console.log(`WebSocket: Traffic stream disconnected for ${id}`)
-            trafficSniffer.removeListener('traffic-pulse', onPulse)
-            // Option to stop sniffing if no clients left
+            trafficSniffer.on('traffic-pulse', onPulse)
+            trafficSniffer.addViewer(id)
+
+            ws.on('close', () => {
+                console.log(`WebSocket: Traffic stream disconnected for ${id}`)
+                trafficSniffer.removeListener('traffic-pulse', onPulse)
+                trafficSniffer.removeViewer(id) // stops the monitor when the last viewer leaves
+            })
+        })().catch(err => {
+            console.error('Traffic stream error:', err)
+            forbid()
         })
+    }
+    else {
+        ws.close(4004, 'Unknown stream')
     }
 })
 
@@ -449,6 +520,8 @@ const PORT = process.env.PORT || 3000
 
 server.listen(PORT, () => {
     // Initialize services
+    clusterStore.backfillOrgIds(ownerId => authService.getUserById(ownerId)?.orgId)
+        .catch(err => console.error('[ClusterStore] orgId backfill failed:', err.message))
     BackupService.initialize()
     BackupService.startDailyScheduler(24)  // Daily config backups for all users
     incidentDetector.init().catch(err => console.error('[IncidentDetector] Failed to init:', err))

@@ -11,9 +11,41 @@ import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
 import { isPaidPlan } from '../config/planFeatures.js'
+import { canAccessResource } from '../utils/access.js'
 
 
 const router = express.Router()
+
+// ─── Tenant-isolation helpers ───────────────────────────────────────────────
+// Load a saved cluster and enforce workspace (org) ownership.
+async function loadOwnedCluster(req, res) {
+    const clusters = await installationManager.getSavedClusters()
+    const cluster = clusters.find(c => c.id === req.params.id)
+    if (!cluster) { res.status(404).json({ error: 'Cluster not found' }); return null }
+    if (!canAccessResource(req.user, cluster)) {
+        res.status(403).json({ error: 'Unauthorized access to this cluster' }); return null
+    }
+    return cluster
+}
+
+// Load an in-memory installation and enforce workspace (org) ownership.
+function loadOwnedInstallation(req, res, id) {
+    const installation = installationManager.getStatus(id)
+    if (!installation) { res.status(404).json({ error: 'Installation not found' }); return null }
+    if (!canAccessResource(req.user, installation)) {
+        res.status(403).json({ error: 'Unauthorized access to this cluster' }); return null
+    }
+    return installation
+}
+
+// Node SSH credentials are needed by the UI only for scaling (the wizard
+// pre-fills the bridge master). Roles that can't scale (viewers) must never
+// receive them.
+function redactForRole(req, record) {
+    if (!record || can(req.user.role, 'cluster:scale')) return record
+    const strip = (nodes) => (nodes || []).map(({ password, sshKey, ...n }) => n)
+    return { ...record, masterNodes: strip(record.masterNodes), workerNodes: strip(record.workerNodes) }
+}
 
 // List all in-progress/recent installations for the current user/org.
 // Lets the UI recover a running install after navigating away or refreshing.
@@ -32,8 +64,8 @@ router.get('/list', async (req, res) => {
     try {
         const clusters = await installationManager.getSavedClusters()
         // Strict Isolation: Users only see clusters from their own Workspace (orgId)
-        const filtered = clusters.filter(c => c.orgId === req.user.orgId || (!c.orgId && c.ownerId === req.user.id))
-        res.json(filtered)
+        const filtered = clusters.filter(c => canAccessResource(req.user, c))
+        res.json(filtered.map(c => redactForRole(req, c)))
     } catch (error) {
         console.error('List clusters error:', error)
         res.status(500).json({ error: 'Failed to retrieve clusters' })
@@ -75,7 +107,8 @@ router.post('/install', requirePermission('cluster:create'), async (req, res) =>
             req.user.id,
             req.user.role,
             newClustersCount,
-            newNodesCount
+            newNodesCount,
+            req.user.orgId
         )
 
         if (!enforcement.allowed) {
@@ -83,9 +116,8 @@ router.post('/install', requirePermission('cluster:create'), async (req, res) =>
             return res.status(402).json({ error: enforcement.error, limitExceeded: true })
         }
 
-        // Plan-gate add-ons: Free plan may only use basic add-ons
-        const planUser = authService.getUserById(req.user.id)
-        const addonCheck = checkAddonPlan(addons, planUser?.subscription?.plan)
+        // Plan-gate add-ons by the WORKSPACE plan (team members have plan 'MEMBER')
+        const addonCheck = checkAddonPlan(addons, authService.getOrgPlan(req.user.orgId))
         if (!addonCheck.allowed) {
             return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
         }
@@ -126,18 +158,9 @@ router.post('/install', requirePermission('cluster:create'), async (req, res) =>
 
 // Get installation status
 router.get('/:id/status', (req, res) => {
-    const { id } = req.params
-    const status = installationManager.getStatus(id)
-
-    if (!status) {
-        return res.status(404).json({ error: 'Installation not found' })
-    }
-
-    if (status.orgId !== req.user.orgId && status.ownerId !== req.user.id) {
-        return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-    }
-
-    res.json(status)
+    const status = loadOwnedInstallation(req, res, req.params.id)
+    if (!status) return
+    res.json(redactForRole(req, status))
 })
 
 // Get cluster health (real-time)
@@ -147,8 +170,17 @@ router.get('/:id/health', async (req, res) => {
         const clusters = await installationManager.getSavedClusters()
         const cluster = clusters.find(c => c.id === id)
 
-        if (cluster && cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized access to this cluster' })
+        if (cluster) {
+            if (!canAccessResource(req.user, cluster)) {
+                return res.status(403).json({ error: 'Unauthorized access to this cluster' })
+            }
+        } else {
+            // Not a saved cluster — may be an installation ID; it must be ours too.
+            const installation = installationManager.getStatus(id)
+            if (!installation) return res.status(404).json({ error: 'Cluster not found' })
+            if (!canAccessResource(req.user, installation)) {
+                return res.status(403).json({ error: 'Unauthorized access to this cluster' })
+            }
         }
 
         const health = await installationManager.getClusterHealth(id)
@@ -162,23 +194,14 @@ router.get('/:id/health', async (req, res) => {
 // Get kubeconfig
 router.get('/:id/kubeconfig', requirePermission('kubeconfig:download'), async (req, res) => {
     try {
-        const { id } = req.params
-        const clusters = await installationManager.getSavedClusters()
-        const cluster = clusters.find(c => c.id === id)
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
 
-        if (!cluster) {
-            return res.status(404).json({ error: 'Cluster not found' })
-        }
-
-        if (req.user.role !== 'admin' && cluster.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-        }
-
-        const kubeconfig = await installationManager.getKubeconfig(id)
+        const kubeconfig = await installationManager.getKubeconfig(cluster.id)
 
         // Send as file download
         res.setHeader('Content-Type', 'application/x-yaml')
-        res.setHeader('Content-Disposition', `attachment; filename="kubeconfig-${id}.yaml"`)
+        res.setHeader('Content-Disposition', `attachment; filename="kubeconfig-${cluster.id}.yaml"`)
         res.send(kubeconfig)
     } catch (error) {
         console.error('Kubeconfig fetch error:', error)
@@ -188,45 +211,29 @@ router.get('/:id/kubeconfig', requirePermission('kubeconfig:download'), async (r
 
 // Get installation logs
 router.get('/:id/logs', (req, res) => {
-    const { id } = req.params
-    const status = installationManager.getStatus(id)
-
-    if (!status) {
-        return res.status(404).json({ error: 'Installation not found' })
-    }
-
-    if (req.user.role !== 'admin' && status.ownerId !== req.user.id) {
-        return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-    }
-
-    const logs = installationManager.getLogs(id)
-    res.json({ logs })
+    const status = loadOwnedInstallation(req, res, req.params.id)
+    if (!status) return
+    res.json({ logs: installationManager.getLogs(status.id) })
 })
 
 // Cancel installation
 router.post('/:id/cancel', requirePermission('cluster:delete'), (req, res) => {
-    const { id } = req.params
-    const status = installationManager.getStatus(id)
-
-    if (!status) {
-        return res.status(404).json({ error: 'Installation not found' })
-    }
-
-    if (req.user.role !== 'admin' && status.ownerId !== req.user.id) {
-        return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-    }
-
-    const success = installationManager.cancelInstallation(id)
+    const status = loadOwnedInstallation(req, res, req.params.id)
+    if (!status) return
+    installationManager.cancelInstallation(status.id)
     res.json({ message: 'Installation cancelled successfully' })
 })
 
-// Delete a saved cluster
+// Delete a saved cluster (or an in-progress installation that isn't saved yet)
 router.delete('/:id', requirePermission('cluster:delete'), async (req, res) => {
     const { id } = req.params
     const clusters = await installationManager.getSavedClusters()
-    const cluster = clusters.find(c => c.id === id)
+    const target = clusters.find(c => c.id === id) || installationManager.getStatus(id)
 
-    if (cluster && req.user.role !== 'admin' && cluster.ownerId !== req.user.id) {
+    if (!target) {
+        return res.status(404).json({ error: 'Cluster not found' })
+    }
+    if (!canAccessResource(req.user, target)) {
         return res.status(403).json({ error: 'Unauthorized access to this cluster' })
     }
 
@@ -240,20 +247,13 @@ router.delete('/:id', requirePermission('cluster:delete'), async (req, res) => {
 })
 
 // Execute Auto-Fix Action
-// Execute Auto-Fix Action
 router.post('/action/fix', requireAuth, requirePermission('cluster:create'), async (req, res) => {
     try {
         const { installationId, nodeIp, fixAction } = req.body
 
         // Find installation to get node details (credentials)
-        const installation = installationManager.getStatus(installationId)
-        if (!installation) {
-            return res.status(404).json({ error: 'Installation not found' })
-        }
-
-        if (req.user.role !== 'admin' && installation.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-        }
+        const installation = loadOwnedInstallation(req, res, installationId)
+        if (!installation) return
 
         // Find the specific node
         const allNodes = [...installation.masterNodes, ...(installation.workerNodes || [])]
@@ -289,16 +289,8 @@ router.post('/action/fix', requireAuth, requirePermission('cluster:create'), asy
 // Retry a failed installation
 router.post('/:id/retry', requireAuth, requirePermission('cluster:create'), async (req, res) => {
     try {
-        const { id } = req.params
-        const oldInstallation = installationManager.getStatus(id)
-
-        if (!oldInstallation) {
-            return res.status(404).json({ error: 'Original installation not found' })
-        }
-
-        if (req.user.role !== 'admin' && oldInstallation.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-        }
+        const oldInstallation = loadOwnedInstallation(req, res, req.params.id)
+        if (!oldInstallation) return
 
         // Check license limits
         const newClustersCount = oldInstallation.mode === 'scale' ? 0 : 1
@@ -308,7 +300,8 @@ router.post('/:id/retry', requireAuth, requirePermission('cluster:create'), asyn
             req.user.id,
             req.user.role,
             newClustersCount,
-            newNodesCount
+            newNodesCount,
+            req.user.orgId
         )
 
         if (!enforcement.allowed) {
@@ -350,14 +343,8 @@ router.post('/:id/retry', requireAuth, requirePermission('cluster:create'), asyn
 // Get access info (URLs + credentials) for all installed addons in a cluster
 router.get('/:id/addons/access', requireAuth, async (req, res) => {
     try {
-        const { id } = req.params
-        const clusters = await installationManager.getSavedClusters()
-        const cluster = clusters.find(c => c.id === id)
-
-        if (!cluster) return res.status(404).json({ error: 'Cluster not found' })
-        if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized' })
-        }
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
 
         const info = await addonAccessService.getAccessInfo(cluster)
 
@@ -381,16 +368,6 @@ router.get('/:id/addons/access', requireAuth, async (req, res) => {
 })
 
 // ─── etcd backups (Pro/Enterprise feature) ─────────────────────────────────────
-// Helper: load a cluster and enforce org ownership.
-async function loadOwnedCluster(req, res) {
-    const clusters = await installationManager.getSavedClusters()
-    const cluster = clusters.find(c => c.id === req.params.id)
-    if (!cluster) { res.status(404).json({ error: 'Cluster not found' }); return null }
-    if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
-        res.status(403).json({ error: 'Unauthorized' }); return null
-    }
-    return cluster
-}
 
 // etcd backup & restore is a paid feature. superadmin always allowed.
 function requireEtcdPlan(req, res) {
@@ -464,14 +441,8 @@ router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade
 // Analyze failed cluster — detect what completed, what's missing, where to resume
 router.post('/:id/analyze', requireAuth, async (req, res) => {
     try {
-        const { id } = req.params
-        const clusters = await installationManager.getSavedClusters()
-        const cluster = clusters.find(c => c.id === id)
-
-        if (!cluster) return res.status(404).json({ error: 'Cluster not found' })
-        if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized' })
-        }
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
 
         const logs = []
         const onLog = (level, msg) => logs.push({ level, message: msg })
@@ -495,13 +466,8 @@ router.post('/:id/resume', requireAuth, requirePermission('cluster:resume'), asy
             return res.status(400).json({ error: 'Missing analysis — call /analyze first' })
         }
 
-        const clusters = await installationManager.getSavedClusters()
-        const cluster = clusters.find(c => c.id === id)
-
-        if (!cluster) return res.status(404).json({ error: 'Cluster not found' })
-        if (cluster.orgId !== req.user.orgId && cluster.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized' })
-        }
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
 
         const resumeId = await installationManager.resumeInstallation(
             id, analysis, req.user.id, req.user.orgId
@@ -523,24 +489,14 @@ router.post('/:id/resume', requireAuth, requirePermission('cluster:resume'), asy
 // Install Add-ons to existing cluster
 router.post('/:id/addons', requireAuth, requirePermission('addon:install'), async (req, res) => {
     try {
-        const { id } = req.params
         const { addons } = req.body
 
         // Load cluster config (decrypted)
-        const clusters = await installationManager.getSavedClusters()
-        const existingCluster = clusters.find(c => c.id === id)
+        const existingCluster = await loadOwnedCluster(req, res)
+        if (!existingCluster) return
 
-        if (!existingCluster) {
-            return res.status(404).json({ error: 'Cluster not found' })
-        }
-
-        if (req.user.role !== 'admin' && existingCluster.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-        }
-
-        // Plan-gate add-ons: Free plan may only use basic add-ons
-        const planUser = authService.getUserById(req.user.id)
-        const addonCheck = checkAddonPlan(addons, planUser?.subscription?.plan)
+        // Plan-gate add-ons by the WORKSPACE plan (team members have plan 'MEMBER')
+        const addonCheck = checkAddonPlan(addons, authService.getOrgPlan(req.user.orgId))
         if (!addonCheck.allowed) {
             return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
         }
@@ -550,6 +506,8 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
             ...existingCluster, // Copy credentials and nodes
             id: newInstallationId,
             ownerId: existingCluster.ownerId || req.user.id, // Keep the original owner
+            orgId: existingCluster.orgId || req.user.orgId,
+            originalClusterId: existingCluster.id,
             addons: addons, // Use new addons selection
             mode: 'addon-only',
             status: 'pending',
@@ -575,26 +533,18 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
 // Upgrade Cluster Version
 router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
-        const { id } = req.params
         const { targetVersion } = req.body
 
         // Load cluster config
-        const clusters = await installationManager.getSavedClusters()
-        const existingCluster = clusters.find(c => c.id === id)
-
-        if (!existingCluster) {
-            return res.status(404).json({ error: 'Cluster not found' })
-        }
-
-        if (req.user.role !== 'admin' && existingCluster.ownerId !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized access to this cluster' })
-        }
+        const existingCluster = await loadOwnedCluster(req, res)
+        if (!existingCluster) return
 
         const newInstallationId = uuidv4()
         const upgradeInstallation = {
             ...existingCluster,
             id: newInstallationId,
             ownerId: existingCluster.ownerId || req.user.id, // Keep the original owner
+            orgId: existingCluster.orgId || req.user.orgId,
             originalClusterId: existingCluster.id, // PERSIST: Keep track of the real cluster ID
             targetVersion: targetVersion,
             mode: 'upgrade',

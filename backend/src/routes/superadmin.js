@@ -151,8 +151,10 @@ router.put('/users/:id/status', (req, res) => {
 router.put('/users/:id/role', (req, res) => {
     try {
         const { role } = req.body;
-        if (!['admin', 'superadmin', 'user'].includes(role)) {
-            return res.status(400).json({ error: 'Role must be admin, superadmin, or user' });
+        // Only real roles from config/permissions.js ('user' grants nothing)
+        const VALID_ROLES = ['superadmin', 'admin', 'operator', 'viewer'];
+        if (!VALID_ROLES.includes(role)) {
+            return res.status(400).json({ error: `Role must be one of: ${VALID_ROLES.join(', ')}` });
         }
 
         // Prevent superadmin from demoting themselves

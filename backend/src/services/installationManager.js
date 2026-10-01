@@ -3,6 +3,7 @@ import { automationEngine } from './automationEngine.js'
 import { clusterStore } from './clusterStore.js'
 import { terminalService } from './terminalService.js'
 import { trafficSniffer } from './trafficSniffer.js'
+import { sameTenant } from '../utils/access.js'
 
 class InstallationManager {
     constructor() {
@@ -217,6 +218,7 @@ class InstallationManager {
             let finalCluster = {
                 id: installationId,
                 ownerId: installation.ownerId, // Save the ownerId to the cluster data
+                orgId: installation.orgId,     // Workspace isolation — team members need this
                 clusterName: installation.clusterName,
                 k8sVersion: effectiveVersion,
                 networkPlugin: installation.networkPlugin,
@@ -238,7 +240,9 @@ class InstallationManager {
                 // Find existing cluster by Bridge Master IP (first node in list)
                 const bridgeIp = installation.masterNodes[0]?.ip
 
+                // Only ever merge into a cluster of the SAME tenant
                 const existingCluster = existingClusters.find(c =>
+                    sameTenant(c, installation) &&
                     c.masterNodes && c.masterNodes.some(n => n.ip === bridgeIp)
                 )
 
@@ -531,7 +535,9 @@ users:
             if (installation) {
                 const masterIp = installation.masterNodes?.[0]?.ip
                 if (masterIp) {
-                    const found = clusters.find(c => c.masterNodes && c.masterNodes.some(n => n.ip === masterIp))
+                    const found = clusters.find(c =>
+                        sameTenant(c, installation) &&
+                        c.masterNodes && c.masterNodes.some(n => n.ip === masterIp))
                     if (found) {
                         return this.getClusterHealth(found.id)
                     }

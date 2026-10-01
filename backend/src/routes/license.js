@@ -2,6 +2,7 @@ import express from 'express'
 import { licenseService } from '../services/licenseService.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
+import { canAccessResource } from '../utils/access.js'
 
 const router = express.Router()
 
@@ -24,7 +25,8 @@ router.get('/license/status', requireAuth, async (req, res) => {
 
         if (state.mode === 'saas') {
             const authService = (await import('../services/authService.js')).authService;
-            const user = authService.getUserById(req.user.id);
+            // Team members share the workspace owner's subscription
+            const user = authService.getOrgOwner(req.user.orgId) || authService.getUserById(req.user.id);
             const sub = user?.subscription || { plan: 'FREE', maxClusters: 1, maxNodes: 2 };
             
             state.plan = sub.plan === 'FREE' ? 'Free Tier' : `${sub.plan} Subscription`;
@@ -45,11 +47,8 @@ router.get('/license/status', requireAuth, async (req, res) => {
                 state.billingCycle = sub.billingCycle || 'monthly';
             }
 
-            if (req.user.role === 'admin') {
-                activeClusters = clusters
-            } else {
-                activeClusters = clusters.filter(c => c.ownerId === req.user.id)
-            }
+            // Only this workspace's clusters — never platform-wide counts
+            activeClusters = clusters.filter(c => canAccessResource(req.user, c))
         } else {
             activeClusters = clusters
         }
@@ -75,8 +74,9 @@ router.get('/license/status', requireAuth, async (req, res) => {
 // Activate license key (admin only, self-hosted mode only)
 router.post('/license/activate', requireAuth, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ error: 'Admin access required to activate license.' })
+        // The license is instance-wide → only the platform owner may change it
+        if (req.user.role !== 'superadmin') {
+            return res.status(403).json({ error: 'Super Admin access required to activate license.' })
         }
 
         const { licenseKey } = req.body
@@ -98,7 +98,7 @@ router.post('/license/activate', requireAuth, async (req, res) => {
 // Generate new license key (Vendor Only)
 router.post('/license/generate', requireAuth, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
+        if (req.user.role !== 'superadmin') {
             return res.status(403).json({ error: 'Vendor access required to generate licenses.' })
         }
 

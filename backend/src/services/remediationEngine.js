@@ -13,7 +13,8 @@ class RemediationEngine {
     }
 
     async handleAnomaly(cluster, event, incident) {
-        const key = `${cluster.id}:${event.reason}:${event.involvedObject?.name}`
+        const ns  = event.involvedObject?.namespace
+        const key = `${cluster.id}:${event.reason}:${ns ? ns + '/' : ''}${event.involvedObject?.name}`
         const now = Date.now()
 
         // Clean up stale entries to prevent memory leak
@@ -116,6 +117,18 @@ class RemediationEngine {
 //   fix()   : async function to apply the fix
 //   verify(): async function returning true if healthy now
 // ─────────────────────────────────────────────────────────────────────────────
+
+// "<pod> -n <namespace>" for kubectl. Names come from the Kubernetes API
+// (DNS-1123), but validate anyway since they're interpolated into a shell.
+const K8S_NAME = /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/
+function podRef(incident) {
+    const name = incident.target
+    const ns = incident.namespace || 'default'
+    if (!K8S_NAME.test(name || '') || !K8S_NAME.test(ns)) {
+        throw new Error(`Refusing to act on invalid pod reference: ${ns}/${name}`)
+    }
+    return `${name} -n ${ns}`
+}
 
 const PLAYBOOKS = {
 
@@ -258,19 +271,24 @@ const PLAYBOOKS = {
                 await updateStatus(incident, 'remediating',
                     `Capturing crash logs for ${incident.target}`)
 
+                const pod = podRef(incident)
+
                 // Capture last 50 lines of logs before deleting
                 const logsResult = await ssh.execCommand(
-                    `kubectl logs ${incident.target} -A --tail=50 --previous 2>/dev/null || ` +
-                    `kubectl logs ${incident.target} -A --tail=50 2>/dev/null || echo "No logs available"`)
+                    `kubectl logs ${pod} --tail=50 --previous 2>/dev/null || ` +
+                    `kubectl logs ${pod} --tail=50 2>/dev/null || echo "No logs available"`)
 
                 console.log(`[AutoHealing] CrashLoop logs for ${incident.target}:\n${logsResult.stdout?.slice(0, 500)}`)
 
                 await updateStatus(incident, 'remediating',
                     `Deleting crashed pod ${incident.target} — Kubernetes will reschedule it cleanly`)
 
-                // Delete the pod — Deployment/DaemonSet/StatefulSet will recreate it
-                await ssh.execCommand(
-                    `kubectl delete pod ${incident.target} -A --grace-period=30 2>/dev/null || true`)
+                // Delete the pod — Deployment/DaemonSet/StatefulSet will recreate it.
+                // Fail loudly: a swallowed error here used to mark the incident resolved.
+                const del = await ssh.execCommand(`kubectl delete pod ${pod} --grace-period=30`)
+                if (del.code !== 0) {
+                    throw new Error(`kubectl delete pod failed: ${(del.stderr || del.stdout || '').trim().slice(0, 200)}`)
+                }
 
             } finally { ssh.dispose?.() }
         },
@@ -301,7 +319,7 @@ const PLAYBOOKS = {
             try {
                 // Describe the pod to surface the exact error
                 const desc = await ssh.execCommand(
-                    `kubectl describe pod ${incident.target} -A 2>/dev/null | grep -A5 "Events:" | tail -5`)
+                    `kubectl describe pod ${podRef(incident)} 2>/dev/null | grep -A5 "Events:" | tail -5`)
                 await updateStatus(incident, 'unresolved',
                     `Image pull failed for ${incident.target}. ` +
                     `Check image name/tag and imagePullSecrets. ` +
@@ -323,7 +341,7 @@ const PLAYBOOKS = {
                     `Diagnosing why ${incident.target} is Pending...`)
 
                 const desc = await ssh.execCommand(
-                    `kubectl describe pod ${incident.target} -A 2>/dev/null | grep -E "Events:|Warning|Insufficient|didn't|taint" | head -5`)
+                    `kubectl describe pod ${podRef(incident)} 2>/dev/null | grep -E "Events:|Warning|Insufficient|didn't|taint" | head -5`)
 
                 const nodes = await ssh.execCommand(
                     'kubectl get nodes -o wide 2>/dev/null | head -5')

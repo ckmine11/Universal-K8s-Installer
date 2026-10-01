@@ -161,24 +161,26 @@ class IncidentDetector {
                 const w = c.state?.waiting
                 const t = c.state?.terminated
                 if (w?.reason === 'CrashLoopBackOff')
-                    this._createIncident(cluster, 'CrashLoopBackOff', `${ns}/${podName} (${c.name}) in CrashLoopBackOff`, podName)
+                    this._createIncident(cluster, 'CrashLoopBackOff', `${ns}/${podName} (${c.name}) in CrashLoopBackOff`, podName, ns)
                 if (w?.reason === 'ImagePullBackOff' || w?.reason === 'ErrImagePull')
-                    this._createIncident(cluster, 'ImagePullBackOff', `${ns}/${podName} (${c.name}) cannot pull image: ${w.message || ''}`, podName)
+                    this._createIncident(cluster, 'ImagePullBackOff', `${ns}/${podName} (${c.name}) cannot pull image: ${w.message || ''}`, podName, ns)
                 if (t?.reason === 'OOMKilled' || w?.reason === 'OOMKilled')
-                    this._createIncident(cluster, 'OOMKilled', `${ns}/${podName} (${c.name}) was OOMKilled`, podName)
+                    this._createIncident(cluster, 'OOMKilled', `${ns}/${podName} (${c.name}) was OOMKilled`, podName, ns)
             }
             if (pod.status?.phase === 'Pending' && pod.metadata?.creationTimestamp) {
                 const age = Date.now() - new Date(pod.metadata.creationTimestamp).getTime()
                 if (age > 5 * 60 * 1000)
-                    this._createIncident(cluster, 'PodPendingTooLong', `${ns}/${podName} Pending for ${Math.round(age / 60000)}m`, podName)
+                    this._createIncident(cluster, 'PodPendingTooLong', `${ns}/${podName} Pending for ${Math.round(age / 60000)}m`, podName, ns)
             }
         }
     }
 
     // ── Incident factory ───────────────────────────────────────────────────────
-    _createIncident(cluster, reason, message, target) {
+    // namespace is set for pod-level incidents (pods are namespaced; kubectl
+    // cannot address a pod by name across all namespaces).
+    _createIncident(cluster, reason, message, target, namespace) {
         if (!reason) return
-        const key = `${cluster.id}:${reason}:${target}`
+        const key = `${cluster.id}:${reason}:${namespace ? namespace + '/' : ''}${target}`
 
         const recent = this.incidents.find(i =>
             i._key === key && Date.now() - new Date(i.timestamp).getTime() < DEDUP_WINDOW_MS)
@@ -195,7 +197,8 @@ class IncidentDetector {
             message:     message || '',
             timestamp:   new Date().toISOString(),
             status:      'detecting',
-            target:      target || 'cluster-wide'
+            target:      target || 'cluster-wide',
+            namespace:   namespace || null
         }
 
         console.log(`[AutoHealing] Incident — [${reason}] target=${target} cluster=${cname(cluster)}`)
@@ -209,7 +212,7 @@ class IncidentDetector {
         try {
             remediationEngine.handleAnomaly(
                 cluster,
-                { reason, message, involvedObject: { name: target } },
+                { reason, message, involvedObject: { name: target, namespace } },
                 incident
             )
         } catch (e) {

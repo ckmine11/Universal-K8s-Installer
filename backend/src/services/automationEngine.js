@@ -36,10 +36,6 @@ class AgentSSHProxy {
 }
 
 class AutomationEngine {
-    constructor() {
-        this.simulationMode = false
-    }
-
     async executeScript(ssh, scriptPath, args = [], onLog) {
         let remotePath
         try {
@@ -422,10 +418,17 @@ class AutomationEngine {
                 }
             }
 
-            // Determine simulation mode
-            this.simulationMode = !(await this.detectRealNodes(installation, onLog))
+            // Determine simulation mode — tracked per installation (never on the
+            // shared engine) so concurrent installs can't flip each other's mode.
+            // An unreachable master FAILS the install unless simulation is
+            // explicitly enabled; never report a fake cluster as "completed".
+            const reachable = await this.detectRealNodes(installation, onLog)
+            if (!reachable && process.env.KUBEEZ_ALLOW_SIMULATION !== 'true') {
+                throw new Error('Cannot reach the master node over SSH — installation aborted. Check the IP, credentials, that port 22 is open, and that your Gateway Agent is online.')
+            }
+            installation.simulationMode = !reachable
 
-            if (this.simulationMode) {
+            if (installation.simulationMode) {
                 onLog('warning', '⚠️ No real nodes detected - Running in SIMULATION mode')
                 onLog('warning', '⚠️ To use real installation, provide actual Linux machines with SSH access')
             }
@@ -463,7 +466,7 @@ class AutomationEngine {
                     ],
                     nodeCount: installation.masterNodes.length + (installation.workerNodes?.length || 0),
                     endpoint: `https://${installation.masterNodes[0].ip}:6443`,
-                    simulationMode: this.simulationMode
+                    simulationMode: installation.simulationMode
                 }
 
                 onComplete(clusterInfo)
@@ -487,7 +490,7 @@ class AutomationEngine {
 
             // Step 2b: Brute Force Time Sync (Master as Source of Truth)
             onProgress(15, 'Force-Syncing clocks and hostnames...')
-            if (!this.simulationMode) {
+            if (!installation.simulationMode) {
                 const masterNode = installation.masterNodes[0]
                 const masterSsh = await this.connectSSH(masterNode)
                 const timeResult = await masterSsh.execCommand('date +"%m%d%H%M%Y.%S"')
@@ -577,7 +580,7 @@ class AutomationEngine {
             // Complete
             onProgress(100, 'Installation completed successfully!')
 
-            if (this.simulationMode) {
+            if (installation.simulationMode) {
                 onLog('warning', '⚠️ SIMULATION MODE - No real cluster was created')
                 onLog('info', '💡 To create a real cluster, provide actual Linux machines with SSH access')
             } else {
@@ -604,7 +607,7 @@ class AutomationEngine {
                 ],
                 nodeCount: installation.masterNodes.length + (installation.workerNodes?.length || 0),
                 endpoint: `https://${installation.masterNodes[0].ip}:6443`,
-                simulationMode: this.simulationMode
+                simulationMode: installation.simulationMode
             }
 
             onComplete(clusterInfo)
@@ -638,7 +641,7 @@ class AutomationEngine {
     }
 
     async validateConnectivity(installation, onLog) {
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', '[SIMULATION] Checking SSH connectivity to all nodes...')
             await this.sleep(1000)
 
@@ -680,7 +683,7 @@ class AutomationEngine {
     }
 
     async configureFirewall(installation, onLog) {
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', '[SIMULATION] Configuring firewall rules on all nodes...')
             await this.sleep(1000)
             onLog('success', '[SIMULATION] ✓ Firewall rules configured')
@@ -710,7 +713,7 @@ class AutomationEngine {
     }
 
     async preFlightChecks(installation, onLog) {
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', '[SIMULATION] Running pre-flight checks on all nodes...')
             await this.sleep(1500)
             onLog('success', '[SIMULATION] ✓ All pre-flight checks passed')
@@ -743,7 +746,7 @@ class AutomationEngine {
     }
 
     async installContainerRuntime(installation, onLog) {
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', '[SIMULATION] Installing containerd on all nodes...')
             await this.sleep(2000)
             onLog('success', '[SIMULATION] ✓ containerd installed successfully')
@@ -778,7 +781,7 @@ class AutomationEngine {
     }
 
     async installKubernetesComponents(installation, onLog) {
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', '[SIMULATION] Installing Kubernetes components...')
             await this.sleep(2500)
             onLog('success', '[SIMULATION] ✓ kubeadm, kubelet, kubectl installed')
@@ -814,7 +817,7 @@ class AutomationEngine {
     }
 
     async initializeControlPlane(installation, onLog) {
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', '[SIMULATION] Initializing Kubernetes control plane...')
             const masterNode = installation.masterNodes[0]
             onLog('info', `[SIMULATION] Control plane endpoint: ${masterNode.ip}:6443`)
@@ -870,7 +873,7 @@ class AutomationEngine {
     async installNetworkPlugin(installation, onLog) {
         const plugin = installation.networkPlugin
 
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', `[SIMULATION] Installing ${plugin} network plugin...`)
             await this.sleep(2000)
             onLog('success', `[SIMULATION] ✓ ${plugin} network plugin installed`)
@@ -899,7 +902,7 @@ class AutomationEngine {
         const masters = installation.masterNodes || []
         const workers = installation.workerNodes || []
 
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             // ... (keep simulation logic if needed or skip)
             return
         }
@@ -950,7 +953,7 @@ class AutomationEngine {
         if (addons.logging) addonList.push('Logging')
         if (addons.dashboard) addonList.push('Dashboard')
 
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', `[SIMULATION] Installing add-ons (${addonList.join(', ')})...`)
             await this.sleep(2000)
             onLog('success', `[SIMULATION] ✓ All add-ons installed successfully`)
@@ -1021,7 +1024,7 @@ class AutomationEngine {
     }
 
     async postInstallationValidation(installation, onLog) {
-        if (this.simulationMode) {
+        if (installation.simulationMode) {
             onLog('info', '[SIMULATION] Validating cluster health...')
             await this.sleep(1500)
             onLog('success', '[SIMULATION] ✓ All nodes are Ready')
@@ -1080,7 +1083,7 @@ class AutomationEngine {
             onLog('info', `🚀 Starting Cluster Upgrade to v${targetVersion}...`)
             onLog('info', '🛟 A safety etcd snapshot will be taken automatically on the primary control-plane before any changes (saved to /var/lib/etcd-backup).')
 
-            if (this.simulationMode) {
+            if (cluster.simulationMode) {
                 onLog('info', '[SIMULATION] Upgrading cluster components...')
                 await this.sleep(3000)
                 onLog('success', `[SIMULATION] ✓ Cluster upgraded to v${targetVersion}`)
@@ -1248,7 +1251,15 @@ class AutomationEngine {
         const startIdx = STEP_ORDER.indexOf(resumeFromStep)
         const steps = STEP_ORDER.slice(startIdx >= 0 ? startIdx : 0)
 
-        this.simulationMode = false // Resume always runs on real nodes
+        // Resume always runs on real nodes. Inject ownerId/orgId so SSH routes
+        // through the tenant's Gateway Agent (stored nodes don't carry them).
+        const enrich = (n) => ({ ...n, ownerId: cluster.ownerId, orgId: cluster.orgId })
+        cluster = {
+            ...cluster,
+            simulationMode: false,
+            masterNodes: (cluster.masterNodes || []).map(enrich),
+            workerNodes: (cluster.workerNodes || []).map(enrich)
+        }
 
         try {
             onLog('info', `▶ Resuming installation from: ${resumeFromStep}`)

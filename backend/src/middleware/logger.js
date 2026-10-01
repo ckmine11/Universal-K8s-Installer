@@ -36,11 +36,13 @@ function sanitizeBody(body) {
         return {};
     }
 
-    const sensitiveFields = ['password', 'sshPassword', 'sshKey', 'token', 'secret'];
+    // Match by pattern, not exact name, so variants like newPassword,
+    // currentPassword, privateKey, licenseKey, resetCode are never logged.
+    const SENSITIVE = /pass(word|wd)?|secret|token|key$|privatekey|sshkey|licensekey|code$|credential/i;
     const sanitized = { ...body };
 
-    for (const field of sensitiveFields) {
-        if (sanitized[field]) {
+    for (const field of Object.keys(sanitized)) {
+        if (SENSITIVE.test(field) && sanitized[field]) {
             sanitized[field] = '[REDACTED]';
         }
     }

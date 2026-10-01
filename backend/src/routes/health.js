@@ -146,13 +146,13 @@ healthRouter.post('/backups', requireAuth, (req, res) => {
  * Restore from a backup
  * POST /api/health/backups/restore
  */
-healthRouter.post('/backups/restore', requireAuth, (req, res) => {
+healthRouter.post('/backups/restore', requireAuth, async (req, res) => {
     try {
         if (!ensureBackupAccess(req, res)) return;
         const { filename } = req.body;
         if (!filename) return res.status(400).json({ success: false, error: 'Missing backup filename' });
 
-        const result = BackupService.restoreBackup(filename, req.user.id);
+        const result = await BackupService.restoreBackup(filename, req.user.id);
         if (result.success) {
             res.json(result);
         } else {

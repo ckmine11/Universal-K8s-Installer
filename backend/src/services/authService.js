@@ -17,6 +17,9 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '../../data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const JWT_SECRET = getJwtSecret();
+const RESET_CODE_TTL_MS = 15 * 60 * 1000;
+const MAX_RESET_ATTEMPTS = 5;
+const hashResetCode = (code) => crypto.createHash('sha256').update(code).digest('hex');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -120,7 +123,7 @@ class AuthService {
         }
 
         // Enforce the plan's team-member seat limit (counts ALL users in the org)
-        const orgAdmin = this.users.find(u => u.orgId === adminOrgId && u.role === 'admin')
+        const orgAdmin = this.getOrgOwner(adminOrgId)
         const maxMembers = orgAdmin?.subscription?.maxMembers ?? 1
         const currentCount = this.users.filter(u => u.orgId === adminOrgId).length
         if (currentCount >= maxMembers) {
@@ -178,7 +181,15 @@ class AuthService {
             if (!user || user.isSuspended) {
                 return null;
             }
-            return decoded;
+            // Authorize with the CURRENT stored role/org — not the values baked
+            // into the token — so demotions and role changes apply immediately.
+            return {
+                ...decoded,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                orgId: user.orgId
+            };
         } catch (error) {
             console.error('JWT Verification Failed:', error.message)
             return null;
@@ -186,6 +197,12 @@ class AuthService {
     }
 
     // ─── Super Admin Functions ────────────────────────────────────────
+
+    // Strip password hash + reset state before anything leaves the service
+    toSafeUser(u) {
+        const { password, resetToken, resetTokenExpiry, resetAttempts, ...safeUser } = u;
+        return safeUser;
+    }
 
     getAllUsers() {
         return this.users.map(u => {
@@ -199,7 +216,7 @@ class AuthService {
         if (user) {
             user.isSuspended = isSuspended;
             this.saveUsers();
-            return user;
+            return this.toSafeUser(user);
         }
         throw new Error('User not found');
     }
@@ -218,7 +235,7 @@ class AuthService {
         if (user) {
             user.role = role;
             this.saveUsers();
-            return user;
+            return this.toSafeUser(user);
         }
         throw new Error('User not found');
     }
@@ -230,10 +247,17 @@ class AuthService {
     // Resolve a workspace's plan from its owner (the admin/superadmin account
     // that holds the subscription). Team members have plan 'MEMBER', so we must
     // look at the org owner to know the real plan for feature gating.
-    getOrgPlan(orgId) {
-        const owner = this.users.find(u => u.orgId === orgId && (u.role === 'admin' || u.role === 'superadmin'))
+    getOrgOwner(orgId) {
+        if (!orgId) return undefined
+        // Prefer the account that actually holds a (non-MEMBER) subscription
+        return this.users.find(u => u.orgId === orgId && (u.role === 'admin' || u.role === 'superadmin')
+                && String(u.subscription?.plan || 'FREE').toUpperCase() !== 'MEMBER')
+            || this.users.find(u => u.orgId === orgId && (u.role === 'admin' || u.role === 'superadmin'))
             || this.users.find(u => u.orgId === orgId && String(u.subscription?.plan || '').toUpperCase() !== 'MEMBER')
-        return String(owner?.subscription?.plan || 'FREE').toUpperCase()
+    }
+
+    getOrgPlan(orgId) {
+        return String(this.getOrgOwner(orgId)?.subscription?.plan || 'FREE').toUpperCase()
     }
 
     getUsersByOrgId(orgId) {
@@ -276,7 +300,7 @@ class AuthService {
 
         user.subscription = sub;
         this.saveUsers();
-        return user;
+        return this.toSafeUser(user);
     }
 
     async forgotPassword(email) {
@@ -286,11 +310,13 @@ class AuthService {
             return true;
         }
 
-        // Generate 6-digit code
-        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-        
-        user.resetToken = resetCode;
-        user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
+        // Generate a cryptographically random 6-digit code. Only its hash is
+        // stored; it's bound to this email and burns after MAX_RESET_ATTEMPTS.
+        const resetCode = crypto.randomInt(100000, 1000000).toString();
+
+        user.resetToken = hashResetCode(resetCode);
+        user.resetTokenExpiry = Date.now() + RESET_CODE_TTL_MS;
+        user.resetAttempts = 0;
 
         this.saveUsers();
 
@@ -299,14 +325,14 @@ class AuthService {
                 from: process.env.EMAIL_FROM || process.env.SMTP_USER,
                 to: email,
                 subject: 'KubeEZ - Password Reset Code',
-                text: `Your password reset code is: ${resetCode}\n\nThis code is valid for 1 hour.`,
+                text: `Your password reset code is: ${resetCode}\n\nThis code is valid for 15 minutes.`,
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
                         <h2 style="color: #3b82f6;">KubeEZ Platform</h2>
                         <p>We received a request to reset your password.</p>
                         <p>Your 6-digit reset code is:</p>
                         <h1 style="background: #f4f4f5; padding: 10px 20px; text-align: center; letter-spacing: 5px; color: #18181b; border-radius: 5px;">${resetCode}</h1>
-                        <p style="color: #71717a; font-size: 12px; margin-top: 20px;">This code will expire in 1 hour. If you did not request this, please ignore this email.</p>
+                        <p style="color: #71717a; font-size: 12px; margin-top: 20px;">This code will expire in 15 minutes. If you did not request this, please ignore this email.</p>
                     </div>
                 `
             });
@@ -319,15 +345,31 @@ class AuthService {
         return true;
     }
 
-    async resetPassword(token, newPassword) {
-        const user = this.users.find(u => u.resetToken === token && u.resetTokenExpiry > Date.now());
-        if (!user) {
-            throw new Error('Invalid or expired reset token');
+    async resetPassword(email, token, newPassword) {
+        const invalid = new Error('Invalid or expired reset code');
+        const user = this.users.find(u => u.email && u.email.toLowerCase() === String(email).toLowerCase());
+        if (!user || !user.resetToken || !(user.resetTokenExpiry > Date.now())) {
+            throw invalid;
+        }
+
+        const given = Buffer.from(hashResetCode(String(token)), 'hex');
+        const stored = Buffer.from(user.resetToken, 'hex');
+        if (given.length !== stored.length || !crypto.timingSafeEqual(given, stored)) {
+            user.resetAttempts = (user.resetAttempts || 0) + 1;
+            if (user.resetAttempts >= MAX_RESET_ATTEMPTS) {
+                // Burn the code — the user must request a new one
+                user.resetToken = undefined;
+                user.resetTokenExpiry = undefined;
+                user.resetAttempts = undefined;
+            }
+            this.saveUsers();
+            throw invalid;
         }
 
         user.password = await bcrypt.hash(newPassword, 10);
         user.resetToken = undefined;
         user.resetTokenExpiry = undefined;
+        user.resetAttempts = undefined;
 
         this.saveUsers();
         return true;

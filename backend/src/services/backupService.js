@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { encrypt, decrypt } from '../utils/cryptoUtils.js';
+import { clusterStore } from './clusterStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -156,22 +157,16 @@ export class BackupService {
      * @param {string} userId - ID of the user
      * @returns {Object} Restore result
      */
-    static restoreBackup(backupFilename, userId) {
+    static async restoreBackup(backupFilename, userId) {
         try {
             if (!userId) throw new Error('User ID is required for restore');
-            const backupPath = path.join(this.BACKUP_DIR, backupFilename);
 
-            // Check if backup exists and belongs to the user
-            if (!fs.existsSync(backupPath)) {
+            // Validates ownership (filename prefix) and rejects path traversal
+            const backupPath = this.getBackupPath(backupFilename, userId);
+            if (!backupPath) {
                 return {
                     success: false,
-                    error: 'Backup file not found'
-                };
-            }
-            if (!new RegExp(`^clusters-${userId}-`).test(backupFilename)) {
-                return {
-                    success: false,
-                    error: 'Unauthorized to restore this backup'
+                    error: 'Backup file not found or access denied'
                 };
             }
 
@@ -187,18 +182,20 @@ export class BackupService {
                 return { success: false, error: 'Backup contains data belonging to another user' };
             }
 
-            // Read all current clusters
-            let allClusters = [];
-            if (fs.existsSync(this.DATA_PATH)) {
-                allClusters = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
-            }
+            // Read-modify-write under the cluster store's lock so a concurrent
+            // saveCluster/deleteCluster can't clobber (or be clobbered by) this.
+            await clusterStore.withLock(async () => {
+                let allClusters = [];
+                if (fs.existsSync(this.DATA_PATH)) {
+                    allClusters = JSON.parse(fs.readFileSync(this.DATA_PATH, 'utf-8'));
+                }
 
-            // Remove existing clusters for this user and append the restored ones
-            allClusters = allClusters.filter(c => c.ownerId !== userId);
-            allClusters.push(...restoredClusters);
+                // Remove existing clusters for this user and append the restored ones
+                allClusters = allClusters.filter(c => c.ownerId !== userId);
+                allClusters.push(...restoredClusters);
 
-            // Write back to clusters.json
-            fs.writeFileSync(this.DATA_PATH, JSON.stringify(allClusters, null, 2));
+                fs.writeFileSync(this.DATA_PATH, JSON.stringify(allClusters, null, 2));
+            });
 
             console.log(`✓ Restored from backup: ${backupFilename} for user ${userId}`);
 

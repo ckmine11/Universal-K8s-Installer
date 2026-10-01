@@ -31,7 +31,7 @@ export default function Login() {
                 setSuccessMessage('Reset code has been sent to your email.');
                 setAuthMode('reset');
             } else if (authMode === 'reset') {
-                await resetPassword(formData.resetCode, formData.password);
+                await resetPassword(formData.email, formData.resetCode, formData.password);
                 setSuccessMessage('Password reset successfully. You can now login.');
                 setAuthMode('login');
                 setFormData({ ...formData, password: '', resetCode: '' });
@@ -154,7 +154,7 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {(isSetupRequired || authMode === 'register' || authMode === 'forgot') && (
+                            {(isSetupRequired || authMode === 'register' || authMode === 'forgot' || authMode === 'reset') && (
                                 <div className="space-y-1">
                                     <div className="relative group">
                                         <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">

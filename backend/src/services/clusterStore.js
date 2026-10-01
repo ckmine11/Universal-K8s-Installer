@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { encrypt, decrypt } from '../utils/cryptoUtils.js'
+import { sameTenant } from '../utils/access.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -58,22 +59,30 @@ class ClusterStore {
         }
     }
 
+    // Serialize every read-modify-write of clusters.json (also used by
+    // BackupService.restoreBackup) so concurrent writers can't lose updates.
+    async withLock(fn) {
+        const run = (this._lock || Promise.resolve()).then(() => fn())
+        this._lock = run.catch(() => {})
+        return run
+    }
+
     async saveCluster(cluster) {
-        let waited = 0
-        while (this._isWriting) {
-            if (waited >= 5000) throw new Error('Cluster store write timeout: lock held too long')
-            await new Promise(resolve => setTimeout(resolve, 100))
-            waited += 100
-        }
-        this._isWriting = true
+        return this.withLock(() => this._saveCluster(cluster))
+    }
+
+    async _saveCluster(cluster) {
         try {
             // Read raw (encrypted) file to avoid double-encrypting untouched clusters
             const rawData = await fs.promises.readFile(CLUSTERS_FILE, 'utf8').catch(() => '[]')
             const rawClusters = JSON.parse(rawData)
 
+            // Match by id, or by master IP within the SAME tenant only — never
+            // let one tenant's install overwrite another tenant's record.
             const idx = rawClusters.findIndex(c =>
                 c.id === cluster.id ||
-                (c.masterNodes && cluster.masterNodes && c.masterNodes[0]?.ip === cluster.masterNodes[0]?.ip)
+                (sameTenant(c, cluster) && c.masterNodes && cluster.masterNodes &&
+                    c.masterNodes[0]?.ip === cluster.masterNodes[0]?.ip)
             )
 
             const encryptedArgs = {
@@ -96,20 +105,35 @@ class ClusterStore {
         } catch (error) {
             console.error('Error saving cluster:', error)
             return false
-        } finally {
-            this._isWriting = false
         }
     }
 
-    async deleteCluster(id) {
-        let waited = 0
-        while (this._isWriting) {
-            if (waited >= 5000) throw new Error('Cluster store write timeout: lock held too long')
-            await new Promise(resolve => setTimeout(resolve, 100))
-            waited += 100
-        }
+    // One-time migration: clusters completed before orgId was persisted only
+    // carry ownerId, which hides them from the owner's team members. Stamp the
+    // owner's current orgId onto them. Raw file edit — credentials untouched.
+    async backfillOrgIds(resolveOrgId) {
+        return this.withLock(async () => {
+            const rawData = await fs.promises.readFile(CLUSTERS_FILE, 'utf8').catch(() => '[]')
+            const rawClusters = JSON.parse(rawData)
+            let changed = 0
+            for (const c of rawClusters) {
+                if (c.orgId || !c.ownerId) continue
+                const orgId = resolveOrgId(c.ownerId)
+                if (orgId) { c.orgId = orgId; changed++ }
+            }
+            if (changed > 0) {
+                await fs.promises.writeFile(CLUSTERS_FILE, JSON.stringify(rawClusters, null, 2))
+                console.log(`[ClusterStore] Backfilled orgId on ${changed} legacy cluster(s)`)
+            }
+            return changed
+        })
+    }
 
-        this._isWriting = true
+    async deleteCluster(id) {
+        return this.withLock(() => this._deleteCluster(id))
+    }
+
+    async _deleteCluster(id) {
         try {
             // CRITICAL FIX: Read RAW file to preserve encryption of other clusters
             const rawData = await fs.promises.readFile(CLUSTERS_FILE, 'utf8').catch(() => '[]')
@@ -124,8 +148,6 @@ class ClusterStore {
         } catch (error) {
             console.error('Error deleting cluster:', error)
             return false
-        } finally {
-            this._isWriting = false
         }
     }
 }

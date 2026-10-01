@@ -79,7 +79,7 @@ router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
             createdAt: u.createdAt
         }))
         // Seat usage so the UI can show "3 / 5 seats used"
-        const orgAdmin = authService.users.find(u => u.orgId === req.user.orgId && u.role === 'admin')
+        const orgAdmin = authService.getOrgOwner(req.user.orgId)
         const maxMembers = orgAdmin?.subscription?.maxMembers ?? 1
         res.json({ users, seats: { used: users.length, max: maxMembers } })
     } catch (err) {
