@@ -568,30 +568,78 @@ component_logs() {
     done
 }
 
-# Map a kubeadm failure to a clear reason + fix.
+# Map a kubeadm failure to a clear reason + fix. Patterns are matched ONLY
+# against the error lines — normal output (e.g. "[certs] ... certificate")
+# must never be mistaken for the cause.
 diagnose_kubeadm() {
-    local out
+    local out err last_err state
     out=$(cat "$KUBEADM_LOG" 2>/dev/null)
-    local last_err
-    last_err=$(echo "$out" | grep -iE '\[ERROR|error execution phase|fatal|failed|error:' | tail -1 | cut -c1-300)
-    local rolled="kubeadm rolled the control plane back, so the cluster is still running on its previous version."
+    err=$(echo "$out" | grep -iE '\[ERROR|error|fatal|failed|timed out|deadline|refused' | grep -viE '^\s*\[(certs|kubeconfig)\]')
+    last_err=$(echo "$out" | grep -iE 'error execution phase|\[ERROR|fatal|error:' | tail -1 | cut -c1-300)
+    [ -z "$last_err" ] && last_err=$(echo "$err" | tail -1 | cut -c1-300)
 
-    if echo "$out" | grep -qiE 'ErrImagePull|ImagePullBackOff|failed to pull image|pull access denied'; then
-        echo "IMAGE_PULL_FAILED|A new control-plane image could not be downloaded. ${rolled}|Check internet/DNS access to registry.k8s.io and free disk space, then retry."
-    elif echo "$out" | grep -qiE 'etcd.*(deadline|timed out|not healthy)|(deadline|timed out).*etcd'; then
-        echo "ETCD_UPGRADE_TIMEOUT|The new etcd did not become healthy in time. ${rolled}|Usually a slow disk or a stale sandbox image. Check the etcd container on the master ('crictl ps -a --name etcd', then 'crictl logs <id>'), then retry."
-    elif echo "$out" | grep -qiE 'context deadline exceeded|timed out waiting for the condition|static Pod hash|did not change after'; then
-        echo "CONTROL_PLANE_TIMEOUT|A control-plane component did not become healthy in time after the upgrade. ${rolled}|Check the component logs shown above (crictl ps -a / crictl logs). Slow nodes usually succeed on retry because images are now cached."
-    elif echo "$out" | grep -qiE 'connection refused.*6443|6443.*connection refused|unable to connect to the server'; then
+    # Where did it stop? Before the static-pod swap kubeadm rolls back; in the
+    # post-upgrade phase the control plane is ALREADY on the new version.
+    if echo "$err" | grep -qi 'phase post-upgrade'; then
+        state="The control plane was already upgraded; only kubeadm's final post-upgrade step failed, so a retry finishes the job."
+    else
+        state="kubeadm rolled the control plane back, so the cluster is still running on its previous version."
+    fi
+
+    if echo "$err" | grep -qiE 'kubelet env file|kubeadm-flags\.env|no flags found'; then
+        echo "KUBELET_ENV_FILE|kubeadm could not read /var/lib/kubelet/kubeadm-flags.env (it has no kubelet flags left — newer Kubernetes removed the only flag it had). ${state}|Retry the upgrade — KubeEZ repairs this file automatically before running kubeadm."
+    elif echo "$err" | grep -qiE 'ErrImagePull|ImagePullBackOff|failed to pull image|pull access denied'; then
+        echo "IMAGE_PULL_FAILED|A new control-plane image could not be downloaded. ${state}|Check internet/DNS access to registry.k8s.io and free disk space, then retry."
+    elif echo "$err" | grep -qiE 'etcd.*(deadline|timed out|not healthy)|(deadline|timed out).*etcd'; then
+        echo "ETCD_UPGRADE_TIMEOUT|The new etcd did not become healthy in time. ${state}|Usually a slow disk or a stale sandbox image. Check the etcd container on the master ('crictl ps -a --name etcd', then 'crictl logs <id>'), then retry."
+    elif echo "$err" | grep -qiE 'context deadline exceeded|timed out waiting for the condition|static Pod hash|did not change after'; then
+        echo "CONTROL_PLANE_TIMEOUT|A control-plane component did not become healthy in time after the upgrade. ${state}|Check the component logs shown above (crictl ps -a / crictl logs). Slow nodes usually succeed on retry because images are now cached."
+    elif echo "$err" | grep -qiE 'connection refused.*6443|6443.*connection refused|unable to connect to the server'; then
         echo "API_SERVER_DOWN|kubeadm could not reach the API server on port 6443.|Make sure the kube-apiserver container is running ('crictl ps --name kube-apiserver') and port 6443 is free, then retry."
-    elif echo "$out" | grep -qiE '\[preflight\].*\[ERROR|\[ERROR '; then
+    elif echo "$err" | grep -qiE '\[ERROR '; then
         echo "KUBEADM_PREFLIGHT|kubeadm preflight check failed: ${last_err}|Fix the reported item on the node, then retry."
-    elif echo "$out" | grep -qiE 'version skew|is not supported|Specified version to upgrade to'; then
+    elif echo "$err" | grep -qiE 'version skew|is not supported|Specified version to upgrade to'; then
         echo "VERSION_SKEW|kubeadm refused this version jump: ${last_err}|Upgrade one minor version at a time, and make sure all nodes are on the same version first."
-    elif echo "$out" | grep -qiE 'certificate|x509'; then
+    elif echo "$err" | grep -qiE 'x509|certificate (has )?expired|certificate is not valid|certificate signed by unknown'; then
         echo "CERTIFICATE_ERROR|A certificate problem stopped the upgrade: ${last_err}|Check certificate expiry with 'kubeadm certs check-expiration' and renew if needed ('kubeadm certs renew all'), then retry."
     else
-        echo "KUBEADM_UPGRADE_FAILED|kubeadm upgrade failed: ${last_err:-see the log above}|Read the kubeadm output above for the exact cause, fix it, then retry."
+        echo "KUBEADM_UPGRADE_FAILED|kubeadm upgrade failed: ${last_err:-see the log above}. ${state}|Read the kubeadm output above for the exact cause, fix it, then retry."
+    fi
+}
+
+# kubeadm (1.35+) refuses to continue when kubeadm-flags.env contains no
+# flags ("no flags found in file"). That happens when the only flag in it was
+# --pod-infra-container-image, which newer Kubernetes removed. Drop removed
+# flags and, if nothing is left, pin --node-ip to the IP the node ALREADY uses
+# (read from the API), so kubelet behaviour does not change.
+KUBELET_ENV_FILE=/var/lib/kubelet/kubeadm-flags.env
+ensure_kubelet_env_flags() {
+    [ -f "$KUBELET_ENV_FILE" ] || return 0
+    sed -i 's/--pod-infra-container-image=[^" ]*//g' "$KUBELET_ENV_FILE" 2>/dev/null || true
+    local args
+    args=$(grep -E '^KUBELET_KUBEADM_ARGS=' "$KUBELET_ENV_FILE" 2>/dev/null | head -1 \
+        | sed -E 's/^KUBELET_KUBEADM_ARGS=//; s/^"//; s/"[[:space:]]*$//' | xargs 2>/dev/null)
+    [ -n "$args" ] && return 0
+
+    local cfg="" node_ip="" ip local_ips
+    [ -f "$ADMIN_KUBECONFIG" ] && cfg="$ADMIN_KUBECONFIG"
+    [ -z "$cfg" ] && [ -f /etc/kubernetes/kubelet.conf ] && cfg=/etc/kubernetes/kubelet.conf
+    if [ -n "$cfg" ]; then
+        # The node's registered InternalIP that is also a local address
+        local_ips=" $(hostname -I 2>/dev/null) "
+        for ip in $(kubectl --kubeconfig="$cfg" get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{" "}{end}' 2>/dev/null); do
+            case "$local_ips" in *" $ip "*) node_ip="$ip"; break;; esac
+        done
+    fi
+    # Fallback: the source IP of the default route (kubelet's own default)
+    [ -z "$node_ip" ] && node_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+
+    if [ -n "$node_ip" ]; then
+        cp "$KUBELET_ENV_FILE" "${KUBELET_ENV_FILE}.kubeez-bak" 2>/dev/null || true
+        echo "KUBELET_KUBEADM_ARGS=\"--node-ip=${node_ip}\"" > "$KUBELET_ENV_FILE"
+        log "Repaired ${KUBELET_ENV_FILE}: it had no flags left — set --node-ip=${node_ip} (the IP this node already uses)."
+    else
+        fail "KUBELET_ENV_FILE" "${KUBELET_ENV_FILE} has no kubelet flags and this node's IP could not be detected." "Write it manually as KUBELET_KUBEADM_ARGS=\"--node-ip=<this-node-ip>\" and retry."
     fi
 }
 
@@ -610,12 +658,17 @@ run_kubeadm_upgrade() {
 }
 
 STEP="kubeadm upgrade (control plane / node config)"
+ensure_kubelet_env_flags
 if ! run_kubeadm_upgrade; then
     DIAG=$(diagnose_kubeadm)
     CODE=$(echo "$DIAG" | cut -d'|' -f1)
     [ "$NODE_ROLE" = "master" ] && component_logs
     # Timeouts are usually transient (slow disk/first image use) — retry once.
-    if [ "$CODE" = "CONTROL_PLANE_TIMEOUT" ] || [ "$CODE" = "ETCD_UPGRADE_TIMEOUT" ] || [ "$CODE" = "API_SERVER_DOWN" ]; then
+    if [ "$CODE" = "KUBELET_ENV_FILE" ]; then
+        log "⚠️ kubelet env file problem — repairing it and retrying once..."
+        ensure_kubelet_env_flags
+        if run_kubeadm_upgrade; then DIAG=""; else DIAG=$(diagnose_kubeadm); fi
+    elif [ "$CODE" = "CONTROL_PLANE_TIMEOUT" ] || [ "$CODE" = "ETCD_UPGRADE_TIMEOUT" ] || [ "$CODE" = "API_SERVER_DOWN" ]; then
         log "⚠️ ${CODE} — waiting 30s for the control plane to settle, then retrying once..."
         systemctl restart kubelet 2>/dev/null || true
         sleep 30
@@ -651,10 +704,10 @@ fi
 
 # Strip kubelet flags removed in newer Kubernetes (v1.35 removed
 # --pod-infra-container-image; an old value makes kubelet crash-loop).
-if [ -f /var/lib/kubelet/kubeadm-flags.env ]; then
+if [ -f "$KUBELET_ENV_FILE" ]; then
     log "Cleaning obsolete kubelet flags (kubeadm-flags.env)..."
-    sed -i 's/--pod-infra-container-image=[^" ]*//g' /var/lib/kubelet/kubeadm-flags.env || true
-    sed -i 's/  */ /g' /var/lib/kubelet/kubeadm-flags.env || true
+    ensure_kubelet_env_flags
+    sed -i 's/  */ /g' "$KUBELET_ENV_FILE" || true
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
