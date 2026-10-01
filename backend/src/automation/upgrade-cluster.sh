@@ -36,6 +36,13 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# apt-get without the harmless "GDBus.Error ... packagekit.service is masked"
+# noise: apt's post-invoke hook pings PackageKit, which older KubeEZ installs
+# masked. Real apt errors still pass through; the exit code is apt-get's own.
+apt_get() {
+    apt-get "$@" 2> >(grep -vE 'UnitMasked|packagekit\.service is masked|org\.freedesktop\.PackageKit' >&2)
+}
+
 # fail <CODE> <reason> <fix> — print a clear explanation and stop.
 fail() {
     KUBEEZ_FAILED=1
@@ -399,7 +406,7 @@ APTEOF
     echo "deb [signed-by=$DIR_NAME/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VER_MAJOR_MINOR}/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
 
     # Update ONLY the Kubernetes list — a broken unrelated repo must not block us
-    if ! apt-get update -o Dir::Etc::sourcelist="sources.list.d/kubernetes.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"; then
+    if ! apt_get update -o Dir::Etc::sourcelist="sources.list.d/kubernetes.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"; then
         fail "REPO_UPDATE_FAILED" "apt could not read the Kubernetes v${VER_MAJOR_MINOR} repository." "Check internet/DNS on the node and that /etc/apt/sources.list.d/kubernetes.list is valid, then retry."
     fi
     if ! apt-cache madison kubeadm 2>/dev/null | grep -q " ${TARGET_VERSION}-"; then
@@ -466,7 +473,7 @@ if [ -n "$CONTAINERD_NEEDS_UPGRADE" ]; then
     log "Upgrading containerd ${CONTAINERD_VER} → 2.x (required by Kubernetes v${VER_MAJOR_MINOR})..."
     if [ "$PKG_MGR" = "apt" ]; then
         apt-get update -o Acquire::AllowInsecureRepositories=true >/dev/null 2>&1 || true
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confold" containerd.io \
+        DEBIAN_FRONTEND=noninteractive apt_get install -y -o Dpkg::Options::="--force-confold" containerd.io \
             || fail "CONTAINERD_UPGRADE_FAILED" "Could not upgrade containerd to 2.x (package containerd.io)." "Upgrade containerd manually to 2.x (Docker's containerd.io package), confirm 'containerd --version' shows 2.x, then retry."
     else
         $PKG_MGR install -y containerd.io --setopt=*.skip_if_unavailable=1 \
@@ -494,7 +501,7 @@ log "Upgrading kubeadm to ${TARGET_VERSION}..."
 if [ "$PKG_MGR" = "apt" ]; then
     apt-mark unhold kubeadm >/dev/null 2>&1 || true
     # --allow-downgrades handles recovery from a previously half-finished upgrade
-    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades --allow-change-held-packages kubeadm="${TARGET_VERSION}-*"; then
+    if ! DEBIAN_FRONTEND=noninteractive apt_get install -y --allow-downgrades --allow-change-held-packages kubeadm="${TARGET_VERSION}-*"; then
         fail "PKG_INSTALL_FAILED" "apt could not install kubeadm ${TARGET_VERSION}." "Look at the apt error above (often a dpkg lock or broken package). Run 'dpkg --configure -a' on the node, then retry."
     fi
     apt-mark hold kubeadm >/dev/null 2>&1 || true
@@ -707,7 +714,7 @@ progress 78 "Installing kubelet and kubectl"
 log "Upgrading kubelet and kubectl to ${TARGET_VERSION}..."
 if [ "$PKG_MGR" = "apt" ]; then
     apt-mark unhold kubelet kubectl >/dev/null 2>&1 || true
-    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades --allow-change-held-packages kubelet="${TARGET_VERSION}-*" kubectl="${TARGET_VERSION}-*"; then
+    if ! DEBIAN_FRONTEND=noninteractive apt_get install -y --allow-downgrades --allow-change-held-packages kubelet="${TARGET_VERSION}-*" kubectl="${TARGET_VERSION}-*"; then
         fail "PKG_INSTALL_FAILED" "apt could not install kubelet/kubectl ${TARGET_VERSION}. The control plane is already upgraded; only this node's kubelet is behind." "Run 'dpkg --configure -a' on the node, then retry — the retry will finish this node."
     fi
     apt-mark hold kubelet kubectl >/dev/null 2>&1 || true

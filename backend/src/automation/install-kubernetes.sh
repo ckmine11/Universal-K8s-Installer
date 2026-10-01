@@ -20,9 +20,10 @@ DNSEOF
 fi
 
 # Release the yum lock on RHEL/CentOS: PackageKit (background updater) grabs
-# /var/run/yum.pid on boot and stalls every yum call for minutes. Harmless on
-# systems without it.
-if command -v systemctl &>/dev/null; then
+# /var/run/yum.pid on boot and stalls every yum call for minutes. yum/dnf
+# systems ONLY — on Ubuntu/Debian a masked PackageKit makes apt's post-invoke
+# hook print "GDBus.Error ... UnitMasked" after every apt/dpkg run.
+if command -v systemctl &>/dev/null && ! command -v apt-get &>/dev/null; then
     systemctl stop packagekit 2>/dev/null || true
     systemctl mask packagekit 2>/dev/null || true
     pkill -9 -f PackageKit 2>/dev/null || true
