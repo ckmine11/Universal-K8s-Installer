@@ -292,9 +292,13 @@ router.post('/:id/retry', requireAuth, requirePermission('cluster:create'), asyn
         const oldInstallation = loadOwnedInstallation(req, res, req.params.id)
         if (!oldInstallation) return
 
-        // Check license limits
-        const newClustersCount = oldInstallation.mode === 'scale' ? 0 : 1
-        const newNodesCount = (oldInstallation.masterNodes?.length || 0) + (oldInstallation.workerNodes?.length || 0)
+        // Check license limits — only a fresh install adds a cluster, and only
+        // install/scale add nodes. Retrying an upgrade/add-on/resume adds nothing.
+        const mode = oldInstallation.mode || 'install'
+        const newClustersCount = mode === 'install' ? 1 : 0
+        const newNodesCount = (mode === 'install' || mode === 'scale')
+            ? (oldInstallation.masterNodes?.length || 0) + (oldInstallation.workerNodes?.length || 0)
+            : 0
 
         const enforcement = await licenseService.checkEnforcementLimit(
             req.user.id,

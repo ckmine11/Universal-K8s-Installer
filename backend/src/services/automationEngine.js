@@ -12,23 +12,27 @@ class AgentSSHProxy {
         this.agentId = agentId
         this.nodeConfig = nodeConfig
     }
-    
+
     async connect() { return true; } // Agent manages connection lazily
 
     async execCommand(command, config = {}) {
         try {
-            // 10-min relay timeout — cluster/addon operations (kubectl rollout
-            // status, image pulls) can run for several minutes via the tunnel.
-            const result = await agentService.relaySSH(this.agentId, this.nodeConfig, command, 600000)
-            
+            // Default 10-min relay timeout — cluster/addon operations (kubectl
+            // rollout status, image pulls) can run for several minutes via the
+            // tunnel. Long scripts (upgrades) pass a bigger config.timeoutMs.
+            const result = await agentService.relaySSH(this.agentId, this.nodeConfig, command, config.timeoutMs || 600000)
+
             // Handle output callbacks if provided
             if (config.onStdout && result.stdout) config.onStdout(Buffer.from(result.stdout))
             if (config.onStderr && result.stderr) config.onStderr(Buffer.from(result.stderr))
-            
+
             return { code: result.exitCode, stdout: result.stdout, stderr: result.stderr }
         } catch (e) {
-            if (config.onStderr) config.onStderr(Buffer.from(e.message))
-            return { code: 1, stdout: '', stderr: e.message }
+            // A failed remote command still has output (incl. the script's
+            // KUBEEZ_FAIL reason) — stream and return it instead of dropping it.
+            if (config.onStdout && e.stdout) config.onStdout(Buffer.from(e.stdout))
+            if (config.onStderr) config.onStderr(Buffer.from(e.stderr || e.message))
+            return { code: e.exitCode || 1, stdout: e.stdout || '', stderr: e.stderr || e.message }
         }
     }
 
@@ -36,7 +40,21 @@ class AgentSSHProxy {
 }
 
 class AutomationEngine {
-    async executeScript(ssh, scriptPath, args = [], onLog) {
+    // Scripts report failures as "KUBEEZ_FAIL|CODE|reason|fix" — the last one wins.
+    parseScriptFailure(output) {
+        const lines = String(output || '').split('\n').filter(l => l.includes('KUBEEZ_FAIL|'))
+        if (!lines.length) return null
+        const last = lines[lines.length - 1]
+        const [, code, reason, fix] = last.slice(last.indexOf('KUBEEZ_FAIL|')).split('|')
+        return {
+            reason: (code || 'SCRIPT_FAILED').trim(),
+            message: (reason || 'The script stopped with an error.').trim(),
+            suggestedFix: (fix || 'Check the log above, then retry.').trim(),
+            fixAction: 'retry_step'
+        }
+    }
+
+    async executeScript(ssh, scriptPath, args = [], onLog, options = {}) {
         let remotePath
         try {
             // Read script content
@@ -60,16 +78,18 @@ class AutomationEngine {
             }).map(arg => `'${arg}'`).join(' ')
 
             const result = await ssh.execCommand(`sudo bash ${remotePath} ${safeArgs}`, {
+                timeoutMs: options.timeoutMs,
                 onStdout: (chunk) => {
                     const lines = chunk.toString('utf8').split('\n')
                     lines.forEach(line => {
-                        if (line.trim()) onLog('info', line)
+                        // Machine-readable reason line → shown on the failure screen, not in the log
+                        if (line.trim() && !line.includes('KUBEEZ_FAIL|')) onLog('info', line)
                     })
                 },
                 onStderr: (chunk) => {
                     const lines = chunk.toString('utf8').split('\n')
                     lines.forEach(line => {
-                        if (line.trim()) {
+                        if (line.trim() && !line.includes('KUBEEZ_FAIL|')) {
                             // Filter warnings vs errors
                             if (line.includes('warning') || line.includes('Error') || line.includes('fail')) {
                                 onLog('warning', line)
@@ -82,8 +102,16 @@ class AutomationEngine {
             })
 
             if (result.code !== 0) {
-                // INTELLIGENT ERROR ANALYSIS
-                const combinedOutput = (result.stderr + ' ' + result.stdout).trim()
+                const combinedOutput = ((result.stderr || '') + '\n' + (result.stdout || '')).trim()
+                // Prefer the script's own explanation (exact reason + fix)
+                const structured = this.parseScriptFailure(combinedOutput)
+                if (structured) {
+                    const error = new Error(structured.message)
+                    error.diagnosis = structured
+                    error.rawOutput = combinedOutput
+                    throw error
+                }
+                // INTELLIGENT ERROR ANALYSIS (scripts without structured output)
                 const error = new Error(combinedOutput || 'Unknown script error')
                 error.diagnosis = this.analyzeError(combinedOutput)
                 throw error
@@ -104,7 +132,7 @@ class AutomationEngine {
     analyzeError(output) {
         const errorLog = output.toLowerCase()
 
-        if (errorLog.includes('could not get lock') || 
+        if (errorLog.includes('could not get lock') ||
             errorLog.includes('resource temporarily unavailable') ||
             errorLog.includes('waiting for cache lock') ||
             errorLog.includes('dpkg: error: dpkg frontend is locked') ||
@@ -154,7 +182,7 @@ class AutomationEngine {
             }
         }
 
-        if (errorLog.includes('port 6443 is already in use') || 
+        if (errorLog.includes('port 6443 is already in use') ||
             errorLog.includes('address already in use') ||
             errorLog.includes('bind: address already in use')) {
             return {
@@ -165,7 +193,7 @@ class AutomationEngine {
             }
         }
 
-        if (errorLog.includes('connection timed out') || 
+        if (errorLog.includes('connection timed out') ||
             errorLog.includes('connection refused') ||
             errorLog.includes('no route to host') ||
             errorLog.includes('network is unreachable')) {
@@ -177,8 +205,8 @@ class AutomationEngine {
             }
         }
 
-        if (errorLog.includes('could not resolve host') || 
-            errorLog.includes('curl#6') || 
+        if (errorLog.includes('could not resolve host') ||
+            errorLog.includes('curl#6') ||
             errorLog.includes('name or service not known') ||
             errorLog.includes('temporary failure in name resolution') ||
             errorLog.includes('could not resolve dns')) {
@@ -295,7 +323,7 @@ class AutomationEngine {
                 console.log(`[AutomationEngine] Routing SSH to ${node.ip} via Gateway Agent ${gatewayAgent.agentId}`)
                 const proxy = new AgentSSHProxy(gatewayAgent.agentId, node)
                 await proxy.connect()
-                
+
                 if (node.username !== 'root') {
                     await this.ensurePasswordlessSudo(proxy, node)
                 }
@@ -403,7 +431,7 @@ class AutomationEngine {
         try {
             onLog('info', 'Starting deployment initialization...')
             onProgress(1, 'Initializing...')
-            
+
             // Inject ownerId + orgId into nodes for Gateway Agent routing
             if (installation.ownerId) {
                 installation.masterNodes.forEach(n => {
@@ -514,7 +542,7 @@ class AutomationEngine {
                         echo "# KubeEZ Managed Start" >> /etc/hosts
                         echo "${hostsEntries}" >> /etc/hosts
                         echo "# KubeEZ Managed End" >> /etc/hosts
-                        
+
                         # Persist kernel modules across reboots
                         echo -e "overlay\nbr_netfilter" > /etc/modules-load.d/k8s.conf
                         modprobe overlay && modprobe br_netfilter
@@ -522,7 +550,7 @@ class AutomationEngine {
                         # Set date from Master
                         date "${masterTime}" || true
                         hwclock -w || true
-                        
+
                         # SELinux Hardening (Permissive)
                         [ -f /etc/sysconfig/selinux ] && sed -i "s/^SELINUX=enforcing/SELINUX=permissive/" /etc/sysconfig/selinux || true
                         [ -f /etc/selinux/config ] && sed -i "s/^SELINUX=enforcing/SELINUX=permissive/" /etc/selinux/config || true
@@ -1012,7 +1040,7 @@ class AutomationEngine {
                     // Usually better to throw so user knows, but for addons, partial success might be better.
                     // For now, let's allow it to propagate if critical, or maybe log and verify?
                     // automationEngine install method catches errors. So if we throw, it stops.
-                    // Given user wants "everything installable", stopping is safer to debug. 
+                    // Given user wants "everything installable", stopping is safer to debug.
                     throw err
                 }
             }
@@ -1094,40 +1122,51 @@ class AutomationEngine {
             const scriptPath = join(__dirname, '../automation/upgrade-cluster.sh')
 
             // VALIDATION: Strict Version Path Check
-            this.validateUpgradePath(cluster.k8sVersion, targetVersion)
+            try {
+                this.validateUpgradePath(cluster.k8sVersion, targetVersion)
+            } catch (err) {
+                err.diagnosis = {
+                    reason: 'INVALID_UPGRADE_PATH',
+                    message: err.message,
+                    suggestedFix: 'Upgrade one minor version at a time (e.g. 1.34 → 1.35 → 1.36).',
+                    fixAction: 'retry_step'
+                }
+                throw err
+            }
 
             const allNodes = [
                 ...cluster.masterNodes.map(n => ({ ...n, role: 'master' })),
                 ...(cluster.workerNodes || []).map(n => ({ ...n, role: 'worker' }))
             ]
 
-            // ── OS / kernel compatibility preflight (BEFORE touching anything) ──
-            // k8s 1.35+ needs a 5.x kernel + cgroups v2. On old kernels (3.x, e.g.
-            // CentOS 7) the etcd/control-plane upgrade fails. We detect this up
-            // front over SSH and refuse cleanly, so the cluster is never modified.
-            const targetMinor = parseInt(String(targetVersion).split('.')[1]) || 0
-            if (targetMinor >= 35) {
-                onLog('info', '🔎 Checking node OS/kernel compatibility...')
+            // ── Preflight on EVERY node before touching ANY node ──────────────────
+            // Runs the upgrade script in read-only "check" mode (kernel, cgroups
+            // v2, containerd, disk, repo/registry reachability, version path).
+            // A blocker on any node stops here with an exact reason — so we never
+            // end up with a half-upgraded cluster.
+            onLog('info', `🔎 Preflight: checking all ${allNodes.length} node(s) for Kubernetes v${targetVersion}...`)
+            onProgress(2, 'Preflight checks on all nodes...')
+            for (let i = 0; i < allNodes.length; i++) {
+                const node = allNodes[i]
+                const isFirstMaster = node.role === 'master' && i === 0
+                const ssh = await this.connectSSH(node)
                 try {
-                    const probe = await this.connectSSH(allNodes[0])
-                    const kr = await probe.execCommand('uname -r')
-                    probe.dispose?.()
-                    const kernelStr = (kr.stdout || '').trim()
-                    const kernelMajor = parseInt(kernelStr.split('.')[0]) || 0
-                    if (kernelMajor > 0 && kernelMajor < 4) {
-                        const msg = `Kubernetes v${targetVersion} is not supported on this node's kernel (${kernelStr}). ` +
-                            `v1.35+ requires a 5.x kernel with cgroups v2 (e.g. Rocky/AlmaLinux 9 or Ubuntu 22.04+). ` +
-                            `The highest version supported on this OS (CentOS 7 / RHEL 7 family) is v1.34. ` +
-                            `Your cluster was NOT modified and is still healthy — please choose v1.34 or migrate the OS.`
-                        onLog('error', `⛔ ${msg}`)
-                        onError(new Error(msg))
-                        return
+                    onLog('info', `Preflight on ${node.ip} (${node.role})...`)
+                    await this.executeScript(ssh, scriptPath, [targetVersion, node.role, isFirstMaster ? 'true' : 'false', 'check'], onLog)
+                } catch (err) {
+                    const e = new Error(`Preflight failed on ${node.ip}: ${err.message}`)
+                    e.diagnosis = {
+                        reason: err.diagnosis?.reason || 'PREFLIGHT_FAILED',
+                        message: `[${node.ip}] ${err.diagnosis?.reason ? err.diagnosis.message : err.message.slice(0, 500)} Nothing was changed — the cluster is still on v${cluster.k8sVersion}.`,
+                        suggestedFix: err.diagnosis?.suggestedFix || 'Check the log above, fix the node, then retry.',
+                        fixAction: 'retry_step'
                     }
-                    onLog('info', `✓ Kernel ${kernelStr} is compatible.`)
-                } catch (e) {
-                    onLog('warning', `Could not probe kernel version (${e.message}); proceeding.`)
+                    throw e
+                } finally {
+                    ssh.dispose?.()
                 }
             }
+            onLog('success', '✓ All nodes passed preflight — starting the upgrade.')
 
             let firstMasterUpgraded = false
 
@@ -1149,8 +1188,11 @@ class AutomationEngine {
                     const args = [targetVersion, node.role, isFirstMaster ? 'true' : 'false']
 
                     onLog('info', `Step: Upgrading node components...`)
+                    // Long-running: apt/yum + image pulls + kubeadm (with one internal
+                    // retry) + waiting for Ready can exceed the default relay timeout.
+                    const scriptOpts = { timeoutMs: 45 * 60 * 1000 }
                     try {
-                        await this.executeScript(ssh, scriptPath, args, onLog)
+                        await this.executeScript(ssh, scriptPath, args, onLog, scriptOpts)
                     } catch (err) {
                         // Auto-heal: if the failure is a broken/EOL OS repo, fix it and retry once
                         const diag = err.diagnosis?.fixAction
@@ -1169,7 +1211,7 @@ class AutomationEngine {
                         }
                         onLog('info', `Retrying upgrade on ${node.ip}...`)
                         // Re-running the script re-runs its built-in RPM DB recovery first
-                        await this.executeScript(ssh, scriptPath, args, onLog)
+                        await this.executeScript(ssh, scriptPath, args, onLog, scriptOpts)
                     }
 
                     if (isFirstMaster) firstMasterUpgraded = true
@@ -1178,7 +1220,17 @@ class AutomationEngine {
 
                 } catch (err) {
                     onLog('error', `❌ Upgrade failed on node ${node.ip}: ${err.message}`)
-                    throw new Error(`Critical Upgrade Failure on ${node.ip}: ${err.message}`)
+                    const e = new Error(`Upgrade failed on ${node.ip}: ${err.message}`)
+                    // Keep the diagnosis so the failure screen shows reason + fix
+                    e.diagnosis = err.diagnosis && err.diagnosis.reason !== 'Unknown execution error'
+                        ? { ...err.diagnosis, message: `[${node.ip} · ${node.role}] ${err.diagnosis.message}` }
+                        : {
+                            reason: 'UPGRADE_FAILED',
+                            message: `[${node.ip} · ${node.role}] ${String(err.message).slice(-500)}`,
+                            suggestedFix: err.diagnosis?.suggestedFix || 'Check the log above for the exact error, fix it on the node, then retry.',
+                            fixAction: 'retry_step'
+                        }
+                    throw e
                 } finally {
                     ssh.dispose()
                 }

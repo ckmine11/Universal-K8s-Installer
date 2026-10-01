@@ -284,6 +284,7 @@ class InstallationManager {
         if (installation) {
             installation.status  = 'failed'
             installation.error   = error.message
+            installation.diagnosis = error.diagnosis   // reason + fix, re-shown after a page refresh
             installation.failedAt = new Date().toISOString()
 
             // Persist to disk so resume works after server restart (fire-and-forget)

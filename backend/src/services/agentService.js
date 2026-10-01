@@ -285,6 +285,7 @@ class AgentService {
             if (result.exitCode !== 0) {
                 const err = new Error(`Remote command failed: ${result.stderr}`)
                 err.stderr = result.stderr
+                err.stdout = result.stdout   // keeps a script's own failure reason
                 err.exitCode = result.exitCode
                 pending.reject(err)
             } else {

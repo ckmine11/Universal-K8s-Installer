@@ -47,11 +47,14 @@ class ClusterStore {
             const data = await fs.promises.readFile(CLUSTERS_FILE, 'utf8')
             const clusters = JSON.parse(data)
 
-            // Decrypt sensitive data on load
+            // Decrypt sensitive data on load. Every node also carries its
+            // cluster's ownerId/orgId so SSH (upgrade, etcd, health, add-ons…)
+            // routes through the tenant's Gateway Agent when one is online.
+            const tag = (c) => (n) => ({ ...n, ownerId: n.ownerId || c.ownerId, orgId: n.orgId || c.orgId })
             return clusters.map(c => ({
                 ...c,
-                masterNodes: this._decryptNodes(c.masterNodes),
-                workerNodes: this._decryptNodes(c.workerNodes)
+                masterNodes: this._decryptNodes(c.masterNodes).map(tag(c)),
+                workerNodes: this._decryptNodes(c.workerNodes).map(tag(c))
             }))
         } catch (error) {
             console.error('Error reading clusters:', error)

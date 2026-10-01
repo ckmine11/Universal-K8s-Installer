@@ -144,9 +144,12 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             apiFetch(`/api/clusters/${installationId}/status`)
                 .then(res => res.json())
                 .then(data => {
-                    if (data && !data.error) {
+                    // A failed installation carries an `error` field too — key off `status`
+                    if (data && data.status) {
                         setClusterInfo(prev => ({ ...prev, ...data }))
-                        if (data.status) setStatus(data.status)
+                        setStatus(data.status)
+                        // After a refresh, show the failure reason again
+                        if (data.status === 'failed' && data.diagnosis) setErrorState(data.diagnosis)
                         // Track this installation globally
                         trackInstallation({
                             id: installationId,
@@ -465,7 +468,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                     <Activity className="w-8 h-8 text-red-500" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-black text-white">Installation Halted</h2>
+                                    <h2 className="text-2xl font-black text-white">{clusterInfo?.mode === 'upgrade' ? 'Upgrade Halted' : 'Installation Halted'}</h2>
                                     <p className="text-red-400 font-medium">Error Code: {errorState.reason || 'UNKNOWN_ERROR'}</p>
                                 </div>
                             </div>
