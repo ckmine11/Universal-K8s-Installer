@@ -25,6 +25,13 @@ STEP="initialization"
 KUBEEZ_FAILED=""
 ADMIN_KUBECONFIG=/etc/kubernetes/admin.conf
 
+# Stage progress for the UI (0-100 within THIS node). The backend maps it
+# onto the overall bar; the line itself is hidden from the log.
+progress() {
+    [ "$RUN_MODE" = "check" ] && return 0
+    echo "KUBEEZ_PROGRESS|$1|$2"
+}
+
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
@@ -188,6 +195,7 @@ else
 fi
 
 log "✅ Preflight passed — node is compatible with Kubernetes v${TARGET_VERSION}."
+progress 5 "Preflight passed"
 if [ "$RUN_MODE" = "check" ]; then
     exit 0
 fi
@@ -197,6 +205,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
     STEP="etcd safety snapshot"
+    progress 8 "Taking etcd safety snapshot"
     log "🛟 Taking etcd snapshot before upgrade (safety backup)..."
     BK_DIR="/var/lib/etcd-backup"
     mkdir -p "$BK_DIR"
@@ -237,6 +246,7 @@ fi
 # 3. OS repositories + Kubernetes repo for the target minor
 # ══════════════════════════════════════════════════════════════════════════════
 STEP="preparing package repositories"
+progress 15 "Preparing package repositories"
 log "Detected Package Manager: $PKG_MGR"
 
 # ── Proactive OS repo repair (runs BEFORE any yum operation) ─────────────────
@@ -452,6 +462,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 if [ -n "$CONTAINERD_NEEDS_UPGRADE" ]; then
     STEP="upgrading containerd to 2.x"
+    progress 25 "Upgrading containerd to 2.x"
     log "Upgrading containerd ${CONTAINERD_VER} → 2.x (required by Kubernetes v${VER_MAJOR_MINOR})..."
     if [ "$PKG_MGR" = "apt" ]; then
         apt-get update -o Acquire::AllowInsecureRepositories=true >/dev/null 2>&1 || true
@@ -478,6 +489,7 @@ fi
 # 4. Upgrade kubeadm
 # ══════════════════════════════════════════════════════════════════════════════
 STEP="installing kubeadm ${TARGET_VERSION}"
+progress 30 "Installing kubeadm"
 log "Upgrading kubeadm to ${TARGET_VERSION}..."
 if [ "$PKG_MGR" = "apt" ]; then
     apt-mark unhold kubeadm >/dev/null 2>&1 || true
@@ -506,6 +518,7 @@ log "kubeadm upgraded to: $KUBEADM_VER"
 # ══════════════════════════════════════════════════════════════════════════════
 if [ "$NODE_ROLE" = "master" ]; then
     STEP="downloading control-plane images"
+    progress 40 "Downloading control-plane images"
     # 'kubeadm upgrade apply' waits a fixed time for each new static pod. If the
     # image must be downloaded during that window the upgrade times out — so
     # pull everything first.
@@ -658,6 +671,7 @@ run_kubeadm_upgrade() {
 }
 
 STEP="kubeadm upgrade (control plane / node config)"
+progress 55 "Running kubeadm upgrade (this is the longest step)"
 ensure_kubelet_env_flags
 if ! run_kubeadm_upgrade; then
     DIAG=$(diagnose_kubeadm)
@@ -689,6 +703,7 @@ log "✓ kubeadm upgrade finished."
 # 7. Upgrade kubelet + kubectl
 # ══════════════════════════════════════════════════════════════════════════════
 STEP="installing kubelet/kubectl ${TARGET_VERSION}"
+progress 78 "Installing kubelet and kubectl"
 log "Upgrading kubelet and kubectl to ${TARGET_VERSION}..."
 if [ "$PKG_MGR" = "apt" ]; then
     apt-mark unhold kubelet kubectl >/dev/null 2>&1 || true
@@ -714,6 +729,7 @@ fi
 # 8. Restart runtime + kubelet, and make sure kubelet actually stays up
 # ══════════════════════════════════════════════════════════════════════════════
 STEP="restarting kubelet"
+progress 85 "Restarting kubelet"
 log "Restarting container runtime + kubelet..."
 systemctl daemon-reload
 systemctl restart containerd 2>/dev/null || systemctl restart docker 2>/dev/null || true
@@ -747,6 +763,7 @@ log "✓ kubelet is running."
 # 9. Verify the node reports Ready (self-heal once if not)
 # ══════════════════════════════════════════════════════════════════════════════
 STEP="waiting for the node to become Ready"
+progress 92 "Waiting for the node to become Ready"
 NODE_NAME=$(hostname | tr '[:upper:]' '[:lower:]')
 KUBECFG=""
 [ -f "$ADMIN_KUBECONFIG" ] && KUBECFG="$ADMIN_KUBECONFIG"
@@ -781,4 +798,5 @@ fi
 STEP="done"
 log "========================================="
 log "Upgrade Complete! Node is now running v${TARGET_VERSION}"
+progress 100 "Node upgraded"
 log "========================================="

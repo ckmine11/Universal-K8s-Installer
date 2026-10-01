@@ -148,6 +148,9 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                     if (data && data.status) {
                         setClusterInfo(prev => ({ ...prev, ...data }))
                         setStatus(data.status)
+                        // Restore the bar immediately after a refresh (don't wait for the socket)
+                        if (typeof data.progress === 'number') setProgress(data.status === 'completed' ? 100 : data.progress)
+                        if (data.currentStep) setCurrentStep(data.currentStep)
                         // After a refresh, show the failure reason again
                         if (data.status === 'failed' && data.diagnosis) setErrorState(data.diagnosis)
                         // Track this installation globally
@@ -247,6 +250,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         progress: data.status === 'completed' ? 100 : undefined
                     })
                     if (data.status === 'completed') {
+                        setProgress(100)
                         setClusterInfo(data.clusterInfo)
                         toast({ title: 'Mission Accomplished', message: 'Infrastructure is now live and fully operational.', type: 'success' })
                     }

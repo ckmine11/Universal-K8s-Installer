@@ -77,29 +77,48 @@ class AutomationEngine {
                 return s
             }).map(arg => `'${arg}'`).join(' ')
 
+            // Machine-readable lines are consumed here, never shown in the log:
+            //   KUBEEZ_PROGRESS|<0-100>|<label>  → options.onStageProgress
+            //   KUBEEZ_FAIL|...                  → failure screen (parsed below)
+            const handleLine = (line, fromStderr) => {
+                if (!line.trim()) return
+                const p = line.indexOf('KUBEEZ_PROGRESS|')
+                if (p >= 0) {
+                    const [, pct, label] = line.slice(p).split('|')
+                    const n = parseInt(pct, 10)
+                    if (!isNaN(n) && options.onStageProgress) options.onStageProgress(Math.max(0, Math.min(100, n)), (label || '').trim())
+                    return
+                }
+                if (line.includes('KUBEEZ_FAIL|')) return
+                if (fromStderr && (line.includes('warning') || line.includes('Error') || line.includes('fail'))) {
+                    onLog('warning', line)
+                } else {
+                    onLog('info', line)
+                }
+            }
+            // Chunks can split a line in two — buffer until the newline arrives
+            const lineReader = (fromStderr) => {
+                let buf = ''
+                return {
+                    push: (chunk) => {
+                        buf += chunk.toString('utf8')
+                        const lines = buf.split('\n')
+                        buf = lines.pop()
+                        lines.forEach(l => handleLine(l.replace(/\r$/, ''), fromStderr))
+                    },
+                    flush: () => { if (buf) handleLine(buf.replace(/\r$/, ''), fromStderr); buf = '' }
+                }
+            }
+            const out = lineReader(false)
+            const errOut = lineReader(true)
+
             const result = await ssh.execCommand(`sudo bash ${remotePath} ${safeArgs}`, {
                 timeoutMs: options.timeoutMs,
-                onStdout: (chunk) => {
-                    const lines = chunk.toString('utf8').split('\n')
-                    lines.forEach(line => {
-                        // Machine-readable reason line → shown on the failure screen, not in the log
-                        if (line.trim() && !line.includes('KUBEEZ_FAIL|')) onLog('info', line)
-                    })
-                },
-                onStderr: (chunk) => {
-                    const lines = chunk.toString('utf8').split('\n')
-                    lines.forEach(line => {
-                        if (line.trim() && !line.includes('KUBEEZ_FAIL|')) {
-                            // Filter warnings vs errors
-                            if (line.includes('warning') || line.includes('Error') || line.includes('fail')) {
-                                onLog('warning', line)
-                            } else {
-                                onLog('info', line)
-                            }
-                        }
-                    })
-                }
+                onStdout: out.push,
+                onStderr: errOut.push
             })
+            out.flush()
+            errOut.flush()
 
             if (result.code !== 0) {
                 const combinedOutput = ((result.stderr || '') + '\n' + (result.stdout || '')).trim()
@@ -1144,13 +1163,26 @@ class AutomationEngine {
             // v2, containerd, disk, repo/registry reachability, version path).
             // A blocker on any node stops here with an exact reason — so we never
             // end up with a half-upgraded cluster.
+            // Overall progress bar: preflight = 0–5%, then each node gets an equal
+            // slice of 5–99% filled from the script's own stage markers. The bar
+            // only ever moves forward.
+            let lastPct = 0
+            const report = (pct, step) => {
+                const p = Math.min(99, Math.max(lastPct, Math.floor(pct)))
+                lastPct = p
+                onProgress(p, step)
+            }
+            const PREFLIGHT_END = 5
+            const nodeSpan = (99 - PREFLIGHT_END) / allNodes.length
+
             onLog('info', `🔎 Preflight: checking all ${allNodes.length} node(s) for Kubernetes v${targetVersion}...`)
-            onProgress(2, 'Preflight checks on all nodes...')
+            report(1, 'Preflight checks on all nodes...')
             for (let i = 0; i < allNodes.length; i++) {
                 const node = allNodes[i]
                 const isFirstMaster = node.role === 'master' && i === 0
                 const ssh = await this.connectSSH(node)
                 try {
+                    report(1 + ((PREFLIGHT_END - 1) * i) / allNodes.length, `Preflight check on ${node.ip} (${i + 1}/${allNodes.length})...`)
                     onLog('info', `Preflight on ${node.ip} (${node.role})...`)
                     await this.executeScript(ssh, scriptPath, [targetVersion, node.role, isFirstMaster ? 'true' : 'false', 'check'], onLog)
                 } catch (err) {
@@ -1167,14 +1199,15 @@ class AutomationEngine {
                 }
             }
             onLog('success', '✓ All nodes passed preflight — starting the upgrade.')
+            report(PREFLIGHT_END, 'Preflight passed — starting the upgrade...')
 
             let firstMasterUpgraded = false
 
             for (let i = 0; i < allNodes.length; i++) {
                 const node = allNodes[i]
-                // FIX: Actually update progress!
-                const percentage = Math.floor((i / allNodes.length) * 100)
-                onProgress(percentage, `Upgrading node ${node.ip} (${node.role})...`)
+                const nodeStart = PREFLIGHT_END + nodeSpan * i
+                const nodeLabel = `Node ${i + 1}/${allNodes.length} · ${node.ip} (${node.role})`
+                report(nodeStart, `${nodeLabel}: starting...`)
 
                 onLog('info', `--------------------------------------------------`)
                 onLog('info', `Processing Node: ${node.ip} (${node.role})`)
@@ -1190,7 +1223,11 @@ class AutomationEngine {
                     onLog('info', `Step: Upgrading node components...`)
                     // Long-running: apt/yum + image pulls + kubeadm (with one internal
                     // retry) + waiting for Ready can exceed the default relay timeout.
-                    const scriptOpts = { timeoutMs: 45 * 60 * 1000 }
+                    const scriptOpts = {
+                        timeoutMs: 45 * 60 * 1000,
+                        // Script stage (0-100 on this node) → this node's slice of the bar
+                        onStageProgress: (pct, label) => report(nodeStart + (nodeSpan * pct) / 100, `${nodeLabel}: ${label}`)
+                    }
                     try {
                         await this.executeScript(ssh, scriptPath, args, onLog, scriptOpts)
                     } catch (err) {
@@ -1217,6 +1254,7 @@ class AutomationEngine {
                     if (isFirstMaster) firstMasterUpgraded = true
 
                     onLog('success', `✓ Node ${node.ip} upgraded successfully`)
+                    report(nodeStart + nodeSpan, `${nodeLabel}: upgraded ✓`)
 
                 } catch (err) {
                     onLog('error', `❌ Upgrade failed on node ${node.ip}: ${err.message}`)
