@@ -23,7 +23,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
     const [restoreDone, setRestoreDone] = useState(false)
     const [notice, setNotice] = useState(null)
     const [locked, setLocked] = useState(false)     // true when plan doesn't include etcd backup
-    const [showInfo, setShowInfo] = useState(false)
+    const [showInfo, setShowInfo] = useState(true)  // shown by default; ⓘ button hides it
 
     const fetchBackups = async () => {
         setLoading(true); setError(null)
