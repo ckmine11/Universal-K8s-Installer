@@ -26,7 +26,8 @@ export default function Home({ onStartNew, onScaleExisting }) {
         dashboard: false,
         'cert-manager': false,
         longhorn: false,
-        argocd: false
+        argocd: false,
+        seaweedfs: false
     })
     const [installingAddons, setInstallingAddons] = useState(false)
 

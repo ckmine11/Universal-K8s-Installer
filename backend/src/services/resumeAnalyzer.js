@@ -145,7 +145,8 @@ class ResumeAnalyzer {
                     dashboard:  { ns: 'kubernetes-dashboard',   label: 'K8s Dashboard' },
                     certManager: { ns: 'cert-manager',          label: 'Cert-Manager' },
                     longhorn:   { ns: 'longhorn-system',        label: 'Longhorn Storage' },
-                    argocd:     { ns: 'argocd',                 label: 'ArgoCD' }
+                    argocd:     { ns: 'argocd',                 label: 'ArgoCD' },
+                    seaweedfs:  { ns: 'seaweedfs',              label: 'S3 Object Storage (SeaweedFS)' }
                 }
 
                 for (const [key, { ns, label }] of Object.entries(addonNsMap)) {

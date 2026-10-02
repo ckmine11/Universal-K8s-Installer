@@ -163,6 +163,24 @@ class AddonAccessService {
                 })
             }
 
+            // ── S3 Object Storage (SeaweedFS) ────────────────────────────────
+            const sw = await run(ssh, `${KB} get deploy seaweedfs -n seaweedfs --no-headers 2>/dev/null`)
+            if (sw.ok && sw.out) {
+                const port = await getNodePort(ssh, 'seaweedfs', 'seaweedfs-s3') || '30833'
+                const key = (k) => run(ssh, `${KB} -n seaweedfs get secret seaweedfs-s3 -o jsonpath='{.data.${k}}' 2>/dev/null | base64 -d 2>/dev/null`)
+                const [ak, sk] = await Promise.all([key('accessKey'), key('secretKey')])
+                addons.push({
+                    key: 'seaweedfs',
+                    name: 'S3 Object Storage (SeaweedFS)',
+                    icon: 'database',
+                    installed: true,
+                    hasUI: false,
+                    url: `http://${nodeIp}:${port}`,
+                    auth: { username: ak.out || null, password: sk.out || null, usernameLabel: 'Access key', passwordLabel: 'Secret key' },
+                    note: 'S3 API endpoint (region us-east-1, path-style) with a ready "backups" bucket. Use it from apps or as the offsite backup target of OTHER clusters — not of this cluster itself.'
+                })
+            }
+
             return {
                 clusterId: cluster.id,
                 clusterName: cluster.clusterName,

@@ -10,8 +10,8 @@ import {
 
 const PROVIDERS = {
     aws: { name: 'AWS S3', icon: Cloud, desc: 'Amazon S3 in the region you choose' },
-    minio: { name: 'MinIO', icon: Server, desc: 'Your own MinIO server (on another machine)' },
-    other: { name: 'Other S3-compatible', icon: Boxes, desc: 'Cloudflare R2, Wasabi, Backblaze B2, E2E Networks…' }
+    minio: { name: 'MinIO', icon: Server, desc: 'An existing MinIO server (on another machine)' },
+    other: { name: 'Other S3-compatible', icon: Boxes, desc: 'SeaweedFS (KubeEZ add-on on another cluster), Cloudflare R2, Wasabi, Backblaze B2, E2E Networks…' }
 }
 
 const AWS_REGIONS = [

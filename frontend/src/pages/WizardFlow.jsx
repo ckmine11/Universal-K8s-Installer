@@ -57,7 +57,8 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
             dashboard: false,
             'cert-manager': false,
             longhorn: false,
-            argocd: false
+            argocd: false,
+            seaweedfs: false
         }
     })
 

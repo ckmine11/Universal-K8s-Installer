@@ -74,9 +74,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash tests/e2e/e2e.sh install ${{ matrix.distro }} ${{ matrix.version }}
 
-  # ── Offsite etcd backups to a real MinIO from a real node, ~8 min ─────────
+  # ── S3 add-on (SeaweedFS) + encrypted offsite etcd backups to it, ~8 min ──
   e2e-offsite:
-    name: Offsite backup to MinIO (real node)
+    name: S3 add-on + offsite backup (real node)
     needs: [checks]
     runs-on: ubuntu-24.04
     steps:

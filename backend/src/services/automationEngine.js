@@ -1032,6 +1032,7 @@ class AutomationEngine {
             if (addons.certManager || addons['cert-manager']) addonsToInstall.push({ type: 'script', script: 'addons/cert-manager.sh', label: 'Cert Manager' })
             if (addons.longhorn) addonsToInstall.push({ type: 'script', script: 'addons/longhorn.sh', label: 'Longhorn Storage' })
             if (addons.argocd) addonsToInstall.push({ type: 'script', script: 'addons/argocd.sh', label: 'ArgoCD' })
+            if (addons.seaweedfs) addonsToInstall.push({ type: 'script', script: 'addons/seaweedfs.sh', label: 'S3 Object Storage (SeaweedFS)' })
 
             if (addonsToInstall.length === 0) {
                 onLog('info', 'No valid add-ons selected to install.')

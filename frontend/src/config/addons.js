@@ -50,6 +50,16 @@ export const ADDONS_LIST = [
         tier: 'pro'
     },
     {
+        key: 'seaweedfs',
+        name: 'S3 Object Storage',
+        desc: 'SeaweedFS — S3-compatible storage for your apps and for offsite backups of OTHER clusters',
+        iconName: 'Database',
+        gradient: 'from-sky-500 via-cyan-500 to-teal-600',
+        badge: '✨ New',
+        badgeColor: 'text-sky-400 border-sky-500/30',
+        tier: 'pro'
+    },
+    {
         key: 'argocd',
         name: 'ArgoCD',
         desc: 'Declarative GitOps continuous delivery',

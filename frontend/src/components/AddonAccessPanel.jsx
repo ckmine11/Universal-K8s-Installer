@@ -168,7 +168,7 @@ export default function AddonAccessPanel({ clusterId }) {
                                     <div className="space-y-2 mb-3">
                                         {addon.auth.username && (
                                             <div>
-                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Username</label>
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">{addon.auth.usernameLabel || 'Username'}</label>
                                                 <div className="flex items-center gap-2">
                                                     <code className="flex-1 font-mono text-sm text-slate-200 bg-black/40 rounded-lg px-3 py-1.5 border border-white/5">{addon.auth.username}</code>
                                                     <CopyBtn text={addon.auth.username} />
@@ -177,7 +177,7 @@ export default function AddonAccessPanel({ clusterId }) {
                                         )}
                                         {addon.auth.password && (
                                             <div>
-                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Password</label>
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">{addon.auth.passwordLabel || 'Password'}</label>
                                                 <Secret value={addon.auth.password} />
                                             </div>
                                         )}

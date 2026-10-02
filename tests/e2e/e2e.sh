@@ -8,7 +8,7 @@
 #   e2e.sh install <distro> [k8s-version]   fresh single-node cluster (default 1.35.0)
 #   e2e.sh upgrade <master> <worker>...       1.35 cluster + workers, then real
 #                                             upgrades 1.35 → 1.36 → 1.37 on every node
-#   e2e.sh offsite [distro]                   offsite backups to a real MinIO (needs
+#   e2e.sh offsite [distro]                   S3 add-on (SeaweedFS) + offsite backups to it (needs
 #                                             Node + npm install in backend/)
 #   e2e.sh clean                              remove all e2e containers
 #
@@ -107,24 +107,21 @@ cmd_upgrade() {
     return 0
 }
 
-# Offsite backups: real MinIO + real node, checked with the backend's own
-# services (needs Node 18+ and `npm install` in backend/).
+# S3 Object Storage add-on (SeaweedFS) + encrypted offsite backups to it, on a
+# real node, checked with the backend's own services (needs Node 18+ and
+# `npm install` in backend/). No external storage container or image needed.
 cmd_offsite() {
-    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro" minio="$PREFIX-minio"
-    local secret='S3cr3t/with+chars=AndLong'   # AWS-style secret: / + = must work
-    docker rm -f "$minio" >/dev/null 2>&1
-    docker run -d --name "$minio" -e MINIO_ROOT_USER=kzadmin -e "MINIO_ROOT_PASSWORD=$secret" \
-        minio/minio server /data >/dev/null || { echo "could not start MinIO"; return 1; }
-    for _ in $(seq 1 30); do docker exec "$minio" sh -c "mc alias set l http://127.0.0.1:9000 kzadmin '$secret'" >/dev/null 2>&1 && break; sleep 1; done
-    docker exec "$minio" mc mb l/kubeez-backups >/dev/null || { echo "could not create the bucket"; return 1; }
-
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
     image "$distro"; start_node "$node" "$distro"
+    docker cp "$AUTOMATION/addons/seaweedfs.sh" "$node:/k/" >/dev/null
     docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
 
+    echo "== installing the S3 Object Storage add-on"
+    docker exec "$node" bash /k/seaweedfs.sh > /tmp/kz-seaweedfs.log 2>&1 \
+        || { tail -30 /tmp/kz-seaweedfs.log; return 1; }
+
     local rc
-    NODE_CONTAINER="$node" MINIO_CONTAINER="$minio" \
-    MINIO_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$minio")" \
-        node "$E2E/offsite-check.mjs"
+    NODE_CONTAINER="$node" node "$E2E/offsite-check.mjs"
     rc=$?
     [ -z "${KEEP:-}" ] && cmd_clean
     return $rc
