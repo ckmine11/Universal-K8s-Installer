@@ -1,5 +1,6 @@
 import { automationEngine } from './automationEngine.js'
 import { readFileSync } from 'fs'
+import { createHash } from 'crypto'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -11,11 +12,17 @@ const BK_DIR = '/var/lib/etcd-backup'
 // every upgrade — there is no scheduled/daily snapshot.
 export const ETCD_RETENTION_DAYS = 45
 
-// Node-side tool for manual snapshots + retention.
+// Node-side tools: snapshots + retention, and offsite (S3/MinIO) copies.
+const NODE_TOOLS = {
+    '/usr/local/sbin/kubeez-etcd-backup': 'etcd-backup-node.sh',
+    '/usr/local/sbin/kubeez-etcd-offsite': 'etcd-offsite-node.sh'
+}
 const NODE_SCRIPT = '/usr/local/sbin/kubeez-etcd-backup'
 const VERSION_FILE = '/etc/kubeez/etcd-backup.version'
-// Bump when the node script changes so existing nodes get updated.
-const TOOL_VERSION = `v1-r${ETCD_RETENTION_DAYS}`
+const readTool = (file) => readFileSync(join(__dirname, '../automation', file), 'utf8').replace(/\r\n/g, '\n')
+// Version = hash of the scripts + retention, so nodes update whenever they change.
+const TOOL_VERSION = `r${ETCD_RETENTION_DAYS}-` + createHash('sha256')
+    .update(Object.values(NODE_TOOLS).map(readTool).join('\0')).digest('hex').slice(0, 12)
 
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64')
 
@@ -50,15 +57,16 @@ class EtcdBackupService {
         const check = await run(ssh, `sudo cat ${VERSION_FILE} 2>/dev/null`)
         if (check.out.includes(TOOL_VERSION)) return { installed: false }
 
-        const script = readFileSync(join(__dirname, '../automation/etcd-backup-node.sh'), 'utf8').replace(/\r\n/g, '\n')
         const cmd = [
-            `echo ${b64(script)} | base64 -d | sudo tee ${NODE_SCRIPT} >/dev/null`,
-            `sudo chmod 0755 ${NODE_SCRIPT}`,
+            ...Object.entries(NODE_TOOLS).flatMap(([dest, file]) => [
+                `echo ${b64(readTool(file))} | base64 -d | sudo tee ${dest} >/dev/null`,
+                `sudo chmod 0755 ${dest}`
+            ]),
             `sudo mkdir -p /etc/kubeez`,
             `echo ${TOOL_VERSION} | sudo tee ${VERSION_FILE} >/dev/null`
         ].join(' && ')
         const r = await run(ssh, cmd)
-        if (!r.ok) throw new Error(`Could not install the etcd snapshot tool: ${r.err || r.out || 'unknown error'}`)
+        if (!r.ok) throw new Error(`Could not install the etcd backup tools: ${r.err || r.out || 'unknown error'}`)
         return { installed: true }
     }
 

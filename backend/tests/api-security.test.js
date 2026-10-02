@@ -31,7 +31,8 @@ before(async () => {
     // alice owns two clusters (one legacy record without orgId)
     fs.writeFileSync(path.join(srv.dataDir, 'clusters.json'), JSON.stringify([
         { id: 'c-alice', ownerId: alice.user.id, orgId: alice.user.orgId, clusterName: 'a', masterNodes: [{ ip: '10.255.255.1', username: 'root', password: 'pw' }], workerNodes: [], status: 'healthy' },
-        { id: 'c-legacy', ownerId: alice.user.id, clusterName: 'legacy', masterNodes: [{ ip: '10.255.255.2', username: 'root' }], workerNodes: [], status: 'failed' }
+        { id: 'c-legacy', ownerId: alice.user.id, clusterName: 'legacy', masterNodes: [{ ip: '10.255.255.2', username: 'root' }], workerNodes: [], status: 'failed' },
+        { id: 'c-root', ownerId: root.user.id, orgId: root.user.orgId, clusterName: 'r', masterNodes: [{ ip: '10.255.255.3', username: 'root' }], workerNodes: [], status: 'healthy' }
     ]))
 })
 after(() => srv?.stop())
@@ -115,6 +116,21 @@ test('workspace cluster quota counts org clusters (incl. legacy)', async () => {
 
 test('no free PRO upgrade without STRIPE_MOCK', async () => {
     assert.equal((await api('POST', '/api/stripe/create-checkout-session', alice.token, { planId: 'pro' })).status, 503)
+})
+
+test('offsite backup API: plan-gated, tenant-scoped, validated', async () => {
+    assert.equal((await api('GET', '/api/offsite', alice.token)).status, 402, 'Free plan cannot use offsite backups')
+    const view = await api('GET', '/api/offsite', root.token)
+    assert.equal(view.status, 200)
+    assert.equal(view.data.connected, false)
+    const good = { provider: 'minio', endpoint: 'http://minio.local:9000', bucket: 'kubeez-backups', accessKey: 'a', secretKey: 'b' }
+    assert.equal((await api('POST', '/api/offsite/test', root.token, good)).status, 400, 'clusterId required')
+    assert.equal((await api('POST', '/api/offsite/test', root.token, { ...good, clusterId: 'c-alice' })).status, 403, 'cannot test from another tenant cluster')
+    const bad = await api('PUT', '/api/offsite', root.token, { ...good, bucket: 'Bad_Bucket', clusterId: 'c-root' })
+    assert.equal(bad.status, 400)
+    assert.match(bad.data.error, /Bucket name/)
+    assert.equal((await api('POST', '/api/offsite/sync', root.token, { clusterId: 'c-root' })).status, 400, 'sync needs a connection')
+    assert.equal((await api('GET', '/api/offsite/recovery-key', root.token)).status, 404)
 })
 
 test('passwords never appear in request logs', async () => {

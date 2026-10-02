@@ -12,6 +12,8 @@ import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
 import { isPaidPlan } from '../config/planFeatures.js'
 import { canAccessResource } from '../utils/access.js'
+import { offsiteStore } from '../services/offsiteStore.js'
+import { offsiteService } from '../services/offsiteService.js'
 
 
 const router = express.Router()
@@ -394,6 +396,18 @@ router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
         if (!cluster) return
         if (!requireEtcdPlan(req, res)) return
         const result = await etcdBackupService.listBackups(cluster)
+        // Which snapshots also exist offsite (S3 / MinIO)?
+        const target = offsiteStore.getConnected(req.user.orgId)
+        if (target) {
+            const r = await offsiteService.list(cluster, target)
+            result.offsite = {
+                connected: true, provider: target.provider, bucket: target.bucket,
+                remote: r.ok ? r.remote : [], error: r.ok ? null : r.error,
+                lastSync: offsiteStore.publicView(req.user.orgId).lastSync?.[cluster.id] || null
+            }
+        } else {
+            result.offsite = { connected: false }
+        }
         res.json(result)
     } catch (error) {
         console.error('etcd list error:', error)
@@ -408,6 +422,13 @@ router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade
         if (!cluster) return
         if (!requireEtcdPlan(req, res)) return
         const result = await etcdBackupService.createBackup(cluster)
+        // Copy it offsite right away when S3 / MinIO is connected
+        const target = result.success && offsiteStore.getConnected(req.user.orgId)
+        if (target) {
+            const s = await offsiteService.sync(cluster, target)
+            offsiteStore.recordSync(req.user.orgId, cluster.id, s)
+            result.offsite = { uploaded: s.ok, error: s.ok ? null : s.error }
+        }
         if (result.success) res.json(result)
         else res.status(500).json(result)
     } catch (error) {

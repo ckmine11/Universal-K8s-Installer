@@ -74,6 +74,21 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash tests/e2e/e2e.sh install ${{ matrix.distro }} ${{ matrix.version }}
 
+  # ── Offsite etcd backups to a real MinIO from a real node, ~8 min ─────────
+  e2e-offsite:
+    name: Offsite backup to MinIO (real node)
+    needs: [checks]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend dependencies
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+      - run: bash tests/e2e/e2e.sh offsite ubuntu2204
+
   # ── Mixed-OS cluster + real upgrades 1.35 → 1.36 → 1.37, ~25 min ──────────
   e2e-upgrade:
     name: Multi-node upgrade (Ubuntu master + Rocky & Debian workers)

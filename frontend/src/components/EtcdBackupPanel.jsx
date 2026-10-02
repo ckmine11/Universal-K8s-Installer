@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
-import { apiFetch } from '../context/AuthContext'
+import { apiFetch, useAuth } from '../context/AuthContext'
+import { can } from '../config/permissions'
+import OffsiteBackup from './OffsiteBackup'
 import {
     Database, RefreshCw, Loader2, ShieldCheck, HardDriveDownload,
     RotateCcw, AlertTriangle, Clock, Zap, X, Lock, Info, CheckCircle2,
-    ChevronDown, Hand, Archive
+    ChevronDown, Hand, Archive, Cloud
 } from 'lucide-react'
 
 function fmtBytes(b) {
@@ -76,7 +78,11 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
         if (!list.some(b => b.filename === selected)) setSelected(list[0].filename)
     }, [data])
 
+    const { user } = useAuth()
     const selectedBackup = data?.backups?.find(b => b.filename === selected)
+    // Snapshots that also exist in S3 / MinIO (bundle name = <snapshot>.tar.gz.enc)
+    const offsiteNames = new Set((data?.offsite?.remote || []).map(n => n.replace(/\.tar\.gz\.enc$/, '.db')))
+    const isOffsite = (b) => offsiteNames.has(b.filename)
     const retentionDays = data?.retentionDays || 45
 
     const fetchBackups = async () => {
@@ -201,6 +207,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                             <p className="mt-2">
                                 Kept for <span className="text-white font-bold">{retentionDays} days</span>, then removed automatically —
                                 the newest snapshot is always kept. Stored on the control-plane at <code className="text-slate-300">/var/lib/etcd-backup</code>.
+                                {' '}Connect <span className="text-white font-bold">S3 / MinIO</span> under "Offsite Backup" below to also keep an encrypted copy outside the cluster.
                             </p>
                         </div>
                         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-slate-400 leading-relaxed">
@@ -293,7 +300,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                                             <optgroup key={g.label} label={g.label} className="bg-slate-900 text-slate-400">
                                                 {g.items.map(b => (
                                                     <option key={b.filename} value={b.filename} className="bg-slate-900 text-white">
-                                                        {fmtWhen(b.created)} — {typeOf(b).short} · {fmtBytes(b.size)}
+                                                        {fmtWhen(b.created)} — {typeOf(b).short} · {fmtBytes(b.size)}{isOffsite(b) ? ' · ☁ offsite' : ''}
                                                     </option>
                                                 ))}
                                             </optgroup>
@@ -317,6 +324,9 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                                                 {selectedBackup.filename === data.backups[0].filename && (
                                                     <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5">Latest</span>
                                                 )}
+                                                {data?.offsite?.connected && (isOffsite(selectedBackup)
+                                                    ? <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded px-1.5 py-0.5"><Cloud className="w-3 h-3" /> Stored offsite</span>
+                                                    : <span className="text-[10px] font-bold text-slate-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">Local only — not uploaded yet</span>)}
                                             </div>
                                             <div className="flex items-center gap-3 flex-wrap text-[11px] text-slate-400">
                                                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{fmtWhen(selectedBackup.created)}</span>
@@ -338,6 +348,14 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                             })()}
                         </>
                     )}
+
+                    <OffsiteBackup
+                        clusterId={clusterId}
+                        offsite={data?.offsite}
+                        canConfigure={can(user?.role, 'backup:manage')}
+                        canSync={canManage}
+                        onChanged={fetchBackups}
+                    />
                 </div>
             )}
 

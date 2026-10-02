@@ -274,6 +274,20 @@ class InstallationManager {
                 } catch (e) {
                     console.error('[InstallationManager] Failed to start auto-healing:', e.message)
                 }
+
+                // An upgrade took a pre-upgrade etcd snapshot — copy it offsite
+                // when the workspace has S3 / MinIO connected. Fire-and-forget.
+                if (installation.mode === 'upgrade') {
+                    ;(async () => {
+                        const { offsiteStore } = await import('./offsiteStore.js')
+                        const target = offsiteStore.getConnected(installation.orgId)
+                        if (!target) return
+                        const { offsiteService } = await import('./offsiteService.js')
+                        const r = await offsiteService.sync(finalCluster, target)
+                        offsiteStore.recordSync(installation.orgId, finalCluster.id, r)
+                        if (!r.ok) console.error(`[Offsite] Upload after upgrade failed for ${finalCluster.clusterName}: ${r.error}`)
+                    })().catch(e => console.error('[Offsite] Upload after upgrade failed:', e.message))
+                }
             }
         }
     }

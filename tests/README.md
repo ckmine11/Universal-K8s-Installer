@@ -8,7 +8,7 @@ Kubernetes / containerd / distro changes).
 |---|---|---|---|
 | **Backend** — `backend/tests/*.test.js` | Tenant isolation, RBAC, auth, agents, upgrade failure reasons, progress bar, config backups | `cd backend && npm install && npm test` | ~10 s |
 | **Upgrade scenarios** — `tests/upgrade-script/` | `upgrade-cluster.sh` stops with the right reason for every known failure (stubbed kubeadm/apt/…) | `bash tests/upgrade-script/scenarios.sh` | ~3 min |
-| **End-to-end** — `tests/e2e/` | The real install scripts build a working cluster on each distro; real upgrades 1.35 → 1.36 → 1.37 on a mixed-OS cluster | see below | 6–25 min |
+| **End-to-end** — `tests/e2e/` | The real install scripts build a working cluster on each distro; real upgrades 1.35 → 1.36 → 1.37 on a mixed-OS cluster; encrypted offsite backups to a real MinIO | see below | 6–25 min |
 
 Requirements: Node 18+ for the backend tests; Docker for the other two
 (Linux host with cgroups v2, or Docker Desktop on Windows/macOS — in Git Bash
@@ -23,6 +23,9 @@ bash tests/e2e/e2e.sh install rocky9 1.37.0
 
 # Ubuntu control-plane + Rocky and Debian workers, then 1.35 → 1.36 → 1.37
 bash tests/e2e/e2e.sh upgrade ubuntu2204 rocky9 debian12
+
+# offsite etcd backups: real MinIO + real node (needs `npm install` in backend/)
+bash tests/e2e/e2e.sh offsite ubuntu2204
 
 KEEP=1 bash tests/e2e/e2e.sh install debian12   # keep the container to debug
 bash tests/e2e/e2e.sh clean                     # remove all e2e containers
