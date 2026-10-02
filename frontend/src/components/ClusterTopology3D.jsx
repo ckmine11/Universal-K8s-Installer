@@ -98,30 +98,7 @@ function ClusterNode({ position, role, name, status, ip, onSelect, selected }) {
     )
 }
 
-function TrafficPulse({ start, end }) {
-    const meshRef = useRef()
-    const curve = useMemo(() => {
-        const mid = new THREE.Vector3().addVectors(new THREE.Vector3(...start), new THREE.Vector3(...end)).multiplyScalar(0.5)
-        mid.y += 1.5
-        return new THREE.CatmullRomCurve3([new THREE.Vector3(...start), mid, new THREE.Vector3(...end)])
-    }, [start, end])
-
-    useFrame((state) => {
-        if (!meshRef.current) return
-        const t = (state.clock.getElapsedTime() * 0.5) % 1
-        meshRef.current.position.copy(curve.getPoint(t))
-    })
-
-    return (
-        <mesh ref={meshRef}>
-            <sphereGeometry args={[0.1, 8, 8]} />
-            <meshBasicMaterial color="#60a5fa" transparent opacity={0.8} />
-            <pointLight distance={2} intensity={2} color="#60a5fa" />
-        </mesh>
-    )
-}
-
-function Scene({ clusterInfo, pulses = [], onSelect, selected }) {
+function Scene({ clusterInfo, onSelect, selected }) {
     const masterNodes = clusterInfo?.nodes?.filter(n => n.role === 'master') || []
     const workerNodes = clusterInfo?.nodes?.filter(n => n.role === 'worker') || []
     const masterPos = [0, 1, 0]
@@ -180,10 +157,6 @@ function Scene({ clusterInfo, pulses = [], onSelect, selected }) {
                 )
             })}
 
-            {pulses.map(pulse => (
-                <TrafficPulse key={pulse.id} start={nodePositionMap.get(pulse.from) || masterPos} end={nodePositionMap.get(pulse.to) || masterPos} />
-            ))}
-
             <OrbitControls autoRotate={false} enablePan enableZoom minDistance={4} maxDistance={20} minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
         </>
     )
@@ -191,30 +164,11 @@ function Scene({ clusterInfo, pulses = [], onSelect, selected }) {
 
 export default function ClusterTopology3D({ clusterId, clusterInfo, stats, height = "500px" }) {
     const hasData = clusterInfo?.nodes && clusterInfo.nodes.length > 0
-    const [pulses, setPulses] = React.useState([])
     const [selected, setSelected] = React.useState(null)
 
     const nodes = clusterInfo?.nodes || []
     const downCount = nodes.filter(n => { const s = (n.status || '').toLowerCase(); return s && s !== 'ready' && s !== 'pending' && s !== 'running' }).length
     const readyCount = nodes.length - downCount
-
-    React.useEffect(() => {
-        if (!clusterId) return
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        let ws
-        try {
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/traffic/${clusterId}`)
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data)
-                if (data.type === 'traffic-pulse') {
-                    const pulseId = Math.random().toString(36).substr(2, 9)
-                    setPulses(prev => [...prev, { ...data, id: pulseId }])
-                    setTimeout(() => setPulses(prev => prev.filter(p => p.id !== pulseId)), 4000)
-                }
-            }
-        } catch (_) {}
-        return () => { try { ws?.close() } catch (_) {} }
-    }, [clusterId])
 
     if (!hasData) {
         return (
@@ -303,7 +257,7 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
             )}
 
             <Canvas camera={{ position: [0, 4, 8], fov: 60 }} onCreated={(state) => state.gl.setClearColor('#000000', 0)}>
-                <Scene clusterInfo={clusterInfo} pulses={pulses} onSelect={setSelected} selected={selected} />
+                <Scene clusterInfo={clusterInfo} onSelect={setSelected} selected={selected} />
             </Canvas>
         </div>
     )

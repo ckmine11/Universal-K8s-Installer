@@ -29,7 +29,7 @@ Most installers fail and leave you guessing. KubeEZ's **Integrated Recovery Engi
 - **Pre-flight Repair**: Disables swap and configures kernel modules automatically.
 
 ### 🔭 Visual Orchestration
-- **3D Digital Twin**: Visualize your cluster topology and real-time traffic in an interactive 3D map.
+- **3D Digital Twin**: Visualize your cluster topology and live node health (Ready / NotReady / Pending) in an interactive 3D map.
 - **Orbital Terminal**: Broadcast commands to all nodes simultaneously through a beautiful Glassmorphism UI.
 - **Live Telemetry**: Monitor core metrics (CPU, Memory, Pods) directly from your dashboard.
 

@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid'
 import { automationEngine } from './automationEngine.js'
 import { clusterStore } from './clusterStore.js'
 import { terminalService } from './terminalService.js'
-import { trafficSniffer } from './trafficSniffer.js'
 import { sameTenant } from '../utils/access.js'
 
 class InstallationManager {
@@ -460,7 +459,6 @@ class InstallationManager {
             }
 
             await terminalService.closeSession(id)
-            trafficSniffer.stopSniffing(id)
             // Stop auto-healing watchers so we don't keep polling a deleted cluster
             const { incidentDetector } = await import('./incidentDetector.js')
             incidentDetector.stopWatching(id)

@@ -90,7 +90,6 @@ test('unreachable master fails the install (no fake "completed" cluster)', async
 })
 
 test('WebSocket streams are tenant-scoped', async () => {
-    assert.equal((await ws('/ws/traffic/c-alice', bob.token)).code, 4003)
     const orb = await ws('/ws/orbital/c-alice', bob.token, { type: 'command', clusterId: 'c-alice', nodes: [{ ip: '10.255.255.1' }], command: 'id' })
     assert.ok(orb.msgs.some(m => /Unauthorized/.test(m.content || '')))
     assert.ok(!orb.msgs.some(m => m.nodeIp === '10.255.255.1'), 'no command ran on another tenant\'s node')

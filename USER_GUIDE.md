@@ -74,7 +74,7 @@ Once installed, you can manage your cluster from the **Management Console**:
 Need to run a command on all nodes? Opening the Terminal widget allows you to broadcast commands to all masters or workers simultaneously.
 
 ### 3D Topology
-The 3D view shows your cluster as a "Digital Twin". You can see traffic flowing between nodes and monitor their health status visually.
+The 3D view shows your cluster as a "Digital Twin": every node with its live health status (Ready, NotReady, Pending). Click a node for its details.
 
 ### Health Telemetry
 The dashboard provides live updates on:

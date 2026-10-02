@@ -13,7 +13,6 @@ import installationRoutes from './routes/installation.js'
 import nodeVerificationRoutes from './routes/nodeVerification.js'
 import { installationManager } from './services/installationManager.js'
 import { terminalService } from './services/terminalService.js'
-import { trafficSniffer } from './services/trafficSniffer.js'
 import { healthRouter } from './routes/health.js'
 import { apiLimiter, authLimiter } from './middleware/rateLimiter.js'
 import { BackupService } from './services/backupService.js'
@@ -471,37 +470,6 @@ wss.on('connection', (ws, req) => {
         (async () => {
             await agentService.onAgentConnect(ws, agentId, agentToken)
         })()
-    }
-    else if (pathname.startsWith('/ws/traffic')) {
-        const id = pathname.split('/').pop();
-        (async () => {
-            const clusters = await installationManager.getSavedClusters()
-            const cluster = clusters.find(c => c.id === id)
-            if (!cluster || !canAccessResource(user, cluster)) {
-                console.log(`WebSocket: Traffic stream rejected for ${id} (not found or not owned)`)
-                return forbid()
-            }
-            if (ws.readyState !== 1) return
-            console.log(`WebSocket: Traffic stream connected for ${id}`)
-
-            const onPulse = (data) => {
-                if (data.clusterId === id && ws.readyState === 1) {
-                    ws.send(JSON.stringify({ type: 'traffic-pulse', ...data }))
-                }
-            }
-
-            trafficSniffer.on('traffic-pulse', onPulse)
-            trafficSniffer.addViewer(id)
-
-            ws.on('close', () => {
-                console.log(`WebSocket: Traffic stream disconnected for ${id}`)
-                trafficSniffer.removeListener('traffic-pulse', onPulse)
-                trafficSniffer.removeViewer(id) // stops the monitor when the last viewer leaves
-            })
-        })().catch(err => {
-            console.error('Traffic stream error:', err)
-            forbid()
-        })
     }
     else {
         ws.close(4004, 'Unknown stream')
