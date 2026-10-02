@@ -48,6 +48,24 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     const [health, setHealth] = useState(null)
     const [healthError, setHealthError] = useState(null)
     const [errorState, setErrorState] = useState(null)
+    // The failure popup can be closed ("fix manually") and stays closed for this
+    // installation, even after a refresh; the header can reopen it.
+    const dismissKey = `kz-error-dismissed-${installationId}`
+    const [errorDismissed, setErrorDismissed] = useState(() => {
+        try { return sessionStorage.getItem(dismissKey) === '1' } catch { return false }
+    })
+    const closeErrorPopup = () => {
+        setErrorDismissed(true)
+        try { sessionStorage.setItem(dismissKey, '1') } catch { /* private mode */ }
+    }
+    const reopenErrorPopup = () => {
+        setErrorDismissed(false)
+        try { sessionStorage.removeItem(dismissKey) } catch { /* private mode */ }
+    }
+    // A retry navigates to a NEW installation in the same component — reset
+    useEffect(() => {
+        try { setErrorDismissed(sessionStorage.getItem(dismissKey) === '1') } catch { setErrorDismissed(false) }
+    }, [installationId])
     const [isFixing, setIsFixing] = useState(false)
 
     // Add-on Management State
@@ -460,7 +478,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     return (
         <div className="max-w-7xl mx-auto relative">
             {/* Smart Error Rescue Modal */}
-            {status === 'failed' && errorState && (
+            {status === 'failed' && errorState && !errorDismissed && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-[#0f172a] border border-red-500/30 rounded-3xl max-w-2xl w-full p-8 shadow-2xl relative overflow-hidden">
                         {/* Background Pulse */}
@@ -472,7 +490,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                     <Activity className="w-8 h-8 text-red-500" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-black text-white">{clusterInfo?.mode === 'upgrade' ? 'Upgrade Halted' : 'Installation Halted'}</h2>
+                                    <h2 className="text-2xl font-black text-white">{clusterInfo?.mode === 'upgrade' ? 'Upgrade Halted' : clusterInfo?.mode === 'addon-only' ? 'Add-on Installation Halted' : 'Installation Halted'}</h2>
                                     <p className="text-red-400 font-medium">Error Code: {errorState.reason || 'UNKNOWN_ERROR'}</p>
                                 </div>
                             </div>
@@ -494,10 +512,10 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
 
                             <div className="grid grid-cols-2 gap-4">
                                 <button
-                                    onClick={() => window.location.reload()}
+                                    onClick={closeErrorPopup}
                                     className="px-6 py-4 rounded-xl border border-white/10 hover:bg-white/5 text-gray-400 font-bold transition-colors"
                                 >
-                                    Cancel & Manual Fix
+                                    Close — I'll fix it manually
                                 </button>
                                 <button
                                     onClick={handleAutoFix}
@@ -734,7 +752,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         <h1 className="text-3xl font-bold mb-2">
                             {status === 'running' && (clusterInfo?.mode === 'upgrade' ? 'Upgrading Kubernetes Cluster...' : 'Installing Kubernetes Cluster...')}
                             {status === 'completed' && (clusterInfo?.mode === 'upgrade' ? '✅ Cluster Upgrade Complete!' : '✅ Cluster Installation Complete!')}
-                            {status === 'failed' && '❌ Installation Failed'}
+                            {status === 'failed' && (clusterInfo?.mode === 'upgrade' ? '❌ Upgrade Failed' : clusterInfo?.mode === 'addon-only' ? '❌ Add-on Installation Failed' : '❌ Installation Failed')}
                             {status === 'cancelled' && '⛔ Installation Cancelled'}
                         </h1>
                         <p className="text-gray-400">Installation ID: {installationId}</p>
@@ -750,6 +768,17 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                             >
                                 {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
                                 <span>{isCancelling ? 'Cancelling...' : 'Cancel Installation'}</span>
+                            </button>
+                        )}
+
+                        {/* Reopen the failure details after closing the popup */}
+                        {status === 'failed' && errorState && errorDismissed && (
+                            <button
+                                onClick={reopenErrorPopup}
+                                className="flex items-center space-x-2 px-5 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 rounded-xl font-bold transition-all active:scale-95"
+                            >
+                                <XCircle className="w-4 h-4" />
+                                <span>View error details</span>
                             </button>
                         )}
 

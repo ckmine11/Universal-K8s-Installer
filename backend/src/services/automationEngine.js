@@ -1051,14 +1051,17 @@ class AutomationEngine {
 
             const legacyScriptPath = join(__dirname, '../automation/install-addons.sh')
 
+            // Add-ons pull images and wait for rollouts — through a Gateway Agent the
+            // default 10-min relay timeout cut them off. Scripts bound their own waits.
+            const addonOpts = { timeoutMs: 30 * 60 * 1000 }
             for (const item of addonsToInstall) {
                 onLog('info', `Step: Installing ${item.label}...`)
                 try {
                     if (item.type === 'legacy') {
-                        await this.executeScript(ssh, legacyScriptPath, [item.name], onLog)
+                        await this.executeScript(ssh, legacyScriptPath, [item.name], onLog, addonOpts)
                     } else {
                         const scriptPath = join(__dirname, '../automation', item.script)
-                        await this.executeScript(ssh, scriptPath, [], onLog)
+                        await this.executeScript(ssh, scriptPath, [], onLog, addonOpts)
                     }
                     onLog('success', `✓ ${item.label} installed successfully`)
                 } catch (err) {

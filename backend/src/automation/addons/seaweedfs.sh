@@ -18,7 +18,7 @@ export KUBECONFIG
 export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin
 
 NS=seaweedfs
-IMAGE=chrislusf/seaweedfs:4.48
+IMAGE=${SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:4.48}
 NODE_PORT=30833
 SIZE=${SEAWEEDFS_SIZE:-20Gi}
 
@@ -155,8 +155,50 @@ spec:
   - { name: s3, port: 8333, targetPort: 8333, nodePort: $NODE_PORT }
 EOF
 
-log "Step 4/5: Waiting for SeaweedFS to be ready..."
-retry 3 kubectl rollout status deployment/seaweedfs -n $NS --timeout=300s
+log "Step 4/5: Waiting for SeaweedFS to be ready (up to 8 min)..."
+# Watch the pod and stop EARLY with the real reason instead of waiting blindly
+# (KUBEEZ_FAIL lines are shown on the KubeEZ failure screen).
+fail() {
+    echo "--- pod status ---"; kubectl -n $NS get pods,pvc -o wide 2>/dev/null
+    echo "--- recent events ---"; kubectl -n $NS get events --sort-by=.lastTimestamp 2>/dev/null | tail -8
+    echo "KUBEEZ_FAIL|$1|$(printf '%s' "$2" | tr '|\n' '/ ')|$(printf '%s' "$3" | tr '|\n' '/ ')"
+    exit 1
+}
+START=$(date +%s)
+while true; do
+    ELAPSED=$(( $(date +%s) - START ))
+    READY=$(kubectl -n $NS get deploy seaweedfs -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
+    [ "${READY:-0}" -ge 1 ] && { log "✓ SeaweedFS is ready (${ELAPSED}s)"; break; }
+
+    POD=$(kubectl -n $NS get pods -l app=seaweedfs -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    WAITING=$(kubectl -n $NS get pod "$POD" -o jsonpath='{.status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
+    WAITMSG=$(kubectl -n $NS get pod "$POD" -o jsonpath='{.status.containerStatuses[0].state.waiting.message}' 2>/dev/null | cut -c1-200 || true)
+    SCHED=$(kubectl -n $NS get pod "$POD" -o jsonpath='{.status.conditions[?(@.type=="PodScheduled")].message}' 2>/dev/null | cut -c1-200 || true)
+    PVC=$(kubectl -n $NS get pvc seaweedfs-data -o jsonpath='{.status.phase}' 2>/dev/null || true)
+
+    case "$WAITING" in
+        ErrImagePull|ImagePullBackOff|InvalidImageName)
+            fail IMAGE_PULL_FAILED "The nodes cannot download the SeaweedFS image ($IMAGE): $WAITMSG" \
+                 "Allow the nodes to reach Docker Hub (registry-1.docker.io), then install the add-on again." ;;
+        CrashLoopBackOff)
+            echo "--- SeaweedFS log ---"; kubectl -n $NS logs "$POD" --tail=20 2>/dev/null
+            fail ADDON_CRASHING "SeaweedFS keeps crashing (see its log above)." "Check free disk space on the node and the log above, then install the add-on again." ;;
+    esac
+    # A volume that never binds also shows up as an "unschedulable" pod — report
+    # it as the storage problem it is (checked before the scheduling message).
+    if [ "$PVC" = "Pending" ] && [ $ELAPSED -ge 90 ]; then
+        fail STORAGE_PENDING "The storage volume for SeaweedFS is still Pending: the default StorageClass '$DEFAULT_SC' is not providing volumes." \
+             "Check the storage add-on (e.g. 'kubectl -n longhorn-system get pods'), or remove the default StorageClass annotation so SeaweedFS uses node storage, then install again."
+    fi
+    if [ -n "$SCHED" ] && [ $ELAPSED -ge 90 ] && ! echo "$SCHED" | grep -qi 'PersistentVolumeClaim'; then
+        fail POD_UNSCHEDULABLE "No node can run SeaweedFS: $SCHED" "Free up CPU/memory (it needs 100m CPU and 256Mi memory) or check node taints, then install again."
+    fi
+    if [ $ELAPSED -ge 480 ]; then
+        fail ADDON_TIMEOUT "SeaweedFS did not become ready within 8 minutes (container state: ${WAITING:-starting})." "Check 'kubectl -n seaweedfs describe pod' on the control-plane, then install the add-on again."
+    fi
+    [ $((ELAPSED % 60)) -lt 10 ] && log "…still starting (${ELAPSED}s, pod: ${WAITING:-${POD:+creating}}${PVC:+, volume: $PVC})"
+    sleep 10
+done
 
 log "Step 5/5: Creating bucket 'backups'..."
 create_bucket() {
