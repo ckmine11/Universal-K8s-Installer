@@ -66,17 +66,52 @@ from_download() {      # last resort — needs internet + a valid version tag
 
 TS=$(date +%s)
 
-# ── Stop kube-apiserver + etcd (move their static-pod manifests aside) ─────────
+# ── Stop the WHOLE control plane (move its static-pod manifests aside) ────────
+# kube-apiserver, controller-manager and scheduler cache cluster state. If any
+# of them survives the restore it keeps serving data NEWER than the restored
+# etcd ("Too large resource version"), and kubelets then fail with
+# "no relationship found between node … and this object". kubelet only
+# re-reads manifests every ~20 s, so we must WAIT until the containers are gone.
+CP_PODS="kube-apiserver kube-controller-manager kube-scheduler etcd"
 mkdir -p "$HELD"
-log "Stopping kube-apiserver and etcd static pods..."
-mv -f "$MANIFESTS/kube-apiserver.yaml" "$HELD/" 2>/dev/null || true
-mv -f "$MANIFESTS/etcd.yaml"           "$HELD/" 2>/dev/null || true
-for i in $(seq 1 15); do
-    command -v crictl >/dev/null 2>&1 || break
-    crictl ps 2>/dev/null | grep -q ' etcd ' || break
-    sleep 2
-done
-sleep 3
+log "Stopping the control plane (api-server, controller-manager, scheduler, etcd)..."
+for p in $CP_PODS; do mv -f "$MANIFESTS/$p.yaml" "$HELD/" 2>/dev/null || true; done
+
+running_cp() {   # names of control-plane containers still running
+    local p
+    for p in $CP_PODS; do
+        [ -n "$(crictl ps --name "^${p}\$" -q 2>/dev/null)" ] && echo "$p"
+    done
+}
+if command -v crictl >/dev/null 2>&1; then
+    for i in $(seq 1 24); do              # up to 2 min
+        [ -z "$(running_cp)" ] && break
+        sleep 5
+    done
+    if [ -n "$(running_cp)" ]; then
+        log "Still running after 2 min: $(running_cp | tr '\n' ' ') — stopping them directly..."
+        for p in $(running_cp); do crictl ps --name "^${p}\$" -q 2>/dev/null | xargs -r crictl stop >/dev/null 2>&1; done
+        sleep 5
+    fi
+    if [ -n "$(running_cp)" ]; then
+        for p in $CP_PODS; do mv -f "$HELD/$p.yaml" "$MANIFESTS/" 2>/dev/null || true; done
+        fail "Could not stop the control plane ($(running_cp | tr '\n' ' ')). Nothing was restored; the cluster is unchanged."
+    fi
+    log "✓ Control plane stopped."
+else
+    log "crictl not found — waiting 60 s for kubelet to stop the control plane..."
+    sleep 60
+fi
+
+# The restored member must keep this node's etcd identity (name + peer URL),
+# not etcdutl's defaults (name "default", http://localhost:2380).
+ETCD_NAME=$(grep -oE -- '--name=[^ "]+' "$HELD/etcd.yaml" 2>/dev/null | head -1 | cut -d= -f2-)
+ETCD_PEER=$(grep -oE -- '--initial-advertise-peer-urls=[^ "]+' "$HELD/etcd.yaml" 2>/dev/null | head -1 | cut -d= -f2-)
+RESTORE_FLAGS=()
+if [ -n "$ETCD_NAME" ] && [ -n "$ETCD_PEER" ]; then
+    RESTORE_FLAGS=(--name "$ETCD_NAME" --initial-cluster "${ETCD_NAME}=${ETCD_PEER}" --initial-advertise-peer-urls "$ETCD_PEER")
+    log "etcd member: ${ETCD_NAME} (${ETCD_PEER})"
+fi
 
 # ── Preserve current data dir as a rollback copy ──────────────────────────────
 if [ -d /var/lib/etcd ]; then
@@ -89,7 +124,7 @@ restore_ok=""
 # 1) host etcdutl
 if command -v etcdutl >/dev/null 2>&1; then
     log "Restoring with host etcdutl..."
-    etcdutl snapshot restore "$SNAP" --data-dir /var/lib/etcd && restore_ok=1
+    etcdutl snapshot restore "$SNAP" --data-dir /var/lib/etcd "${RESTORE_FLAGS[@]}" && restore_ok=1
 fi
 # 2) run etcdutl straight from the etcd IMAGE (no host binary, fully offline)
 if [ -z "$restore_ok" ] && command -v ctr >/dev/null 2>&1 && [ -n "$IMG" ]; then
@@ -97,7 +132,7 @@ if [ -z "$restore_ok" ] && command -v ctr >/dev/null 2>&1 && [ -n "$IMG" ]; then
     if ctr -n k8s.io run --rm \
         --mount type=bind,src=/var/lib,dst=/var/lib,options=rbind:rw \
         "$IMG" kubeez-etcd-restore-${TS} \
-        etcdutl snapshot restore "$SNAP" --data-dir /var/lib/etcd 2>>"$LOG_FILE"; then
+        etcdutl snapshot restore "$SNAP" --data-dir /var/lib/etcd "${RESTORE_FLAGS[@]}" 2>>"$LOG_FILE"; then
         restore_ok=1
     fi
 fi
@@ -106,43 +141,52 @@ if [ -z "$restore_ok" ]; then
     from_proc || from_download || true
     if command -v etcdutl >/dev/null 2>&1; then
         log "Restoring with acquired etcdutl..."
-        etcdutl snapshot restore "$SNAP" --data-dir /var/lib/etcd && restore_ok=1
+        etcdutl snapshot restore "$SNAP" --data-dir /var/lib/etcd "${RESTORE_FLAGS[@]}" && restore_ok=1
     fi
 fi
 # 4) legacy etcdctl (etcd <= 3.5)
 if [ -z "$restore_ok" ] && command -v etcdctl >/dev/null 2>&1; then
     log "Restoring with host etcdctl (legacy)..."
-    ETCDCTL_API=3 etcdctl snapshot restore "$SNAP" --data-dir /var/lib/etcd && restore_ok=1
+    ETCDCTL_API=3 etcdctl snapshot restore "$SNAP" --data-dir /var/lib/etcd "${RESTORE_FLAGS[@]}" && restore_ok=1
 fi
 
 if [ -z "$restore_ok" ]; then
     log "⚠️ Restore did not run — rolling back to previous data."
     rm -rf /var/lib/etcd 2>/dev/null || true
     mv "/var/lib/etcd-prerestore-${TS}" /var/lib/etcd 2>/dev/null || true
-    mv -f "$HELD/etcd.yaml"           "$MANIFESTS/" 2>/dev/null || true
-    mv -f "$HELD/kube-apiserver.yaml" "$MANIFESTS/" 2>/dev/null || true
+    for p in $CP_PODS; do mv -f "$HELD/$p.yaml" "$MANIFESTS/" 2>/dev/null || true; done
     fail "Could not restore: no working etcdutl (host/image/download all failed). Cluster rolled back."
 fi
 
 # ownership: etcd runs as root in the static pod
 chown -R root:root /var/lib/etcd 2>/dev/null || true
 
-# ── Restart the control plane on the restored data ────────────────────────────
-log "Restarting etcd + kube-apiserver..."
-mv -f "$HELD/etcd.yaml"           "$MANIFESTS/" 2>/dev/null || true
-mv -f "$HELD/kube-apiserver.yaml" "$MANIFESTS/" 2>/dev/null || true
-systemctl restart kubelet 2>/dev/null || true
+# ── Start the control plane on the restored data ─────────────────────────────
+log "Starting the control plane on the restored data..."
+for p in $CP_PODS; do mv -f "$HELD/$p.yaml" "$MANIFESTS/" 2>/dev/null || true; done
 
-# ── Short health wait (long waits risk dropping the SSH stream) ───────────────
-log "Snapshot restored. Control plane is restarting..."
 KC=/etc/kubernetes/admin.conf
-HEALTHY=""
-for i in $(seq 1 12); do
-    if KUBECONFIG=$KC kubectl get --raw='/healthz' >/dev/null 2>&1; then HEALTHY=1; break; fi
-    sleep 5
-done
-[ -n "$HEALTHY" ] && log "✓ Control plane healthy. Restore complete." \
-                  || log "Restore applied. Control plane still starting — should be healthy shortly."
+api_ready() { [ "$(KUBECONFIG=$KC kubectl get --raw='/readyz' 2>/dev/null)" = "ok" ]; }
+wait_api() {     # $1 = seconds
+    local i
+    for i in $(seq 1 $(( $1 / 5 ))); do api_ready && return 0; sleep 5; done
+    return 1
+}
+if ! wait_api 180; then
+    log "Previous data preserved at: /var/lib/etcd-prerestore-${TS}"
+    log "Manual rollback: move /etc/kubernetes/manifests/*.yaml aside, replace /var/lib/etcd with that copy, move the manifests back."
+    fail "The API server did not become ready within 3 minutes after the restore. Check 'crictl ps -a' and 'crictl logs <kube-apiserver id>' on this node."
+fi
+log "✓ API server ready on the restored data."
+
+# kubelet still remembers pods created AFTER the snapshot; a restart makes it
+# drop them and resync from the restored API ("no relationship found" otherwise).
+log "Restarting kubelet so it drops pods that are not in the snapshot..."
+systemctl restart kubelet 2>/dev/null || true
+wait_api 120 || fail "The API server stopped responding after the kubelet restart."
+
+NODE_STATE=$(KUBECONFIG=$KC kubectl get nodes --no-headers 2>/dev/null | awk '{print $1"="$2}' | tr '\n' ' ')
+log "✓ Restore complete. Nodes: ${NODE_STATE}"
 log "Previous data preserved at: /var/lib/etcd-prerestore-${TS}"
 echo "[etcd-restore] RESULT=OK" >> "$LOG_FILE"
 exit 0

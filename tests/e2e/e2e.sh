@@ -10,6 +10,8 @@
 #                                             upgrades 1.35 → 1.36 → 1.37 on every node
 #   e2e.sh offsite [distro]                   S3 add-on (SeaweedFS) + offsite backups to it (needs
 #                                             Node + npm install in backend/)
+#   e2e.sh cluster <master> <worker>...       build a 1.35 cluster and leave it running
+#   e2e.sh restore <master> <worker>...       etcd restore on a multi-node cluster (needs Node)
 #   e2e.sh clean                              remove all e2e containers
 #
 # distros: ubuntu2204 ubuntu2404 debian12 rocky9 alma9 fedora amzn2023
@@ -127,12 +129,44 @@ cmd_offsite() {
     return $rc
 }
 
+# Build a 1.35 cluster (control-plane + workers) and leave it running, for
+# manual debugging or other checks:  e2e.sh cluster ubuntu2204 rocky9
+cmd_cluster() {
+    local master_distro="$1"; shift
+    local master="$PREFIX-$master_distro-cp" d
+    image "$master_distro"; start_node "$master" "$master_distro"
+    docker exec "$master" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local join; join=$(docker exec "$master" cat /tmp/kubeadm-join-command.txt)
+    for d in "$@"; do
+        image "$d"; start_node "$PREFIX-$d-w" "$d"
+        docker exec "$PREFIX-$d-w" bash /k/node-install.sh worker 1.35.0 "$join" | grep RESULT || return 1
+    done
+    echo "cluster up — control-plane container: $master"
+}
+
+# etcd restore on a real multi-node cluster (pods replaced after the snapshot):
+# the control plane must come back on the restored data, every node Ready,
+# no kubelet stuck on stale pods.  e2e.sh restore ubuntu2204 debian12
+cmd_restore() {
+    local master_distro="$1"; shift
+    cmd_cluster "$master_distro" "$@" || return 1
+    local workers="" d
+    for d in "$@"; do workers="${workers:+$workers,}$PREFIX-$d-w"; done
+    local rc
+    MASTER_CONTAINER="$PREFIX-$master_distro-cp" WORKER_CONTAINERS="$workers" node "$E2E/restore-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
 cmd_clean() { docker ps -aq --filter "name=$PREFIX-" | xargs -r docker rm -f >/dev/null 2>&1; true; }
 
 case "${1:-}" in
     install) shift; cmd_install "$@" ;;
     upgrade) shift; cmd_upgrade "$@" ;;
     offsite) shift; cmd_offsite "$@" ;;
+    cluster) shift; cmd_cluster "$@" ;;
+    restore) shift; cmd_restore "$@" ;;
     clean)   cmd_clean ;;
-    *) sed -n '2,16p' "$0"; exit 2 ;;
+    *) sed -n '2,18p' "$0"; exit 2 ;;
 esac

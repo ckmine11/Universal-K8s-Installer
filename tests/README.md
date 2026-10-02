@@ -21,6 +21,9 @@ on Windows the scripts handle path conversion themselves).
 bash tests/e2e/e2e.sh install ubuntu2204
 bash tests/e2e/e2e.sh install rocky9 1.37.0
 
+# etcd restore on a 2-node cluster (pods replaced after the snapshot)
+bash tests/e2e/e2e.sh restore ubuntu2204 rocky9
+
 # Ubuntu control-plane + Rocky and Debian workers, then 1.35 → 1.36 → 1.37
 bash tests/e2e/e2e.sh upgrade ubuntu2204 rocky9 debian12
 

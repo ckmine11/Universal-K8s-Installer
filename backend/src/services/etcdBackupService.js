@@ -129,6 +129,29 @@ class EtcdBackupService {
     }
 
     /**
+     * After a restore, worker kubelets still remember pods created after the
+     * snapshot and keep asking the API about them ("no relationship found
+     * between node … and this object"). A kubelet restart makes them resync.
+     * Best effort: an unreachable worker is reported, not fatal.
+     */
+    async refreshWorkerKubelets(cluster, onLog = () => {}) {
+        for (const node of cluster.workerNodes || []) {
+            let ssh
+            try {
+                ssh = await automationEngine.connectSSH(node)
+                const r = await run(ssh, 'sudo systemctl restart kubelet')
+                onLog(r.ok ? 'info' : 'warning', r.ok
+                    ? `[etcd-restore] ✓ kubelet restarted on worker ${node.ip}`
+                    : `[etcd-restore] ⚠️ Could not restart kubelet on worker ${node.ip}: ${r.err || r.out} — run 'sudo systemctl restart kubelet' there.`)
+            } catch (e) {
+                onLog('warning', `[etcd-restore] ⚠️ Worker ${node.ip} unreachable (${e.message}) — run 'sudo systemctl restart kubelet' there.`)
+            } finally {
+                ssh?.dispose?.()
+            }
+        }
+    }
+
+    /**
      * Restore etcd from a snapshot on the primary control-plane.
      * Runs the multi-step kubeadm restore script; streams progress via onLog.
      * Only supported for single control-plane clusters (see route guard).
@@ -164,7 +187,10 @@ class EtcdBackupService {
             }
 
             const succeeded = /RESULT=OK/.test(logText)
-            if (succeeded) return { success: true }
+            if (succeeded) {
+                await this.refreshWorkerKubelets(cluster, onLog)
+                return { success: true }
+            }
 
             const failedMarker = /RESULT=FAILED/.test(logText)
             const reason = failedMarker

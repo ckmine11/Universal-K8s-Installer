@@ -89,6 +89,21 @@ jobs:
         run: npm install --no-audit --no-fund
       - run: bash tests/e2e/e2e.sh offsite ubuntu2204
 
+  # ── etcd restore on a real 2-node cluster, ~10 min ─────────────────────────
+  e2e-restore:
+    name: etcd restore (Ubuntu control-plane + Rocky worker)
+    needs: [checks]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend dependencies
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+      - run: bash tests/e2e/e2e.sh restore ubuntu2204 rocky9
+
   # ── Mixed-OS cluster + real upgrades 1.35 → 1.36 → 1.37, ~25 min ──────────
   e2e-upgrade:
     name: Multi-node upgrade (Ubuntu master + Rocky & Debian workers)
