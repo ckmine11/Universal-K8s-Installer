@@ -1,0 +1,2 @@
+#!/bin/bash
+cat >/dev/null; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && { mkdir -p "$(dirname "$2")"; touch "$2"; }; shift; done

@@ -1,0 +1,2 @@
+#!/bin/bash
+M="${K_JOURNAL:-I started}"; echo "Oct 01 kubelet[123]: ${M//_/ }"

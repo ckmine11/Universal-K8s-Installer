@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { encrypt, decrypt } from '../utils/cryptoUtils.js';
 import { clusterStore } from './clusterStore.js';
+import { DATA_DIR } from '../utils/paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,8 +12,8 @@ const __dirname = path.dirname(__filename);
  * BackupService - Handles automatic and manual backups of cluster data
  */
 export class BackupService {
-    static DATA_PATH = path.join(__dirname, '../../data/clusters.json');
-    static BACKUP_DIR = path.join(__dirname, '../../data/backups');
+    static DATA_PATH = path.join(DATA_DIR, 'clusters.json');
+    static BACKUP_DIR = path.join(DATA_DIR, 'backups');
 
     /**
      * Initialize backup service - create backup directory if it doesn't exist

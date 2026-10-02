@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  # Nightly: catches upstream changes (new Kubernetes / containerd / distro
+  # releases) that break installs even when our code did not change.
+  schedule:
+    - cron: '30 21 * * *'   # 03:00 IST
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Fast checks: every push/PR, ~2 min ─────────────────────────────────────
+  checks:
+    name: Backend tests · frontend build · script syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Shell script syntax
+        run: |
+          shopt -s globstar nullglob
+          for f in backend/src/automation/**/*.sh tests/**/*.sh; do
+            bash -n "$f" || { echo "::error file=$f::shell syntax error"; exit 1; }
+          done
+          echo "all scripts parse"
+
+      - name: Backend tests
+        working-directory: backend
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Frontend build
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+  # ── upgrade-cluster.sh failure/happy-path scenarios (stubbed), ~3 min ──────
+  upgrade-scenarios:
+    name: Upgrade script scenarios
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/upgrade-script/scenarios.sh
+
+  # ── Real installs on every supported distro, ~6 min each ───────────────────
+  e2e-install:
+    name: Install · ${{ matrix.distro }} · k8s ${{ matrix.version }}
+    needs: [checks]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ubuntu2204, ubuntu2404, debian12, rocky9, alma9, fedora, amzn2023]
+        version: ['1.35.0']
+        include:
+          - { distro: ubuntu2404, version: '1.37.0' }
+          - { distro: rocky9, version: '1.37.0' }
+          - { distro: alma9, version: '1.30.0' }
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/e2e/e2e.sh install ${{ matrix.distro }} ${{ matrix.version }}
+
+  # ── Mixed-OS cluster + real upgrades 1.35 → 1.36 → 1.37, ~25 min ──────────
+  e2e-upgrade:
+    name: Multi-node upgrade (Ubuntu master + Rocky & Debian workers)
+    needs: [checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/e2e/e2e.sh upgrade ubuntu2204 rocky9 debian12

@@ -7,8 +7,8 @@
     "scripts": {
         "dev": "node --watch src/server.js",
         "start": "node src/server.js",
-        "test": "echo \"Tests will be added with Jest\" && exit 0",
-        "test:watch": "echo \"Test watch mode\" && exit 0",
+        "test": "node --test",
+        "test:watch": "node --test --watch",
         "lint": "echo \"Linting will be added\" && exit 0"
     },
     "keywords": [

@@ -3,11 +3,12 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { encrypt, decrypt } from '../utils/cryptoUtils.js'
 import { sameTenant } from '../utils/access.js'
+import { DATA_DIR } from '../utils/paths.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const DATA_DIR = path.join(__dirname, '../../data')
+
 const CLUSTERS_FILE = path.join(DATA_DIR, 'clusters.json')
 
 class ClusterStore {

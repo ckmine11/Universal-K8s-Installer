@@ -6,11 +6,12 @@ import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 import { clusterStore } from './clusterStore.js'
 import { canAccessResource } from '../utils/access.js'
+import { DATA_DIR } from '../utils/paths.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const DATA_DIR = path.join(__dirname, '../../data')
+
 const LICENSE_FILE = path.join(DATA_DIR, 'license.json')
 const PUBLIC_KEY_FILE = path.join(DATA_DIR, 'public.pem')
 const SYSTEM_ID_FILE = path.join(DATA_DIR, 'system.json')

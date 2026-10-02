@@ -1,0 +1,8 @@
+#!/bin/bash
+echo "systemctl $*" >> /tmp/st/calls
+if [ "$1" = "is-active" ]; then
+  svc="${@: -1}"
+  [ "$svc" = "kubelet" ] && [ -f /tmp/st/kubelet_upgraded ] && exit ${K_KUBELET_ACTIVE:-0}
+  exit 0
+fi
+exit 0

@@ -2,11 +2,12 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
+import { DATA_DIR } from './paths.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const DATA_DIR = path.join(__dirname, '../../data')
+
 const KEY_FILE = path.join(DATA_DIR, 'master.key')
 const ALGORITHM = 'aes-256-cbc'
 

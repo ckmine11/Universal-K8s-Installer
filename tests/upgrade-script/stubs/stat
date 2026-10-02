@@ -1,0 +1,2 @@
+#!/bin/bash
+case "$*" in *"/sys/fs/cgroup"*) echo "${K_CGROUP:-cgroup2fs}";; *) /usr/bin/stat "$@";; esac

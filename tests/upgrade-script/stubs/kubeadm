@@ -1,0 +1,11 @@
+#!/bin/bash
+echo "kubeadm $*" >> /tmp/st/calls
+case "$1 $2" in
+  "version -o") echo "v$(cat /tmp/st/kubeadm_ver 2>/dev/null || echo 1.34.0)";;
+  "config images") if [ "$3" = "pull" ]; then exit ${K_PULL:-0}; else echo "registry.k8s.io/kube-apiserver:v1.35.0"; echo "registry.k8s.io/pause:3.10.1"; fi;;
+  "upgrade apply"|"upgrade node")
+     n=$(cat /tmp/st/apply_count 2>/dev/null || echo 0); n=$((n+1)); echo $n > /tmp/st/apply_count
+     if [ -n "$K_APPLY_MSG" ] && [ "$n" -le "${K_APPLY_FAILS:-99}" ]; then echo "${K_APPLY_MSG//_/ }"; exit 1; fi
+     if [ -n "$K_REAL_ENVCHECK" ]; then a=$(grep KUBELET_KUBEADM_ARGS /var/lib/kubelet/kubeadm-flags.env | sed -E "s/^KUBELET_KUBEADM_ARGS=\"?//; s/\"$//" | xargs); if [ -z "$a" ]; then echo "[certs] Using certificateDir folder /etc/kubernetes/pki"; echo "error: error execution phase post-upgrade: error reading kubelet env file: no flags found in file \"/var/lib/kubelet/kubeadm-flags.env\""; exit 1; fi; fi
+     echo "[upgrade/successful] SUCCESS!";;
+esac

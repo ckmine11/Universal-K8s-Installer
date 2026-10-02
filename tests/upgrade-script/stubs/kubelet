@@ -1,0 +1,2 @@
+#!/bin/bash
+echo "Kubernetes v${K_KUBELET_VER:-1.34.0}"

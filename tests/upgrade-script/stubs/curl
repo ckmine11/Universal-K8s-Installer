@@ -1,0 +1,15 @@
+#!/bin/bash
+url="${@: -1}"; for a in "$@"; do case "$a" in http*) url="$a";; esac; done
+want_code=""; for a in "$@"; do [ "$a" = "%{http_code}" ] && want_code=1; done
+if [ -n "$want_code" ]; then
+  case "$url" in
+    *registry.k8s.io*) echo -n "${K_REG:-401}";;
+    *) echo -n "${K_REPO:-200}";;
+  esac; exit 0
+fi
+case "$url" in
+  *Packages) printf 'Package: kubeadm\nVersion: %s-1.1\n' "${K_PKGVER:-1.35.0}";;
+  *Release.key) echo "KEY";;
+  *github.com*) exit 22;;
+  *) exit 0;;
+esac

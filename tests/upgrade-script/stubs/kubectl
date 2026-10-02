@@ -1,0 +1,7 @@
+#!/bin/bash
+case "$*" in
+  *"version -o json"*) printf '{\n "clientVersion": {"minor": "35"},\n "serverVersion": {\n  "major": "1",\n  "minor": "%s"\n }\n}\n' "${K_SERVER_MINOR:-34}";;
+  *readyz*) echo -n "${K_READYZ:-ok}";;
+  *jsonpath*) echo -n "192.168.220.81 192.168.220.80 ";;
+  *"get node"*) echo "master Ready control-plane 2d v1.35.0";;
+esac

@@ -2,11 +2,12 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { v4 as uuidv4 } from 'uuid'
+import { DATA_DIR } from '../utils/paths.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const DATA_DIR = path.join(__dirname, '../../data')
+
 const AGENTS_FILE = path.join(DATA_DIR, 'agents.json')
 
 class AgentService {

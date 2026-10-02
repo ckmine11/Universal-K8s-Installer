@@ -1,0 +1,5 @@
+# Shell scripts run on Linux nodes (uploaded by the backend, or in tests) and
+# break with CRLF line endings — always check them out with LF, even on Windows.
+*.sh                          text eol=lf
+tests/upgrade-script/stubs/*  text eol=lf
+Dockerfile                    text eol=lf

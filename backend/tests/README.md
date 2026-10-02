@@ -1,77 +1,17 @@
-# KubeEZ Backend Tests
+# Backend tests
 
-This directory contains tests for the KubeEZ backend.
-
-## Structure
-
-```
-tests/
-├── unit/           # Unit tests for individual functions/modules
-├── integration/    # Integration tests for API endpoints
-└── e2e/           # End-to-end tests
-```
-
-## Running Tests
+Uses Node's built-in test runner — no extra dependencies.
 
 ```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npm test -- tests/unit/backupService.test.js
-
-# Run with coverage
-npm test -- --coverage
-
-# Watch mode
-npm test -- --watch
+npm install
+npm test                 # all *.test.js files
+node --test tests/services.test.js
 ```
 
-## Writing Tests
+- `api-security.test.js` boots the real server (`helpers/server.js`) on a random
+  port with a throw-away data directory (`KUBEEZ_DATA_DIR`), so tests never
+  touch `backend/data`.
+- `services.test.js` imports services in-process; it sets `KUBEEZ_DATA_DIR`
+  before importing them.
 
-### Unit Tests
-
-Test individual functions in isolation:
-
-```javascript
-// tests/unit/backupService.test.js
-import { BackupService } from '../../src/services/backupService.js';
-
-describe('BackupService', () => {
-  test('should create backup successfully', () => {
-    const result = BackupService.createBackup('test');
-    expect(result.success).toBe(true);
-  });
-});
-```
-
-### Integration Tests
-
-Test API endpoints:
-
-```javascript
-// tests/integration/health.test.js
-import request from 'supertest';
-import app from '../../src/server.js';
-
-describe('Health Endpoints', () => {
-  test('GET /api/health should return healthy status', async () => {
-    const response = await request(app).get('/api/health');
-    expect(response.status).toBe(200);
-    expect(response.body.status).toBe('healthy');
-  });
-});
-```
-
-## Test Coverage Goals
-
-- Unit tests: > 80%
-- Integration tests: > 70%
-- E2E tests: Critical user flows
-
-## CI/CD Integration
-
-Tests run automatically on:
-- Pull requests
-- Commits to main branch
-- Before deployment
+See `../../tests/README.md` for the upgrade-script and end-to-end suites.

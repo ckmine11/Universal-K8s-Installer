@@ -1,0 +1,2 @@
+#!/bin/bash
+echo "Filesystem 1M-blocks Used Available Use% Mounted"; echo "/dev/sda1 100000 50000 ${K_DISK:-40000} 50% /"

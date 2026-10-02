@@ -1,0 +1,2 @@
+#!/bin/bash
+case "$1" in ps) [ -n "$K_CRASH" ] && echo cid1;; inspect) echo CONTAINER_EXITED;; logs) echo "etcd: panic: failed to recover v3 backend";; esac; exit 0

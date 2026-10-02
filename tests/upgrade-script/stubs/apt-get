@@ -1,0 +1,12 @@
+#!/bin/bash
+echo "apt-get $*" >> /tmp/st/calls
+if [ "$1" = "install" ] || [[ " $* " == *" install "* ]]; then
+  for a in "$@"; do
+    case "$a" in
+      kubeadm=*) [ -n "$K_APT_FAIL" ] && { echo "E: Unable to locate package"; exit 100; }; v=${a#kubeadm=}; echo "${v%-*}" > /tmp/st/kubeadm_ver;;
+      kubelet=*) touch /tmp/st/kubelet_upgraded;;
+      containerd.io) touch /tmp/st/ctr_upgraded;;
+    esac
+  done
+fi
+exit 0

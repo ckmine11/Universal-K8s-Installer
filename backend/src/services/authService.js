@@ -8,13 +8,14 @@ import { v4 as uuidv4 } from 'uuid';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { DATA_DIR } from '../utils/paths.js';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = path.join(__dirname, '../../data');
+
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const JWT_SECRET = getJwtSecret();
 const RESET_CODE_TTL_MS = 15 * 60 * 1000;
