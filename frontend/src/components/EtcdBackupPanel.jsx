@@ -192,11 +192,36 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                             </ul>
                         </div>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-slate-400 leading-relaxed">
-                        <div className="flex items-center gap-1.5 mb-1.5 text-slate-200 font-black uppercase tracking-wider text-[10px]"><RotateCcw className="w-3.5 h-3.5" /> How Restore Works</div>
-                        <p>Click <span className="text-white font-bold">Restore</span> on a snapshot → KubeEZ safely: (1) stops the API server &amp; etcd,
-                        (2) keeps your current data as a rollback copy on the node, (3) restores the snapshot, (4) restarts the control plane and waits until it's healthy.</p>
-                        <p className="mt-1.5 text-amber-300/90">⚠️ Changes made <span className="font-bold">after</span> the snapshot are lost. Snapshots are taken <span className="font-bold">automatically every day and before every upgrade</span>, and kept for <span className="font-bold">{retentionDays} days</span> (the newest is always kept). Automated restore supports single control-plane clusters.</p>
+                    <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-slate-400 leading-relaxed">
+                            <div className="flex items-center gap-1.5 mb-2 text-slate-200 font-black uppercase tracking-wider text-[10px]"><CalendarClock className="w-3.5 h-3.5" /> When Snapshots Are Taken</div>
+                            <ul className="space-y-1">
+                                <li>• <span className="text-white font-bold">Every day</span> automatically (around 02:00, node time)</li>
+                                <li>• <span className="text-white font-bold">Before every upgrade</span> automatically</li>
+                                <li>• <span className="text-white font-bold">Anytime</span> with "Backup Now" (e.g. before a risky change)</li>
+                            </ul>
+                            <p className="mt-2">
+                                Kept for <span className="text-white font-bold">{retentionDays} days</span>, then removed automatically —
+                                the newest snapshot is always kept. Stored on the control-plane at <code className="text-slate-300">/var/lib/etcd-backup</code>.
+                                Daily snapshots keep running even if KubeEZ is offline.
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-slate-400 leading-relaxed">
+                            <div className="flex items-center gap-1.5 mb-2 text-slate-200 font-black uppercase tracking-wider text-[10px]"><RotateCcw className="w-3.5 h-3.5" /> How Restore Works</div>
+                            <p>Pick a snapshot in the dropdown below → <span className="text-white font-bold">Restore this snapshot</span>. KubeEZ then safely:</p>
+                            <ol className="mt-1 space-y-0.5 list-decimal list-inside">
+                                <li>stops the API server &amp; etcd</li>
+                                <li>keeps your current data as a rollback copy on the node</li>
+                                <li>restores the snapshot</li>
+                                <li>restarts the control plane and waits until it's healthy</li>
+                            </ol>
+                            <p className="mt-1.5">Takes about 1–3 minutes; the Kubernetes API is briefly unavailable, then your workloads are brought back in line with the snapshot.</p>
+                        </div>
+                    </div>
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-3 text-amber-300/90 leading-relaxed space-y-1">
+                        <p>⚠️ Everything changed <span className="font-bold">after</span> the chosen snapshot is lost (new deployments, config edits, etc.).</p>
+                        <p>⚠️ Automated restore supports <span className="font-bold">single control-plane</span> clusters. For HA clusters, restore etcd manually on each member.</p>
+                        <p>💡 For app data in Persistent Volumes, use a storage backup (e.g. Longhorn snapshots) — etcd snapshots don't include it.</p>
                     </div>
                 </div>
             )}
