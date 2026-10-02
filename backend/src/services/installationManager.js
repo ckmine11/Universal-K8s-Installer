@@ -275,19 +275,6 @@ class InstallationManager {
                 } catch (e) {
                     console.error('[InstallationManager] Failed to start auto-healing:', e.message)
                 }
-
-                // Daily etcd snapshots (kept 45 days) for paid workspaces — set up
-                // right away so backups exist even if nobody opens the etcd panel.
-                // Fire-and-forget: never delays or fails the install/upgrade.
-                ;(async () => {
-                    const { authService } = await import('./authService.js')
-                    const { isPaidPlan } = await import('../config/planFeatures.js')
-                    const owner = authService.getUserById(finalCluster.ownerId)
-                    if (owner?.role !== 'superadmin' && !isPaidPlan(authService.getOrgPlan(installation.orgId))) return
-                    const { etcdBackupService } = await import('./etcdBackupService.js')
-                    await etcdBackupService.ensureScheduleForCluster(finalCluster)
-                    console.log(`[InstallationManager] Daily etcd backups enabled for ${finalCluster.clusterName}`)
-                })().catch(e => console.error('[InstallationManager] Could not enable daily etcd backups:', e.message))
             }
         }
     }

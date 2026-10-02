@@ -3,7 +3,7 @@ import { apiFetch } from '../context/AuthContext'
 import {
     Database, RefreshCw, Loader2, ShieldCheck, HardDriveDownload,
     RotateCcw, AlertTriangle, Clock, Zap, X, Lock, Info, CheckCircle2,
-    ChevronDown, CalendarClock, Hand, Archive
+    ChevronDown, Hand, Archive
 } from 'lucide-react'
 
 function fmtBytes(b) {
@@ -34,7 +34,6 @@ function fmtAgo(iso) {
 
 // Snapshot kind → label, short label (for the dropdown) and badge style
 const TYPES = {
-    daily: { label: 'Daily (automatic)', short: 'Daily', icon: CalendarClock, cls: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' },
     'pre-upgrade': { label: 'Before upgrade (automatic)', short: 'Before upgrade', icon: Zap, cls: 'text-blue-300 bg-blue-500/10 border-blue-500/20' },
     manual: { label: 'Manual (Backup Now)', short: 'Manual', icon: Hand, cls: 'text-slate-300 bg-white/5 border-white/10' },
     other: { label: 'Snapshot', short: 'Snapshot', icon: Archive, cls: 'text-slate-300 bg-white/5 border-white/10' }
@@ -140,7 +139,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                     <ShieldCheck className="w-5 h-5 text-emerald-400" />
                     <div>
                         <h3 className="text-lg font-black text-white tracking-tight">etcd Snapshots</h3>
-                        <p className="text-slate-500 text-xs mt-0.5">Cluster-state backups — daily, before upgrades & on demand · kept {retentionDays} days</p>
+                        <p className="text-slate-500 text-xs mt-0.5">Cluster-state backups — automatic before upgrades + on demand · kept {retentionDays} days</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -194,16 +193,14 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3 mb-3">
                         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-slate-400 leading-relaxed">
-                            <div className="flex items-center gap-1.5 mb-2 text-slate-200 font-black uppercase tracking-wider text-[10px]"><CalendarClock className="w-3.5 h-3.5" /> When Snapshots Are Taken</div>
+                            <div className="flex items-center gap-1.5 mb-2 text-slate-200 font-black uppercase tracking-wider text-[10px]"><Clock className="w-3.5 h-3.5" /> When Snapshots Are Taken</div>
                             <ul className="space-y-1">
-                                <li>• <span className="text-white font-bold">Every day</span> automatically (around 02:00, node time)</li>
-                                <li>• <span className="text-white font-bold">Before every upgrade</span> automatically</li>
-                                <li>• <span className="text-white font-bold">Anytime</span> with "Backup Now" (e.g. before a risky change)</li>
+                                <li>• <span className="text-white font-bold">Automatically before every upgrade</span> — no action needed</li>
+                                <li>• <span className="text-white font-bold">Manually, anytime</span> with "Backup Now" — tip: take one before any risky change (deleting namespaces, big config edits)</li>
                             </ul>
                             <p className="mt-2">
                                 Kept for <span className="text-white font-bold">{retentionDays} days</span>, then removed automatically —
                                 the newest snapshot is always kept. Stored on the control-plane at <code className="text-slate-300">/var/lib/etcd-backup</code>.
-                                Daily snapshots keep running even if KubeEZ is offline.
                             </p>
                         </div>
                         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-slate-400 leading-relaxed">
@@ -259,7 +256,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {/* Summary: how many, retention, next automatic snapshot */}
+                    {/* Summary: how many, retention, when snapshots are taken */}
                     <div className="flex flex-wrap items-center gap-2 text-[11px]">
                         <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-slate-300">
                             <Database className="w-3.5 h-3.5 text-slate-400" /> {data?.backups?.length || 0} snapshot{data?.backups?.length === 1 ? '' : 's'}
@@ -267,23 +264,16 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                         <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-slate-300">
                             <Archive className="w-3.5 h-3.5 text-slate-400" /> Kept {retentionDays} days
                         </span>
-                        {data?.schedule?.enabled ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-2.5 py-1 text-emerald-300">
-                                <CalendarClock className="w-3.5 h-3.5" /> Daily auto-backup
-                                {data.schedule.nextRun && <span className="text-emerald-400/70">· next {fmtWhen(data.schedule.nextRun)}</span>}
-                            </span>
-                        ) : data?.schedule?.error ? (
-                            <span title={data.schedule.error} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-1 text-amber-300">
-                                <AlertTriangle className="w-3.5 h-3.5" /> Daily auto-backup not active — click refresh to retry
-                            </span>
-                        ) : null}
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/[0.06] px-2.5 py-1 text-blue-300">
+                            <Zap className="w-3.5 h-3.5" /> Auto before every upgrade
+                        </span>
                     </div>
 
                     {!data?.backups?.length ? (
                         <div className="py-8 text-center rounded-xl border border-dashed border-white/10">
                             <Database className="w-10 h-10 text-slate-700 mx-auto mb-3" />
                             <p className="text-slate-400 text-sm">No etcd snapshots yet.</p>
-                            <p className="text-slate-600 text-xs mt-1">The first daily snapshot runs automatically, one is taken before every upgrade, or click "Backup Now".</p>
+                            <p className="text-slate-600 text-xs mt-1">One is taken automatically before every upgrade — or click "Backup Now" to take one now.</p>
                         </div>
                     ) : (
                         <>

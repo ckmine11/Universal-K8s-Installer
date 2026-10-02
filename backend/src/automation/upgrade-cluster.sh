@@ -241,7 +241,7 @@ if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
     else
         log "⚠️ etcdctl unavailable (and download failed) — skipping snapshot (continuing)."
     fi
-    # Retention (same rule as KubeEZ's daily snapshots): delete snapshots older
+    # Retention (same 45-day rule as manual snapshots): delete snapshots older
     # than 45 days, but always keep the newest one.
     NEWEST_SNAP=$(ls -1t "$BK_DIR"/*.db 2>/dev/null | head -1)
     find "$BK_DIR" -maxdepth 1 -type f -name '*.db' -mmin +$((45 * 1440)) 2>/dev/null \

@@ -1,10 +1,11 @@
 #!/bin/bash
 # KubeEZ etcd snapshot + retention — installed on the primary control-plane as
-# /usr/local/sbin/kubeez-etcd-backup and run daily by kubeez-etcd-backup.timer.
+# /usr/local/sbin/kubeez-etcd-backup. Used for "Backup Now" and to apply
+# retention; pre-upgrade snapshots are taken by upgrade-cluster.sh.
 #
-# Usage: kubeez-etcd-backup [daily|manual|prune]
-#   daily|manual → take a snapshot named etcd-<kind>-YYYYmmdd-HHMMSS.db, then prune
-#   prune        → only apply retention
+# Usage: kubeez-etcd-backup [manual|prune]
+#   manual → take a snapshot named etcd-manual-YYYYmmdd-HHMMSS.db, then prune
+#   prune  → only apply retention
 #
 # Retention: snapshots older than RETENTION_DAYS (default 45) are deleted, but
 # the NEWEST snapshot is always kept so a restore point never disappears.
@@ -15,13 +16,13 @@ export PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 
 BK=/var/lib/etcd-backup
 RETENTION_DAYS="${RETENTION_DAYS:-45}"
-KIND="${1:-daily}"
+KIND="${1:-manual}"
 C="--cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key --endpoints=https://127.0.0.1:2379"
 
 mkdir -p "$BK"
 
 if [ "$KIND" != "prune" ]; then
-    case "$KIND" in daily|manual) ;; *) echo "SAVE_FAILED: unknown kind '$KIND'"; exit 1;; esac
+    case "$KIND" in manual) ;; *) echo "SAVE_FAILED: unknown kind '$KIND'"; exit 1;; esac
 
     # Host etcdctl (download the version matching the cluster's etcd if missing).
     # We avoid exec-ing inside the etcd pod: distroless etcd images have no shell.

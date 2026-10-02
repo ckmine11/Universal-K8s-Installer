@@ -7,36 +7,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const BK_DIR = '/var/lib/etcd-backup'
 
 // Snapshots are kept for this many days (the newest one is always kept).
+// Snapshots are taken only on demand ("Backup Now") and automatically before
+// every upgrade — there is no scheduled/daily snapshot.
 export const ETCD_RETENTION_DAYS = 45
 
-// Node-side tooling: one script for daily + manual snapshots and retention,
-// run daily by a systemd timer so backups continue even if KubeEZ is offline.
+// Node-side tool for manual snapshots + retention.
 const NODE_SCRIPT = '/usr/local/sbin/kubeez-etcd-backup'
-const UNIT = 'kubeez-etcd-backup'
 const VERSION_FILE = '/etc/kubeez/etcd-backup.version'
-// Bump when the script or units change so existing nodes get updated.
-const SCHEDULE_VERSION = `v1-r${ETCD_RETENTION_DAYS}`
-
-const SERVICE_UNIT = `[Unit]
-Description=KubeEZ etcd snapshot (keeps ${ETCD_RETENTION_DAYS} days)
-After=network-online.target
-
-[Service]
-Type=oneshot
-Environment=RETENTION_DAYS=${ETCD_RETENTION_DAYS}
-ExecStart=${NODE_SCRIPT} daily
-`
-const TIMER_UNIT = `[Unit]
-Description=Daily KubeEZ etcd snapshot
-
-[Timer]
-OnCalendar=*-*-* 02:00:00
-RandomizedDelaySec=30min
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-`
+// Bump when the node script changes so existing nodes get updated.
+const TOOL_VERSION = `v1-r${ETCD_RETENTION_DAYS}`
 
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64')
 
@@ -49,10 +28,9 @@ async function run(ssh, cmd) {
     }
 }
 
-// pre-upgrade | daily | manual | other — from the snapshot file name
+// pre-upgrade | manual | other — from the snapshot file name
 function snapshotType(filename) {
     if (/pre-upgrade/.test(filename)) return 'pre-upgrade'
-    if (/-daily-/.test(filename)) return 'daily'
     if (/-manual-/.test(filename)) return 'manual'
     return 'other'
 }
@@ -65,37 +43,23 @@ class EtcdBackupService {
     }
 
     /**
-     * Install/update the snapshot script + daily systemd timer on the primary
-     * control-plane. Idempotent: does nothing when the installed version matches.
+     * Install/update the snapshot tool on the primary control-plane.
+     * Idempotent: does nothing when the installed version matches.
      */
-    async ensureSchedule(ssh) {
-        const check = await run(ssh, `sudo cat ${VERSION_FILE} 2>/dev/null; systemctl is-enabled ${UNIT}.timer 2>/dev/null`)
-        if (check.out.includes(SCHEDULE_VERSION) && /\benabled\b/.test(check.out)) return { installed: false }
+    async ensureTool(ssh) {
+        const check = await run(ssh, `sudo cat ${VERSION_FILE} 2>/dev/null`)
+        if (check.out.includes(TOOL_VERSION)) return { installed: false }
 
         const script = readFileSync(join(__dirname, '../automation/etcd-backup-node.sh'), 'utf8').replace(/\r\n/g, '\n')
         const cmd = [
             `echo ${b64(script)} | base64 -d | sudo tee ${NODE_SCRIPT} >/dev/null`,
             `sudo chmod 0755 ${NODE_SCRIPT}`,
-            `echo ${b64(SERVICE_UNIT)} | base64 -d | sudo tee /etc/systemd/system/${UNIT}.service >/dev/null`,
-            `echo ${b64(TIMER_UNIT)} | base64 -d | sudo tee /etc/systemd/system/${UNIT}.timer >/dev/null`,
             `sudo mkdir -p /etc/kubeez`,
-            `echo ${SCHEDULE_VERSION} | sudo tee ${VERSION_FILE} >/dev/null`,
-            `sudo systemctl daemon-reload`,
-            `sudo systemctl enable --now ${UNIT}.timer`
+            `echo ${TOOL_VERSION} | sudo tee ${VERSION_FILE} >/dev/null`
         ].join(' && ')
         const r = await run(ssh, cmd)
-        if (!r.ok) throw new Error(`Could not set up daily etcd backups: ${r.err || r.out || 'unknown error'}`)
+        if (!r.ok) throw new Error(`Could not install the etcd snapshot tool: ${r.err || r.out || 'unknown error'}`)
         return { installed: true }
-    }
-
-    /** Connect to the primary control-plane and make sure daily backups are on. */
-    async ensureScheduleForCluster(cluster) {
-        const ssh = await automationEngine.connectSSH(this.firstMaster(cluster))
-        try {
-            return await this.ensureSchedule(ssh)
-        } finally {
-            ssh.dispose?.()
-        }
     }
 
     /** List etcd snapshots on the primary control-plane (and apply retention). */
@@ -103,12 +67,12 @@ class EtcdBackupService {
         const master = this.firstMaster(cluster)
         const ssh = await automationEngine.connectSSH(master)
         try {
-            let scheduleError = null
+            // Retention is best-effort — listing must work even if it fails
             try {
-                await this.ensureSchedule(ssh)
+                await this.ensureTool(ssh)
                 await run(ssh, `sudo RETENTION_DAYS=${ETCD_RETENTION_DAYS} ${NODE_SCRIPT} prune`)
             } catch (e) {
-                scheduleError = e.message   // listing still works without the schedule
+                console.warn('[etcd] retention skipped:', e.message)
             }
 
             // Emit "name|size|mtimeEpoch" per snapshot for easy parsing.
@@ -126,25 +90,12 @@ class EtcdBackupService {
                         size: parseInt(size) || 0,
                         created: new Date((parseInt(mtime) || 0) * 1000).toISOString(),
                         type,
-                        auto: type !== 'manual'
+                        auto: type === 'pre-upgrade'   // taken automatically before an upgrade
                     }
                 })
                 .sort((a, b) => new Date(b.created) - new Date(a.created))
 
-            // When will the next daily snapshot run? (epoch seconds from systemd)
-            const t = await run(ssh, `t=$(systemctl show ${UNIT}.timer -p NextElapseUSecRealtime --value 2>/dev/null); [ -n "$t" ] && date -d "$t" +%s 2>/dev/null`)
-            const nextEpoch = parseInt(t.out, 10)
-
-            return {
-                backups,
-                node: master.ip,
-                retentionDays: ETCD_RETENTION_DAYS,
-                schedule: {
-                    enabled: !scheduleError,
-                    nextRun: nextEpoch > 0 ? new Date(nextEpoch * 1000).toISOString() : null,
-                    error: scheduleError
-                }
-            }
+            return { backups, node: master.ip, retentionDays: ETCD_RETENTION_DAYS }
         } finally {
             ssh.dispose?.()
         }
@@ -155,7 +106,7 @@ class EtcdBackupService {
         const master = this.firstMaster(cluster)
         const ssh = await automationEngine.connectSSH(master)
         try {
-            await this.ensureSchedule(ssh)
+            await this.ensureTool(ssh)
             // Uses host etcdctl (downloaded if missing) — the etcd image is
             // distroless, so exec-ing a shell inside the pod does not work.
             const r = await run(ssh, `sudo RETENTION_DAYS=${ETCD_RETENTION_DAYS} ${NODE_SCRIPT} manual`)
