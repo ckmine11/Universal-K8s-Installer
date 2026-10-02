@@ -1,10 +1,44 @@
 import { automationEngine } from './automationEngine.js'
+import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const BK_DIR = '/var/lib/etcd-backup'
-const ETCD_CERTS = '--cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key --endpoints=https://127.0.0.1:2379'
+
+// Snapshots are kept for this many days (the newest one is always kept).
+export const ETCD_RETENTION_DAYS = 45
+
+// Node-side tooling: one script for daily + manual snapshots and retention,
+// run daily by a systemd timer so backups continue even if KubeEZ is offline.
+const NODE_SCRIPT = '/usr/local/sbin/kubeez-etcd-backup'
+const UNIT = 'kubeez-etcd-backup'
+const VERSION_FILE = '/etc/kubeez/etcd-backup.version'
+// Bump when the script or units change so existing nodes get updated.
+const SCHEDULE_VERSION = `v1-r${ETCD_RETENTION_DAYS}`
+
+const SERVICE_UNIT = `[Unit]
+Description=KubeEZ etcd snapshot (keeps ${ETCD_RETENTION_DAYS} days)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=RETENTION_DAYS=${ETCD_RETENTION_DAYS}
+ExecStart=${NODE_SCRIPT} daily
+`
+const TIMER_UNIT = `[Unit]
+Description=Daily KubeEZ etcd snapshot
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+`
+
+const b64 = (s) => Buffer.from(s, 'utf8').toString('base64')
 
 async function run(ssh, cmd) {
     try {
@@ -15,6 +49,14 @@ async function run(ssh, cmd) {
     }
 }
 
+// pre-upgrade | daily | manual | other — from the snapshot file name
+function snapshotType(filename) {
+    if (/pre-upgrade/.test(filename)) return 'pre-upgrade'
+    if (/-daily-/.test(filename)) return 'daily'
+    if (/-manual-/.test(filename)) return 'manual'
+    return 'other'
+}
+
 class EtcdBackupService {
     firstMaster(cluster) {
         const m = cluster.masterNodes?.[0]
@@ -22,11 +64,53 @@ class EtcdBackupService {
         return m
     }
 
-    /** List etcd snapshots present on the primary control-plane. */
+    /**
+     * Install/update the snapshot script + daily systemd timer on the primary
+     * control-plane. Idempotent: does nothing when the installed version matches.
+     */
+    async ensureSchedule(ssh) {
+        const check = await run(ssh, `sudo cat ${VERSION_FILE} 2>/dev/null; systemctl is-enabled ${UNIT}.timer 2>/dev/null`)
+        if (check.out.includes(SCHEDULE_VERSION) && /\benabled\b/.test(check.out)) return { installed: false }
+
+        const script = readFileSync(join(__dirname, '../automation/etcd-backup-node.sh'), 'utf8').replace(/\r\n/g, '\n')
+        const cmd = [
+            `echo ${b64(script)} | base64 -d | sudo tee ${NODE_SCRIPT} >/dev/null`,
+            `sudo chmod 0755 ${NODE_SCRIPT}`,
+            `echo ${b64(SERVICE_UNIT)} | base64 -d | sudo tee /etc/systemd/system/${UNIT}.service >/dev/null`,
+            `echo ${b64(TIMER_UNIT)} | base64 -d | sudo tee /etc/systemd/system/${UNIT}.timer >/dev/null`,
+            `sudo mkdir -p /etc/kubeez`,
+            `echo ${SCHEDULE_VERSION} | sudo tee ${VERSION_FILE} >/dev/null`,
+            `sudo systemctl daemon-reload`,
+            `sudo systemctl enable --now ${UNIT}.timer`
+        ].join(' && ')
+        const r = await run(ssh, cmd)
+        if (!r.ok) throw new Error(`Could not set up daily etcd backups: ${r.err || r.out || 'unknown error'}`)
+        return { installed: true }
+    }
+
+    /** Connect to the primary control-plane and make sure daily backups are on. */
+    async ensureScheduleForCluster(cluster) {
+        const ssh = await automationEngine.connectSSH(this.firstMaster(cluster))
+        try {
+            return await this.ensureSchedule(ssh)
+        } finally {
+            ssh.dispose?.()
+        }
+    }
+
+    /** List etcd snapshots on the primary control-plane (and apply retention). */
     async listBackups(cluster) {
         const master = this.firstMaster(cluster)
         const ssh = await automationEngine.connectSSH(master)
         try {
+            let scheduleError = null
+            try {
+                await this.ensureSchedule(ssh)
+                await run(ssh, `sudo RETENTION_DAYS=${ETCD_RETENTION_DAYS} ${NODE_SCRIPT} prune`)
+            } catch (e) {
+                scheduleError = e.message   // listing still works without the schedule
+            }
+
             // Emit "name|size|mtimeEpoch" per snapshot for easy parsing.
             const r = await run(ssh,
                 `sudo bash -c 'for f in ${BK_DIR}/*.db; do [ -e "$f" ] || continue; echo "$(basename "$f")|$(stat -c %s "$f")|$(stat -c %Y "$f")"; done'`)
@@ -36,15 +120,31 @@ class EtcdBackupService {
                 .filter(Boolean)
                 .map(line => {
                     const [filename, size, mtime] = line.split('|')
+                    const type = snapshotType(filename)
                     return {
                         filename,
                         size: parseInt(size) || 0,
                         created: new Date((parseInt(mtime) || 0) * 1000).toISOString(),
-                        auto: /pre-upgrade/.test(filename)   // taken automatically before an upgrade
+                        type,
+                        auto: type !== 'manual'
                     }
                 })
                 .sort((a, b) => new Date(b.created) - new Date(a.created))
-            return { backups, node: master.ip }
+
+            // When will the next daily snapshot run? (epoch seconds from systemd)
+            const t = await run(ssh, `t=$(systemctl show ${UNIT}.timer -p NextElapseUSecRealtime --value 2>/dev/null); [ -n "$t" ] && date -d "$t" +%s 2>/dev/null`)
+            const nextEpoch = parseInt(t.out, 10)
+
+            return {
+                backups,
+                node: master.ip,
+                retentionDays: ETCD_RETENTION_DAYS,
+                schedule: {
+                    enabled: !scheduleError,
+                    nextRun: nextEpoch > 0 ? new Date(nextEpoch * 1000).toISOString() : null,
+                    error: scheduleError
+                }
+            }
         } finally {
             ssh.dispose?.()
         }
@@ -55,32 +155,12 @@ class EtcdBackupService {
         const master = this.firstMaster(cluster)
         const ssh = await automationEngine.connectSSH(master)
         try {
-            // Use HOST etcdctl (with an explicit PATH so /usr/local/bin is found,
-            // and a download fallback). The old pod-exec path used `sh -c`, which
-            // fails on the distroless etcd image ("sh: not found").
-            const cmd = `sudo bash -c '
-export PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
-BK=${BK_DIR}; mkdir -p "$BK"
-SNAP="$BK/etcd-manual-$(date +%Y%m%d-%H%M%S).db"
-C="${ETCD_CERTS}"
-if ! command -v etcdctl >/dev/null 2>&1; then
-  EV=$(grep -oE "etcd:[0-9]+\\.[0-9]+\\.[0-9]+" /etc/kubernetes/manifests/etcd.yaml 2>/dev/null | head -1 | cut -d: -f2)
-  [ -z "$EV" ] && EV=3.5.16
-  A=amd64; [ "$(uname -m)" = "aarch64" ] && A=arm64
-  curl -fsSL --retry 3 -m 120 "https://github.com/etcd-io/etcd/releases/download/v$EV/etcd-v$EV-linux-$A.tar.gz" -o /tmp/etcd.tgz 2>/dev/null && \
-    tar xzf /tmp/etcd.tgz -C /tmp 2>/dev/null && \
-    install -m0755 /tmp/etcd-v$EV-linux-$A/etcdctl /usr/local/bin/etcdctl 2>/dev/null
-fi
-command -v etcdctl >/dev/null 2>&1 || { echo "NO_ETCDCTL: could not find or download etcdctl"; exit 1; }
-if ETCDCTL_API=3 etcdctl $C snapshot save "$SNAP" >/tmp/etcd-save.log 2>&1; then
-  echo "SNAPSHOT_OK:$SNAP"
-else
-  echo "SAVE_FAILED:"; cat /tmp/etcd-save.log; exit 1
-fi
-'`
-            const r = await run(ssh, cmd)
+            await this.ensureSchedule(ssh)
+            // Uses host etcdctl (downloaded if missing) — the etcd image is
+            // distroless, so exec-ing a shell inside the pod does not work.
+            const r = await run(ssh, `sudo RETENTION_DAYS=${ETCD_RETENTION_DAYS} ${NODE_SCRIPT} manual`)
             if (r.ok && /SNAPSHOT_OK:/.test(r.out)) {
-                const path = r.out.split('SNAPSHOT_OK:')[1]?.trim()
+                const path = r.out.split('SNAPSHOT_OK:')[1]?.split('\n')[0]?.trim()
                 return { success: true, filename: path?.split('/').pop(), path }
             }
             return { success: false, error: (r.out || r.err || 'Snapshot failed').replace('SAVE_FAILED:', '').trim() }

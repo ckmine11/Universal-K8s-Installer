@@ -241,8 +241,12 @@ if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
     else
         log "⚠️ etcdctl unavailable (and download failed) — skipping snapshot (continuing)."
     fi
-    # Retain only the 5 most recent snapshots to bound disk usage.
-    ls -1t "$BK_DIR"/etcd-pre-upgrade-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f 2>/dev/null || true
+    # Retention (same rule as KubeEZ's daily snapshots): delete snapshots older
+    # than 45 days, but always keep the newest one.
+    NEWEST_SNAP=$(ls -1t "$BK_DIR"/*.db 2>/dev/null | head -1)
+    find "$BK_DIR" -maxdepth 1 -type f -name '*.db' -mmin +$((45 * 1440)) 2>/dev/null \
+        | while IFS= read -r f; do [ "$f" != "$NEWEST_SNAP" ] && rm -f "$f"; done
+    true
 fi
 
 # Swap breaks the kubelet — disable it (same as a fresh install does).

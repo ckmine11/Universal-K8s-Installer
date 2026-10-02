@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../context/AuthContext'
 import {
     Database, RefreshCw, Loader2, ShieldCheck, HardDriveDownload,
-    RotateCcw, AlertTriangle, Clock, Zap, X, Lock, Info, CheckCircle2
+    RotateCcw, AlertTriangle, Clock, Zap, X, Lock, Info, CheckCircle2,
+    ChevronDown, CalendarClock, Hand, Archive
 } from 'lucide-react'
 
 function fmtBytes(b) {
@@ -10,6 +11,49 @@ function fmtBytes(b) {
     const k = 1024, s = ['B', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(b) / Math.log(k))
     return `${parseFloat((b / Math.pow(k, i)).toFixed(2))} ${s[i]}`
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function fmtWhen(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+        weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    })
+}
+
+function fmtAgo(iso) {
+    const diff = Date.now() - new Date(iso).getTime()
+    const mins = Math.round(diff / 60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins} min ago`
+    const hrs = Math.round(mins / 60)
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`
+    const days = Math.round(diff / DAY_MS)
+    return `${days} day${days === 1 ? '' : 's'} ago`
+}
+
+// Snapshot kind → label, short label (for the dropdown) and badge style
+const TYPES = {
+    daily: { label: 'Daily (automatic)', short: 'Daily', icon: CalendarClock, cls: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' },
+    'pre-upgrade': { label: 'Before upgrade (automatic)', short: 'Before upgrade', icon: Zap, cls: 'text-blue-300 bg-blue-500/10 border-blue-500/20' },
+    manual: { label: 'Manual (Backup Now)', short: 'Manual', icon: Hand, cls: 'text-slate-300 bg-white/5 border-white/10' },
+    other: { label: 'Snapshot', short: 'Snapshot', icon: Archive, cls: 'text-slate-300 bg-white/5 border-white/10' }
+}
+const typeOf = (b) => TYPES[b.type] || (b.auto ? TYPES['pre-upgrade'] : TYPES.manual)
+
+// Group snapshots by age for the dropdown (list is already newest-first)
+function groupByAge(backups) {
+    const buckets = [
+        { label: 'Last 7 days', max: 7, items: [] },
+        { label: '8 – 30 days ago', max: 30, items: [] },
+        { label: '31 – 45 days ago', max: 45, items: [] },
+        { label: 'Older (newest kept as a safety copy)', max: Infinity, items: [] }
+    ]
+    for (const b of backups) {
+        const age = (Date.now() - new Date(b.created).getTime()) / DAY_MS
+        buckets.find(g => age <= g.max).items.push(b)
+    }
+    return buckets.filter(g => g.items.length)
 }
 
 export default function EtcdBackupPanel({ clusterId, canManage = false }) {
@@ -24,6 +68,17 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
     const [notice, setNotice] = useState(null)
     const [locked, setLocked] = useState(false)     // true when plan doesn't include etcd backup
     const [showInfo, setShowInfo] = useState(true)  // shown by default; ⓘ button hides it
+    const [selected, setSelected] = useState('')    // filename chosen in the dropdown
+
+    // Keep a valid selection: default to the newest snapshot
+    useEffect(() => {
+        const list = data?.backups || []
+        if (!list.length) { setSelected(''); return }
+        if (!list.some(b => b.filename === selected)) setSelected(list[0].filename)
+    }, [data])
+
+    const selectedBackup = data?.backups?.find(b => b.filename === selected)
+    const retentionDays = data?.retentionDays || 45
 
     const fetchBackups = async () => {
         setLoading(true); setError(null)
@@ -85,7 +140,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                     <ShieldCheck className="w-5 h-5 text-emerald-400" />
                     <div>
                         <h3 className="text-lg font-black text-white tracking-tight">etcd Snapshots</h3>
-                        <p className="text-slate-500 text-xs mt-0.5">Cluster-state backups — auto before upgrades + on-demand</p>
+                        <p className="text-slate-500 text-xs mt-0.5">Cluster-state backups — daily, before upgrades & on demand · kept {retentionDays} days</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -141,7 +196,7 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                         <div className="flex items-center gap-1.5 mb-1.5 text-slate-200 font-black uppercase tracking-wider text-[10px]"><RotateCcw className="w-3.5 h-3.5" /> How Restore Works</div>
                         <p>Click <span className="text-white font-bold">Restore</span> on a snapshot → KubeEZ safely: (1) stops the API server &amp; etcd,
                         (2) keeps your current data as a rollback copy on the node, (3) restores the snapshot, (4) restarts the control plane and waits until it's healthy.</p>
-                        <p className="mt-1.5 text-amber-300/90">⚠️ Changes made <span className="font-bold">after</span> the snapshot are lost. A snapshot is also taken <span className="font-bold">automatically before every upgrade</span>. Automated restore supports single control-plane clusters.</p>
+                        <p className="mt-1.5 text-amber-300/90">⚠️ Changes made <span className="font-bold">after</span> the snapshot are lost. Snapshots are taken <span className="font-bold">automatically every day and before every upgrade</span>, and kept for <span className="font-bold">{retentionDays} days</span> (the newest is always kept). Automated restore supports single control-plane clusters.</p>
                     </div>
                 </div>
             )}
@@ -177,38 +232,97 @@ export default function EtcdBackupPanel({ clusterId, canManage = false }) {
                     <p className="text-red-400 text-sm mb-2">{error}</p>
                     <button onClick={fetchBackups} className="text-xs font-bold text-blue-400 hover:underline">Try again</button>
                 </div>
-            ) : !data?.backups?.length ? (
-                <div className="py-10 text-center">
-                    <Database className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-                    <p className="text-slate-400 text-sm">No etcd snapshots yet.</p>
-                    <p className="text-slate-600 text-xs mt-1">A snapshot is taken automatically before every upgrade, or click "Backup Now".</p>
-                </div>
             ) : (
-                <div className="space-y-2">
-                    {data.backups.map(b => (
-                        <div key={b.filename} className="flex items-center justify-between gap-3 bg-white/[0.03] border border-white/8 rounded-xl px-4 py-3">
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-mono text-xs font-bold text-white truncate">{b.filename}</span>
-                                    {b.auto
-                                        ? <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded px-1.5 py-0.5"><Zap className="w-3 h-3" /> Auto (pre-upgrade)</span>
-                                        : <span className="text-[10px] font-bold text-slate-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">Manual</span>}
-                                </div>
-                                <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1">
-                                    <span>{fmtBytes(b.size)}</span>
-                                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(b.created).toLocaleString()}</span>
+                <div className="space-y-4">
+                    {/* Summary: how many, retention, next automatic snapshot */}
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-slate-300">
+                            <Database className="w-3.5 h-3.5 text-slate-400" /> {data?.backups?.length || 0} snapshot{data?.backups?.length === 1 ? '' : 's'}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-slate-300">
+                            <Archive className="w-3.5 h-3.5 text-slate-400" /> Kept {retentionDays} days
+                        </span>
+                        {data?.schedule?.enabled ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-2.5 py-1 text-emerald-300">
+                                <CalendarClock className="w-3.5 h-3.5" /> Daily auto-backup
+                                {data.schedule.nextRun && <span className="text-emerald-400/70">· next {fmtWhen(data.schedule.nextRun)}</span>}
+                            </span>
+                        ) : data?.schedule?.error ? (
+                            <span title={data.schedule.error} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-1 text-amber-300">
+                                <AlertTriangle className="w-3.5 h-3.5" /> Daily auto-backup not active — click refresh to retry
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {!data?.backups?.length ? (
+                        <div className="py-8 text-center rounded-xl border border-dashed border-white/10">
+                            <Database className="w-10 h-10 text-slate-700 mx-auto mb-3" />
+                            <p className="text-slate-400 text-sm">No etcd snapshots yet.</p>
+                            <p className="text-slate-600 text-xs mt-1">The first daily snapshot runs automatically, one is taken before every upgrade, or click "Backup Now".</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Snapshot picker */}
+                            <div>
+                                <label htmlFor="etcd-snapshot" className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+                                    Choose a snapshot
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        id="etcd-snapshot"
+                                        value={selected}
+                                        onChange={(e) => setSelected(e.target.value)}
+                                        className="w-full appearance-none cursor-pointer bg-black/40 border border-white/10 hover:border-white/20 focus:border-emerald-500/50 rounded-xl pl-4 pr-10 py-3 text-sm text-white outline-none transition-colors"
+                                    >
+                                        {groupByAge(data.backups).map(g => (
+                                            <optgroup key={g.label} label={g.label} className="bg-slate-900 text-slate-400">
+                                                {g.items.map(b => (
+                                                    <option key={b.filename} value={b.filename} className="bg-slate-900 text-white">
+                                                        {fmtWhen(b.created)} — {typeOf(b).short} · {fmtBytes(b.size)}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                                 </div>
                             </div>
-                            {canManage && (
-                                <button
-                                    onClick={() => setRestoreTarget(b.filename)}
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 text-amber-400 text-xs font-black transition-all active:scale-95 shrink-0"
-                                >
-                                    <RotateCcw className="w-3.5 h-3.5" /> Restore
-                                </button>
-                            )}
-                        </div>
-                    ))}
+
+                            {/* Selected snapshot details */}
+                            {selectedBackup && (() => {
+                                const t = typeOf(selectedBackup)
+                                const TypeIcon = t.icon
+                                return (
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/[0.03] border border-white/8 rounded-xl px-4 py-3">
+                                        <div className="min-w-0 space-y-1.5">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className={`inline-flex items-center gap-1 text-[10px] font-bold border rounded px-1.5 py-0.5 ${t.cls}`}>
+                                                    <TypeIcon className="w-3 h-3" /> {t.label}
+                                                </span>
+                                                {selectedBackup.filename === data.backups[0].filename && (
+                                                    <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5">Latest</span>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-3 flex-wrap text-[11px] text-slate-400">
+                                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{fmtWhen(selectedBackup.created)}</span>
+                                                <span className="text-slate-500">({fmtAgo(selectedBackup.created)})</span>
+                                                <span>{fmtBytes(selectedBackup.size)}</span>
+                                            </div>
+                                            <p className="font-mono text-[10px] text-slate-600 truncate">{selectedBackup.filename}</p>
+                                        </div>
+                                        {canManage && (
+                                            <button
+                                                onClick={() => setRestoreTarget(selectedBackup.filename)}
+                                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 text-amber-400 text-xs font-black transition-all active:scale-95 shrink-0"
+                                            >
+                                                <RotateCcw className="w-3.5 h-3.5" /> Restore this snapshot
+                                            </button>
+                                        )}
+                                    </div>
+                                )
+                            })()}
+                        </>
+                    )}
                 </div>
             )}
 
