@@ -786,7 +786,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         {/* Add-on jobs: back to the cluster (Manage Add-ons → Repair / Logs) */}
                         {isAddonJob && status !== 'running' && clusterInfo?.originalClusterId && (
                             <button
-                                onClick={() => navigate(`/cluster/${clusterInfo.originalClusterId}`)}
+                                onClick={() => navigate(`/cluster/${clusterInfo.originalClusterId}?tab=addons&section=manage`)}
                                 className="flex items-center space-x-2 px-5 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-bold transition-colors"
                             >
                                 <span>Back to cluster</span>
