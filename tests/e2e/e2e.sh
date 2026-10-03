@@ -13,6 +13,7 @@
 #   e2e.sh cluster <master> <worker>...       build a 1.35 cluster and leave it running
 #   e2e.sh restore <master> <worker>...       etcd restore on a multi-node cluster (needs Node)
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
+#   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
 #   e2e.sh clean                              remove all e2e containers
 #
 # distros: ubuntu2204 ubuntu2404 debian12 rocky9 alma9 fedora amzn2023
@@ -160,6 +161,19 @@ cmd_restore() {
     return $rc
 }
 
+# Add-on management on a real node: install, status, logs, web UI login,
+# repair, uninstall (nothing left behind).  e2e.sh addons [distro]
+cmd_addons() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
+    image "$distro"; start_node "$node" "$distro"
+    docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local rc
+    NODE_CONTAINER="$node" node "$E2E/addons-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
 # Restore the pre-upgrade snapshot after 1.35 → 1.36 (kubeadm-config rolls back
 # to v1.35.0 while the control plane stays 1.36), then 1.36 → 1.37 must still
 # work.  e2e.sh restore-upgrade [distro]
@@ -195,6 +209,7 @@ case "${1:-}" in
     cluster) shift; cmd_cluster "$@" ;;
     restore) shift; cmd_restore "$@" ;;
     restore-upgrade) shift; cmd_restore_upgrade "$@" ;;
+    addons)  shift; cmd_addons "$@" ;;
     clean)   cmd_clean ;;
-    *) sed -n '2,19p' "$0"; exit 2 ;;
+    *) sed -n '2,20p' "$0"; exit 2 ;;
 esac

@@ -6,6 +6,7 @@ import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 import { licenseService } from '../services/licenseService.js'
 import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
+import { addonManager, ADDON_REGISTRY } from '../services/addonManager.js'
 import { etcdBackupService } from '../services/etcdBackupService.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
@@ -373,6 +374,75 @@ router.get('/:id/addons/access', requireAuth, async (req, res) => {
     }
 })
 
+// ─── Add-on management: live status, logs, uninstall ──────────────────────────
+
+// Health + pods of every add-on (installed or not)
+router.get('/:id/addons/status', requireAuth, requirePermission('addon:view'), async (req, res) => {
+    try {
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
+        const status = await addonManager.getStatus(cluster)
+        const job = installationManager.runningJobFor(cluster.id)
+        res.json({ ...status, runningJob: job ? { id: job.id, mode: job.mode } : null })
+    } catch (error) {
+        console.error('Addon status error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Pod logs + recent events of one add-on (logs can contain secrets → operators/admins)
+router.get('/:id/addons/:key/logs', requireAuth, requirePermission('addon:install'), async (req, res) => {
+    try {
+        const cluster = await loadOwnedCluster(req, res)
+        if (!cluster) return
+        res.json(await addonManager.getLogs(cluster, req.params.key, { pod: req.query.pod, tail: req.query.tail }))
+    } catch (error) {
+        console.error('Addon logs error:', error)
+        res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+// Uninstall (remove) or reinstall (remove, then install fresh) one add-on —
+// runs as a job with live logs, like an install
+router.post('/:id/addons/:key/:action(uninstall|reinstall)', requireAuth, requirePermission('addon:install'), async (req, res) => {
+    try {
+        const { key, action } = req.params
+        const existingCluster = await loadOwnedCluster(req, res)
+        if (!existingCluster) return
+        if (!ADDON_REGISTRY[key]) return res.status(400).json({ error: 'Unknown add-on' })
+        // Deliberate action: the client must echo the add-on key back
+        if (req.body?.confirm !== key) return res.status(400).json({ error: `Confirm the ${action} by sending the add-on key as "confirm".` })
+        if (action === 'reinstall') {
+            // Reinstall installs again → same plan rules as Install
+            const addonCheck = checkAddonPlan({ [key]: true }, authService.getOrgPlan(req.user.orgId))
+            if (!addonCheck.allowed) return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
+        }
+
+        const busy = installationManager.runningJobFor(existingCluster.id)
+        if (busy) return res.status(409).json({ error: 'Another operation is still running on this cluster — wait for it to finish.', runningJobId: busy.id })
+
+        const newInstallationId = uuidv4()
+        installationManager.startInstallation({
+            ...existingCluster,
+            id: newInstallationId,
+            ownerId: existingCluster.ownerId || req.user.id,
+            orgId: existingCluster.orgId || req.user.orgId,
+            originalClusterId: existingCluster.id,
+            mode: action === 'reinstall' ? 'addon-reinstall' : 'addon-uninstall',
+            uninstallAddon: key,
+            uninstallNamespace: ADDON_REGISTRY[key].ns,   // used by the generic removal path
+            status: 'pending',
+            logs: [],
+            progress: 0,
+            createdAt: new Date().toISOString()
+        })
+        res.json({ success: true, newInstallationId, message: `${action === 'reinstall' ? 'Reinstalling' : 'Uninstalling'} ${ADDON_REGISTRY[key].label}` })
+    } catch (error) {
+        console.error(`Add-on ${req.params.action} error:`, error)
+        res.status(500).json({ error: `Failed to start the add-on ${req.params.action}` })
+    }
+})
+
 // ─── etcd backups (Pro/Enterprise feature) ─────────────────────────────────────
 
 // etcd backup & restore is a paid feature. superadmin always allowed.
@@ -519,6 +589,8 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
         // Load cluster config (decrypted)
         const existingCluster = await loadOwnedCluster(req, res)
         if (!existingCluster) return
+        const busy = installationManager.runningJobFor(existingCluster.id)
+        if (busy) return res.status(409).json({ error: 'Another operation is still running on this cluster — wait for it to finish.', runningJobId: busy.id })
 
         // Plan-gate add-ons by the WORKSPACE plan (team members have plan 'MEMBER')
         const addonCheck = checkAddonPlan(addons, authService.getOrgPlan(req.user.orgId))

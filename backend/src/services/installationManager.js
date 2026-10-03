@@ -4,6 +4,11 @@ import { clusterStore } from './clusterStore.js'
 import { terminalService } from './terminalService.js'
 import { sameTenant } from '../utils/access.js'
 
+// Day-2 jobs that touch one add-on of an existing cluster
+const ADDON_JOB_MODES = new Set(['addon-only', 'addon-uninstall', 'addon-reinstall'])
+// The same add-on can be stored under more than one key
+const addonAliases = (key) => (key === 'cert-manager' || key === 'certManager') ? ['cert-manager', 'certManager'] : [key]
+
 class InstallationManager {
     constructor() {
         this.installations = new Map()
@@ -11,7 +16,15 @@ class InstallationManager {
         this.cancelRequests = new Set() // installationIds requested to cancel
 
         // Auto-cleanup stale installations every hour
-        setInterval(() => this.cleanupStaleInstallations(), 60 * 60 * 1000)
+        setInterval(() => this.cleanupStaleInstallations(), 60 * 60 * 1000).unref?.()
+    }
+
+    /** A job (install/upgrade/add-on…) still running on this cluster, if any. */
+    runningJobFor(clusterId) {
+        for (const job of this.installations.values()) {
+            if (job.status === 'running' && (job.originalClusterId === clusterId || job.id === clusterId)) return job
+        }
+        return null
     }
 
     cleanupStaleInstallations() {
@@ -262,6 +275,30 @@ class InstallationManager {
                 }
             }
 
+            // Add-on jobs change ONE add-on of an existing cluster: merge into the
+            // saved add-on list instead of replacing it with this job's selection.
+            if (ADDON_JOB_MODES.has(installation.mode)) {
+                const existing = (await clusterStore.getClusters()).find(c => c.id === finalCluster.id)
+                const addons = { ...(existing?.addons || {}) }
+                if (installation.mode === 'addon-only') {
+                    for (const [k, v] of Object.entries(installation.addons || {})) if (v) addons[k] = true
+                } else if (installation.mode === 'addon-reinstall') {
+                    addons[installation.uninstallAddon] = true
+                } else {
+                    for (const k of addonAliases(installation.uninstallAddon)) delete addons[k]
+                }
+                finalCluster.addons = addons
+                if (existing) finalCluster.k8sVersion = existing.k8sVersion
+                // A cluster whose INSTALL or UPGRADE failed stays failed (Resume /
+                // retry is still needed). One marked failed only because an add-on
+                // failed (older KubeEZ versions did that) is healthy again.
+                if (existing?.status === 'failed' && !ADDON_JOB_MODES.has(existing.mode)) {
+                    finalCluster.status = 'failed'
+                    finalCluster.mode = existing.mode
+                    finalCluster.error = existing.error
+                }
+            }
+
             // Persist
             await clusterStore.saveCluster(finalCluster)
 
@@ -299,6 +336,10 @@ class InstallationManager {
             installation.error   = error.message
             installation.diagnosis = error.diagnosis   // reason + fix, re-shown after a page refresh
             installation.failedAt = new Date().toISOString()
+
+            // An add-on job failing says nothing about the cluster itself — keep the
+            // cluster's saved state (it used to become "Installation Failed").
+            if (ADDON_JOB_MODES.has(installation.mode)) return
 
             // Persist to disk so resume works after server restart (fire-and-forget)
             clusterStore.saveCluster({

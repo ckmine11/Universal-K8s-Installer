@@ -57,12 +57,24 @@ for (const [method, p] of [
     ['GET', '/api/clusters/c-alice/kubeconfig'], ['DELETE', '/api/clusters/c-alice'],
     ['POST', '/api/clusters/c-alice/upgrade'], ['POST', '/api/clusters/c-alice/addons'],
     ['GET', '/api/clusters/c-alice/health'], ['POST', '/api/clusters/c-alice/analyze'],
-    ['GET', '/api/clusters/c-alice/addons/access'], ['GET', '/api/clusters/c-alice/etcd/backups']
+    ['GET', '/api/clusters/c-alice/addons/access'], ['GET', '/api/clusters/c-alice/etcd/backups'],
+    ['GET', '/api/clusters/c-alice/addons/status'], ['GET', '/api/clusters/c-alice/addons/seaweedfs/logs'],
+    ['POST', '/api/clusters/c-alice/addons/seaweedfs/uninstall'], ['POST', '/api/clusters/c-alice/addons/seaweedfs/reinstall']
 ]) {
     test(`another tenant gets 403: ${method} ${p}`, async () => {
         assert.equal((await api(method, p, bob.token, {})).status, 403)
     })
 }
+
+test('add-on uninstall needs a known add-on and an explicit confirmation', async () => {
+    const base = '/api/clusters/c-alice/addons'
+    assert.equal((await api('POST', `${base}/nope/uninstall`, alice.token, { confirm: 'nope' })).status, 400)
+    assert.equal((await api('POST', `${base}/seaweedfs/uninstall`, alice.token, {})).status, 400)
+    assert.equal((await api('POST', `${base}/seaweedfs/uninstall`, alice.token, { confirm: 'longhorn' })).status, 400)
+    assert.equal((await api('POST', `${base}/seaweedfs/reinstall`, alice.token, {})).status, 400)
+    assert.equal((await api('POST', `${base}/seaweedfs/explode`, alice.token, { confirm: 'seaweedfs' })).status, 404)
+    assert.equal((await api('GET', `${base}/seaweedfs/logs?pod=${encodeURIComponent('x; rm -rf /')}`, alice.token)).status, 400)
+})
 
 test('tenant admins cannot activate or generate licenses', async () => {
     assert.equal((await api('POST', '/api/license/activate', alice.token, { licenseKey: 'x' })).status, 403)

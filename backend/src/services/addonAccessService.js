@@ -168,19 +168,30 @@ class AddonAccessService {
             if (sw.ok && sw.out) {
                 const port = await getNodePort(ssh, 'seaweedfs', 'seaweedfs-s3') || '30833'
                 const key = (k) => run(ssh, `${KB} -n seaweedfs get secret seaweedfs-s3 -o jsonpath='{.data.${k}}' 2>/dev/null | base64 -d 2>/dev/null`)
-                const [ak, sk] = await Promise.all([key('accessKey'), key('secretKey')])
+                const [ak, sk, au, ap] = await Promise.all([key('accessKey'), key('secretKey'), key('adminUser'), key('adminPassword')])
+                const uiPort = await getNodePort(ssh, 'seaweedfs', 'seaweedfs-admin')
                 addons.push({
                     key: 'seaweedfs',
                     name: 'S3 Object Storage (SeaweedFS)',
                     icon: 'database',
                     installed: true,
-                    hasUI: false,
+                    hasUI: !!uiPort,
+                    // Web admin UI (file browser, buckets) — installs before it existed get
+                    // it with "Repair" in Manage Add-ons.
+                    uiUrl: uiPort ? `http://${nodeIp}:${uiPort}` : null,
                     // An S3 API, not a website: a browser sends no signature and
                     // gets "AccessDenied" — the UI shows it as an endpoint, not a link.
                     apiEndpoint: true,
                     url: `http://${nodeIp}:${port}`,
                     example: `AWS_ACCESS_KEY_ID='<access key>' AWS_SECRET_ACCESS_KEY='<secret key>' aws --endpoint-url http://${nodeIp}:${port} --region us-east-1 s3 ls s3://backups/`,
-                    auth: { username: ak.out || null, password: sk.out || null, usernameLabel: 'Access key', passwordLabel: 'Secret key' },
+                    auth: {
+                        username: ak.out || null, password: sk.out || null, usernameLabel: 'Access key', passwordLabel: 'Secret key',
+                        // Kept inside `auth` so the viewer-role redaction hides these too
+                        extra: uiPort && ap.out ? [
+                            { label: 'Web UI user', value: au.out || 'admin' },
+                            { label: 'Web UI password', value: ap.out, secret: true }
+                        ] : []
+                    },
                     note: 'S3 API endpoint (region us-east-1, path-style) with a ready "backups" bucket. Use it from apps or as the offsite backup target of OTHER clusters — not of this cluster itself.'
                 })
             }

@@ -1,6 +1,6 @@
 import { NodeSSH } from 'node-ssh'
 import { sshRefusedMessage } from '../utils/sshFixHint.js'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { agentService } from './agentService.js'
@@ -521,6 +521,49 @@ class AutomationEngine {
                 return
             }
 
+            // ==========================================
+            // MODE: ADD-ON UNINSTALL (Day-2 Operations)
+            // ==========================================
+            // Uninstall = remove everything the add-on created.
+            // Reinstall = the same removal, then a fresh install (clean slate).
+            if (installation.mode === 'addon-uninstall' || installation.mode === 'addon-reinstall') {
+                const key = installation.uninstallAddon
+                const reinstall = installation.mode === 'addon-reinstall'
+                onLog('info', reinstall ? `♻️ Mode: Reinstall add-on "${key}" (remove, then install fresh)` : `🗑 Mode: Uninstall add-on "${key}"`)
+                onProgress(5, 'Verifying connectivity...')
+                await this.validateConnectivity(installation, onLog)
+
+                if (!installation.simulationMode) {
+                    const ssh = await this.connectSSH(installation.masterNodes[0])
+                    try {
+                        const span = reinstall ? 0.4 : 0.85
+                        await this.executeScript(ssh, join(__dirname, '../automation/addon-uninstall.sh'),
+                            [key, '/etc/kubernetes/admin.conf', installation.uninstallNamespace || ''], onLog, {
+                                timeoutMs: 30 * 60 * 1000,   // Longhorn's own uninstaller may take minutes
+                                onStageProgress: (pct, label) => onProgress(10 + Math.round(pct * span), label)
+                            })
+                    } finally {
+                        ssh.dispose?.()
+                    }
+                    if (reinstall) {
+                        onLog('success', `✓ Old "${key}" removed — installing it fresh`)
+                        onProgress(55, `Installing ${key}...`)
+                        // mode addon-only: running cluster, no settle wait
+                        await this.installAddons({ ...installation, mode: 'addon-only', addons: { [key]: true } }, onLog)
+                    }
+                }
+
+                onProgress(100, reinstall ? 'Add-on reinstalled' : 'Add-on removed')
+                onLog('success', reinstall ? `✅ Add-on "${key}" reinstalled` : `✅ Add-on "${key}" uninstalled`)
+                onComplete({
+                    name: installation.clusterName,
+                    version: installation.k8sVersion,
+                    endpoint: `https://${installation.masterNodes[0].ip}:6443`,
+                    simulationMode: installation.simulationMode
+                })
+                return
+            }
+
             // Step 1: Validate connectivity
             ck()
             onProgress(5, 'Validating node connectivity...')
@@ -1035,6 +1078,16 @@ class AutomationEngine {
             if (addons.argocd) addonsToInstall.push({ type: 'script', script: 'addons/argocd.sh', label: 'ArgoCD' })
             if (addons.seaweedfs) addonsToInstall.push({ type: 'script', script: 'addons/seaweedfs.sh', label: 'S3 Object Storage (SeaweedFS)' })
 
+            // Any other add-on: a script named automation/addons/<key>.sh is enough
+            // (no code change needed to add one).
+            const KNOWN = new Set(['ingress', 'monitoring', 'logging', 'dashboard', 'certManager', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs'])
+            for (const [key, on] of Object.entries(addons)) {
+                if (!on || KNOWN.has(key) || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(key)) continue
+                if (existsSync(join(__dirname, '../automation/addons', `${key}.sh`))) {
+                    addonsToInstall.push({ type: 'script', script: `addons/${key}.sh`, label: key })
+                }
+            }
+
             if (addonsToInstall.length === 0) {
                 onLog('info', 'No valid add-ons selected to install.')
                 return
@@ -1042,12 +1095,16 @@ class AutomationEngine {
 
             const addonNames = addonsToInstall.map(a => a.label).join(', ')
             onLog('info', `Installing add-ons: ${addonNames}`)
-            onLog('info', 'Waiting 60 seconds for cluster networking to settle and nodes to become Ready...')
-            // Emit periodic progress so the log stream never goes silent for 60s
-            // (keeps the WebSocket alive through proxies/Cloudflare)
-            for (let s = 15; s <= 60; s += 15) {
-                await this.sleep(15000)
-                onLog('info', `...settling (${s}s / 60s)`)
+            // A fresh cluster needs a moment for networking to settle; a running
+            // one (add-on install / repair from the cluster page) does not.
+            if (installation.mode !== 'addon-only') {
+                onLog('info', 'Waiting 60 seconds for cluster networking to settle and nodes to become Ready...')
+                // Emit periodic progress so the log stream never goes silent for 60s
+                // (keeps the WebSocket alive through proxies/Cloudflare)
+                for (let s = 15; s <= 60; s += 15) {
+                    await this.sleep(15000)
+                    onLog('info', `...settling (${s}s / 60s)`)
+                }
             }
 
             const legacyScriptPath = join(__dirname, '../automation/install-addons.sh')

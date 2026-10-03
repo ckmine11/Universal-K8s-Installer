@@ -43,6 +43,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
     const [logs, setLogs] = useState([])
     const [currentStep, setCurrentStep] = useState('Initializing...')
     const [clusterInfo, setClusterInfo] = useState(null)
+    const isAddonJob = ['addon-only', 'addon-uninstall', 'addon-reinstall'].includes(clusterInfo?.mode)
     const logsEndRef = useRef(null)
     const wsRef = useRef(null)
     const [health, setHealth] = useState(null)
@@ -269,7 +270,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                     })
                     if (data.status === 'completed') {
                         setProgress(100)
-                        setClusterInfo(data.clusterInfo)
+                        setClusterInfo(prev => ({ ...prev, ...data.clusterInfo }))   // keep mode / originalClusterId
                         toast({ title: 'Mission Accomplished', message: 'Infrastructure is now live and fully operational.', type: 'success' })
                     }
                     if (data.status === 'failed' && data.diagnosis) {
@@ -490,7 +491,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                     <Activity className="w-8 h-8 text-red-500" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-black text-white">{clusterInfo?.mode === 'upgrade' ? 'Upgrade Halted' : clusterInfo?.mode === 'addon-only' ? 'Add-on Installation Halted' : 'Installation Halted'}</h2>
+                                    <h2 className="text-2xl font-black text-white">{({ upgrade: 'Upgrade Halted', 'addon-only': 'Add-on Installation Halted', 'addon-uninstall': 'Add-on Uninstall Halted', 'addon-reinstall': 'Add-on Reinstall Halted' }[clusterInfo?.mode]) || 'Installation Halted'}</h2>
                                     <p className="text-red-400 font-medium">Error Code: {errorState.reason || 'UNKNOWN_ERROR'}</p>
                                 </div>
                             </div>
@@ -750,9 +751,9 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold mb-2">
-                            {status === 'running' && (clusterInfo?.mode === 'upgrade' ? 'Upgrading Kubernetes Cluster...' : 'Installing Kubernetes Cluster...')}
-                            {status === 'completed' && (clusterInfo?.mode === 'upgrade' ? '✅ Cluster Upgrade Complete!' : '✅ Cluster Installation Complete!')}
-                            {status === 'failed' && (clusterInfo?.mode === 'upgrade' ? '❌ Upgrade Failed' : clusterInfo?.mode === 'addon-only' ? '❌ Add-on Installation Failed' : '❌ Installation Failed')}
+                            {status === 'running' && ({ upgrade: 'Upgrading Kubernetes Cluster...', 'addon-only': 'Installing Add-ons...', 'addon-uninstall': 'Uninstalling Add-on...', 'addon-reinstall': 'Reinstalling Add-on...' }[clusterInfo?.mode] || 'Installing Kubernetes Cluster...')}
+                            {status === 'completed' && ({ upgrade: '✅ Cluster Upgrade Complete!', 'addon-only': '✅ Add-ons Installed!', 'addon-uninstall': '✅ Add-on Uninstalled!', 'addon-reinstall': '✅ Add-on Reinstalled!' }[clusterInfo?.mode] || '✅ Cluster Installation Complete!')}
+                            {status === 'failed' && ({ upgrade: '❌ Upgrade Failed', 'addon-only': '❌ Add-on Installation Failed', 'addon-uninstall': '❌ Add-on Uninstall Failed', 'addon-reinstall': '❌ Add-on Reinstall Failed' }[clusterInfo?.mode] || '❌ Installation Failed')}
                             {status === 'cancelled' && '⛔ Installation Cancelled'}
                         </h1>
                         <p className="text-gray-400">Installation ID: {installationId}</p>
@@ -782,8 +783,18 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                             </button>
                         )}
 
-                        {/* Resume — after cancel or failure (skips completed steps) */}
-                        {canResume && (status === 'cancelled' || status === 'failed') && (
+                        {/* Add-on jobs: back to the cluster (Manage Add-ons → Repair / Logs) */}
+                        {isAddonJob && status !== 'running' && clusterInfo?.originalClusterId && (
+                            <button
+                                onClick={() => navigate(`/cluster/${clusterInfo.originalClusterId}`)}
+                                className="flex items-center space-x-2 px-5 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-bold transition-colors"
+                            >
+                                <span>Back to cluster</span>
+                            </button>
+                        )}
+
+                        {/* Resume — after cancel or failure (skips completed steps); not for add-on jobs */}
+                        {canResume && !isAddonJob && (status === 'cancelled' || status === 'failed') && (
                             <button
                                 onClick={handleResumeFromDashboard}
                                 disabled={isResuming}

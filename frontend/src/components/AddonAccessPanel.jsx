@@ -134,6 +134,21 @@ export default function AddonAccessPanel({ clusterId }) {
                                     </span>
                                 </div>
 
+                                {/* Web UI of an API add-on (e.g. SeaweedFS admin) */}
+                                {addon.uiUrl && (
+                                    <div className="mb-3">
+                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Web UI (login below)</label>
+                                        <div className="flex items-center gap-2">
+                                            <a href={addon.uiUrl} target="_blank" rel="noopener noreferrer"
+                                               className="flex-1 min-w-0 flex items-center gap-2 font-mono text-sm text-blue-400 hover:text-blue-300 bg-black/40 rounded-lg px-3 py-1.5 border border-white/5 truncate">
+                                                <span className="truncate">{addon.uiUrl}</span>
+                                                <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                                            </a>
+                                            <CopyBtn text={addon.uiUrl} />
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* API endpoint (e.g. S3) — not a web page, so no clickable link */}
                                 {addon.url && addon.apiEndpoint && (
                                     <div className="mb-3">
@@ -205,6 +220,17 @@ export default function AddonAccessPanel({ clusterId }) {
                                                 <Secret value={addon.auth.password} />
                                             </div>
                                         )}
+                                        {(addon.auth.extra || []).map(x => (
+                                            <div key={x.label}>
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">{x.label}</label>
+                                                {x.secret ? <Secret value={x.value} /> : (
+                                                    <div className="flex items-center gap-2">
+                                                        <code className="flex-1 font-mono text-sm text-slate-200 bg-black/40 rounded-lg px-3 py-1.5 border border-white/5">{x.value}</code>
+                                                        <CopyBtn text={x.value} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
                                         {addon.auth.token && (
                                             <div>
                                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1 mb-1.5">

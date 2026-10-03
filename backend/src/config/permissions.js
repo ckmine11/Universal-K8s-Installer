@@ -82,7 +82,7 @@ export const PERMISSION_GROUPS = [
     { group: 'Add-ons & Access', items: [
         { key: 'addon:view',          label: 'View installed add-ons & URLs' },
         { key: 'addon:credentials',   label: 'View add-on credentials/tokens' },
-        { key: 'addon:install',       label: 'Install add-ons' },
+        { key: 'addon:install',       label: 'Install, repair & uninstall add-ons; view add-on logs' },
         { key: 'kubeconfig:download', label: 'Download kubeconfig' },
         { key: 'terminal:access',     label: 'Use the cluster terminal' }
     ]},

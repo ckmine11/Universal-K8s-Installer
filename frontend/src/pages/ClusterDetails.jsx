@@ -28,6 +28,7 @@ import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
+import AddonManagerPanel from '../components/AddonManagerPanel'
 import EtcdBackupPanel from '../components/EtcdBackupPanel'
 
 export default function ClusterDetails({ onScaleCluster }) {
@@ -40,6 +41,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     const canUpgrade = can(user?.role, 'cluster:upgrade')
     const canScale = can(user?.role, 'cluster:scale')
     const canResume = can(user?.role, 'cluster:resume')
+    const canManageAddons = can(user?.role, 'addon:install')
     const canKubeconfig = can(user?.role, 'kubeconfig:download')
     const canTerminal = can(user?.role, 'terminal:access')
     const [cluster, setCluster] = useState(null)
@@ -284,6 +286,13 @@ export default function ClusterDetails({ onScaleCluster }) {
             {cluster.status !== 'failed' && cluster.status !== 'cancelled' && (
                 <div className="mb-8">
                     <AddonAccessPanel clusterId={id} />
+                </div>
+            )}
+
+            {/* Add-on management — also on failed clusters (repair a failed add-on) */}
+            {cluster.status !== 'cancelled' && (
+                <div className="mb-8">
+                    <AddonManagerPanel clusterId={id} canManage={canManageAddons} />
                 </div>
             )}
 
