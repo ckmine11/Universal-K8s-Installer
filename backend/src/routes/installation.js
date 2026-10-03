@@ -14,7 +14,7 @@ import { can } from '../config/permissions.js'
 import { isPaidPlan } from '../config/planFeatures.js'
 import { canAccessResource } from '../utils/access.js'
 import { offsiteStore } from '../services/offsiteStore.js'
-import { offsiteService } from '../services/offsiteService.js'
+import { offsiteService, sameClusterWarning } from '../services/offsiteService.js'
 
 
 const router = express.Router()
@@ -472,6 +472,7 @@ router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
             const r = await offsiteService.list(cluster, target)
             result.offsite = {
                 connected: true, provider: target.provider, bucket: target.bucket,
+                warning: sameClusterWarning(cluster, target.endpoint),
                 remote: r.ok ? r.remote : [], error: r.ok ? null : r.error,
                 lastSync: offsiteStore.publicView(req.user.orgId).lastSync?.[cluster.id] || null
             }

@@ -5,6 +5,9 @@ import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import http from 'node:http'
+import { execFile } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { tempDataDir } from './helpers/server.js'
 
 const DATA = tempDataDir()
@@ -12,7 +15,7 @@ process.env.KUBEEZ_DATA_DIR = DATA
 process.env.APP_SECRET = 'test-secret'
 
 const { presign } = await import('../src/utils/s3presign.js')
-const { normaliseConfig, offsiteService } = await import('../src/services/offsiteService.js')
+const { normaliseConfig, offsiteService, sameClusterWarning } = await import('../src/services/offsiteService.js')
 const { offsiteStore } = await import('../src/services/offsiteStore.js')
 
 after(() => fs.rmSync(DATA, { recursive: true, force: true }))
@@ -107,4 +110,39 @@ test('sync plan: uploads missing snapshots, deletes >45-day bundles, keeps the n
     } finally {
         offsiteService._run = orig
     }
+})
+
+test('storage on a node of the same cluster is flagged as not offsite', () => {
+    const cluster = { masterNodes: [{ ip: '192.168.220.80' }], workerNodes: [{ ip: '192.168.220.81', hostname: 'worker1' }] }
+    assert.match(sameClusterWarning(cluster, 'http://192.168.220.80:30833'), /node of this cluster/)
+    assert.match(sameClusterWarning(cluster, 'http://WORKER1:30833'), /node of this cluster/)
+    assert.equal(sameClusterWarning(cluster, 'http://192.168.220.90:30833'), null)
+    assert.equal(sameClusterWarning(cluster, 'https://s3.us-east-1.amazonaws.com'), null)
+})
+
+// Run the node-side script's connection test against a local HTTP server
+async function nodeTest(handler) {
+    const srv = http.createServer(handler)
+    await new Promise(r => srv.listen(0, '127.0.0.1', r))
+    const url = `http://127.0.0.1:${srv.address().port}/bucket/probe`
+    const b64 = (v) => Buffer.from(v).toString('base64')
+    const input = ['KZ_PUT', 'KZ_GET', 'KZ_DEL'].map(k => `${k}=${b64(url)}`)
+        .concat(`KZ_HOST=${b64('127.0.0.1:' + srv.address().port)}`).join('\n') + '\n'
+    const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/automation/etcd-offsite-node.sh')
+    const out = await new Promise(resolve => {
+        const p = execFile('bash', [script, 'test'], (err, stdout) => resolve(stdout))
+        p.stdin.end(input)
+    })
+    srv.close()
+    return out.split('\n').find(l => l.startsWith('OFFSITE_')) || out
+}
+
+test('node script: a web page / wrong port is reported as "not an S3 API"', async () => {
+    const line = await nodeTest((req, res) => { res.writeHead(404, { 'content-type': 'text/html' }); res.end('<!doctype html><title>SeaweedFS Admin</title>') })
+    assert.match(line, /^OFFSITE_FAIL\|WRONG_ENDPOINT\|.*30833/)
+})
+
+test('node script: a real S3 error is still reported precisely', async () => {
+    const line = await nodeTest((req, res) => { res.writeHead(404, { 'content-type': 'application/xml' }); res.end('<Error><Code>NoSuchBucket</Code><Message>bucket missing</Message></Error>') })
+    assert.match(line, /^OFFSITE_FAIL\|NO_BUCKET\|/)
 })

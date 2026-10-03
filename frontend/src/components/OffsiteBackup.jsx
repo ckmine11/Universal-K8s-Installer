@@ -85,7 +85,7 @@ export default function OffsiteBackup({ clusterId, offsite, canConfigure, canSyn
     const test = async () => {
         setBusy('test'); setResult(null)
         const { ok, data } = await call('POST', '/api/offsite/test', body())
-        setResult(ok ? { ok: true, msg: 'Connection works — this node can write to the bucket.' } : { ok: false, msg: data.error || 'Test failed' })
+        setResult(ok ? { ok: true, msg: 'Connection works — this node can write to the bucket.', warning: data.warning } : { ok: false, msg: data.error || 'Test failed' })
         setBusy(null)
     }
 
@@ -146,7 +146,7 @@ export default function OffsiteBackup({ clusterId, offsite, canConfigure, canSyn
             {result && (
                 <div className={`mb-3 flex items-start gap-2 rounded-xl p-3 text-xs ${result.ok ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border border-red-500/20 text-red-300'}`}>
                     {result.ok ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
-                    <span>{result.msg}</span>
+                    <span>{result.msg}{result.warning && <span className="block mt-1 text-amber-300">⚠ {result.warning}</span>}</span>
                 </div>
             )}
 
@@ -170,6 +170,7 @@ export default function OffsiteBackup({ clusterId, offsite, canConfigure, canSyn
                                     · Encrypted (AES-256) · kept 45 days
                                 </p>
                                 {offsite?.error && <p className="text-[11px] text-red-300 mt-1">Cannot read the bucket right now: {offsite.error}</p>}
+                                {offsite?.warning && <p className="text-[11px] text-amber-300 mt-1">⚠ Not really offsite: {offsite.warning}</p>}
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-2">

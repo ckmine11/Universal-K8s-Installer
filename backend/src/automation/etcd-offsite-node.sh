@@ -66,6 +66,11 @@ s3() {
     local s3code msg
     s3code=$(grep -oE '<Code>[^<]*</Code>' "$RESP" | head -1 | sed -E 's#</?Code>##g')
     msg=$(grep -oE '<Message>[^<]*</Message>' "$RESP" | head -1 | sed -E 's#</?Message>##g')
+    # No S3 error document at all → this address is not an S3 API (a web UI,
+    # a different service, a wrong port)
+    if [ -z "$s3code" ] && { grep -qiE '<html|<!doctype' "$RESP" || [ "$code" = 404 ] || [ "$code" = 405 ]; }; then
+        fail WRONG_ENDPOINT "${KZ_HOST} answered (HTTP ${code}), but it is not an S3 API — probably a web page or the wrong port. For KubeEZ's S3 add-on use its S3 endpoint (port 30833), not the web UI (30834)."
+    fi
     case "$s3code" in
         NoSuchBucket) fail NO_BUCKET "The bucket does not exist. Create it first (or fix the name)." ;;
         InvalidAccessKeyId|SignatureDoesNotMatch) fail BAD_KEYS "The access key or secret key is wrong." ;;

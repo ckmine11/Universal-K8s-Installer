@@ -88,6 +88,20 @@ function bundleTime(name) {
     return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null
 }
 
+/**
+ * Storage that runs ON the cluster being backed up (e.g. its own S3 add-on)
+ * is not offsite: losing the cluster loses the backups too. Returns a warning.
+ */
+export function sameClusterWarning(cluster, endpoint) {
+    let host
+    try { host = new URL(endpoint).hostname.toLowerCase() } catch { return null }
+    const nodes = [...(cluster?.masterNodes || []), ...(cluster?.workerNodes || [])]
+    const hit = nodes.find(n => [n.ip, n.hostname].filter(Boolean).map(s => String(s).toLowerCase()).includes(host))
+    return hit
+        ? `${host} is a node of this cluster — if the cluster is lost, these backups are lost with it. Use storage on another cluster or server (or a cloud bucket).`
+        : null
+}
+
 class OffsiteService {
     async _run(cluster, mode, entries) {
         const master = etcdBackupService.firstMaster(cluster)

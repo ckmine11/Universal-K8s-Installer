@@ -1,7 +1,7 @@
 import express from 'express'
 import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 import { offsiteStore } from '../services/offsiteStore.js'
-import { offsiteService, normaliseConfig } from '../services/offsiteService.js'
+import { offsiteService, normaliseConfig, sameClusterWarning } from '../services/offsiteService.js'
 import { installationManager } from '../services/installationManager.js'
 import { authService } from '../services/authService.js'
 import { isPaidPlan } from '../config/planFeatures.js'
@@ -39,7 +39,7 @@ router.post('/test', requirePermission('backup:manage'), async (req, res) => {
     let cfg
     try { cfg = normaliseConfig(req.body, offsiteStore.get(req.user.orgId)) } catch (e) { return res.status(400).json({ ok: false, error: e.message }) }
     const r = await offsiteService.test(cluster, cfg)
-    res.status(r.ok ? 200 : 422).json(r)
+    res.status(r.ok ? 200 : 422).json({ ...r, warning: sameClusterWarning(cluster, cfg.endpoint) })
 })
 
 // Connect = test + save. Only a configuration that passed the test is saved.
