@@ -1,6 +1,86 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key } from 'lucide-react';
+import {
+    Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key, CheckCircle2,
+    ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users
+} from 'lucide-react';
+
+// What KubeEZ does — shown to everyone arriving at the login page.
+const FEATURE_GROUPS = [
+    {
+        group: 'Deploy', features: [
+            { Icon: Zap, color: 'text-amber-400', title: 'One-click clusters', desc: 'Guided wizard with pre-flight checks and live logs. Ubuntu, Debian, Rocky, Alma, Fedora, Amazon Linux · Flannel or Calico.' },
+            { Icon: ArrowUpCircle, color: 'text-emerald-400', title: 'Safe upgrades', desc: 'Kubernetes 1.27 → 1.37, one version at a time. Automatic etcd snapshot before every upgrade, clear failure reasons, auto-retry.' },
+            { Icon: RotateCcw, color: 'text-sky-400', title: 'Resume, not restart', desc: 'If an install stops, resume it — finished steps are skipped. Scale out by adding workers any time.' }
+        ]
+    },
+    {
+        group: 'Operate', features: [
+            { Icon: Puzzle, color: 'text-fuchsia-400', title: 'Add-ons, managed', desc: 'Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage — install, repair, reinstall, uninstall and read logs from the UI.' },
+            { Icon: HeartPulse, color: 'text-rose-400', title: 'Auto-healing', desc: 'Detects NotReady nodes, disk/memory pressure and crash-looping pods, and fixes what it safely can.' },
+            { Icon: TerminalSquare, color: 'text-blue-400', title: 'Terminal & live health', desc: 'Browser terminal, live CPU / memory / disk and a 3D topology of every node.' }
+        ]
+    },
+    {
+        group: 'Protect', features: [
+            { Icon: DatabaseBackup, color: 'text-cyan-400', title: 'etcd backups & restore', desc: 'Backup Now plus automatic pre-upgrade snapshots, kept 45 days, one-click restore.' },
+            { Icon: Cloud, color: 'text-indigo-400', title: 'Encrypted offsite copies', desc: 'AES-256 encrypted copies to AWS S3, MinIO or any S3 storage. Your keys never reach the nodes.' }
+        ]
+    },
+    {
+        group: 'Connect & Team', features: [
+            { Icon: Shield, color: 'text-emerald-400', title: 'Gateway Agent', desc: 'Manage private servers through an outbound tunnel — no inbound firewall ports.' },
+            { Icon: Users, color: 'text-amber-300', title: 'Teams & roles', desc: 'Admin, Operator and Viewer roles in isolated workspaces. Viewers never see credentials.' }
+        ]
+    }
+];
+
+const STATS = [
+    { value: '7', label: 'Linux distros' },
+    { value: '1.27 → 1.37', label: 'Kubernetes' },
+    { value: '7', label: 'add-ons' },
+    { value: 'AES-256', label: 'offsite backups' }
+];
+
+// A cluster "deploying" line by line — what KubeEZ does, in ten seconds.
+const DEPLOY_LINES = [
+    { t: '$ kubeez deploy prod-cluster --nodes 3 --k8s 1.37', c: 'text-slate-300' },
+    { t: '✓ Pre-flight: 3 nodes reachable · OS, CPU, RAM, ports OK', c: 'text-emerald-400' },
+    { t: '✓ containerd 2.x installed on all nodes', c: 'text-emerald-400' },
+    { t: '✓ Control plane initialised (kubeadm v1.37)', c: 'text-emerald-400' },
+    { t: '✓ Network: flannel ready', c: 'text-emerald-400' },
+    { t: '✓ 2 workers joined', c: 'text-emerald-400' },
+    { t: '✓ Add-ons: ingress · monitoring · cert-manager', c: 'text-emerald-400' },
+    { t: '✓ etcd snapshot saved · offsite copy encrypted', c: 'text-cyan-400' },
+    { t: '🚀 Cluster ready — 3/3 nodes Ready', c: 'text-blue-300 font-bold' }
+];
+
+function DeployTerminal() {
+    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const [shown, setShown] = useState(reduced ? DEPLOY_LINES.length : 1);
+    useEffect(() => {
+        if (reduced) return;
+        // type a line every 0.9 s, hold the finished log for a moment, then replay
+        const t = setTimeout(() => setShown(n => (n >= DEPLOY_LINES.length + 3 ? 1 : n + 1)), shown >= DEPLOY_LINES.length ? 1400 : 900);
+        return () => clearTimeout(t);
+    }, [shown, reduced]);
+    return (
+        <div className="rounded-2xl border border-white/10 bg-black/60 shadow-2xl overflow-hidden" aria-label="Example deployment">
+            <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500/70" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/70" />
+                <span className="ml-3 text-[10px] font-bold tracking-widest text-slate-500 uppercase">live install log</span>
+            </div>
+            <div className="p-4 font-mono text-[12px] leading-6 min-h-[15.5rem]">
+                {DEPLOY_LINES.slice(0, Math.min(shown, DEPLOY_LINES.length)).map((l, i) => (
+                    <div key={i} className={`${l.c} animate-in`}>{l.t}</div>
+                ))}
+                {shown < DEPLOY_LINES.length && <span className="inline-block w-2 h-4 bg-slate-400 animate-pulse align-middle" />}
+            </div>
+        </div>
+    );
+}
 
 export default function Login() {
     const { login, setup, register, forgotPassword, resetPassword, isSetupRequired } = useAuth();
@@ -45,29 +125,9 @@ export default function Login() {
         }
     };
 
-    const features = [
-        {
-            icon: <Zap className="w-6 h-6 text-amber-400" />,
-            title: "Lightning Fast Provisioning",
-            desc: "Spin up production-ready Kubernetes clusters in seconds, fully configured and secured.",
-            color: "amber"
-        },
-        {
-            icon: <Activity className="w-6 h-6 text-emerald-400" />,
-            title: "Auto-Healing Engine",
-            desc: "Real-time AI diagnostics to auto-fix DNS, Swap memory, and node issues on the fly.",
-            color: "emerald"
-        },
-        {
-            icon: <Cloud className="w-6 h-6 text-blue-400" />,
-            title: "Secure SaaS Tunnels",
-            desc: "Connect local private nodes using lightweight WebSocket agents without opening firewall ports.",
-            color: "blue"
-        }
-    ];
 
     return (
-        <div className="min-h-screen bg-[#030712] text-white relative overflow-hidden font-sans flex items-center justify-center selection:bg-blue-500/30">
+        <div className="min-h-screen bg-[#030712] text-white relative overflow-x-clip font-sans flex items-center justify-center selection:bg-blue-500/30">
             {/* Ultra Premium Animated Background */}
             <div className="absolute inset-0 w-full h-full overflow-hidden z-0 pointer-events-none">
                 {/* Massive glowing orbs */}
@@ -81,46 +141,62 @@ export default function Login() {
                 <div className="absolute inset-0 bg-gradient-to-t from-[#030712] via-transparent to-[#030712]"></div>
             </div>
 
-            <div className={`max-w-[1400px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10 p-6 xl:p-0 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+            <div className={`max-w-[1400px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10 px-6 xl:px-10 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
                 
-                {/* Left Side: Stunning Typography & Brand */}
-                <div className="hidden lg:flex flex-col justify-center col-span-7 pr-8">
-                    <div className="mb-14">
-                        <div className="inline-flex items-center space-x-3 px-5 py-2 bg-white/5 border border-white/10 rounded-full mb-8 backdrop-blur-md shadow-2xl">
-                            <span className="flex h-2.5 w-2.5 relative">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-                            </span>
-                            <span className="text-[11px] font-black tracking-[0.25em] text-blue-400 uppercase">KubeEZ Master Console</span>
-                        </div>
-                        
-                        <h1 className="text-6xl xl:text-[80px] font-black tracking-tighter text-white mb-6 leading-[1.05]">
-                            Deploy Clusters <br />
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">
-                                With Zero Friction
-                            </span>
-                        </h1>
-                        <p className="text-xl text-slate-400 max-w-xl leading-relaxed font-medium">
-                            The ultimate "No-Ops" platform. Manage your entire Kubernetes infrastructure seamlessly from a single pane of glass.
-                        </p>
+                {/* Left Side: what KubeEZ is and everything it does */}
+                <div className="hidden lg:flex flex-col justify-center lg:col-span-7 pr-8 py-10">
+                    <div className="inline-flex self-start items-center space-x-3 px-5 py-2 bg-white/5 border border-white/10 rounded-full mb-6 backdrop-blur-md">
+                        <span className="flex h-2.5 w-2.5 relative">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                        </span>
+                        <span className="text-[11px] font-black tracking-[0.25em] text-blue-400 uppercase">KubeEZ · Kubernetes made easy</span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {features.map((feature, idx) => (
-                            <div key={idx} className="group relative glass p-6 rounded-[28px] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/10 transition-all duration-500 overflow-hidden">
-                                <div className={`absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-10 transition-opacity duration-500 ${feature.color === 'emerald' ? 'from-emerald-500 to-transparent' : feature.color === 'blue' ? 'from-blue-500 to-transparent' : 'from-amber-500 to-transparent'}`}></div>
-                                <div className="p-4 bg-black/40 rounded-2xl inline-block mb-6 border border-white/5 shadow-inner relative z-10 group-hover:scale-110 transition-transform duration-500">
-                                    {feature.icon}
+                    <h1 className="text-5xl xl:text-6xl font-black tracking-tighter text-white mb-4 leading-[1.05]">
+                        Production Kubernetes, <br />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">
+                            without the ops work.
+                        </span>
+                    </h1>
+                    <p className="text-lg text-slate-400 max-w-2xl leading-relaxed font-medium mb-8">
+                        Install, upgrade, back up and run clusters on your own servers — from one console, with a clear reason and a fix whenever something goes wrong.
+                    </p>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mb-8">
+                        <div className="xl:col-span-3"><DeployTerminal /></div>
+                        <div className="xl:col-span-2 grid grid-cols-2 gap-3 content-start">
+                            {STATS.map(st => (
+                                <div key={st.label} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                                    <div className="text-lg xl:text-xl font-black text-white tracking-tight whitespace-nowrap">{st.value}</div>
+                                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mt-1">{st.label}</div>
                                 </div>
-                                <h3 className="text-base font-black tracking-wide text-white mb-3 relative z-10">{feature.title}</h3>
-                                <p className="text-sm text-slate-500 leading-relaxed relative z-10 group-hover:text-slate-400 transition-colors font-medium">{feature.desc}</p>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="space-y-5">
+                        {FEATURE_GROUPS.map(g => (
+                            <div key={g.group}>
+                                <div className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2">{g.group}</div>
+                                <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+                                    {g.features.map(f => (
+                                        <div key={f.title} className="group rounded-2xl border border-white/5 bg-white/[0.015] hover:bg-white/[0.04] hover:border-white/10 p-4 transition-all duration-300">
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <f.Icon className={`w-4 h-4 ${f.color} group-hover:scale-110 transition-transform`} />
+                                                <h3 className="text-sm font-black text-white">{f.title}</h3>
+                                            </div>
+                                            <p className="text-xs text-slate-500 group-hover:text-slate-400 leading-relaxed transition-colors">{f.desc}</p>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         ))}
                     </div>
                 </div>
 
                 {/* Right Side: Ultra Premium Login Box */}
-                <div className="flex flex-col justify-center items-center lg:items-end w-full col-span-5 relative">
+                <div className="flex flex-col justify-center items-center lg:items-end w-full lg:col-span-5 relative lg:sticky lg:top-0 lg:h-screen lg:self-start">
                     {/* Glowing effect behind the card */}
                     <div className="absolute top-1/2 right-0 -translate-y-1/2 w-[120%] h-[120%] bg-gradient-to-br from-blue-600/10 to-purple-600/10 blur-[100px] rounded-full z-0 pointer-events-none"></div>
                     
@@ -298,6 +374,16 @@ export default function Login() {
                                 </div>
                             )}
                         </form>
+                    </div>
+
+                    {/* Phones/tablets: the feature panel is hidden — show the essentials */}
+                    <div className="lg:hidden w-full max-w-[460px] mt-8 grid grid-cols-2 gap-2 relative z-10">
+                        {FEATURE_GROUPS.flatMap(g => g.features).map(f => (
+                            <div key={f.title} className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
+                                <f.Icon className={`w-3.5 h-3.5 shrink-0 ${f.color}`} />
+                                <span className="text-[11px] font-bold text-slate-300">{f.title}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
