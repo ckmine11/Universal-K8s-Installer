@@ -1,4 +1,5 @@
 import { NodeSSH } from 'node-ssh'
+import { sshRefusedMessage } from '../utils/sshFixHint.js'
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -368,7 +369,7 @@ class AutomationEngine {
                 // If it fails here, it might be due to SSH connectivity issues
                 // being delayed until the first execCommand
                 if (err.message.includes('ECONNREFUSED')) {
-                    throw new Error(`SSH Connection Refused on ${node.ip}:22.\n\nFIX (Ubuntu/Debian):\n  sudo apt update && sudo apt install openssh-server -y\n  sudo systemctl enable --now ssh\n  sudo ufw allow ssh`)
+                    throw new Error(sshRefusedMessage(`${node.ip}:22`))
                 }
                 if (err.message.includes('Timed out while waiting for handshake')) {
                     throw new Error(`SSH Handshake Timeout on ${node.ip}.\n\nFIX: Verify the IP is correct and Port 22 is open on the host's firewall.`)
@@ -423,7 +424,7 @@ class AutomationEngine {
         } catch (error) {
             // Intercept common SSH networking errors that surface here
             if (error.message.includes('ECONNREFUSED')) {
-                throw new Error(`SSH Connection Refused on ${node.ip}:22.\n\nFIX (Ubuntu/Debian):\n  sudo apt update && sudo apt install openssh-server -y\n  sudo systemctl enable --now ssh\n  sudo ufw allow ssh`)
+                throw new Error(sshRefusedMessage(`${node.ip}:22`))
             }
             if (error.message.includes('Timed out while waiting for handshake')) {
                 throw new Error(`SSH Handshake Timeout on ${node.ip}.\n\nFIX: Verify the IP is correct and Port 22 is open on the host's firewall.`)

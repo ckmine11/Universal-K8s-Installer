@@ -1,5 +1,6 @@
 import { NodeSSH } from 'node-ssh'
 import { automationEngine } from './automationEngine.js'
+import { sshRefusedMessage } from '../utils/sshFixHint.js'
 
 // Total verification timeout — must stay under NGINX proxy_read_timeout (300s)
 const VERIFY_TIMEOUT_MS = 60_000  // 60s total
@@ -54,7 +55,7 @@ class NodeVerifier {
                 result.status = 'unreachable'
                 let errMessage = sshError.message
                 if (errMessage.includes('ECONNREFUSED')) {
-                    errMessage = `Connection Refused on Port 22.\nFIX (Ubuntu/Debian):\n  sudo apt update && sudo apt install openssh-server -y\n  sudo systemctl enable --now ssh`
+                    errMessage = sshRefusedMessage('port 22')
                 } else if (errMessage.includes('Timed out while waiting for handshake')) {
                     errMessage = `SSH Handshake Timeout.\nFIX: Verify IP is correct and firewall allows Port 22.`
                 }
