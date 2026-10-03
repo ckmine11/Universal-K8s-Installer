@@ -134,8 +134,32 @@ export default function AddonAccessPanel({ clusterId }) {
                                     </span>
                                 </div>
 
+                                {/* API endpoint (e.g. S3) — not a web page, so no clickable link */}
+                                {addon.url && addon.apiEndpoint && (
+                                    <div className="mb-3">
+                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">S3 Endpoint (API — not a web page)</label>
+                                        <div className="flex items-center gap-2">
+                                            <code className="flex-1 min-w-0 font-mono text-sm text-slate-200 bg-black/40 rounded-lg px-3 py-1.5 border border-white/5 truncate">{addon.url}</code>
+                                            <CopyBtn text={addon.url} />
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 leading-relaxed mt-1.5">
+                                            Use it from an S3 client (aws CLI, rclone, S3 Browser, an SDK) with the keys below.
+                                            Opening it in a browser shows <span className="font-mono">AccessDenied</span> — that is normal: a browser sends no keys.
+                                        </p>
+                                        {addon.example && (
+                                            <div className="mt-2">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Quick test (aws CLI)</label>
+                                                <div className="flex items-start gap-2">
+                                                    <code className="flex-1 min-w-0 font-mono text-[11px] text-slate-300 bg-black/40 rounded-lg px-3 py-1.5 border border-white/5 break-all">{addon.example}</code>
+                                                    <CopyBtn text={addon.example} />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* URL */}
-                                {addon.url && (
+                                {addon.url && !addon.apiEndpoint && (
                                     <div className="mb-3">
                                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Access URL</label>
                                         <div className="flex items-center gap-2">
