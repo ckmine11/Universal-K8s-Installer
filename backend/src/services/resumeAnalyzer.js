@@ -73,20 +73,30 @@ class ResumeAnalyzer {
             // ── 4. Network plugin (only if CP ready) ─────────────────────────
             let networkOk = false
             if (cpOk) {
+                // All namespaces: Flannel runs in kube-flannel, Calico (operator) in
+                // calico-system — looking only in kube-system misses both.
                 const netPods = await run(ssh,
-                    `${KB} kubectl get pods -n kube-system --no-headers 2>/dev/null ` +
-                    `| grep -E "calico|flannel|weave|cilium|canal|antrea" | grep -c "Running"`)
-                networkOk = parseInt(netPods.out) >= 1
-                const netName = await run(ssh,
-                    `${KB} kubectl get pods -n kube-system --no-headers 2>/dev/null ` +
-                    `| grep -E "calico|flannel|weave|cilium|canal|antrea" | awk '{print $1}' | head -1`)
+                    `${KB} kubectl get pods -A --no-headers 2>/dev/null ` +
+                    `| grep -E "calico|flannel|weave|cilium|canal|antrea" | awk '$4=="Running"{print $2; n++} END{exit n?0:1}'`)
+                networkOk = netPods.ok && !!netPods.out
+                // A node only turns Ready once its CNI works — a reliable fallback
+                // for plugins with other pod names.
+                let viaNodes = false
+                if (!networkOk) {
+                    const nodes = await run(ssh, `${KB} kubectl get nodes --no-headers 2>/dev/null`)
+                    const lines = nodes.out.split('\n').filter(Boolean)
+                    viaNodes = lines.length > 0 && lines.every(l => l.split(/\s+/)[1] === 'Ready')
+                    networkOk = viaNodes
+                }
                 checks.push({
                     key: 'installNetworkPlugin',
                     label: 'Network Plugin (CNI)',
                     done: networkOk,
-                    detail: networkOk
-                        ? `Running — ${netName.out || 'CNI pods active'}`
-                        : 'CNI pods not found or not Running'
+                    detail: !networkOk
+                        ? 'CNI pods not found or not Running'
+                        : viaNodes
+                            ? 'Working — all nodes Ready'
+                            : `Running — ${netPods.out.split('\n')[0]}`
                 })
             } else {
                 checks.push({ key: 'installNetworkPlugin', label: 'Network Plugin (CNI)', done: false, detail: 'Skipped — control plane not ready', skipped: true })
@@ -150,10 +160,15 @@ class ResumeAnalyzer {
                 }
 
                 for (const [key, { ns, label }] of Object.entries(addonNsMap)) {
-                    if (!cluster.addons?.[key] && !cluster.addons?.[key.replace(/([A-Z])/g, '-$1').toLowerCase()]) continue
+                    const kebab = key.replace(/([A-Z])/g, '-$1').toLowerCase()
+                    const configKey = cluster.addons?.[key] ? key : cluster.addons?.[kebab] ? kebab : null
+                    if (!configKey) continue
+                    // Done = pods exist and every one is Running/Completed (one healthy
+                    // pod next to a crashing one is NOT a finished add-on).
                     const r = await run(ssh,
-                        `${KB} kubectl get pods -n ${ns} --no-headers 2>/dev/null | grep -c "Running"`)
-                    addonChecks[key] = { done: parseInt(r.out) >= 1, label }
+                        `${KB} kubectl get pods -n ${ns} --no-headers 2>/dev/null | awk '{t++} $3!="Running" && $3!="Completed"{b++} END{print t+0, b+0}'`)
+                    const [total, bad] = r.out.split(/\s+/).map(n => parseInt(n) || 0)
+                    addonChecks[key] = { done: total > 0 && bad === 0, label, configKey }
                 }
             }
 
@@ -191,6 +206,8 @@ class ResumeAnalyzer {
                 checks,
                 resumeFromStep,
                 missingWorkers,
+                // add-ons (cluster.addons keys) still to install — resume skips the rest
+                pendingAddons: Object.values(addonChecks).filter(a => !a.done).map(a => a.configKey),
                 allDone,
                 summary: allDone
                     ? 'All steps completed — only post-validation needed'

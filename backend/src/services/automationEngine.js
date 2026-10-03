@@ -1349,8 +1349,13 @@ class AutomationEngine {
             postValidation:            95
         }
 
+        // Start at the first unfinished step, and also skip any LATER step the
+        // analysis found already done (e.g. CNI failed earlier but workers have
+        // joined since) — re-running those would re-join nodes or reinstall.
+        const doneSteps = new Set((analysis.checks || []).filter(c => c.done).map(c => c.key))
         const startIdx = STEP_ORDER.indexOf(resumeFromStep)
         const steps = STEP_ORDER.slice(startIdx >= 0 ? startIdx : 0)
+            .filter(s => s === resumeFromStep || s === 'postValidation' || !doneSteps.has(s))
 
         // Resume always runs on real nodes. Inject ownerId/orgId so SSH routes
         // through the tenant's Gateway Agent (stored nodes don't carry them).
@@ -1402,7 +1407,9 @@ class AutomationEngine {
                         if (!joinCommand) {
                             joinCommand = await this._regenerateJoinCommand(cluster, onLog)
                         }
-                        const workersToJoin = missingWorkers?.length > 0
+                        // Only workers the analysis found missing — never re-join a
+                        // node that is already in the cluster.
+                        const workersToJoin = Array.isArray(missingWorkers)
                             ? missingWorkers
                             : (cluster.workerNodes || [])
                         if (workersToJoin.length === 0) {
@@ -1415,10 +1422,25 @@ class AutomationEngine {
                         break
                     }
 
-                    case 'installAddons':
-                        onLog('info', 'Installing add-ons...')
-                        await this.installAddons(cluster, onLog)
+                    case 'installAddons': {
+                        // Only the add-ons that are not healthy yet
+                        // (analysis comes from the client — only add-ons configured on this cluster)
+                        const pending = Array.isArray(analysis.pendingAddons)
+                            ? analysis.pendingAddons.filter(k => cluster.addons?.[k])
+                            : null
+                        const addons = Array.isArray(pending)
+                            ? Object.fromEntries(pending.map(k => [k, true]))
+                            : cluster.addons
+                        if (Array.isArray(pending)) {
+                            onLog('info', pending.length
+                                ? `Installing add-ons not finished yet: ${pending.join(', ')}`
+                                : 'All add-ons already running — skipping')
+                        } else {
+                            onLog('info', 'Installing add-ons...')
+                        }
+                        await this.installAddons({ ...cluster, addons }, onLog)
                         break
+                    }
 
                     case 'postValidation':
                         onLog('info', 'Running post-installation validation...')
