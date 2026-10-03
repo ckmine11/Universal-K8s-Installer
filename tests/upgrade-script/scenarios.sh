@@ -58,6 +58,8 @@ scenario "image pull failure inside kubeadm"      "K_APPLY_MSG=error:_failed_to_
 scenario "kubeadm preflight [ERROR]"              "K_APPLY_MSG=[preflight]_Some_fatal_errors_occurred:_[ERROR_X]:_bad" KUBEADM_PREFLIGHT - 1.35.0 master true
 scenario "expired certificate"                    "K_APPLY_MSG=error:_x509:_certificate_has_expired" CERTIFICATE_ERROR - 1.35.0 master true
 scenario "stale kubeadm-config version"          "K_APPLY_MSG=[upgrade]_FATAL:_this_version_of_kubeadm_only_supports_deploying_clusters_with_the_control_plane_version_1.36.0._Current_version:_v1.35.0" KUBEADM_CONFIG_STALE - 1.35.0 master true
+scenario "API timeout (config map) once → auto-retry"   "K_APPLY_MSG=error:_[upgrade]_FATAL:_failed_to_get_config_map:_Get_https://192.168.220.80:6443/api/v1/namespaces/kube-system/configmaps/kubeadm-config:_net/http:_request_canceled_Client.Timeout_exceeded_while_awaiting_headers K_APPLY_FAILS=1" OK 'APPLY_RUNS=2' 1.35.0 master true
+scenario "API timeout twice → reason, cluster unchanged" "K_APPLY_MSG=error:_[upgrade]_FATAL:_failed_to_get_config_map:_Get_https://192.168.220.80:6443/api/v1/namespaces/kube-system/configmaps/kubeadm-config:_net/http:_request_canceled_Client.Timeout_exceeded_while_awaiting_headers" API_SERVER_DOWN 'cluster is unchanged' 1.35.0 master true
 scenario "kubelet rejects old flag"               "K_KUBELET_ACTIVE=3 K_JOURNAL=E1_unknown_flag:_--x" KUBELET_FLAG -          1.35.0 master true
 scenario "apt cannot install kubeadm"             "K_APT_FAIL=1"                            PKG_INSTALL_FAILED    -   1.35.0 master true
 scenario "image pre-pull fails"                   "K_PULL=1"                                IMAGE_PULL_FAILED     -   1.35.0 master true

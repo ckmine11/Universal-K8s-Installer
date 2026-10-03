@@ -643,6 +643,8 @@ diagnose_kubeadm() {
     # post-upgrade phase the control plane is ALREADY on the new version.
     if echo "$err" | grep -qi 'phase post-upgrade'; then
         state="The control plane was already upgraded; only kubeadm's final post-upgrade step failed, so a retry finishes the job."
+    elif ! echo "$out" | grep -qiE 'upgrade/staticpods|upgrade/etcd|Moving new manifest|Moved new manifest'; then
+        state="kubeadm stopped before changing anything, so the cluster is unchanged."
     else
         state="kubeadm rolled the control plane back, so the cluster is still running on its previous version."
     fi
@@ -657,8 +659,8 @@ diagnose_kubeadm() {
         echo "ETCD_UPGRADE_TIMEOUT|The new etcd did not become healthy in time. ${state}|Usually a slow disk or a stale sandbox image. Check the etcd container on the master ('crictl ps -a --name etcd', then 'crictl logs <id>'), then retry."
     elif echo "$err" | grep -qiE 'context deadline exceeded|timed out waiting for the condition|static Pod hash|did not change after'; then
         echo "CONTROL_PLANE_TIMEOUT|A control-plane component did not become healthy in time after the upgrade. ${state}|Check the component logs shown above (crictl ps -a / crictl logs). Slow nodes usually succeed on retry because images are now cached."
-    elif echo "$err" | grep -qiE 'connection refused.*6443|6443.*connection refused|unable to connect to the server'; then
-        echo "API_SERVER_DOWN|kubeadm could not reach the API server on port 6443.|Make sure the kube-apiserver container is running ('crictl ps --name kube-apiserver') and port 6443 is free, then retry."
+    elif echo "$err" | grep -qiE 'connection refused.*6443|6443.*connection refused|unable to connect to the server|6443.*(Client.Timeout|i/o timeout|TLS handshake timeout|no route to host|EOF)|failed to get config ?map'; then
+        echo "API_SERVER_DOWN|kubeadm could not reach the API server on port 6443 (it did not answer in time). ${state}|Make sure the kube-apiserver container is running ('crictl ps --name kube-apiserver') and port 6443 is free, then retry."
     elif echo "$err" | grep -qiE '\[ERROR '; then
         echo "KUBEADM_PREFLIGHT|kubeadm preflight check failed: ${last_err}|Fix the reported item on the node, then retry."
     elif echo "$err" | grep -qiE 'version skew|is not supported|Specified version to upgrade to'; then
@@ -706,6 +708,19 @@ ensure_kubelet_env_flags() {
     fi
 }
 
+# Earlier steps (containerd upgrade, sandbox-image sync, image pulls) can make
+# the API server briefly unreachable; kubeadm gives up after 10 s on its first
+# request ("failed to get config map … Client.Timeout exceeded"). Wait first.
+api_ready() { [ "$(kubectl --kubeconfig="$ADMIN_KUBECONFIG" get --raw='/readyz' --request-timeout=5s 2>/dev/null)" = "ok" ]; }
+wait_for_api() {   # $1 = seconds; only on control-plane nodes (they have admin.conf)
+    [ "$NODE_ROLE" = "master" ] && [ -f "$ADMIN_KUBECONFIG" ] || return 0
+    api_ready && return 0
+    log "Waiting for the API server to answer before running kubeadm (up to $1 s)..."
+    local i
+    for i in $(seq 1 $(( $1 / 5 ))); do api_ready && { log "✓ API server ready"; return 0; }; sleep 5; done
+    return 1
+}
+
 run_kubeadm_upgrade() {
     local rc
     if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
@@ -726,6 +741,10 @@ if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
     reconcile_kubeadm_config fix
 fi
 ensure_kubelet_env_flags
+if ! wait_for_api 300; then
+    component_logs
+    fail "API_SERVER_DOWN" "The API server on this node did not answer for 5 minutes, so kubeadm was not started. The cluster is unchanged."          "Check 'crictl ps -a --name kube-apiserver' and 'crictl logs <id>' on this node (and 'journalctl -u kubelet -n 50'), fix it, then retry."
+fi
 if ! run_kubeadm_upgrade; then
     DIAG=$(diagnose_kubeadm)
     CODE=$(echo "$DIAG" | cut -d'|' -f1)
@@ -736,9 +755,10 @@ if ! run_kubeadm_upgrade; then
         ensure_kubelet_env_flags
         if run_kubeadm_upgrade; then DIAG=""; else DIAG=$(diagnose_kubeadm); fi
     elif [ "$CODE" = "CONTROL_PLANE_TIMEOUT" ] || [ "$CODE" = "ETCD_UPGRADE_TIMEOUT" ] || [ "$CODE" = "API_SERVER_DOWN" ]; then
-        log "⚠️ ${CODE} — waiting 30s for the control plane to settle, then retrying once..."
+        log "⚠️ ${CODE} — waiting for the control plane to settle, then retrying once..."
         systemctl restart kubelet 2>/dev/null || true
         sleep 30
+        wait_for_api 300 || true
         if run_kubeadm_upgrade; then
             DIAG=""
         else
