@@ -12,6 +12,7 @@
 #                                             Node + npm install in backend/)
 #   e2e.sh cluster <master> <worker>...       build a 1.35 cluster and leave it running
 #   e2e.sh restore <master> <worker>...       etcd restore on a multi-node cluster (needs Node)
+#   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh clean                              remove all e2e containers
 #
 # distros: ubuntu2204 ubuntu2404 debian12 rocky9 alma9 fedora amzn2023
@@ -159,6 +160,32 @@ cmd_restore() {
     return $rc
 }
 
+# Restore the pre-upgrade snapshot after 1.35 → 1.36 (kubeadm-config rolls back
+# to v1.35.0 while the control plane stays 1.36), then 1.36 → 1.37 must still
+# work.  e2e.sh restore-upgrade [distro]
+cmd_restore_upgrade() {
+    local distro="${1:-ubuntu2204}"; local m="$PREFIX-$distro-cp"
+    image "$distro"; start_node "$m" "$distro"
+    docker exec "$m" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    upgrade_node "$m" 1.36.0 master true || return 1
+    local snap; snap=$(docker exec "$m" bash -c 'ls -t /var/lib/etcd-backup/etcd-pre-upgrade-*.db | head -1 | xargs basename')
+    echo "== restoring $snap (taken on 1.35)"
+    docker exec "$m" bash /k/etcd-restore.sh "$snap" | sed 's/^/    /'
+    docker exec "$m" grep -q RESULT=OK /var/lib/etcd-backup/last-restore.log || { echo "  ✗ restore failed"; return 1; }
+    local cfg; cfg=$(kubectl_on "$m" "-n kube-system get cm kubeadm-config -o jsonpath={.data.ClusterConfiguration}" | grep kubernetesVersion)
+    echo "$cfg" | grep -q 'v1.36' || { echo "  ✗ kubeadm-config not corrected after restore: $cfg"; return 1; }
+    echo "  ✓ restore corrected kubeadm-config ($cfg)"
+
+    # The upgrade must also self-heal clusters restored by an older KubeEZ
+    kubectl_on "$m" "-n kube-system get cm kubeadm-config -o yaml" | sed -E 's/(kubernetesVersion: *)v[0-9.]+/\1v1.35.0/' \
+        | docker exec -i "$m" bash -c 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl replace -f -' >/dev/null
+    echo "== kubeadm-config forced back to v1.35.0; upgrading to 1.37"
+    upgrade_node "$m" 1.37.0 master true || return 1
+    verify_cluster "$m" 1.37 "$m" 1 || return 1
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return 0
+}
+
 cmd_clean() { docker ps -aq --filter "name=$PREFIX-" | xargs -r docker rm -f >/dev/null 2>&1; true; }
 
 case "${1:-}" in
@@ -167,6 +194,7 @@ case "${1:-}" in
     offsite) shift; cmd_offsite "$@" ;;
     cluster) shift; cmd_cluster "$@" ;;
     restore) shift; cmd_restore "$@" ;;
+    restore-upgrade) shift; cmd_restore_upgrade "$@" ;;
     clean)   cmd_clean ;;
-    *) sed -n '2,18p' "$0"; exit 2 ;;
+    *) sed -n '2,19p' "$0"; exit 2 ;;
 esac

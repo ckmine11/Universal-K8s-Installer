@@ -57,6 +57,7 @@ scenario "etcd timeout twice → reason"            "K_APPLY_MSG=[upgrade/etcd]_
 scenario "image pull failure inside kubeadm"      "K_APPLY_MSG=error:_failed_to_pull_image_registry.k8s.io/etcd" IMAGE_PULL_FAILED - 1.35.0 master true
 scenario "kubeadm preflight [ERROR]"              "K_APPLY_MSG=[preflight]_Some_fatal_errors_occurred:_[ERROR_X]:_bad" KUBEADM_PREFLIGHT - 1.35.0 master true
 scenario "expired certificate"                    "K_APPLY_MSG=error:_x509:_certificate_has_expired" CERTIFICATE_ERROR - 1.35.0 master true
+scenario "stale kubeadm-config version"          "K_APPLY_MSG=[upgrade]_FATAL:_this_version_of_kubeadm_only_supports_deploying_clusters_with_the_control_plane_version_1.36.0._Current_version:_v1.35.0" KUBEADM_CONFIG_STALE - 1.35.0 master true
 scenario "kubelet rejects old flag"               "K_KUBELET_ACTIVE=3 K_JOURNAL=E1_unknown_flag:_--x" KUBELET_FLAG -          1.35.0 master true
 scenario "apt cannot install kubeadm"             "K_APT_FAIL=1"                            PKG_INSTALL_FAILED    -   1.35.0 master true
 scenario "image pre-pull fails"                   "K_PULL=1"                                IMAGE_PULL_FAILED     -   1.35.0 master true

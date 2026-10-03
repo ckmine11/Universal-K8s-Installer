@@ -179,6 +179,23 @@ if ! wait_api 180; then
 fi
 log "✓ API server ready on the restored data."
 
+# A snapshot taken BEFORE an upgrade carries the old kubeadm-config
+# (kubernetesVersion v1.35.0) while the static pods on disk stay newer (v1.36).
+# The next 'kubeadm upgrade' would then refuse to run — bring the record in
+# line with the control plane that actually runs (only ever upwards).
+CFG_VER=$(KUBECONFIG=$KC kubectl -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}' 2>/dev/null \
+    | grep -oE 'kubernetesVersion: *v[0-9]+\.[0-9]+\.[0-9]+' | grep -oE 'v[0-9.]+' | head -1)
+SRV_VER=$(KUBECONFIG=$KC kubectl version -o json 2>/dev/null | grep -A12 '"serverVersion"' | grep '"gitVersion"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+if [ -n "$CFG_VER" ] && [ -n "$SRV_VER" ] && [ "$CFG_VER" != "$SRV_VER" ] \
+   && [ "$(printf '%s\n%s\n' "${CFG_VER#v}" "${SRV_VER#v}" | sort -V | head -1)" = "${CFG_VER#v}" ]; then
+    log "kubeadm-config says ${CFG_VER} (from the snapshot) but the control plane runs ${SRV_VER} — correcting it..."
+    KUBECONFIG=$KC kubectl -n kube-system get cm kubeadm-config -o yaml \
+        | sed -E "s/(kubernetesVersion: *)v[0-9]+\.[0-9]+\.[0-9]+/\1${SRV_VER}/" \
+        | KUBECONFIG=$KC kubectl replace -f - >/dev/null 2>&1 \
+        && log "✓ kubeadm-config now records ${SRV_VER}" \
+        || log "⚠️ Could not update kubeadm-config — before the next upgrade run: kubectl -n kube-system edit cm kubeadm-config (set kubernetesVersion: ${SRV_VER})"
+fi
+
 # kubelet still remembers pods created AFTER the snapshot; a restart makes it
 # drop them and resync from the restored API ("no relationship found" otherwise).
 log "Restarting kubelet so it drops pods that are not in the snapshot..."

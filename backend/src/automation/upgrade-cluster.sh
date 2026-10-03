@@ -70,6 +70,39 @@ trap on_exit EXIT
 # ver_ge A B → true if version A >= B
 ver_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$2" ]; }
 
+# kubeadm-config's kubernetesVersion vs the control plane that actually runs.
+# Restoring an etcd snapshot taken BEFORE an upgrade rolls this ConfigMap back
+# (e.g. v1.35.0) while the static pods on disk stay newer (v1.36) — kubeadm
+# then refuses: "only supports deploying clusters with the control plane
+# version >= 1.36.0. Current version: v1.35.0".
+kubeadm_config_version() {
+    kubectl --kubeconfig="$ADMIN_KUBECONFIG" -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}' 2>/dev/null \
+        | grep -oE 'kubernetesVersion: *v[0-9]+\.[0-9]+\.[0-9]+' | grep -oE 'v[0-9.]+' | head -1
+}
+server_git_version() {
+    kubectl --kubeconfig="$ADMIN_KUBECONFIG" version -o json 2>/dev/null \
+        | grep -A12 '"serverVersion"' | grep '"gitVersion"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1
+}
+# reconcile_kubeadm_config check|fix — only ever moves the record UP to what runs
+reconcile_kubeadm_config() {
+    local cfg srv
+    cfg=$(kubeadm_config_version); srv=$(server_git_version)
+    { [ -z "$cfg" ] || [ -z "$srv" ] || ver_ge "${cfg#v}" "${srv#v}"; } && return 0
+    if [ "$1" = "check" ]; then
+        log "  ⚠ kubeadm-config says $cfg but the control plane runs $srv (an older etcd snapshot was restored) — it will be corrected before upgrading"
+        return 0
+    fi
+    log "Correcting kubeadm-config: $cfg → $srv (left behind by restoring an older etcd snapshot)..."
+    kubectl --kubeconfig="$ADMIN_KUBECONFIG" -n kube-system get cm kubeadm-config -o yaml \
+        | sed -E "s/(kubernetesVersion: *)v[0-9]+\.[0-9]+\.[0-9]+/\1${srv}/" \
+        | kubectl --kubeconfig="$ADMIN_KUBECONFIG" replace -f - >/dev/null 2>&1
+    if [ "$(kubeadm_config_version)" != "$srv" ]; then
+        fail "KUBEADM_CONFIG_STALE" "kubeadm-config records $cfg but the control plane runs $srv, and it could not be corrected automatically." \
+             "On the control-plane run: kubectl -n kube-system edit cm kubeadm-config — set kubernetesVersion to $srv — then retry."
+    fi
+    log "✓ kubeadm-config now matches the running control plane ($srv)"
+}
+
 if [ -z "$TARGET_VERSION" ]; then
     fail "INVALID_ARGS" "Target version is required (e.g. 1.35.0)." "Select a target version in the Upgrade dialog."
 fi
@@ -190,6 +223,7 @@ if [ "$NODE_ROLE" = "master" ] && [ -f "$ADMIN_KUBECONFIG" ]; then
         fi
         log "  ✓ Version path v1.${SERVER_MINOR} → v${VER_MAJOR_MINOR}"
     fi
+    [ "$IS_FIRST_MASTER" = "true" ] && reconcile_kubeadm_config check
     # The API server must be healthy before kubeadm can upgrade it.
     if [ "$IS_FIRST_MASTER" = "true" ]; then
         if [ "$(kubectl --kubeconfig="$ADMIN_KUBECONFIG" get --raw='/readyz' 2>/dev/null)" != "ok" ]; then
@@ -613,7 +647,9 @@ diagnose_kubeadm() {
         state="kubeadm rolled the control plane back, so the cluster is still running on its previous version."
     fi
 
-    if echo "$err" | grep -qiE 'kubelet env file|kubeadm-flags\.env|no flags found'; then
+    if echo "$err" | grep -qiE 'only supports deploying clusters with the control plane version'; then
+        echo "KUBEADM_CONFIG_STALE|kubeadm's record of the cluster version (kubeadm-config) is older than the control plane that actually runs — usually after restoring an etcd snapshot taken before an upgrade. ${state}|Retry the upgrade — KubeEZ now corrects kubeadm-config automatically before running kubeadm."
+    elif echo "$err" | grep -qiE 'kubelet env file|kubeadm-flags\.env|no flags found'; then
         echo "KUBELET_ENV_FILE|kubeadm could not read /var/lib/kubelet/kubeadm-flags.env (it has no kubelet flags left — newer Kubernetes removed the only flag it had). ${state}|Retry the upgrade — KubeEZ repairs this file automatically before running kubeadm."
     elif echo "$err" | grep -qiE 'ErrImagePull|ImagePullBackOff|failed to pull image|pull access denied'; then
         echo "IMAGE_PULL_FAILED|A new control-plane image could not be downloaded. ${state}|Check internet/DNS access to registry.k8s.io and free disk space, then retry."
@@ -686,6 +722,9 @@ run_kubeadm_upgrade() {
 
 STEP="kubeadm upgrade (control plane / node config)"
 progress 55 "Running kubeadm upgrade (this is the longest step)"
+if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
+    reconcile_kubeadm_config fix
+fi
 ensure_kubelet_env_flags
 if ! run_kubeadm_upgrade; then
     DIAG=$(diagnose_kubeadm)
