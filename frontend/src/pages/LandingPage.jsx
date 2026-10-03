@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
     Rocket, Server, Zap, Shield, Network, BarChart3,
     Package, ArrowRight, ChevronRight, Star, Check,
-    Terminal, GitBranch, Globe, Play, Cpu
+    Terminal, GitBranch, Globe, Play, Cpu, Database, RotateCcw
 } from 'lucide-react'
 
 // ─── Animated Counter ─────────────────────────────────────────────
@@ -106,12 +106,15 @@ export default function LandingPage() {
     const goToApp = () => navigate('/login')
 
     const features = [
-        { icon: Terminal, title: 'Zero Config Deploy', desc: 'SSH credentials provide — baaki sab KubeEZ karta hai. Automated preflight checks, runtime install, control plane init.', gradient: 'from-blue-500/20 to-cyan-500/10' },
-        { icon: Network, title: 'Multi-OS Support', desc: 'Ubuntu, Debian, CentOS 7/8/9, RHEL, Rocky Linux — sabhi pe ek jaisa experience. CentOS 7 EOL bhi handle hota hai.', gradient: 'from-emerald-500/20 to-teal-500/10' },
-        { icon: Zap, title: 'Intelligent Scale', desc: 'Ek click mein nodes add karo bina cluster downtime ke. HA multi-master setup bhi supported hai.', gradient: 'from-purple-500/20 to-violet-500/10' },
-        { icon: Shield, title: 'Auto-Healing', desc: 'DNS failures, swap issues, port conflicts — sab automatically detect aur fix hote hain. Production-grade reliability.', gradient: 'from-orange-500/20 to-amber-500/10' },
-        { icon: BarChart3, title: 'Live Monitoring', desc: 'Real-time CPU, RAM, disk, pods status. 3D cluster topology visualization. Incident detection with auto-remediation.', gradient: 'from-pink-500/20 to-rose-500/10' },
-        { icon: Package, title: 'Add-on Marketplace', desc: 'Nginx Ingress, Prometheus, ArgoCD, Longhorn, Cert-Manager — ek click install. Production-ready configurations.', gradient: 'from-indigo-500/20 to-blue-500/10' },
+        { icon: Terminal, title: 'Zero Config Deploy', desc: 'SSH credentials do — baaki sab KubeEZ karta hai. Preflight checks, runtime install, control plane init, live log ke saath.', gradient: 'from-blue-500/20 to-cyan-500/10' },
+        { icon: Network, title: 'Multi-OS Support', desc: 'Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, Amazon Linux — aur CentOS 7 (Kubernetes 1.34 tak). Sab pe ek jaisa experience.', gradient: 'from-emerald-500/20 to-teal-500/10' },
+        { icon: Rocket, title: 'Safe Upgrades', desc: 'Kubernetes 1.27 → 1.37, ek version at a time. Har upgrade se pehle automatic etcd snapshot, fail ho to saaf reason + auto-retry.', gradient: 'from-cyan-500/20 to-sky-500/10' },
+        { icon: Database, title: 'Backup & Restore', desc: 'etcd snapshots (Backup Now + har upgrade se pehle), one-click restore, aur AES-256 encrypted offsite copy S3 / MinIO pe.', gradient: 'from-teal-500/20 to-emerald-500/10' },
+        { icon: Package, title: 'Add-ons, Managed', desc: 'Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage — install, repair, reinstall, uninstall aur logs, sab UI se.', gradient: 'from-indigo-500/20 to-blue-500/10' },
+        { icon: Shield, title: 'Auto-Healing', desc: 'NotReady nodes, disk / memory pressure, crash-loop pods — detect hote hain aur jo safely fix ho sake wo apne aap fix hota hai.', gradient: 'from-orange-500/20 to-amber-500/10' },
+        { icon: RotateCcw, title: 'Resume, Restart Nahi', desc: 'Install beech mein ruk gaya? Resume karo — jo steps ho chuke wo skip. Running cluster mein workers kabhi bhi add karo.', gradient: 'from-purple-500/20 to-violet-500/10' },
+        { icon: BarChart3, title: 'Live Monitoring', desc: 'Real-time CPU, RAM, disk, 3D topology aur browser terminal. Incidents page pe har problem ka record.', gradient: 'from-pink-500/20 to-rose-500/10' },
+        { icon: Globe, title: 'Gateway Agent & Teams', desc: 'Private servers bina inbound port khole manage karo. Admin / Operator / Viewer roles, alag-alag workspaces.', gradient: 'from-blue-500/20 to-indigo-500/10' },
     ]
 
     const steps = [
@@ -217,10 +220,10 @@ export default function LandingPage() {
             <section className="border-y border-white/5 bg-white/[0.02] py-14 px-6">
                 <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
                     {[
-                        { target: 5, suffix: '+', label: 'OS Supported' },
-                        { target: 20, suffix: '+', label: 'K8s Versions' },
-                        { target: 99, suffix: '%', label: 'Auto-Heal Rate' },
-                        { target: 6, suffix: '+', label: 'Add-ons Ready' },
+                        { target: 8, suffix: '', label: 'Linux Distros' },
+                        { target: 11, suffix: '', label: 'K8s Versions (1.27–1.37)' },
+                        { target: 7, suffix: '', label: 'Add-ons Ready' },
+                        { target: 45, suffix: ' days', label: 'Backup Retention' },
                     ].map((stat, i) => (
                         <div key={i}>
                             <div className="text-4xl font-black text-white mb-2">
@@ -286,16 +289,18 @@ export default function LandingPage() {
                     <div className="p-8 rounded-3xl bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5 border border-white/5">
                         <div className="text-center mb-8">
                             <h3 className="text-2xl font-black text-white mb-2">Sabhi OS pe Kaam Karta Hai</h3>
-                            <p className="text-slate-500 text-sm">CentOS 7 EOL, RHEL 8/9, Rocky, Alma, Ubuntu — sab supported</p>
+                            <p className="text-slate-500 text-sm">Kubernetes 1.35+ ke liye cgroups v2 (5.x kernel) chahiye — CentOS 7 pe 1.34 tak</p>
                         </div>
                         <div className="flex flex-wrap justify-center gap-4">
                             {[
-                                { name: 'Ubuntu 20/22/24', color: 'text-orange-400 border-orange-500/20 bg-orange-500/5' },
-                                { name: 'CentOS 7 (EOL)', color: 'text-purple-400 border-purple-500/20 bg-purple-500/5' },
+                                { name: 'Ubuntu 22.04 / 24.04', color: 'text-orange-400 border-orange-500/20 bg-orange-500/5' },
+                                { name: 'Debian 12', color: 'text-cyan-400 border-cyan-500/20 bg-cyan-500/5' },
                                 { name: 'RHEL 8/9', color: 'text-red-400 border-red-500/20 bg-red-500/5' },
-                                { name: 'Rocky Linux', color: 'text-green-400 border-green-500/20 bg-green-500/5' },
-                                { name: 'AlmaLinux', color: 'text-blue-400 border-blue-500/20 bg-blue-500/5' },
-                                { name: 'Debian 11/12', color: 'text-cyan-400 border-cyan-500/20 bg-cyan-500/5' },
+                                { name: 'Rocky Linux 9', color: 'text-green-400 border-green-500/20 bg-green-500/5' },
+                                { name: 'AlmaLinux 9', color: 'text-blue-400 border-blue-500/20 bg-blue-500/5' },
+                                { name: 'Fedora', color: 'text-sky-400 border-sky-500/20 bg-sky-500/5' },
+                                { name: 'Amazon Linux 2023', color: 'text-amber-400 border-amber-500/20 bg-amber-500/5' },
+                                { name: 'CentOS 7 (K8s ≤ 1.34)', color: 'text-purple-400 border-purple-500/20 bg-purple-500/5' },
                             ].map((os, i) => (
                                 <div key={i} className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold ${os.color}`}>
                                     <Check className="w-4 h-4" />

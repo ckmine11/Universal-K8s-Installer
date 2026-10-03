@@ -9,7 +9,7 @@ import {
 const FEATURE_GROUPS = [
     {
         group: 'Deploy', features: [
-            { Icon: Zap, color: 'text-amber-400', title: 'One-click clusters', desc: 'Guided wizard with pre-flight checks and live logs. Ubuntu, Debian, Rocky, Alma, Fedora, Amazon Linux · Flannel or Calico.' },
+            { Icon: Zap, color: 'text-amber-400', title: 'One-click clusters', desc: 'Guided wizard with pre-flight checks and live logs. Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, Amazon Linux (CentOS 7 up to 1.34) · Flannel or Calico.' },
             { Icon: ArrowUpCircle, color: 'text-emerald-400', title: 'Safe upgrades', desc: 'Kubernetes 1.27 → 1.37, one version at a time. Automatic etcd snapshot before every upgrade, clear failure reasons, auto-retry.' },
             { Icon: RotateCcw, color: 'text-sky-400', title: 'Resume, not restart', desc: 'If an install stops, resume it — finished steps are skipped. Scale out by adding workers any time.' }
         ]
@@ -36,7 +36,7 @@ const FEATURE_GROUPS = [
 ];
 
 const STATS = [
-    { value: '7', label: 'Linux distros' },
+    { value: '8', label: 'Linux distros' },
     { value: '1.27 → 1.37', label: 'Kubernetes' },
     { value: '7', label: 'add-ons' },
     { value: 'AES-256', label: 'offsite backups' }

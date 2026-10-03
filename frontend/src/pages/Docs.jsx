@@ -190,7 +190,7 @@ export default function Docs() {
                         </P>
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                             {[
-                                [Server, 'Deploy', 'Guided install with pre-flight checks on 7 Linux distros.'],
+                                [Server, 'Deploy', 'Guided install with pre-flight checks on 8 Linux distros.'],
                                 [ArrowUpCircle, 'Upgrade', '1.27 → 1.37, one version at a time, snapshot first.'],
                                 [Puzzle, 'Add-ons', '7 add-ons — install, repair, uninstall, logs from the UI.'],
                                 [DatabaseBackup, 'Back up', 'etcd snapshots, 1-click restore, encrypted offsite copies.'],
@@ -217,7 +217,7 @@ export default function Docs() {
 
                     <Section id="requirements" Icon={Cpu} color="text-orange-400" title="Node Requirements">
                         <Table head={['', 'Requirement']} rows={[
-                            ['Operating system', 'Ubuntu 22.04 / 24.04, Debian 12, Rocky Linux 9, AlmaLinux 9, Fedora, Amazon Linux 2023 (all tested end-to-end). Needs cgroups v2 — CentOS 7 / RHEL 7 are not supported.'],
+                            ['Operating system', 'Ubuntu 22.04 / 24.04, Debian 12, Rocky Linux 9, AlmaLinux 9, Fedora, Amazon Linux 2023 (all tested end-to-end), RHEL 8 / 9. Kubernetes 1.35+ needs cgroups v2 and a 5.x kernel — CentOS 7 / RHEL 7 are supported up to Kubernetes 1.34.'],
                             ['CPU / memory', 'Control plane: 2 vCPU, 4 GB RAM recommended. Workers: 2 vCPU, 2 GB RAM minimum.'],
                             ['Disk', '20 GB+ recommended; upgrades need at least 2 GB free on /var.'],
                             ['Network', 'Outbound HTTPS to pkgs.k8s.io, registry.k8s.io and Docker Hub. Nodes must reach each other (6443, 10250, 30000–32767).'],

@@ -5,7 +5,17 @@ import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
-import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock, Eye } from 'lucide-react'
+import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock, Eye, HeartPulse, Users, RotateCcw } from 'lucide-react'
+
+// Full class names per colour (Tailwind drops classes built from `${color}`)
+const TONE = {
+    blue:    { text: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20',    ring: 'border-blue-500/30',    from: 'from-blue-500/10' },
+    cyan:    { text: 'text-cyan-400',    bg: 'bg-cyan-500/10',    border: 'border-cyan-500/20',    ring: 'border-cyan-500/30',    from: 'from-cyan-500/10' },
+    pink:    { text: 'text-pink-400',    bg: 'bg-pink-500/10',    border: 'border-pink-500/20',    ring: 'border-pink-500/30',    from: 'from-pink-500/10' },
+    emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', ring: 'border-emerald-500/30', from: 'from-emerald-500/10' },
+    orange:  { text: 'text-orange-400',  bg: 'bg-orange-500/10',  border: 'border-orange-500/20',  ring: 'border-orange-500/30',  from: 'from-orange-500/10' },
+    purple:  { text: 'text-purple-400',  bg: 'bg-purple-500/10',  border: 'border-purple-500/20',  ring: 'border-purple-500/30',  from: 'from-purple-500/10' }
+}
 
 export default function Home({ onStartNew, onScaleExisting }) {
     const { toast } = useToast()
@@ -463,14 +473,14 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     <div className="absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-blue-500/0 via-blue-500/50 to-blue-500/0 -translate-y-1/2 hidden md:block"></div>
 
                     {[
-                        { title: "Configure", icon: Settings, desc: "Define your master and worker nodes with simple SSH credentials.", color: "blue" },
-                        { title: "Automate", icon: Zap, desc: "KubeEZ runs deep automation scripts to provision the cluster.", color: "purple" },
-                        { title: "Control", icon: LayoutDashboard, desc: "Manage add-ons, scale nodes, and visualize topology instantly.", color: "pink" }
+                        { title: "Configure", icon: Settings, desc: "Add master and worker nodes (SSH or Gateway Agent). Pre-flight checks verify every node first.", color: "blue" },
+                        { title: "Automate", icon: Zap, desc: "KubeEZ installs everything with a live log. If a step fails you get the reason — and Resume skips what is done.", color: "purple" },
+                        { title: "Operate", icon: LayoutDashboard, desc: "Upgrade, back up, manage add-ons and watch health — all from the cluster page.", color: "pink" }
                     ].map((step, i) => (
                         <div key={i} className="relative z-10 flex flex-col items-center text-center group">
-                            <div className={`w-20 h-20 rounded-2xl bg-slate-900 border border-${step.color}-500/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-300 relative overflow-hidden`}>
-                                <div className={`absolute inset-0 bg-gradient-to-br from-${step.color}-500/10 to-transparent`}></div>
-                                <step.icon className={`w-8 h-8 text-${step.color}-400`} />
+                            <div className={`w-20 h-20 rounded-2xl bg-slate-900 border ${TONE[step.color].ring} flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-300 relative overflow-hidden`}>
+                                <div className={`absolute inset-0 bg-gradient-to-br ${TONE[step.color].from} to-transparent`}></div>
+                                <step.icon className={`w-8 h-8 ${TONE[step.color].text}`} />
                             </div>
                             <h4 className="text-lg font-bold text-white mb-2">{step.title}</h4>
                             <p className="text-slate-400 text-sm max-w-[200px]">{step.desc}</p>
@@ -483,17 +493,20 @@ export default function Home({ onStartNew, onScaleExisting }) {
             <div className={`w-full max-w-6xl transition-all duration-700 delay-200 mb-20 ${savedClusters.length > 0 ? 'opacity-50 hover:opacity-100' : 'opacity-100'}`}>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {[
-                        { title: "Multi-OS Core", icon: Server, desc: "Native support for Ubuntu, Debian, CentOS, and RHEL.", color: "blue" },
-                        { title: "3D Topology", icon: Network, desc: "Visualize your cluster infrastructure in real-time 3D.", color: "emerald" },
-                        { title: "Smart Scaling", icon: BarChart3, desc: "One-click node addition without downtime.", color: "purple" },
-                        { title: "Enterprise Ready", icon: Shield, desc: "Security hardened with RBAC and Firewall automation.", color: "orange" },
-                        { title: "Seamless Upgrades", icon: Rocket, desc: "Zero-effort Kubernetes version upgrades.", color: "cyan" },
-                        { title: "Add-on Marketplace", icon: Package, desc: "Install Monitoring, Storage, and GitOps in seconds.", color: "pink" }
+                        { title: "Multi-OS", icon: Server, desc: "Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, Amazon Linux — and CentOS 7 up to Kubernetes 1.34.", color: "blue" },
+                        { title: "Safe Upgrades", icon: Rocket, desc: "Kubernetes 1.27 → 1.37, one version at a time. Automatic etcd snapshot first, clear failure reasons, auto-retry.", color: "cyan" },
+                        { title: "Add-ons, Managed", icon: Package, desc: "Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 — install, repair, uninstall and logs from the UI.", color: "pink" },
+                        { title: "Backups & Restore", icon: Database, desc: "etcd snapshots before every upgrade and on demand, one-click restore, AES-256 offsite copies to S3 / MinIO.", color: "emerald" },
+                        { title: "Auto-Healing", icon: HeartPulse, desc: "Detects NotReady nodes, disk / memory pressure and crash-looping pods, and fixes what it safely can.", color: "orange" },
+                        { title: "Resume & Scale", icon: RotateCcw, desc: "A stopped install resumes where it left off; add worker nodes to a running cluster any time.", color: "purple" },
+                        { title: "Topology & Terminal", icon: Network, desc: "Live 3D topology, CPU / memory / disk and a browser terminal on every node.", color: "blue" },
+                        { title: "Gateway Agent", icon: Shield, desc: "Manage private servers through an outbound tunnel — no inbound firewall ports.", color: "cyan" },
+                        { title: "Teams & Roles", icon: Users, desc: "Admin, Operator and Viewer roles in isolated workspaces. Viewers never see credentials.", color: "emerald" }
                     ].map((feature, i) => (
                         <div key={i} className="p-8 rounded-[32px] bg-slate-900/40 backdrop-blur-xl border border-white/5 hover:border-white/20 transition-all group relative overflow-hidden">
-                            <div className={`absolute -right-8 -bottom-8 w-24 h-24 bg-${feature.color}-500/10 blur-2xl rounded-full group-hover:scale-150 transition-transform`}></div>
-                            <div className={`w-14 h-14 rounded-2xl bg-${feature.color}-500/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform border border-${feature.color}-500/20`}>
-                                <feature.icon className={`w-7 h-7 text-${feature.color}-400`} />
+                            <div className={`absolute -right-8 -bottom-8 w-24 h-24 ${TONE[feature.color].bg} blur-2xl rounded-full group-hover:scale-150 transition-transform`}></div>
+                            <div className={`w-14 h-14 rounded-2xl ${TONE[feature.color].bg} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform border ${TONE[feature.color].border}`}>
+                                <feature.icon className={`w-7 h-7 ${TONE[feature.color].text}`} />
                             </div>
                             <h4 className="text-xl font-bold text-white mb-3 tracking-tight">{feature.title}</h4>
                             <p className="text-slate-400 text-sm leading-relaxed">{feature.desc}</p>
