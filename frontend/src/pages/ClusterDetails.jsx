@@ -43,6 +43,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     const canKubeconfig = can(user?.role, 'kubeconfig:download')
     const canTerminal = can(user?.role, 'terminal:access')
     const [cluster, setCluster] = useState(null)
+    const failedUpgrade = cluster?.status === 'failed' && cluster?.mode === 'upgrade'
     const [loading, setLoading] = useState(true)
     const [health, setHealth] = useState(null)
     const [healthLoading, setHealthLoading] = useState(true)
@@ -207,7 +208,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                             const liveNodes = health?.nodes || []
                             const notReady = liveNodes.filter(n => n.status && n.status !== 'Ready')
                             if (cluster.status === 'failed') {
-                                return <span className="flex items-center text-red-400"><AlertTriangle className="w-4 h-4 mr-1" /> Installation Failed</span>
+                                return <span className="flex items-center text-red-400"><AlertTriangle className="w-4 h-4 mr-1" /> {failedUpgrade ? 'Upgrade Failed' : 'Installation Failed'}</span>
                             }
                             if (cluster.status === 'cancelled') {
                                 return <span className="flex items-center text-amber-400"><AlertTriangle className="w-4 h-4 mr-1" /> Installation Cancelled</span>
@@ -227,8 +228,9 @@ export default function ClusterDetails({ onScaleCluster }) {
                     </div>
                 </div>
 
-                {/* Resume button — for failed OR cancelled clusters */}
-                {canResume && (cluster.status === 'failed' || cluster.status === 'cancelled') && (
+                {/* Resume button — for failed OR cancelled installs (a failed upgrade is
+                    retried with "Upgrade" or rolled back with an etcd snapshot instead) */}
+                {canResume && !failedUpgrade && (cluster.status === 'failed' || cluster.status === 'cancelled') && (
                     <button
                         onClick={() => setResumeModalOpen(true)}
                         className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
@@ -285,12 +287,21 @@ export default function ClusterDetails({ onScaleCluster }) {
                 </div>
             )}
 
-            {/* etcd Snapshots (cluster-state backups) */}
-            {cluster.status !== 'failed' && cluster.status !== 'cancelled' && (
-                <div className="mb-8">
-                    <EtcdBackupPanel clusterId={id} canManage={canUpgrade} />
-                </div>
-            )}
+            {/* etcd Snapshots (cluster-state backups) — also after a failure: that is
+                exactly when restoring the automatic pre-upgrade snapshot is needed */}
+            <div className="mb-8">
+                {cluster.status === 'failed' && (
+                    <div className="mb-3 flex items-start gap-3 p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 text-sm text-amber-200">
+                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                        <span>
+                            {failedUpgrade
+                                ? <>The upgrade failed. Usually the cluster is still running on its previous version — retry with <b>Upgrade</b> first. If the cluster is broken, restore the <b>Before upgrade (automatic)</b> snapshot below.</>
+                                : <>The installation failed. Snapshots appear here once the control plane is running; use <b>Resume Installation</b> to finish the remaining steps.</>}
+                        </span>
+                    </div>
+                )}
+                <EtcdBackupPanel clusterId={id} canManage={canUpgrade} />
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column: Actions & Nodes */}
