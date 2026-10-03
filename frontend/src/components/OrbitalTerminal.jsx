@@ -33,7 +33,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
         fitAddon.fit();
         xtermRef.current = term;
 
-        term.writeln('\x1b[1;34mWelcome to Orbit Terminal System v2.1.0\x1b[0m');
+        term.writeln('\x1b[1;34mWelcome to the KubeEZ Terminal\x1b[0m');
         term.writeln('\x1b[32m[SYSTEM] Parallel SSH broadcasting active.\x1b[0m');
         term.writeln('\x1b[90mConnected to ' + nodes.length + ' node(s).\x1b[0m\r\n');
 

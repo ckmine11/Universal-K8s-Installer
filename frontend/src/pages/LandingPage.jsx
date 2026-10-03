@@ -172,7 +172,7 @@ export default function LandingPage() {
                     <div className="flex justify-center mb-8">
                         <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-black uppercase tracking-widest">
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                            Universal Kubernetes Installer — Production Ready
+                            KubeEZ — Production-ready Kubernetes, made easy
                         </div>
                     </div>
 

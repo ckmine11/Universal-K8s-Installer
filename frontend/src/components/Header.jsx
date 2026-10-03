@@ -52,11 +52,11 @@ export default function Header() {
                         </div>
                         <div>
                             <h1 className="text-xl font-black tracking-tighter text-white">
-                                Universal <span className="text-blue-500">K8s</span> Installer
+                                Kube<span className="text-blue-500">EZ</span>
                             </h1>
                             <div className="flex items-center space-x-1.5">
                                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">v2.1.0 Production</p>
+                                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Kubernetes made easy</p>
                             </div>
                         </div>
                     </Link>
