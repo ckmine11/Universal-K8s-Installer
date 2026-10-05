@@ -626,25 +626,45 @@ users:
             throw new Error('No master node found configuration')
         }
 
+        let ssh
         try {
             // Re-use automation engine's SSH capability
-            const ssh = await automationEngine.connectSSH(masterNode)
+            ssh = await automationEngine.connectSSH(masterNode)
+        } catch (error) {
+            return { error: 'Cannot connect to the control-plane', details: error.message, step: 'connect' }
+        }
 
-            // Parallel execution for speed
+        try {
+            // admin.conf is readable by root only: a non-root SSH user (passwordless
+            // sudo is set up on connect) must read it through sudo. Short timeout —
+            // the page polls every 15 s and must never hang on a slow tunnel.
+            const KUBECTL = 'sudo -n KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
+            const run = (cmd) => ssh.execCommand(cmd, { timeoutMs: 20000 })
             const [cpuResult, memResult, diskResult, nodesResult, podsResult] = await Promise.all([
                 // CPU Usage (simple top check)
-                ssh.execCommand("top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}'"),
+                run("top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}'"),
                 // Memory Usage (free -m)
-                ssh.execCommand("free -m | awk 'NR==2{printf \"%.2f\", $3*100/$2 }'"),
+                run("free -m | awk 'NR==2{printf \"%.2f\", $3*100/$2 }'"),
                 // Disk Usage (root partition)
-                ssh.execCommand("df -h / | awk 'NR==2 {print $5}' | sed 's/%//'"),
+                run("df -h / | awk 'NR==2 {print $5}' | sed 's/%//'"),
                 // Node Status (kubectl -o wide) - Name, Status, Roles, and INTERNAL-IP (col 6)
-                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get nodes -o wide --no-headers | awk '{print $1,$2,$3,$6}'"),
+                run(`${KUBECTL} get nodes -o wide --no-headers | awk '{print $1,$2,$3,$6}'`),
                 // Pods Running count
-                ssh.execCommand("export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get pods -A --field-selector=status.phase=Running --no-headers | wc -l")
+                run(`${KUBECTL} get pods -A --field-selector=status.phase=Running --no-headers | wc -l`)
             ])
 
-            ssh.dispose()
+            ssh.dispose?.()
+
+            // Through the Gateway Agent a failed SSH login comes back as failed
+            // commands, not as an exception — if nothing ran, report the reason
+            const all = [cpuResult, memResult, diskResult, nodesResult, podsResult]
+            if (all.every(r => r.code !== 0)) {
+                return {
+                    error: 'Cannot run commands on the control-plane',
+                    details: (nodesResult.stderr || nodesResult.stdout || 'no output').trim().split('\n').pop().slice(0, 300),
+                    step: 'commands'
+                }
+            }
 
             // Parse Nodes (name, status, roles, internal-ip)
             const nodesList = nodesResult.stdout.split('\n').filter(Boolean).map(line => {
@@ -664,15 +684,20 @@ users:
                 disk: parseFloat(diskResult.stdout) || 0,
                 pods: parseInt((podsResult.stdout || '0').trim(), 10) || 0,
                 nodes: nodesList.length > 0 ? nodesList : null, // If null, use stored config
+                // Connected, but the node list could not be read — say why
+                nodesError: nodesList.length ? undefined
+                    : ((nodesResult.stderr || nodesResult.stdout || '').trim().split('\n').pop() || 'kubectl returned no nodes').slice(0, 300),
                 timestamp: new Date().toISOString()
             }
 
         } catch (error) {
             console.error('Health check failed:', error)
-            // Return null or partial data so UI can show "Connection Failed" instead of crashing
+            ssh?.dispose?.()
+            // A reason the UI can show instead of a silent "Unknown"
             return {
-                error: 'Failed to connect to cluster master',
-                details: error.message
+                error: 'Could not read the cluster status',
+                details: error.message,
+                step: 'commands'
             }
         }
     }

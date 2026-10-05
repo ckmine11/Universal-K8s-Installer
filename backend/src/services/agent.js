@@ -46,7 +46,13 @@ const log = (...m) => console.log(new Date().toISOString(), '[Gateway Agent]', .
 process.on('uncaughtException', (e) => log('Unexpected error (continuing):', e && e.stack || e));
 process.on('unhandledRejection', (e) => log('Unhandled rejection (continuing):', e && e.message || e));
 
+// Sessions are cached per user + host + credential: a command for one account
+// must never run in a session another account opened (and a wrong password must
+// not "work" because some other session to the host is still open).
 const sshSessions = new Map();
+const crypto = require('crypto');
+const sessionKey = (ip, username, password, privateKey) =>
+    crypto.createHash('sha256').update([ip, username, password || '', privateKey || ''].join('\0')).digest('hex');
 let attempt = 0;
 
 function closeSessions() {
@@ -85,12 +91,13 @@ function connect() {
         if (msg.type !== 'execute-ssh') return;
 
         const { commandId, ip, username, password, command, privateKey } = msg;
+        const key = sessionKey(ip, username, password, privateKey);
         try {
-            let ssh = sshSessions.get(ip);
+            let ssh = sshSessions.get(key);
             if (!ssh || !ssh.isConnected()) {
                 ssh = new NodeSSH();
                 await ssh.connect({ host: ip, username, password, privateKey, tryKeyboard: true, readyTimeout: 60000 });
-                sshSessions.set(ip, ssh);
+                sshSessions.set(key, ssh);
                 log(`SSH connected to ${ip}`);
             }
             log(`Running on ${ip}: ${String(command).substring(0, 50)}...`);
@@ -101,7 +108,7 @@ function connect() {
         } catch (error) {
             log(`SSH error on ${ip}:`, error.message);
             send({ type: 'command-result', commandId, stdout: '', stderr: error.message, exitCode: 1 });
-            sshSessions.delete(ip); // reconnect next time
+            sshSessions.delete(key); // reconnect next time
         }
     });
 

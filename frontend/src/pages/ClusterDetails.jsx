@@ -64,6 +64,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     const [loading, setLoading] = useState(true)
     const [health, setHealth] = useState(null)
     const [healthLoading, setHealthLoading] = useState(true)
+    const [healthError, setHealthError] = useState(null)   // { error, details } when live status can't be read
 
     const [viewMode, setViewMode] = useState('3d') // 'list' | '3d'
     const [isTerminalOpen, setIsTerminalOpen] = useState(false)
@@ -145,11 +146,14 @@ export default function ClusterDetails({ onScaleCluster }) {
         apiFetch(`/api/clusters/${id}/health`)
             .then(res => res.json())
             .then(data => {
-                if (!data.error) {
+                if (data.error) {
+                    setHealthError({ error: data.error, details: data.details })
+                } else {
                     setHealth(data)
+                    setHealthError(data.nodesError ? { error: 'Connected, but the node list could not be read', details: data.nodesError } : null)
                 }
             })
-            .catch(err => console.error("Health fetch failed:", err))
+            .catch(err => setHealthError({ error: 'Could not reach KubeEZ', details: err.message }))
             .finally(() => setHealthLoading(false))
     }
 
@@ -245,7 +249,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                             if (cluster.status === 'cancelled') {
                                 return <span className="flex items-center text-amber-400"><AlertTriangle className="w-4 h-4 mr-1" /> Installation Cancelled</span>
                             }
-                            if (health?.error) {
+                            if (health?.error || (healthError && !health)) {
                                 return <span className="flex items-center text-red-400"><AlertTriangle className="w-4 h-4 mr-1" /> Unreachable</span>
                             }
                             if (notReady.length > 0) {
@@ -369,6 +373,19 @@ export default function ClusterDetails({ onScaleCluster }) {
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         <div className="lg:col-span-2 space-y-6">
+                            {/* Why live status is missing (instead of silent "Unknown" nodes) */}
+                            {healthError && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 text-sm text-amber-200">
+                                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                                    <div className="min-w-0">
+                                        <div className="font-bold">{healthError.error}{health ? ' — showing the last known status' : ''}</div>
+                                        {healthError.details && <div className="text-xs text-amber-200/80 mt-1 break-words font-mono">{healthError.details}</div>}
+                                        <div className="text-xs text-amber-200/70 mt-1">
+                                            Retries every 15 s. In SaaS mode check that the Gateway Agent is online on the Tunnels page and can reach the control-plane.
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             {/* Nodes Visualization */}
                             <div className="glass rounded-[32px] p-8 border border-white/5 overflow-hidden relative">
                                 <div className="flex items-center justify-between mb-6 relative z-10">

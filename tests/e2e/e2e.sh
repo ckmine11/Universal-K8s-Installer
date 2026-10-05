@@ -15,6 +15,7 @@
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
 #   e2e.sh agent [distro]                     Gateway Agent install as a service, crash/reboot recovery
+#   e2e.sh agent-health [distro]              cluster topology through the agent (root/non-root, reconnect)
 #   e2e.sh clean                              remove all e2e containers
 #
 # distros: ubuntu2204 ubuntu2404 debian12 rocky9 alma9 fedora amzn2023
@@ -188,6 +189,18 @@ cmd_agent() {
     return $rc
 }
 
+# Topology / health through the Gateway Agent on a real cluster: root and
+# non-root users, wrong password, agent reconnect.  e2e.sh agent-health [distro]
+cmd_agent_health() {
+    local distro="${1:-ubuntu2204}"
+    cmd_cluster "$distro" || return 1
+    local rc
+    NODE_CONTAINER="$PREFIX-$distro-cp" node "$E2E/health-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
 # Restore the pre-upgrade snapshot after 1.35 → 1.36 (kubeadm-config rolls back
 # to v1.35.0 while the control plane stays 1.36), then 1.36 → 1.37 must still
 # work.  e2e.sh restore-upgrade [distro]
@@ -225,6 +238,7 @@ case "${1:-}" in
     restore-upgrade) shift; cmd_restore_upgrade "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
     agent)   shift; cmd_agent "$@" ;;
+    agent-health) shift; cmd_agent_health "$@" ;;
     clean)   cmd_clean ;;
-    *) sed -n '2,21p' "$0"; exit 2 ;;
+    *) sed -n '2,22p' "$0"; exit 2 ;;
 esac

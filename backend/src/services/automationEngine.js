@@ -1161,7 +1161,8 @@ class AutomationEngine {
 
         const masterNode = installation.masterNodes[0]
         const ssh = await this.connectSSH(masterNode)
-        const kubeconfig = 'export KUBECONFIG=/etc/kubernetes/admin.conf && '
+        // admin.conf is root-only — a non-root SSH user reads it via sudo
+        const kubeconfig = 'sudo -n KUBECONFIG=/etc/kubernetes/admin.conf'
 
         try {
             // Check nodes
