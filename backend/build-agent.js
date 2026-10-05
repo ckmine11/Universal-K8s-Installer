@@ -20,7 +20,9 @@ async function buildAgent() {
             minify: true,
             // Keep native modules as external if any, but ws and node-ssh can usually be bundled
             // node-ssh might use some native bindings but typically ssh2 handles it
-            external: ['ssh2', 'cpu-features'], 
+            // ssh2 MUST be bundled: the installer downloads only this one file. Its
+            // optional native add-ons stay out — ssh2 falls back to pure JS without them.
+            external: ['cpu-features', '*.node'],
         });
         console.log('✅ Gateway Agent bundled successfully to public/agent-bundle.js');
     } catch (err) {

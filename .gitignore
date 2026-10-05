@@ -74,3 +74,6 @@ temp/
 *.crt
 *.cert
 *.ca-bundle
+
+# Built by backend/build-agent.js (Dockerfile / tests) — never commit
+backend/public/agent-bundle.js

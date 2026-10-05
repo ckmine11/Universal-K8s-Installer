@@ -4,6 +4,21 @@ import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
+// Install commands for an agent. Re-running them is safe: the installer replaces
+// the running agent (one copy only) and sets it up as a service.
+function installCommands(req, record) {
+    const hostHeader = req.get('x-forwarded-host') || req.get('host')
+    const host = process.env.KUBEEZ_PUBLIC_URL || `${req.protocol}://${hostHeader}`
+    const wsHost = host.replace(/^http/, 'ws')
+    const ts = Date.now()
+    // Quote the URL — zsh (default on macOS) treats the '?' in the query string
+    // as a glob and errors with "no matches found" if left unquoted.
+    const installCommandLinux = `curl -sfL "${host}/agent-install.sh?v=${ts}" | bash -s -- --token ${record.token} --agent-id ${record.agentId} --server ${wsHost}`
+    const psCmd = `$t="$env:TEMP\\kbagent.ps1"; Invoke-WebRequest -Uri "${host}/agent-install.ps1?v=${ts}" -OutFile $t; & $t -Token ${record.token} -AgentId ${record.agentId} -ServerUrl ${wsHost}`
+    const installCommandWindows = `powershell -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(psCmd, 'utf16le').toString('base64')}`
+    return { installCommandLinux, installCommandWindows }
+}
+
 // Generate a new agent registration token + install command
 router.post('/agent/token', requireAuth, requirePermission('agent:manage'), async (req, res) => {
     try {
@@ -12,19 +27,7 @@ router.post('/agent/token', requireAuth, requirePermission('agent:manage'), asyn
 
         const record = await agentService.generateToken(ownerId, ownerUsername, orgId, label)
 
-        // Detect host for the install command (from request, or env fallback)
-        const hostHeader = req.get('x-forwarded-host') || req.get('host')
-        const host = process.env.KUBEEZ_PUBLIC_URL || `${req.protocol}://${hostHeader}`
-        const wsHost = host.replace(/^http/, 'ws')
-        // Generate universal NodeJS command
-        const ts = Date.now()
-        // Quote the URL — zsh (default on macOS) treats the '?' in the query string
-        // as a glob and errors with "no matches found" if left unquoted.
-        const installCommandLinux = `curl -sfL "${host}/agent-install.sh?v=${ts}" | bash -s -- --token ${record.token} --agent-id ${record.agentId} --server ${wsHost}`
-        
-        const psCmd = `$t="$env:TEMP\\kbagent.ps1"; Invoke-WebRequest -Uri "${host}/agent-install.ps1?v=${ts}" -OutFile $t; & $t -Token ${record.token} -AgentId ${record.agentId} -ServerUrl ${wsHost}`
-        const base64Cmd = Buffer.from(psCmd, 'utf16le').toString('base64')
-        const installCommandWindows = `powershell -ExecutionPolicy Bypass -EncodedCommand ${base64Cmd}`
+        const { installCommandLinux, installCommandWindows } = installCommands(req, record)
 
         res.json({
             agentId: record.agentId,
@@ -83,6 +86,19 @@ router.post('/agent/check-ips', requireAuth, async (req, res) => {
         if (!Array.isArray(ips)) return res.status(400).json({ error: 'ips must be an array' })
         const result = await agentService.getStatusForIps(ips, req.user.id, req.user.role, req.user.orgId)
         res.json(result)
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Install / reconnect command for an EXISTING agent — same token, no new agent.
+// Use it to (re)install on a machine where the agent stopped or was removed.
+router.get('/agent/:agentId/install-command', requireAuth, requirePermission('agent:manage'), async (req, res) => {
+    try {
+        const agent = await agentService.getAgentById(req.params.agentId)
+        const mine = agent && ((agent.orgId && agent.orgId === req.user.orgId) || (!agent.orgId && agent.ownerId === req.user.id))
+        if (!mine) return res.status(404).json({ error: 'Agent not found' })
+        res.json({ agentId: agent.agentId, label: agent.label, ...installCommands(req, agent) })
     } catch (error) {
         res.status(500).json({ error: error.message })
     }

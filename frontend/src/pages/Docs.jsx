@@ -81,6 +81,7 @@ function Section({ id, Icon, color, title, intro, children }) {
     )
 }
 
+const H4 = ({ children }) => <h3 className="text-base font-black text-white pt-2">{children}</h3>
 const P = ({ children }) => <p className="text-sm text-slate-400 leading-relaxed max-w-3xl">{children}</p>
 const C = ({ children }) => <code className="text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded text-[12px]">{children}</code>
 
@@ -234,6 +235,14 @@ export default function Docs() {
                             'Paste the generated one-line installer into a terminal on a machine in your network (Linux, macOS or Windows). It downloads a portable runtime if needed.',
                             <>The agent appears as <b>Online</b>. Clusters in that workspace are now installed and managed through it.</>
                         ]} />
+                        <H4>Stays connected — no new token needed</H4>
+                        <Table head={['Situation', 'What happens']} rows={[
+                            ['Network drop / KubeEZ restart', 'The agent reconnects by itself (2 s, 4 s … up to 60 s between tries). A link that dies silently is detected within 60 s.'],
+                            ['Agent crashes or the machine reboots', 'The installer sets it up as a service: systemd (Linux, root or sudo), launchd (macOS) or a Scheduled Task (Windows, starts at boot when run as Administrator). Without sudo on Linux it falls back to a user service or cron.'],
+                            ['Agent was removed from the machine', <>Tunnels → the agent → <b>Install / Reconnect</b> shows the same command again (same token). Running it twice is safe — it replaces the old copy.</>],
+                            ['Agent deleted in KubeEZ', 'Its token stops working and the agent stops itself instead of retrying forever.']
+                        ]} />
+                        <Code>{"sudo systemctl status kubeez-agent      # Linux service\njournalctl -u kubeez-agent -f            # live log"}</Code>
                         <Note>Long operations (add-ons up to 30 min, upgrades up to 45 min) are given matching relay time-outs, so they are not cut off midway.</Note>
                     </Section>
 

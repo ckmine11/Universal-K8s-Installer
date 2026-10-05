@@ -6,7 +6,7 @@ import { useToast } from '../components/ToastProvider'
 import {
     Server, Plus, Wifi, WifiOff, Clock, Copy, Check,
     Trash2, Loader2, RefreshCw, Shield, AlertTriangle,
-    Terminal, ChevronRight, Activity, Info, Rocket, Zap, ArrowRight, Lock
+    Terminal, ChevronRight, Activity, Info, Rocket, Zap, ArrowRight, Lock, RotateCcw
 } from 'lucide-react'
 
 // ─── Status Badge ─────────────────────────────────────────────────
@@ -235,6 +235,24 @@ function AgentCard({ agent, onDelete, canManage = true }) {
     const { toast } = useToast()
     const [deleting, setDeleting] = useState(false)
     const [confirm, setConfirm] = useState(false)
+    const [cmd, setCmd] = useState(null)          // install/reconnect commands (same token)
+    const [cmdOpen, setCmdOpen] = useState(false)
+    const [cmdOs, setCmdOs] = useState('linux')
+
+    const toggleCommand = async () => {
+        if (cmdOpen) return setCmdOpen(false)
+        setCmdOpen(true)
+        if (cmd) return
+        try {
+            const res = await apiFetch(`/api/agent/${agent.agentId}/install-command`)
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Could not load the command')
+            setCmd(data)
+        } catch (err) {
+            toast({ title: 'Error', message: err.message, type: 'error' })
+            setCmdOpen(false)
+        }
+    }
 
     const handleDelete = async () => {
         setDeleting(true)
@@ -310,6 +328,40 @@ function AgentCard({ agent, onDelete, canManage = true }) {
                 </div>
             )}
 
+            {agent.status === 'offline' && (
+                <div className="mb-4 rounded-2xl border border-rose-500/15 bg-rose-500/5 p-3 text-[11px] text-rose-200/80 leading-relaxed">
+                    The agent reconnects by itself as soon as its machine is up and online — no new token needed.
+                    If it was removed from that machine (or installed with an older KubeEZ), use <b>Install / Reconnect</b> below and run the command again.
+                </div>
+            )}
+
+            {cmdOpen && (
+                <div className="mb-4 rounded-2xl border border-white/10 bg-black/30 p-3">
+                    {!cmd ? (
+                        <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading command...</div>
+                    ) : (
+                        <>
+                            <div className="flex items-center gap-1 mb-2">
+                                {[['linux', 'Linux / macOS'], ['windows', 'Windows']].map(([k, l]) => (
+                                    <button key={k} onClick={() => setCmdOs(k)}
+                                        className={`px-3 py-1 rounded-lg text-[11px] font-bold ${cmdOs === k ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`}>{l}</button>
+                                ))}
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <code className="flex-1 min-w-0 text-[10px] font-mono text-slate-300 bg-black/40 rounded-lg p-2 break-all max-h-28 overflow-y-auto">
+                                    {cmdOs === 'linux' ? cmd.installCommandLinux : cmd.installCommandWindows}
+                                </code>
+                                <CopyButton text={cmdOs === 'linux' ? cmd.installCommandLinux : cmd.installCommandWindows} />
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                                Same agent and token. Installs it as a service that starts at boot and restarts after a crash
+                                {cmdOs === 'linux' ? ' (run with sudo for a boot-time systemd service).' : ' (run PowerShell as Administrator to start at boot).'} Safe to run again — it replaces the running agent.
+                            </p>
+                        </>
+                    )}
+                </div>
+            )}
+
             {/* Meta */}
             <div className="flex items-center justify-between border-t border-white/5 pt-4">
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold">
@@ -317,6 +369,12 @@ function AgentCard({ agent, onDelete, canManage = true }) {
                     Last seen: {timeSince(agent.lastSeen)}
                 </div>
 
+                {canManage && !confirm && (
+                    <button onClick={toggleCommand}
+                        className="ml-auto mr-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 transition-all">
+                        <RotateCcw className="w-3.5 h-3.5" /> {cmdOpen ? 'Hide command' : 'Install / Reconnect'}
+                    </button>
+                )}
                 {!canManage ? null : !confirm ? (
                     <button
                         onClick={() => setConfirm(true)}

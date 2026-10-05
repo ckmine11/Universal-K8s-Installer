@@ -2,6 +2,7 @@ import express from 'express'
 import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
 import path from 'path';
+import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url';
 import cors from 'cors'
 import helmet from 'helmet'
@@ -218,122 +219,15 @@ const __dirname = path.dirname(__filename);
 // Serve the bundled agent script
 app.use(express.static(path.join(__dirname, '../public')));
 
-app.get('/agent-install.sh', (req, res) => {
-    res.setHeader('Content-Type', 'text/plain')
-    res.send(`#!/usr/bin/env bash
-# KubeEZ Gateway Agent Installer (Mac/Linux)
-set -e
-
-TOKEN=""
-AGENT_ID=""
-SERVER=""
-
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --token) TOKEN="$2"; shift 2 ;;
-    --agent-id) AGENT_ID="$2"; shift 2 ;;
-    --server) SERVER="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-
-if [ -z "$TOKEN" ] || [ -z "$AGENT_ID" ] || [ -z "$SERVER" ]; then
-  echo "ERROR: Missing required arguments: --token, --agent-id, --server"
-  exit 1
-fi
-
-echo "[KubeEZ Gateway] Setting up Agent..."
-
-AGENT_DIR="$HOME/.kubeez-agent"
-mkdir -p "$AGENT_DIR"
-cd "$AGENT_DIR"
-
-NODE_BIN="node"
-if ! command -v node &>/dev/null; then
-  echo "[KubeEZ Gateway] Node.js not found. Downloading portable Node.js..."
-  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-  ARCH=$(uname -m)
-  if [ "$ARCH" = "x86_64" ]; then ARCH="x64"; fi
-  if [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
-  NODE_VER="v18.20.2"
-  NODE_DIR="node-$NODE_VER-$OS-$ARCH"
-  NODE_TAR="$NODE_DIR.tar.gz"
-  
-  if [ ! -f "bin/node" ]; then
-    curl -sfL -o node.tar.gz "https://nodejs.org/dist/$NODE_VER/$NODE_TAR" || { echo "Failed to download Node.js for $OS-$ARCH"; exit 1; }
-    tar -xzf node.tar.gz
-    mkdir -p bin
-    mv $NODE_DIR/bin/node bin/node
-    rm -rf $NODE_DIR node.tar.gz
-  fi
-  NODE_BIN="$AGENT_DIR/bin/node"
-fi
-
-HOST_URL=$(echo "$SERVER" | sed 's|^wss|https|; s|^ws|http|')
-curl -sfL "$HOST_URL/agent-bundle.js" -o agent-bundle.js
-
-echo "[KubeEZ Gateway] Starting Agent in background..."
-nohup $NODE_BIN agent-bundle.js --token "$TOKEN" --agent-id "$AGENT_ID" --server "$SERVER" > agent.log 2>&1 &
-echo $! > agent.pid
-
-echo "=========================================================="
-echo " [SUCCESS] KubeEZ Gateway Agent is running in background! "
-echo " You can safely close this terminal."
-echo " To view logs, run: cat $AGENT_DIR/agent.log"
-echo " To stop agent, run: kill \$(cat $AGENT_DIR/agent.pid)"
-echo "=========================================================="
-`)
-})
-
-app.get('/agent-install.ps1', (req, res) => {
-    res.setHeader('Content-Type', 'text/plain')
-    res.send(`
-param (
-    [Parameter(Mandatory=$true)][string]$Token,
-    [Parameter(Mandatory=$true)][string]$AgentId,
-    [Parameter(Mandatory=$true)][string]$ServerUrl
-)
-
-Write-Host "[KubeEZ Gateway] Setting up Agent..." -ForegroundColor Cyan
-
-$AgentDir = Join-Path $HOME ".kubeez-agent"
-if (-not (Test-Path $AgentDir)) {
-    New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
-}
-Set-Location $AgentDir
-
-$NodeBin = "node"
-if (-not (Get-Command "node" -ErrorAction SilentlyContinue)) {
-    Write-Host "[KubeEZ Gateway] Node.js not found. Downloading portable Node.js..." -ForegroundColor Gray
-    $NodeVer = "v18.20.2"
-    $NodeZip = "node-$NodeVer-win-x64.zip"
-    $NodeUrl = "https://nodejs.org/dist/$NodeVer/$NodeZip"
-    
-    if (-not (Test-Path "bin\\node.exe")) {
-        Invoke-WebRequest -Uri $NodeUrl -OutFile "node.zip" -UseBasicParsing
-        Expand-Archive -Path "node.zip" -DestinationPath "." -Force
-        New-Item -ItemType Directory -Force -Path "bin" | Out-Null
-        Move-Item -Path "node-$NodeVer-win-x64\\node.exe" -Destination "bin\\node.exe" -Force
-        Remove-Item -Path "node-$NodeVer-win-x64" -Recurse -Force
-        Remove-Item -Path "node.zip" -Force
-    }
-    $NodeBin = Join-Path $AgentDir "bin\\node.exe"
-}
-
-$HttpUrl = $ServerUrl -replace "^ws", "http"
-Invoke-WebRequest -Uri "$HttpUrl/agent-bundle.js" -OutFile "agent-bundle.js" -UseBasicParsing
-
-Write-Host "[KubeEZ Gateway] Starting Agent in background..." -ForegroundColor Green
-$ProcessArgs = "agent-bundle.js --token $Token --agent-id $AgentId --server $ServerUrl"
-$Proc = Start-Process -FilePath $NodeBin -ArgumentList $ProcessArgs -WindowStyle Hidden -PassThru
-$Proc.Id | Out-File -FilePath "agent.pid"
-
-Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host " [SUCCESS] KubeEZ Gateway Agent is running in background! " -ForegroundColor Green
-Write-Host " You can safely close this terminal." -ForegroundColor White
-Write-Host " To stop agent, run: Stop-Process -Id (Get-Content .kubeez-agent\\agent.pid) -Force" -ForegroundColor Gray
-Write-Host "==========================================================" -ForegroundColor Cyan
-`)
+// Gateway Agent installers — they install the agent as a service (systemd /
+// launchd / Scheduled Task) so it survives reboots and crashes. Read per request
+// so an update ships without a rebuild.
+const AGENT_INSTALLERS = { sh: 'agent-install.sh', ps1: 'agent-install.ps1' }
+app.get('/agent-install.:ext(sh|ps1)', (req, res) => {
+    const file = path.join(__dirname, 'automation/agent', AGENT_INSTALLERS[req.params.ext])
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'))
 })
 
 

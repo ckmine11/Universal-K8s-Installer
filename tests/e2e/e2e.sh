@@ -14,6 +14,7 @@
 #   e2e.sh restore <master> <worker>...       etcd restore on a multi-node cluster (needs Node)
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
+#   e2e.sh agent [distro]                     Gateway Agent install as a service, crash/reboot recovery
 #   e2e.sh clean                              remove all e2e containers
 #
 # distros: ubuntu2204 ubuntu2404 debian12 rocky9 alma9 fedora amzn2023
@@ -32,6 +33,7 @@ start_node() {
     local name="$1" distro="$2"
     docker rm -f "$name" >/dev/null 2>&1
     docker run -d --name "$name" --hostname "$name" --privileged --cgroupns=private \
+        --add-host=host.docker.internal:host-gateway \
         --tmpfs /run --tmpfs /run/lock -v /var/lib/containerd -v /var/lib/kubelet \
         "kubeez-e2e/$distro" >/dev/null || { echo "could not start $name"; exit 1; }
     for _ in $(seq 1 30); do docker exec "$name" systemctl is-system-running >/dev/null 2>&1 && break
@@ -174,6 +176,18 @@ cmd_addons() {
     return $rc
 }
 
+# Gateway Agent installer on a real node: systemd service, crash/reboot
+# recovery, re-install = one copy, SSH through the agent.  e2e.sh agent [distro]
+cmd_agent() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-agent-$distro"
+    image "$distro"; start_node "$node" "$distro"
+    local rc
+    NODE_CONTAINER="$node" node "$E2E/agent-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && docker rm -f "$node" >/dev/null 2>&1
+    return $rc
+}
+
 # Restore the pre-upgrade snapshot after 1.35 → 1.36 (kubeadm-config rolls back
 # to v1.35.0 while the control plane stays 1.36), then 1.36 → 1.37 must still
 # work.  e2e.sh restore-upgrade [distro]
@@ -210,6 +224,7 @@ case "${1:-}" in
     restore) shift; cmd_restore "$@" ;;
     restore-upgrade) shift; cmd_restore_upgrade "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
+    agent)   shift; cmd_agent "$@" ;;
     clean)   cmd_clean ;;
-    *) sed -n '2,20p' "$0"; exit 2 ;;
+    *) sed -n '2,21p' "$0"; exit 2 ;;
 esac

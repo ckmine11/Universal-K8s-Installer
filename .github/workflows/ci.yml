@@ -118,6 +118,20 @@ jobs:
         run: npm install --no-audit --no-fund
       - run: bash tests/e2e/e2e.sh addons ubuntu2204
 
+  e2e-agent:
+    name: Gateway Agent (service install, crash & reboot recovery, SSH relay)
+    needs: [checks]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend dependencies
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+      - run: bash tests/e2e/e2e.sh agent ubuntu2204
+
   # ── Mixed-OS cluster + real upgrades 1.35 → 1.36 → 1.37, ~25 min ──────────
   e2e-upgrade:
     name: Multi-node upgrade (Ubuntu master + Rocky & Debian workers)

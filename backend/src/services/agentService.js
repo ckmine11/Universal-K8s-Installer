@@ -9,6 +9,8 @@ const __dirname = path.dirname(__filename)
 
 
 const AGENTS_FILE = path.join(DATA_DIR, 'agents.json')
+// No message from an agent for this long → its connection is dead
+const AGENT_DEAD_AFTER_MS = Number(process.env.KUBEEZ_AGENT_DEAD_AFTER_MS) || 60000
 
 class AgentService {
     constructor() {
@@ -141,8 +143,21 @@ class AgentService {
 
         console.log(`[AgentService] Agent ${agentId} (${agent.label}) connected as gateway`)
 
+        // The agent pings every 20 s. A link that died silently (NAT / proxy /
+        // power loss) never fires 'close' — drop it after 60 s of silence so the
+        // agent shows offline at once and jobs fail fast instead of hanging.
+        let lastHeard = Date.now()
+        const watchdog = setInterval(() => {
+            if (Date.now() - lastHeard > AGENT_DEAD_AFTER_MS) {
+                console.log(`[AgentService] Agent ${agentId} silent for ${AGENT_DEAD_AFTER_MS / 1000}s — dropping the connection`)
+                try { ws.terminate() } catch { }
+            }
+        }, Math.min(20000, AGENT_DEAD_AFTER_MS / 3))
+        watchdog.unref?.()
+
         // Heartbeat
         ws.on('message', async (raw) => {
+            lastHeard = Date.now()
             try {
                 const msg = JSON.parse(raw.toString())
                 if (msg.type === 'ping') {
@@ -159,6 +174,7 @@ class AgentService {
         })
 
         ws.on('close', async () => {
+            clearInterval(watchdog)
             // Only tear down if THIS socket is still the active one — the close of
             // a replaced socket must not unregister its newer reconnection.
             if (this.agentSockets.get(agentId) !== ws) return
