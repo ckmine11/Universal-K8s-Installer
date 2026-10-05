@@ -51,6 +51,7 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
     const [setup, setSetup] = useState(false)
     const [form, setForm] = useState({ useOffsite: true, provider: 'other', endpoint: '', region: '', bucket: '', accessKey: '', secretKey: '', insecureTls: false })
     const [busy, setBusy] = useState(null)
+    const [sameCluster, setSameCluster] = useState(null)   // warning: storage is on this cluster
     const [backupNs, setBackupNs] = useState([])
     const [restore, setRestore] = useState(null)     // { backup, namespaces, mode, confirm }
     const [details, setDetails] = useState(null)     // { title, text }
@@ -89,10 +90,18 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
         } catch (e) { setNotice({ ok: false, msg: e.message }); return null } finally { setBusy(null) }
     }
 
-    const saveConfig = async () => {
-        const body = form.useOffsite ? { useOffsite: true } : { ...form, useOffsite: false }
-        const j = await call('config', 'PUT', `/api/clusters/${clusterId}/volume-backups/config`, body)
-        if (j?.newInstallationId) navigate(`/dashboard/${j.newInstallationId}`)
+    // Storage on a node of THIS cluster is refused first (backups would die
+    // with the cluster); the user may still accept it, e.g. for testing.
+    const saveConfig = async (allowSameCluster = false) => {
+        const body = { ...(form.useOffsite ? { useOffsite: true } : { ...form, useOffsite: false }), allowSameCluster }
+        setBusy('config'); setNotice(null); setSameCluster(null)
+        try {
+            const r = await apiFetch(`/api/clusters/${clusterId}/volume-backups/config`, { method: 'PUT', body: JSON.stringify(body) })
+            const j = await r.json().catch(() => ({}))
+            if (r.status === 400 && j.sameCluster) { setSameCluster(j.error); return }
+            if (!r.ok) throw new Error(j.error || 'Could not save the settings')
+            if (j.newInstallationId) navigate(`/dashboard/${j.newInstallationId}`)
+        } catch (e) { setNotice({ ok: false, msg: e.message }) } finally { setBusy(null) }
     }
     const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
@@ -193,9 +202,19 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
                                     )}
                                 </div>
                             )}
+                            {sameCluster && (
+                                <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200 space-y-2">
+                                    <p className="flex gap-2"><AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" /> {sameCluster}</p>
+                                    <p className="text-amber-200/80">Fine for trying Volume Backups out — for real protection use storage outside this cluster.</p>
+                                    <div className="flex gap-2 justify-end">
+                                        <button onClick={() => setSameCluster(null)} className="px-3 py-1.5 rounded-lg border border-white/10 text-slate-300 font-bold">Cancel</button>
+                                        <button onClick={() => saveConfig(true)} disabled={busy === 'config'} className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black disabled:opacity-50">Use it anyway (testing only)</button>
+                                    </div>
+                                </div>
+                            )}
                             <div className="flex gap-2 justify-end">
                                 {data?.config?.configured && <button onClick={() => setSetup(false)} className="px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold">Cancel</button>}
-                                <button onClick={saveConfig} disabled={busy === 'config'} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black disabled:opacity-50">
+                                <button onClick={() => saveConfig()} disabled={busy === 'config'} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black disabled:opacity-50">
                                     {busy === 'config' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Settings2 className="w-3.5 h-3.5" />}
                                     {data?.installed ? 'Save & apply' : 'Save & install Velero'}
                                 </button>
@@ -207,7 +226,7 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
                 <div className="py-6 text-center space-y-3">
                     <p className="text-sm text-slate-400">Storage is configured ({data.config.bucket}), but Velero is not installed{data.runningJob ? ' yet — an operation is running on this cluster' : ''}.</p>
                     {data.error && <p className="text-xs text-red-400">{data.error}</p>}
-                    {canConfigure && <button onClick={saveConfig} disabled={busy === 'config' || !!data.runningJob} className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black disabled:opacity-50">Install Velero</button>}
+                    {canConfigure && <button onClick={() => saveConfig()} disabled={busy === 'config' || !!data.runningJob} className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black disabled:opacity-50">Install Velero</button>}
                 </div>
             ) : (
                 /* ── Installed ── */
