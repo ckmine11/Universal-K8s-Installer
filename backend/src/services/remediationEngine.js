@@ -1,5 +1,8 @@
 import { automationEngine } from './automationEngine.js'
 
+// The SSH user may not be root / have its own kubeconfig — use the admin one
+const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
+
 const MAX_RETRIES     = 3
 const RETRY_DELAYS    = [0, 30_000, 60_000]  // immediate, 30s, 60s
 const VERIFY_POLL_MS  = 15_000               // check every 15s after fix
@@ -155,7 +158,7 @@ const PLAYBOOKS = {
             const ssh = await engine.connectSSH(master)
             try {
                 const r = await ssh.execCommand(
-                    `kubectl get node ${node.hostname || node.ip} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null`
+                    `${KUBECTL} get node ${node.hostname || node.ip} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null`
                 )
                 return r.stdout.trim() === 'True'
             } finally { ssh.dispose?.() }
@@ -183,9 +186,10 @@ const PLAYBOOKS = {
                 // Clean /tmp
                 await ssh.execCommand(
                     'sudo find /tmp -type f -mtime +1 -delete 2>/dev/null || true')
-                // Clean old logs
+                // Empty (don't delete) big logs: deleting a file a service still
+                // has open frees nothing and loses the application's log
                 await ssh.execCommand(
-                    'sudo find /var/log -name "*.log" -size +50M -delete 2>/dev/null || true')
+                    'sudo find /var/log -name "*.log" -size +50M -exec truncate -s 0 {} + 2>/dev/null || true')
             } finally { ssh.dispose?.() }
         },
         async verify(engine, cluster, node) {
@@ -275,8 +279,8 @@ const PLAYBOOKS = {
 
                 // Capture last 50 lines of logs before deleting
                 const logsResult = await ssh.execCommand(
-                    `kubectl logs ${pod} --tail=50 --previous 2>/dev/null || ` +
-                    `kubectl logs ${pod} --tail=50 2>/dev/null || echo "No logs available"`)
+                    `${KUBECTL} logs ${pod} --tail=50 --previous 2>/dev/null || ` +
+                    `${KUBECTL} logs ${pod} --tail=50 2>/dev/null || echo "No logs available"`)
 
                 console.log(`[AutoHealing] CrashLoop logs for ${incident.target}:\n${logsResult.stdout?.slice(0, 500)}`)
 
@@ -285,9 +289,9 @@ const PLAYBOOKS = {
 
                 // Delete the pod — Deployment/DaemonSet/StatefulSet will recreate it.
                 // Fail loudly: a swallowed error here used to mark the incident resolved.
-                const del = await ssh.execCommand(`kubectl delete pod ${pod} --grace-period=30`)
+                const del = await ssh.execCommand(`${KUBECTL} delete pod ${pod} --grace-period=30`)
                 if (del.code !== 0) {
-                    throw new Error(`kubectl delete pod failed: ${(del.stderr || del.stdout || '').trim().slice(0, 200)}`)
+                    throw new Error(`Deleting the pod failed: ${(del.stderr || del.stdout || '').trim().slice(0, 200)}`)
                 }
 
             } finally { ssh.dispose?.() }
@@ -319,7 +323,7 @@ const PLAYBOOKS = {
             try {
                 // Describe the pod to surface the exact error
                 const desc = await ssh.execCommand(
-                    `kubectl describe pod ${podRef(incident)} 2>/dev/null | grep -A5 "Events:" | tail -5`)
+                    `${KUBECTL} describe pod ${podRef(incident)} 2>/dev/null | grep -A5 "Events:" | tail -5`)
                 await updateStatus(incident, 'unresolved',
                     `Image pull failed for ${incident.target}. ` +
                     `Check image name/tag and imagePullSecrets. ` +
@@ -341,10 +345,10 @@ const PLAYBOOKS = {
                     `Diagnosing why ${incident.target} is Pending...`)
 
                 const desc = await ssh.execCommand(
-                    `kubectl describe pod ${podRef(incident)} 2>/dev/null | grep -E "Events:|Warning|Insufficient|didn't|taint" | head -5`)
+                    `${KUBECTL} describe pod ${podRef(incident)} 2>/dev/null | grep -E "Events:|Warning|Insufficient|didn't|taint" | head -5`)
 
                 const nodes = await ssh.execCommand(
-                    'kubectl get nodes -o wide 2>/dev/null | head -5')
+                    `${KUBECTL} get nodes -o wide 2>/dev/null | head -5`)
 
                 await updateStatus(incident, 'unresolved',
                     `${incident.target} is Pending. ` +

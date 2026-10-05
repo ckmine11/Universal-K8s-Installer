@@ -1,6 +1,9 @@
+import fs from 'fs'
+import path from 'path'
 import { clusterStore } from './clusterStore.js'
 import { automationEngine } from './automationEngine.js'
 import { remediationEngine } from './remediationEngine.js'
+import { DATA_DIR } from '../utils/paths.js'
 
 const NODE_POLL_INTERVAL  = 60 * 1000       // 60s — node conditions
 const POD_POLL_INTERVAL   = 90 * 1000       // 90s — pod states
@@ -9,6 +12,18 @@ const RECONNECT_MAX_MS    = 5 * 60 * 1000
 const INCIDENT_TTL_MS     = 24 * 60 * 60 * 1000
 const DEDUP_WINDOW_MS     = 5 * 60 * 1000     // don't re-create the same incident within 5min
 const MAX_POLL_FAILURES   = 3                 // consecutive failures before reconnect
+const MAX_INCIDENTS       = 200
+const INCIDENTS_FILE      = path.join(DATA_DIR, 'incidents.json')
+
+// The SSH user may not be root and may have no kubeconfig of its own — always
+// use the cluster admin kubeconfig (same as every other KubeEZ check).
+export const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
+
+// Problems found by each poller — used to notice when one has gone away
+const NODE_REASONS = new Set(['NodeNotReady', 'DiskPressure', 'MemoryPressure', 'PIDPressure'])
+const POD_REASONS  = new Set(['CrashLoopBackOff', 'ImagePullBackOff', 'OOMKilled', 'PodPendingTooLong'])
+// A closed incident is not reused; the same problem coming back opens a new one
+const CLOSED = new Set(['resolved', 'cleared'])
 
 const cname = (c) => c.clusterName || c.name || 'cluster'
 
@@ -23,10 +38,35 @@ class IncidentDetector {
         this.automationEngine = automationEngine
         this.streams   = new Map()   // clusterId -> { ssh, timers:[], failCount, cluster }
         this.reconnect = new Map()   // clusterId -> attempt count
-        this.incidents = []
+        this.watched   = new Map()   // clusterId -> cluster (everything we try to monitor)
+        this.incidents = this._load()
     }
 
-    getIncidents() { return this.incidents }
+    getIncidents() {
+        const now = Date.now()
+        return this.incidents.filter(i => now - new Date(i.lastSeen || i.timestamp).getTime() < INCIDENT_TTL_MS)
+    }
+
+    /** Clusters under watch and whether the watcher is connected right now. */
+    getMonitoring() {
+        return [...this.watched.values()].map(c => ({
+            clusterId: c.id, clusterName: cname(c), orgId: c.orgId, ownerId: c.ownerId,
+            connected: this.streams.has(c.id)
+        }))
+    }
+
+    // ── Persistence: incidents survive a KubeEZ restart ─────────────────────
+    _load() {
+        try { return JSON.parse(fs.readFileSync(INCIDENTS_FILE, 'utf8')) } catch { return [] }
+    }
+    _save() {
+        clearTimeout(this._saveTimer)
+        this._saveTimer = setTimeout(() => {
+            fs.promises.writeFile(INCIDENTS_FILE, JSON.stringify(this.incidents.slice(0, MAX_INCIDENTS)))
+                .catch(e => console.error('[AutoHealing] Could not save incidents:', e.message))
+        }, 1000)
+        this._saveTimer.unref?.()
+    }
 
     async init() {
         console.log('[AutoHealing] Initializing Auto-Healing Engine...')
@@ -52,6 +92,7 @@ class IncidentDetector {
 
         const master = cluster.masterNodes?.[0]
         if (!master) return
+        this.watched.set(cluster.id, cluster)
 
         // Ensure Gateway-Agent routing works — connectSSH needs ownerId/orgId on the node
         const node = { ...master, ownerId: cluster.ownerId, orgId: cluster.orgId }
@@ -124,36 +165,39 @@ class IncidentDetector {
     // ── Node poller ──────────────────────────────────────────────────────────
     async _pollNodes(cluster) {
         const result = await this._run(cluster, ssh =>
-            ssh.execCommand('kubectl get nodes -o json 2>/dev/null'))
+            ssh.execCommand(`${KUBECTL} get nodes -o json 2>/dev/null`))
         if (!result || result.code !== 0 || !result.stdout?.trim()) return
 
         let data
         try { data = JSON.parse(result.stdout) } catch { return }
 
+        const seen = new Set()
         for (const n of (data.items || [])) {
             const name = n.metadata?.name
             for (const cond of (n.status?.conditions || [])) {
                 if (cond.type === 'Ready' && cond.status !== 'True')
-                    this._createIncident(cluster, 'NodeNotReady', `Node ${name} not Ready: ${cond.message}`, name)
+                    seen.add(this._createIncident(cluster, 'NodeNotReady', `Node ${name} not Ready: ${cond.message}`, name))
                 if (cond.type === 'DiskPressure' && cond.status === 'True')
-                    this._createIncident(cluster, 'DiskPressure', `Node ${name} DiskPressure: ${cond.message}`, name)
+                    seen.add(this._createIncident(cluster, 'DiskPressure', `Node ${name} DiskPressure: ${cond.message}`, name))
                 if (cond.type === 'MemoryPressure' && cond.status === 'True')
-                    this._createIncident(cluster, 'MemoryPressure', `Node ${name} MemoryPressure: ${cond.message}`, name)
+                    seen.add(this._createIncident(cluster, 'MemoryPressure', `Node ${name} MemoryPressure: ${cond.message}`, name))
                 if (cond.type === 'PIDPressure' && cond.status === 'True')
-                    this._createIncident(cluster, 'PIDPressure', `Node ${name} PIDPressure: ${cond.message}`, name)
+                    seen.add(this._createIncident(cluster, 'PIDPressure', `Node ${name} PIDPressure: ${cond.message}`, name))
             }
         }
+        this._clearGone(cluster, NODE_REASONS, seen)
     }
 
     // ── Pod poller ───────────────────────────────────────────────────────────
     async _pollPods(cluster) {
         const result = await this._run(cluster, ssh =>
-            ssh.execCommand('kubectl get pods -A -o json 2>/dev/null'))
+            ssh.execCommand(`${KUBECTL} get pods -A -o json 2>/dev/null`))
         if (!result || result.code !== 0 || !result.stdout?.trim()) return
 
         let data
         try { data = JSON.parse(result.stdout) } catch { return }
 
+        const seen = new Set()
         for (const pod of (data.items || [])) {
             const podName = pod.metadata?.name
             const ns = pod.metadata?.namespace
@@ -161,30 +205,59 @@ class IncidentDetector {
                 const w = c.state?.waiting
                 const t = c.state?.terminated
                 if (w?.reason === 'CrashLoopBackOff')
-                    this._createIncident(cluster, 'CrashLoopBackOff', `${ns}/${podName} (${c.name}) in CrashLoopBackOff`, podName, ns)
+                    seen.add(this._createIncident(cluster, 'CrashLoopBackOff', `${ns}/${podName} (${c.name}) in CrashLoopBackOff`, podName, ns))
                 if (w?.reason === 'ImagePullBackOff' || w?.reason === 'ErrImagePull')
-                    this._createIncident(cluster, 'ImagePullBackOff', `${ns}/${podName} (${c.name}) cannot pull image: ${w.message || ''}`, podName, ns)
+                    seen.add(this._createIncident(cluster, 'ImagePullBackOff', `${ns}/${podName} (${c.name}) cannot pull image: ${w.message || ''}`, podName, ns))
                 if (t?.reason === 'OOMKilled' || w?.reason === 'OOMKilled')
-                    this._createIncident(cluster, 'OOMKilled', `${ns}/${podName} (${c.name}) was OOMKilled`, podName, ns)
+                    seen.add(this._createIncident(cluster, 'OOMKilled', `${ns}/${podName} (${c.name}) was OOMKilled`, podName, ns))
             }
             if (pod.status?.phase === 'Pending' && pod.metadata?.creationTimestamp) {
                 const age = Date.now() - new Date(pod.metadata.creationTimestamp).getTime()
                 if (age > 5 * 60 * 1000)
-                    this._createIncident(cluster, 'PodPendingTooLong', `${ns}/${podName} Pending for ${Math.round(age / 60000)}m`, podName, ns)
+                    seen.add(this._createIncident(cluster, 'PodPendingTooLong', `${ns}/${podName} Pending for ${Math.round(age / 60000)}m`, podName, ns))
             }
         }
+        this._clearGone(cluster, POD_REASONS, seen)
+    }
+
+    // An open incident whose problem is no longer reported has gone away
+    _clearGone(cluster, reasons, seenKeys) {
+        let changed = false
+        for (const inc of this.incidents) {
+            if (inc.clusterId !== cluster.id || !reasons.has(inc.reason) || CLOSED.has(inc.status)) continue
+            if (seenKeys.has(inc._key)) continue
+            inc.status = 'cleared'
+            inc.details = 'No longer detected — the problem went away'
+            inc.updatedAt = new Date().toISOString()
+            changed = true
+        }
+        if (changed) this._save()
     }
 
     // ── Incident factory ───────────────────────────────────────────────────────
     // namespace is set for pod-level incidents (pods are namespaced; kubectl
     // cannot address a pod by name across all namespaces).
+    // Returns the incident key (pollers use it to notice problems that went away).
     _createIncident(cluster, reason, message, target, namespace) {
-        if (!reason) return
+        if (!reason) return null
         const key = `${cluster.id}:${reason}:${namespace ? namespace + '/' : ''}${target}`
+        const now = Date.now()
 
-        const recent = this.incidents.find(i =>
-            i._key === key && Date.now() - new Date(i.timestamp).getTime() < DEDUP_WINDOW_MS)
-        if (recent) return
+        // Still the same ongoing problem → update it instead of adding a row.
+        // Re-run the playbook at most every DEDUP_WINDOW (it has its own retry limit).
+        const open = this.incidents.find(i => i._key === key && !CLOSED.has(i.status))
+        if (open) {
+            open.count = (open.count || 1) + 1
+            open.lastSeen = new Date(now).toISOString()
+            open.message = message || open.message
+            const last = new Date(open.lastDispatchedAt || open.timestamp).getTime()
+            if (now - last >= DEDUP_WINDOW_MS) {
+                open.lastDispatchedAt = new Date(now).toISOString()
+                this._dispatch(cluster, open)
+            }
+            this._save()
+            return key
+        }
 
         const incident = {
             id:          `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -196,6 +269,8 @@ class IncidentDetector {
             reason,
             message:     message || '',
             timestamp:   new Date().toISOString(),
+            lastSeen:    new Date().toISOString(),
+            count:       1,
             status:      'detecting',
             target:      target || 'cluster-wide',
             namespace:   namespace || null
@@ -205,16 +280,21 @@ class IncidentDetector {
 
         this.incidents.unshift(incident)
         this.incidents = this.incidents
-            .slice(0, 200)
-            .filter(i => Date.now() - new Date(i.timestamp).getTime() < INCIDENT_TTL_MS)
+            .filter(i => now - new Date(i.lastSeen || i.timestamp).getTime() < INCIDENT_TTL_MS)
+            .slice(0, MAX_INCIDENTS)
+        this._dispatch(cluster, incident)
+        this._save()
+        return key
+    }
 
-        // Dispatch to remediation — never let a failure here break detection
+    // Dispatch to remediation — never let a failure here break detection
+    _dispatch(cluster, incident) {
         try {
-            remediationEngine.handleAnomaly(
+            Promise.resolve(remediationEngine.handleAnomaly(
                 cluster,
-                { reason, message, involvedObject: { name: target, namespace } },
+                { reason: incident.reason, message: incident.message, involvedObject: { name: incident.target, namespace: incident.namespace } },
                 incident
-            )
+            )).catch(e => console.error(`[AutoHealing] Remediation failed: ${e.message}`))
         } catch (e) {
             console.error(`[AutoHealing] Remediation dispatch failed: ${e.message}`)
         }
@@ -226,12 +306,14 @@ class IncidentDetector {
             inc.status = status
             inc.details = details
             inc.updatedAt = new Date().toISOString()
+            this._save()
         }
     }
 
     stopWatching(clusterId) {
         this._cleanup(clusterId)
         this.reconnect.delete(clusterId)
+        this.watched.delete(clusterId)
         console.log(`[AutoHealing] Stopped watching cluster ${clusterId}`)
     }
 }

@@ -369,10 +369,13 @@ export default function Docs() {
                     {/* ── Operations ──────────────────────────────────── */}
                     <Section id="healing" Icon={HeartPulse} color="text-rose-400" title="Auto-Healing & Incidents"
                         intro="Healthy clusters are watched continuously. Incidents are listed on the Incidents & Auto-Healing page with what was detected and what was done.">
-                        <Table head={['Detected', 'Examples']} rows={[
-                            ['Node problems', 'NodeNotReady, DiskPressure, MemoryPressure'],
-                            ['Workload problems', 'Pods in CrashLoopBackOff']
+                        <Table head={['Detected', 'What KubeEZ does']} rows={[
+                            ['Node down (NotReady)', 'Restarts containerd + kubelet on that node, then verifies it is Ready again.'],
+                            ['Disk / memory / process pressure', 'Frees space (old images, exited containers, journals, oversized logs are emptied — never deleted), drops caches, clears zombie processes.'],
+                            ['Pod crash loop', 'Saves the last log lines, then deletes the pod so its controller recreates it.'],
+                            ['Out of memory, image pull failure, pod stuck Pending', 'Explains the cause (limits, image name / pull secret, resources or taints) — these need your decision.']
                         ]} />
+                        <P>A problem that keeps happening stays <b className="text-white">one</b> incident (&quot;seen 12×&quot;); a fix is retried at most 3 times. When the problem goes away it is marked <b className="text-white">Cleared</b>. Incidents are kept 24 hours and survive a KubeEZ restart. If a cluster can&apos;t be reached, the page says so instead of showing &quot;all healthy&quot;.</P>
                     </Section>
 
                     <Section id="roles" Icon={Users} color="text-blue-400" title="Teams & Roles"

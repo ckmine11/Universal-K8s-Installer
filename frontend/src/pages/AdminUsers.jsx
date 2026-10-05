@@ -253,6 +253,10 @@ function UserCard({ userItem, currentUser, onRefresh }) {
                         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                             <span className="font-black text-white">{userItem.username}</span>
                             <RoleBadge role={userItem.role} />
+                            {userItem.isOwner && (
+                                <span title="Holds the plan and billing — other admins cannot change this account"
+                                    className="text-[9px] font-black uppercase tracking-widest text-slate-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">Owner</span>
+                            )}
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold">
                             <Clock className="w-3 h-3" />
@@ -262,8 +266,13 @@ function UserCard({ userItem, currentUser, onRefresh }) {
                     </div>
                 </div>
 
-                {/* Actions */}
-                {!isSelf && (
+                {/* Actions — the workspace owner's account can only be changed by the owner */}
+                {!isSelf && userItem.isOwner && (
+                    <p className="mt-5 pt-5 border-t border-white/5 text-[11px] text-slate-500">
+                        Workspace owner — holds the plan and billing. Only the owner can change this account.
+                    </p>
+                )}
+                {!isSelf && !userItem.isOwner && (
                     <div className="flex items-center gap-2 mt-5 pt-5 border-t border-white/5">
                         {/* Role selector */}
                         <div className="flex-1 relative">

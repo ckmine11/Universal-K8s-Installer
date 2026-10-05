@@ -175,12 +175,23 @@ class AuthService {
         );
     }
 
+    // Set a new password. Sessions issued before this moment stop working
+    // (a leaked password or an admin reset logs everyone else out).
+    async setPassword(user, plain) {
+        user.password = await bcrypt.hash(plain, 10);
+        user.passwordChangedAt = Math.floor(Date.now() / 1000);
+        this.saveUsers();
+    }
+
     verifyToken(token) {
         try {
             const decoded = jwt.verify(token, JWT_SECRET);
             const user = this.getUserById(decoded.id);
             if (!user || user.isSuspended) {
                 return null;
+            }
+            if (user.passwordChangedAt && decoded.iat < user.passwordChangedAt) {
+                return null; // issued before the last password change
             }
             // Authorize with the CURRENT stored role/org — not the values baked
             // into the token — so demotions and role changes apply immediately.
@@ -367,12 +378,10 @@ class AuthService {
             throw invalid;
         }
 
-        user.password = await bcrypt.hash(newPassword, 10);
         user.resetToken = undefined;
         user.resetTokenExpiry = undefined;
         user.resetAttempts = undefined;
-
-        this.saveUsers();
+        await this.setPassword(user, newPassword);
         return true;
     }
 }

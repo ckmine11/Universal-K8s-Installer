@@ -232,7 +232,7 @@ export default function TenantManager() {
                                             {ws.owner.subscription?.maxClusters} Clusters • {ws.owner.subscription?.maxNodes} Nodes
                                         </div>
                                         <div className="text-[10px] text-slate-500">
-                                            Seats: <span className="text-slate-300 font-bold">{ws.members.length}/{ws.owner.subscription?.maxMembers ?? 1}</span>
+                                            Seats: <span className="text-slate-300 font-bold">{ws.members.length + 1}/{ws.owner.subscription?.maxMembers ?? 1}</span>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">

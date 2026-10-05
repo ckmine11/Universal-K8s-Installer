@@ -8,6 +8,17 @@ const router = express.Router()
 
 const ASSIGNABLE_ROLES = ['admin', 'operator', 'viewer']
 
+// Accounts another admin may not demote, delete or reset: the workspace owner
+// (holds the plan/billing) and the platform super admin. Returns an error or null.
+function protectedTarget(actor, target) {
+    if (target.id === actor.id) return null
+    if (target.role === 'superadmin' && actor.role !== 'superadmin') return 'The platform super admin account cannot be changed from a workspace.'
+    if (authService.getOrgOwner(target.orgId)?.id === target.id && actor.role !== 'superadmin') {
+        return 'This is the workspace owner (holds the plan and billing) — only the owner can change this account.'
+    }
+    return null
+}
+
 // ─── Middleware: Admin only ───────────────────────────────────────
 const requireAdmin = (req, res, next) => {
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
@@ -56,12 +67,16 @@ router.post('/auth/change-password', requireAuth, async (req, res) => {
             return res.status(401).json({ error: 'Current password is incorrect' })
         }
 
-        // Hash new password
-        const hashed = await bcrypt.hash(newPassword, 10)
-        authService.users[userIdx].password = hashed
-        authService.saveUsers()
-
-        res.json({ success: true, message: 'Password changed successfully' })
+        // Other sessions are logged out; this one gets a fresh token
+        await authService.setPassword(users[userIdx], newPassword)
+        const token = authService.generateToken(users[userIdx])
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000
+        })
+        res.json({ success: true, message: 'Password changed — other sessions were logged out', token })
     } catch (err) {
         console.error('Password change error:', err)
         res.status(500).json({ error: err.message })
@@ -71,11 +86,13 @@ router.post('/auth/change-password', requireAuth, async (req, res) => {
 // ─── Admin: List team members ─────────────────────────────────────
 router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
     try {
+        const ownerId = authService.getOrgOwner(req.user.orgId)?.id
         const users = authService.getUsersByOrgId(req.user.orgId).map(u => ({
             id: u.id,
             username: u.username,
             email: u.email,
             role: u.role,
+            isOwner: u.id === ownerId,   // holds the plan — other admins cannot change this account
             createdAt: u.createdAt
         }))
         // Seat usage so the UI can show "3 / 5 seats used"
@@ -120,6 +137,8 @@ router.put('/admin/users/:id/role', requireAuth, requireAdmin, async (req, res) 
 
         const userIdx = authService.users.findIndex(u => u.id === targetId && u.orgId === req.user.orgId)
         if (userIdx < 0) return res.status(404).json({ error: 'User not found in your organization' })
+        const blocked = protectedTarget(req.user, authService.users[userIdx])
+        if (blocked) return res.status(403).json({ error: blocked })
 
         authService.users[userIdx].role = role
         authService.saveUsers()
@@ -151,6 +170,9 @@ router.delete('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
         const userIdx = authService.users.findIndex(u => u.id === targetId && u.orgId === req.user.orgId)
         if (userIdx < 0) return res.status(404).json({ error: 'User not found in your organization' })
 
+        const blocked = protectedTarget(req.user, authService.users[userIdx])
+        if (blocked) return res.status(403).json({ error: blocked })
+
         const deletedUsername = authService.users[userIdx].username
         authService.users.splice(userIdx, 1)
         authService.saveUsers()
@@ -172,11 +194,12 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireAdmin, async 
         const userIdx = authService.users.findIndex(u => u.id === req.params.id && u.orgId === req.user.orgId)
         if (userIdx < 0) return res.status(404).json({ error: 'User not found in your organization' })
 
-        const hashed = await bcrypt.hash(newPassword, 10)
-        authService.users[userIdx].password = hashed
-        authService.saveUsers()
+        const blocked = protectedTarget(req.user, authService.users[userIdx])
+        if (blocked) return res.status(403).json({ error: blocked })
 
-        res.json({ success: true, message: `Password reset for user "${authService.users[userIdx].username}"` })
+        // Their existing sessions end; they log in with the new password
+        await authService.setPassword(authService.users[userIdx], newPassword)
+        res.json({ success: true, message: `Password reset for user "${authService.users[userIdx].username}" — their sessions were logged out` })
     } catch (err) {
         res.status(500).json({ error: err.message })
     }
