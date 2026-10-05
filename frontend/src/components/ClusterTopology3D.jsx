@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Text, Grid, Stars, Line, Html } from '@react-three/drei'
+import { OrbitControls, Grid, Stars, Line, Html } from '@react-three/drei'
 import * as THREE from 'three'
 
 // Status → visual state
@@ -72,13 +72,15 @@ function ClusterNode({ position, role, name, status, ip, onSelect, selected }) {
                 {/* Warning glow for down nodes */}
                 {v.pulse && <pointLight distance={4} intensity={3} color={v.color} />}
 
-                {/* Labels */}
-                <Text position={[0, 1.5, 0]} fontSize={0.25} color="white" anchorX="center" anchorY="middle" outlineWidth={0.02} outlineColor="black">
-                    {name}
-                </Text>
-                <Text position={[0, 1.18, 0]} fontSize={0.14} color={v.color} anchorX="center" anchorY="middle">
-                    {role.toUpperCase()} · {v.label}
-                </Text>
+                {/* Labels — HTML overlays, not drei <Text>: that one downloads a font at
+                    runtime and builds glyphs in a worker via new Function(), which the
+                    Content-Security-Policy (rightly) blocks → the scene never rendered */}
+                <Html position={[0, 1.45, 0]} center distanceFactor={10} style={{ pointerEvents: 'none' }}>
+                    <div style={{ textAlign: 'center', whiteSpace: 'nowrap', fontFamily: 'Inter, system-ui, sans-serif', textShadow: '0 0 4px #000, 0 0 2px #000' }}>
+                        <div style={{ color: '#fff', fontWeight: 800, fontSize: 15 }}>{name}</div>
+                        <div style={{ color: v.color, fontWeight: 700, fontSize: 9, letterSpacing: '0.12em' }}>{role.toUpperCase()} · {v.label}</div>
+                    </div>
+                </Html>
 
                 {/* Hover tooltip */}
                 {hovered && (
@@ -167,8 +169,17 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
     const [selected, setSelected] = React.useState(null)
 
     const nodes = clusterInfo?.nodes || []
-    const downCount = nodes.filter(n => { const s = (n.status || '').toLowerCase(); return s && s !== 'ready' && s !== 'pending' && s !== 'running' }).length
-    const readyCount = nodes.length - downCount
+    // Only a node Kubernetes reports Ready is ready; no live data yet ("Pending" /
+    // "Unknown") is "waiting" — never counted as healthy
+    const st = (n) => (n.status || '').toLowerCase()
+    const readyCount = nodes.filter(n => st(n) === 'ready').length
+    const waitingCount = nodes.filter(n => ['', 'pending', 'unknown'].includes(st(n))).length
+    const downCount = nodes.length - readyCount - waitingCount
+    const headline = downCount > 0 ? `${downCount} node(s) down`
+        : waitingCount === nodes.length ? 'Waiting for live status'
+        : waitingCount > 0 ? `${readyCount} ready · ${waitingCount} waiting`
+        : 'All nodes healthy'
+    const tone = downCount > 0 ? 'red' : waitingCount > 0 ? 'amber' : 'green'
 
     if (!hasData) {
         return (
@@ -186,9 +197,9 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
             {/* Live status header */}
             <div className="absolute top-4 left-4 pointer-events-none z-10">
                 <div className="flex items-center space-x-2">
-                    <div className={`w-2 h-2 rounded-full ${downCount > 0 ? 'bg-red-500' : 'bg-green-400'} animate-pulse`}></div>
-                    <span className={`text-xs font-mono uppercase tracking-widest ${downCount > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                        {downCount > 0 ? `${downCount} node(s) down` : 'All nodes healthy'}
+                    <div className={`w-2 h-2 rounded-full ${tone === 'red' ? 'bg-red-500' : tone === 'amber' ? 'bg-amber-400' : 'bg-green-400'} animate-pulse`}></div>
+                    <span className={`text-xs font-mono uppercase tracking-widest ${tone === 'red' ? 'text-red-400' : tone === 'amber' ? 'text-amber-300' : 'text-green-400'}`}>
+                        {headline}
                     </span>
                 </div>
             </div>
@@ -207,6 +218,12 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
                     <span className="text-emerald-400 text-xs font-black">{readyCount}</span>
                     <span className="text-slate-500 text-[10px] ml-1 uppercase">Ready</span>
                 </div>
+                {waitingCount > 0 && (
+                    <div className="bg-black/40 backdrop-blur-md rounded-xl px-3 py-1.5 border border-amber-500/20">
+                        <span className="text-amber-300 text-xs font-black">{waitingCount}</span>
+                        <span className="text-slate-500 text-[10px] ml-1 uppercase">Waiting</span>
+                    </div>
+                )}
                 {downCount > 0 && (
                     <div className="bg-black/40 backdrop-blur-md rounded-xl px-3 py-1.5 border border-red-500/20 animate-pulse">
                         <span className="text-red-400 text-xs font-black">{downCount}</span>

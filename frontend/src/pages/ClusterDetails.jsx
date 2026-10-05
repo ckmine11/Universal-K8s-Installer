@@ -417,7 +417,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                                                     ip: n.ip || `10.0.0.${idx}`,
                                                     hostname: n.hostname || (n.role === 'master' ? 'master' : `worker-${idx}`),
                                                     role: n.role,
-                                                    status: n.status || (health ? 'Ready' : 'Pending')
+                                                    status: n.status || 'Pending'   // never assume Ready without live data
                                                 }))
                                             }}
                                             stats={health && !health.error ? {
@@ -468,7 +468,13 @@ export default function ClusterDetails({ onScaleCluster }) {
                                     {healthLoading && <div className="text-xs text-blue-400 animate-pulse">Syncing...</div>}
                                 </div>
 
-                                {health ? (
+                                {!health && healthError ? (
+                                    <div className="relative z-10 text-sm text-amber-200">
+                                        <div className="font-bold mb-1">No live metrics</div>
+                                        <div className="text-xs text-amber-200/80 break-words">{healthError.error}{healthError.details ? ` — ${healthError.details}` : ''}</div>
+                                        <div className="text-xs text-slate-500 mt-2">Retrying every 15 seconds.</div>
+                                    </div>
+                                ) : health ? (
                                     <div className="space-y-6 relative z-10 animate-in fade-in duration-500">
                                         <div>
                                             <div className="flex justify-between text-sm mb-2">
@@ -482,10 +488,10 @@ export default function ClusterDetails({ onScaleCluster }) {
                                         <div>
                                             <div className="flex justify-between text-sm mb-2">
                                                 <span className="text-slate-400">Cluster Memory</span>
-                                                <span className="text-purple-400 font-bold">{health.ram}%</span>
+                                                <span className="text-purple-400 font-bold">{health.mem}%</span>
                                             </div>
                                             <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden">
-                                                <div className="h-full bg-purple-500 rounded-full transition-all duration-1000" style={{ width: `${Math.min(health.ram, 100)}%` }}></div>
+                                                <div className="h-full bg-purple-500 rounded-full transition-all duration-1000" style={{ width: `${Math.min(health.mem || 0, 100)}%` }}></div>
                                             </div>
                                         </div>
                                         <div>
@@ -518,17 +524,17 @@ export default function ClusterDetails({ onScaleCluster }) {
                                     </div>
                                 )}
 
-                                <div className="mt-8 pt-6 border-t border-white/10">
+                                {health && <div className="mt-8 pt-6 border-t border-white/10">
                                     <div className="flex items-center space-x-3 text-sm text-slate-400">
                                         <Zap className="w-4 h-4 text-yellow-400" />
                                         <span>Optimization Tips:</span>
                                     </div>
                                     <p className="mt-2 text-xs text-slate-500 leading-relaxed">
                                         {health && health.cpu > 80 ? 'High CPU usage detected. Consider adding more worker nodes.' :
-                                            health && health.ram > 80 ? 'High Memory usage detected. Check for memory leaks or scale up.' :
+                                            health && health.mem > 80 ? 'High Memory usage detected. Check for memory leaks or scale up.' :
                                                 'Cluster is running within optimal parameters.'}
                                     </p>
-                                </div>
+                                </div>}
                             </div>
                         </div>
                     </div>

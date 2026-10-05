@@ -50,6 +50,7 @@ process.on('unhandledRejection', (e) => log('Unhandled rejection (continuing):',
 // must never run in a session another account opened (and a wrong password must
 // not "work" because some other session to the host is still open).
 const sshSessions = new Map();
+const connecting = new Map();   // key → login in progress (shared by concurrent commands)
 const crypto = require('crypto');
 const sessionKey = (ip, username, password, privateKey) =>
     crypto.createHash('sha256').update([ip, username, password || '', privateKey || ''].join('\0')).digest('hex');
@@ -95,10 +96,20 @@ function connect() {
         try {
             let ssh = sshSessions.get(key);
             if (!ssh || !ssh.isConnected()) {
-                ssh = new NodeSSH();
-                await ssh.connect({ host: ip, username, password, privateKey, tryKeyboard: true, readyTimeout: 60000 });
-                sshSessions.set(key, ssh);
-                log(`SSH connected to ${ip}`);
+                // Several commands arrive at once (live metrics sends 5): share ONE
+                // login instead of opening 5 connections and leaking 4 of them
+                let pending = connecting.get(key);
+                if (!pending) {
+                    pending = (async () => {
+                        const s = new NodeSSH();
+                        await s.connect({ host: ip, username, password, privateKey, tryKeyboard: true, readyTimeout: 60000 });
+                        sshSessions.set(key, s);
+                        log(`SSH connected to ${ip}`);
+                        return s;
+                    })().finally(() => connecting.delete(key));
+                    connecting.set(key, pending);
+                }
+                ssh = await pending;
             }
             log(`Running on ${ip}: ${String(command).substring(0, 50)}...`);
             const result = await ssh.execCommand(command, { options: { pty: true } });

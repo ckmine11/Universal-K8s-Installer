@@ -75,6 +75,7 @@ try {
     // Agent offline: health must answer quickly with a reason, not hang
     dx('systemctl stop kubeez-agent')
     for (let i = 0; i < 40 && await status(t.agentId) === 'online'; i++) await sleep(500)
+    await sleep(6000) // status results are reused for 5 s
     const t0 = Date.now()
     const off = (await api('GET', '/api/clusters/c-root/health', admin.token)).data
     const secs = Math.round((Date.now() - t0) / 1000)

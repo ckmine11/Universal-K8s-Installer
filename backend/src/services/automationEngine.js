@@ -336,7 +336,8 @@ class AutomationEngine {
         }
     }
 
-    async connectSSH(node) {
+    // opts.readyTimeout: quick status checks give up sooner than installs
+    async connectSSH(node, opts = {}) {
         // Check if a Gateway Agent is available for this owner
         if (node.ownerId || node.orgId) {
             const gatewayAgent = await agentService.getGatewayAgentForOwner(node.ownerId, 'admin', node.orgId)
@@ -361,7 +362,7 @@ class AutomationEngine {
             username: node.username,
             password: node.password,
             privateKey: node.sshKey || undefined,
-            readyTimeout: 30000
+            readyTimeout: opts.readyTimeout || 30000
         })
 
         // Auto-configure passwordless sudo for non-root users

@@ -578,7 +578,20 @@ users:
         }
     }
 
+    // Live status is polled every 15 s by every open cluster page: concurrent
+    // requests share one check, and a result is reused for a few seconds, so
+    // several tabs / overlapping polls don't each open SSH through the tunnel.
     async getClusterHealth(id) {
+        this._health = this._health || new Map()
+        const hit = this._health.get(id)
+        if (hit && (hit.pending || Date.now() - hit.at < 5000)) return hit.promise
+        const entry = { pending: true, at: Date.now() }
+        entry.promise = this._fetchClusterHealth(id).finally(() => { entry.pending = false; entry.at = Date.now() })
+        this._health.set(id, entry)
+        return entry.promise
+    }
+
+    async _fetchClusterHealth(id) {
         const clusters = await clusterStore.getClusters()
         const cluster = clusters.find(c => c.id === id)
 
@@ -629,7 +642,7 @@ users:
         let ssh
         try {
             // Re-use automation engine's SSH capability
-            ssh = await automationEngine.connectSSH(masterNode)
+            ssh = await automationEngine.connectSSH(masterNode, { readyTimeout: 10000 })
         } catch (error) {
             return { error: 'Cannot connect to the control-plane', details: error.message, step: 'connect' }
         }
