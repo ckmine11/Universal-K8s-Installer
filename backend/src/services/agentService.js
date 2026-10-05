@@ -3,6 +3,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { v4 as uuidv4 } from 'uuid'
 import { DATA_DIR } from '../utils/paths.js'
+import { writeFileAtomic } from '../utils/atomicWrite.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -39,7 +40,7 @@ class AgentService {
     }
 
     async _writeAgents(agents) {
-        await fs.promises.writeFile(AGENTS_FILE, JSON.stringify(agents, null, 2))
+        await writeFileAtomic(AGENTS_FILE, JSON.stringify(agents, null, 2))
     }
 
     // Serialize every read-modify-write of agents.json. Pings arrive every 20s

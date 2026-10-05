@@ -26,14 +26,9 @@ export default function NodeVerificationCard({ node, nodeType, index, onVerify, 
     const [showBlueprint, setShowBlueprint] = useState(false)
 
     const handleVerify = async (isRetry = false) => {
-        console.log('[NodeVerification] handleVerify called with node:', {
-            ip: node.ip,
-            username: node.username,
-            hasPassword: !!node.password,
-            hasSSHKey: !!node.sshKey
-        })
-
-        if (!node.ip || !node.username || (!node.password && !node.sshKey)) {
+        // A node of an existing cluster may have a stored password/key instead
+        const hasCredential = node.password || node.sshKey || node.hasPassword || node.hasSshKey
+        if (!node.ip || !node.username || !hasCredential) {
             console.warn('[NodeVerification] Missing required fields')
             return
         }
@@ -48,7 +43,10 @@ export default function NodeVerificationCard({ node, nodeType, index, onVerify, 
         try {
             const response = await apiFetch('/api/nodes/verify', {
                 method: 'POST',
-                body: JSON.stringify(node)
+                body: JSON.stringify({
+                    ip: node.ip, username: node.username, password: node.password, sshKey: node.sshKey,
+                    hostname: node.hostname, clusterId: node.clusterId
+                })
             })
 
             console.log('Verification response status:', response.status)

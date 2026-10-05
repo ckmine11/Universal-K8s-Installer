@@ -39,6 +39,7 @@ export const AuthProvider = ({ children }) => {
             await apiFetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
         } catch (_) { /* ignore network errors on logout */ }
         localStorage.removeItem('user');
+        localStorage.removeItem('scaleClusterData');
         setUser(null);
         setIsAuthenticated(false);
         // Login screen renders at '/' when unauthenticated — there is no

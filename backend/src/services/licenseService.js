@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { clusterStore } from './clusterStore.js'
 import { canAccessResource } from '../utils/access.js'
 import { DATA_DIR } from '../utils/paths.js'
+import { writeFileAtomic } from '../utils/atomicWrite.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -173,7 +174,7 @@ class LicenseService {
                 activatedAt: new Date().toISOString()
             }
 
-            await fs.promises.writeFile(LICENSE_FILE, JSON.stringify(payload, null, 2))
+            await writeFileAtomic(LICENSE_FILE, JSON.stringify(payload, null, 2))
             return {
                 plan: parsed.plan,
                 maxClusters: parsed.maxClusters,

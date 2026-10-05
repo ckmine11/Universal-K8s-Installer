@@ -53,7 +53,11 @@ function AuthenticatedApp() {
     const startScaling = (clusterData = null) => {
         setFlowMode('scale')
         if (clusterData) {
-            localStorage.setItem('scaleClusterData', JSON.stringify(clusterData))
+            // never keep SSH credentials in browser storage (survives logout)
+            const strip = (nodes) => (nodes || []).map(({ password, sshKey, ...n }) => n)
+            localStorage.setItem('scaleClusterData', JSON.stringify({
+                ...clusterData, masterNodes: strip(clusterData.masterNodes), workerNodes: strip(clusterData.workerNodes)
+            }))
         }
         navigate('/scale', { state: { clusterData } })
     }

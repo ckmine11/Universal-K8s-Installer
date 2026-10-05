@@ -4,6 +4,7 @@ import { clusterStore } from './clusterStore.js'
 import { automationEngine } from './automationEngine.js'
 import { remediationEngine } from './remediationEngine.js'
 import { DATA_DIR } from '../utils/paths.js'
+import { writeFileAtomic } from '../utils/atomicWrite.js'
 
 const NODE_POLL_INTERVAL  = 60 * 1000       // 60s — node conditions
 const POD_POLL_INTERVAL   = 90 * 1000       // 90s — pod states
@@ -62,7 +63,7 @@ class IncidentDetector {
     _save() {
         clearTimeout(this._saveTimer)
         this._saveTimer = setTimeout(() => {
-            fs.promises.writeFile(INCIDENTS_FILE, JSON.stringify(this.incidents.slice(0, MAX_INCIDENTS)))
+            writeFileAtomic(INCIDENTS_FILE, JSON.stringify(this.incidents.slice(0, MAX_INCIDENTS)))
                 .catch(e => console.error('[AutoHealing] Could not save incidents:', e.message))
         }, 1000)
         this._saveTimer.unref?.()

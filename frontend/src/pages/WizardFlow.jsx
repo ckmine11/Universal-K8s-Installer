@@ -74,6 +74,9 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                 masterNodes: (initialData.masterNodes && initialData.masterNodes.length > 0)
                     ? initialData.masterNodes.map(n => ({
                         ...n,
+                        clusterId: initialData.id,
+                        password: '',
+                        sshKey: '',
                         verified: false,
                         verificationResult: null
                     }))
@@ -81,6 +84,9 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
 
                 workerNodes: (initialData.workerNodes || []).map(n => ({
                     ...n,
+                    clusterId: initialData.id,
+                    password: '',
+                    sshKey: '',
                     verified: false,
                     verificationResult: null
                 }))
@@ -249,6 +255,8 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
             hostname: node.hostname
         }))
     }
+    // Every add-on the wizard offers (not only the first four)
+    const selectedAddons = Object.fromEntries(Object.entries(formData.addons || {}).map(([k, v]) => [k, !!v]))
 
     const handleConfirmInstall = async () => {
         try {
@@ -259,25 +267,14 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                 clusterName: formData.clusterName,
                 k8sVersion: formData.k8sVersion,
                 networkPlugin: formData.networkPlugin,
-                addons: formData.addons ? {
-                    ingress: !!formData.addons.ingress,
-                    monitoring: !!formData.addons.monitoring,
-                    logging: !!formData.addons.logging,
-                    dashboard: !!formData.addons.dashboard
-                } : {},
+                addons: selectedAddons,
                 mode: mode,
+                // scaling: existing nodes are sent without passwords — the server uses the stored ones
+                clusterId: mode === 'scale' ? initialData?.id : undefined,
                 masterNodes: sanitizeNodeData(formData.masterNodes),
                 workerNodes: sanitizeNodeData(formData.workerNodes || [])
             }
 
-            console.log('FormData state:', {
-                clusterName: formData.clusterName,
-                masterNodesCount: formData.masterNodes?.length,
-                workerNodesCount: formData.workerNodes?.length,
-                masterNodes: formData.masterNodes,
-                workerNodes: formData.workerNodes
-            })
-            console.log('Sending to backend:', sanitizedData)
 
             const response = await apiFetch('/api/clusters/install', {
                 method: 'POST',
@@ -323,9 +320,9 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                     <div className="inline-flex p-5 bg-amber-500/10 border border-amber-500/20 rounded-3xl mb-6">
                         <AlertTriangle className="w-12 h-12 text-amber-400" />
                     </div>
-                    <h2 className="text-2xl font-black text-white uppercase tracking-wide mb-3">Node Agent Required</h2>
+                    <h2 className="text-2xl font-black text-white uppercase tracking-wide mb-3">Gateway Agent Required</h2>
                     <p className="text-slate-300 leading-relaxed mb-2">
-                        To deploy a local cluster in SaaS mode, <strong className="text-amber-300">you must first install a Node Agent</strong>.
+                        To deploy a local cluster in SaaS mode, <strong className="text-amber-300">you must first install a Gateway Agent</strong>.
                     </p>
                     <p className="text-slate-400 text-sm leading-relaxed mb-8">
                         The agent establishes a secure connection between your local server and the KubeEZ SaaS backend. 
@@ -336,7 +333,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                             onClick={() => navigate('/agents')}
                             className="px-8 py-4 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-amber-600/20 active:scale-95 transition-all"
                         >
-                            → Setup Node Agents
+                            → Set up the Gateway Agent
                         </button>
                         <button
                             onClick={onCancel}
@@ -349,7 +346,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                         <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3">Setup Steps:</p>
                         <ol className="space-y-2">
                             {[
-                                'Go to the Node Agents page → Generate a Token',
+                                'Open Tunnels → Generate a Token',
                                 'Run the install command on your local server (as root)',
                                 'Once the agent shows "Online", return here to create your cluster'
                             ].map((step, i) => (
@@ -496,13 +493,13 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                 <div>
                                     <h4 className="text-sm font-black text-amber-300 uppercase tracking-widest mb-1">SaaS Deployment Mode</h4>
                                     <p className="text-xs text-amber-200/80 leading-relaxed mb-3">
-                                        Direct SSH connections are disabled in SaaS mode for your security. To deploy to your local LAN servers, you must first connect them using KubeEZ Outbound Node Agents.
+                                        In SaaS mode KubeEZ never connects into private networks directly — servers on a LAN or private IP are reached only through your Gateway Agent (an outbound tunnel you run on your network).
                                     </p>
                                     <button 
                                         onClick={(e) => { e.preventDefault(); window.location.href = '/agents'; }}
                                         className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/20 transition-all"
                                     >
-                                        Configure Node Agents
+                                        Configure the Gateway Agent
                                     </button>
                                 </div>
                             </div>
@@ -599,7 +596,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                         <div className="relative">
                                                             <input
                                                                 type={showPasswords[`m-${idx}`] ? "text" : "password"}
-                                                                placeholder="SSH Password"
+                                                                placeholder={node.hasPassword ? 'Saved — leave empty to keep it' : 'SSH Password'}
                                                                 className="w-full px-5 py-3 rounded-xl bg-black/40 border border-blue-500/20 focus:border-blue-500 outline-none placeholder:text-slate-700"
                                                                 value={node.password}
                                                                 onChange={(e) => updateNode('master', idx, 'password', e.target.value)}
@@ -716,7 +713,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                             <div className="relative">
                                                                 <input
                                                                     type={showPasswords[`m-${actualIdx}`] ? "text" : "password"}
-                                                                    placeholder="SSH Password"
+                                                                    placeholder={node.hasPassword ? 'Saved — leave empty to keep it' : 'SSH Password'}
                                                                     className="w-full px-5 py-3 rounded-xl bg-black/40 border border-emerald-500/20 focus:border-emerald-500 outline-none placeholder:text-slate-700"
                                                                     value={node.password}
                                                                     onChange={(e) => updateNode('master', actualIdx, 'password', e.target.value)}
@@ -810,7 +807,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                         <div className="relative">
                                                             <input
                                                                 type={showPasswords[`m-${idx}`] ? "text" : "password"}
-                                                                placeholder="SSH Password"
+                                                                placeholder={node.hasPassword ? 'Saved — leave empty to keep it' : 'SSH Password'}
                                                                 className="w-full px-5 py-3 rounded-xl bg-black/40 border border-white/10 focus:border-blue-500 outline-none placeholder:text-slate-700"
                                                                 value={node.password}
                                                                 onChange={(e) => updateNode('master', idx, 'password', e.target.value)}
@@ -942,7 +939,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                         <div className="relative">
                                                             <input
                                                                 type={showPasswords[`w-${idx}`] ? "text" : "password"}
-                                                                placeholder="SSH Password"
+                                                                placeholder={node.hasPassword ? 'Saved — leave empty to keep it' : 'SSH Password'}
                                                                 className="w-full px-5 py-3 rounded-xl bg-black/40 border border-white/10 focus:border-purple-500 outline-none placeholder:text-slate-700"
                                                                 value={node.password}
                                                                 onChange={(e) => updateNode('worker', idx, 'password', e.target.value)}

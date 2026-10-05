@@ -1,5 +1,6 @@
 import { NodeSSH } from 'node-ssh'
 import { sshRefusedMessage } from '../utils/sshFixHint.js'
+import { assertDirectConnectAllowed } from '../utils/netGuard.js'
 import { readFileSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -352,6 +353,8 @@ class AutomationEngine {
         }
 
         console.log(`[AutomationEngine] Direct SSH to ${node.ip}`)
+        // SaaS: never let the KubeEZ server itself connect into internal networks
+        await assertDirectConnectAllowed(node.ip)
         const ssh = new NodeSSH()
         await ssh.connect({
             host: node.ip,
@@ -401,6 +404,10 @@ class AutomationEngine {
                 throw new Error(`Invalid SSH username for sudo configuration: ${username}`)
             }
 
+            if (!node.password) {
+                throw new Error(`User '${username}' on ${node.ip} needs sudo without a password, and KubeEZ has no password to set that up (SSH key login). ` +
+                    `Run once on the node: echo '${username} ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/kubeez-${username} — or connect as root.`)
+            }
             const sudoersFile = `/etc/sudoers.d/kubeez-${username}`
 
             // Escape single quotes in password for safe single-quote shell embedding

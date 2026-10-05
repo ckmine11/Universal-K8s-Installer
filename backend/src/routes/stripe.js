@@ -14,7 +14,12 @@ const router = express.Router()
 router.post('/create-checkout-session', express.json(), requireAuth, async (req, res) => {
     try {
         const { planId } = req.body
-        const userId = req.user.id  // Always use the authenticated user's ID
+        // Buying is a workspace decision: admins only, and the plan goes to the
+        // workspace owner (who holds the subscription), never to a member account
+        if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+            return res.status(403).json({ error: 'Only a workspace admin can change the plan.' })
+        }
+        const userId = authService.getOrgOwner(req.user.orgId)?.id || req.user.id
 
         let priceId = ''
         let planName = ''

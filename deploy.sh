@@ -54,7 +54,7 @@ if [ ! -f .env ]; then
     cp .env.production .env
 
     # Generate secure APP_SECRET
-    APP_SECRET=$(openssl rand -hex 32 2>/dev/null || date +%s | md5sum | head -c 32)
+    APP_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
     sed -i "s|APP_SECRET=CHANGE_ME_GENERATE_WITH_openssl_rand_hex_32|APP_SECRET=${APP_SECRET}|" .env
 
     printf "${GREEN}✓ Generated secure APP_SECRET${NC}\n"
@@ -62,7 +62,7 @@ else
     printf "${GREEN}✓ .env file already exists${NC}\n"
 
     if grep -q "CHANGE_ME" .env 2>/dev/null; then
-        APP_SECRET=$(openssl rand -hex 32 2>/dev/null || date +%s | md5sum | head -c 32)
+        APP_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
         sed -i "s|APP_SECRET=CHANGE_ME_GENERATE_WITH_openssl_rand_hex_32|APP_SECRET=${APP_SECRET}|" .env
         printf "${GREEN}✓ Generated secure APP_SECRET (was placeholder)${NC}\n"
     fi

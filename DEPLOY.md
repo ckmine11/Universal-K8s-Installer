@@ -45,6 +45,24 @@ docker compose up -d --build
 Open your browser and visit: `http://YOUR_VPS_IP`
 *   *Note*: Ensure port `80` (or the port defined in docker-compose) is open in your Security Group/Firewall.
 
+### 5. Security checklist (do not skip)
+*   **`APP_SECRET`** must be a real random value (`openssl rand -hex 32`). `deploy.sh` generates one;
+    with the placeholder from `.env.production` the backend **refuses to start** in production —
+    that placeholder is public, and anyone could forge logins and decrypt stored SSH credentials.
+*   **Platform Super Admin**
+    *   *Self-hosted*: the first account is created on the **setup screen**; sign-up is closed until then.
+    *   *SaaS (`KUBEEZ_MODE=saas`)*: sign-ups are always ordinary workspace admins. Create the platform
+        admin on the server, then restart the backend:
+        ```bash
+        docker compose exec backend node scripts/make-superadmin.js <username> '<strong password>' [email]
+        docker compose restart backend
+        ```
+*   **`ALLOWED_ORIGINS`** = the exact URL users open (e.g. `https://kubeez.example.com`). It is used for
+    CORS and to refuse WebSocket connections from other web pages.
+*   In SaaS mode KubeEZ never opens SSH from the server into private/internal addresses — customers'
+    private servers are reached through their Gateway Agent. (Only if KubeEZ runs inside the same private
+    network as the clusters, set `KUBEEZ_ALLOW_PRIVATE_SSH=true`.)
+
 ---
 
 ## 🏠 Easiest Way (Local)

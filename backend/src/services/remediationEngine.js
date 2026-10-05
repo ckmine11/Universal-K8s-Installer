@@ -152,13 +152,15 @@ const PLAYBOOKS = {
         },
         async verify(engine, cluster, node) {
             if (!node) return false
+            const nodeName = node.hostname || node.ip
+            if (!K8S_NAME.test(String(nodeName).toLowerCase())) return false // never put odd input into a shell
             // Check via master — is the node Ready in k8s?
             const master = cluster.masterNodes?.[0]
             if (!master) return false
             const ssh = await engine.connectSSH(master)
             try {
                 const r = await ssh.execCommand(
-                    `${KUBECTL} get node ${node.hostname || node.ip} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null`
+                    `${KUBECTL} get node ${String(nodeName).toLowerCase()} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null`
                 )
                 return r.stdout.trim() === 'True'
             } finally { ssh.dispose?.() }

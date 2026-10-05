@@ -12,7 +12,7 @@ const me = async (token) => (await api('GET', '/api/auth/me', token)).status
 before(async () => {
     srv = await startServer()
     api = client(srv)
-    root = (await api('POST', '/api/auth/register', null, { username: 'root', password: 'secret123', email: 'root@example.com' })).data
+    root = (await api('POST', '/api/auth/login', null, { username: 'root', password: 'secret123' })).data
     owner = (await api('POST', '/api/auth/register', null, { username: 'owner', password: 'secret123', email: 'owner@example.com' })).data
     // Give the workspace seats, then add a second admin
     assert.equal((await api('PUT', `/api/superadmin/users/${owner.user.id}/limits`, root.token, { plan: 'PRO', maxClusters: 10, maxNodes: 50, maxMembers: 5 })).status, 200)

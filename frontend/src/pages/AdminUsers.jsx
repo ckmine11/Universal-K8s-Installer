@@ -34,8 +34,8 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
     const [loading, setLoading] = useState(false)
 
     const handleReset = async () => {
-        if (password.length < 6) {
-            toast({ title: 'Error', message: 'Password must be at least 6 characters', type: 'error' })
+        if (password.length < 8) {
+            toast({ title: 'Error', message: 'Password must be at least 8 characters', type: 'error' })
             return
         }
         setLoading(true)
@@ -103,8 +103,8 @@ function CreateUserModal({ onClose, onSuccess }) {
     const [loading, setLoading] = useState(false)
 
     const handleCreate = async () => {
-        if (formData.password.length < 6) {
-            toast({ title: 'Error', message: 'Password must be at least 6 characters', type: 'error' })
+        if (formData.password.length < 8) {
+            toast({ title: 'Error', message: 'Password must be at least 8 characters', type: 'error' })
             return
         }
         if (!formData.username || !formData.email) {

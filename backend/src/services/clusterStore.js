@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { encrypt, decrypt } from '../utils/cryptoUtils.js'
 import { sameTenant } from '../utils/access.js'
 import { DATA_DIR } from '../utils/paths.js'
+import { writeFileAtomic } from '../utils/atomicWrite.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -103,7 +104,7 @@ class ClusterStore {
                 rawClusters.push(encryptedArgs)
             }
 
-            await fs.promises.writeFile(CLUSTERS_FILE, JSON.stringify(rawClusters, null, 2))
+            await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(rawClusters, null, 2))
             return true
 
         } catch (error) {
@@ -126,7 +127,7 @@ class ClusterStore {
                 if (orgId) { c.orgId = orgId; changed++ }
             }
             if (changed > 0) {
-                await fs.promises.writeFile(CLUSTERS_FILE, JSON.stringify(rawClusters, null, 2))
+                await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(rawClusters, null, 2))
                 console.log(`[ClusterStore] Backfilled orgId on ${changed} legacy cluster(s)`)
             }
             return changed
@@ -147,7 +148,7 @@ class ClusterStore {
             const newClusters = rawClusters.filter(c => c.id !== id)
 
             // Write back the raw (still encrypted) data
-            await fs.promises.writeFile(CLUSTERS_FILE, JSON.stringify(newClusters, null, 2))
+            await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(newClusters, null, 2))
             return true
         } catch (error) {
             console.error('Error deleting cluster:', error)

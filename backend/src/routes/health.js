@@ -16,7 +16,8 @@ function ensureBackupAccess(req, res) {
         res.status(403).json({ error: 'Only workspace admins can manage backups' });
         return false;
     }
-    const plan = authService.getUserById(req.user.id)?.subscription?.plan;
+    // The workspace plan — a second admin of a Pro workspace has plan "MEMBER"
+    const plan = authService.getOrgPlan(req.user.orgId);
     if (!canUseBackups(plan, req.user.role)) {
         res.status(402).json({
             error: 'Daily config backups & 1-click restore are a Pro feature. Upgrade to Pro to enable automatic backups.',

@@ -25,7 +25,7 @@ function ws(p, token, send) {
 before(async () => {
     srv = await startServer()
     api = client(srv)
-    root = await register('root')
+    root = (await api('POST', '/api/auth/login', null, { username: 'root', password: 'secret123' })).data
     alice = await register('alice')
     bob = await register('bob')
     // alice owns two clusters (one legacy record without orgId)
@@ -37,7 +37,7 @@ before(async () => {
 })
 after(() => srv?.stop())
 
-test('first user is superadmin, later signups are org admins', () => {
+test('the platform Super Admin comes from make-superadmin; every sign-up is an org admin', () => {
     assert.equal(root.user.role, 'superadmin')
     assert.equal(alice.user.role, 'admin')
     assert.notEqual(alice.user.orgId, bob.user.orgId)

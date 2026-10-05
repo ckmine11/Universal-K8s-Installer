@@ -1,4 +1,5 @@
 import express from 'express'
+import net from 'net'
 import { v4 as uuidv4 } from 'uuid'
 import { installationManager } from '../services/installationManager.js'
 import { automationEngine } from '../services/automationEngine.js'
@@ -7,6 +8,7 @@ import { licenseService } from '../services/licenseService.js'
 import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
 import { addonManager, ADDON_REGISTRY } from '../services/addonManager.js'
+import { stripCredentials, fillStoredCredentials } from '../services/clusterCredentials.js'
 import { etcdBackupService } from '../services/etcdBackupService.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
@@ -41,14 +43,9 @@ function loadOwnedInstallation(req, res, id) {
     return installation
 }
 
-// Node SSH credentials are needed by the UI only for scaling (the wizard
-// pre-fills the bridge master). Roles that can't scale (viewers) must never
-// receive them.
-function redactForRole(req, record) {
-    if (!record || can(req.user.role, 'cluster:scale')) return record
-    const strip = (nodes) => (nodes || []).map(({ password, sshKey, ...n }) => n)
-    return { ...record, masterNodes: strip(record.masterNodes), workerNodes: strip(record.workerNodes) }
-}
+// SSH passwords / keys never go to the browser — for any role. Scaling and
+// re-verifying send the cluster id; the server fills in the stored credentials.
+const redactForRole = (req, record) => stripCredentials(record)
 
 // List all in-progress/recent installations for the current user/org.
 // Lets the UI recover a running install after navigating away or refreshing.
@@ -75,10 +72,38 @@ router.get('/list', async (req, res) => {
     }
 })
 
+// Everything here ends up in shell scripts, kubeconfigs and the UI — accept
+// only well-formed values (the scripts quote arguments too; this is the first line).
+function installInputProblem({ clusterName, k8sVersion, networkPlugin, mode }, masterNodes, workerNodes) {
+    if (typeof clusterName !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9 ._-]{0,62}$/.test(clusterName)) {
+        return 'Cluster name: 1-63 characters — letters, numbers, spaces, ".", "_" or "-"'
+    }
+    if (mode !== 'scale' || k8sVersion) {
+        if (typeof k8sVersion !== 'string' || !/^1\.\d{1,2}\.\d{1,3}$/.test(k8sVersion)) return 'Kubernetes version must look like 1.35.0'
+    }
+    if (networkPlugin && !['flannel', 'calico'].includes(networkPlugin)) return 'Network plugin must be flannel or calico'
+    const nodes = [...(masterNodes || []), ...(workerNodes || [])]
+    if (nodes.length > 100) return 'At most 100 nodes per request'
+    for (const n of nodes) {
+        const host = String(n?.ip || '')
+        if (!(net.isIP(host) || /^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(host))) {
+            return `Node address "${host.slice(0, 60)}" is not a valid IP address or hostname`
+        }
+        if (!/^[a-z_][a-z0-9_.-]{0,31}$/i.test(String(n?.username || ''))) return `Invalid SSH username for ${host}`
+    }
+    return null
+}
+
 // Start cluster installation
 router.post('/install', requirePermission('cluster:create'), async (req, res) => {
     try {
-        const { clusterName, k8sVersion, networkPlugin, masterNodes, workerNodes, addons, mode } = req.body
+        const { clusterName, k8sVersion, networkPlugin, addons, mode, clusterId } = req.body
+        // Scaling an existing cluster: its nodes come without passwords (never sent
+        // to the browser) — use the stored ones
+        const masterNodes = await fillStoredCredentials(req.user, clusterId, req.body.masterNodes)
+        const workerNodes = await fillStoredCredentials(req.user, clusterId, req.body.workerNodes)
+        const inputProblem = (masterNodes?.length || mode !== 'scale') ? installInputProblem(req.body, masterNodes, workerNodes) : null
+        if (inputProblem) return res.status(400).json({ error: inputProblem })
 
         console.log('Received installation request:', { clusterName, masterNodes: masterNodes?.length, workerNodes: workerNodes?.length, mode })
 

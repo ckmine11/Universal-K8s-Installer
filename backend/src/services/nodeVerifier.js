@@ -1,6 +1,7 @@
 import { NodeSSH } from 'node-ssh'
 import { automationEngine } from './automationEngine.js'
 import { sshRefusedMessage } from '../utils/sshFixHint.js'
+import { assertDirectConnectAllowed } from '../utils/netGuard.js'
 
 // Total verification timeout — must stay under NGINX proxy_read_timeout (300s)
 const VERIFY_TIMEOUT_MS = 60_000  // 60s total
@@ -40,6 +41,7 @@ class NodeVerifier {
                 if (nodeConfig.ownerId || nodeConfig.orgId) {
                     ssh = await automationEngine.connectSSH(nodeConfig)
                 } else {
+                    await assertDirectConnectAllowed(ip)
                     ssh = new NodeSSH()
                     await ssh.connect({
                         host: ip,

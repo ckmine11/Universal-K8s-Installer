@@ -9,6 +9,7 @@ import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { DATA_DIR } from '../utils/paths.js';
+import { writeFileAtomicSync } from '../utils/atomicWrite.js'
 
 dotenv.config();
 
@@ -19,6 +20,8 @@ const __dirname = path.dirname(__filename);
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const JWT_SECRET = getJwtSecret();
 const RESET_CODE_TTL_MS = 15 * 60 * 1000;
+// bcrypt hash of a random string — compared against when the username does not exist
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
 const MAX_RESET_ATTEMPTS = 5;
 const hashResetCode = (code) => crypto.createHash('sha256').update(code).digest('hex');
 
@@ -40,6 +43,7 @@ const transporter = nodemailer.createTransport({
 class AuthService {
     constructor() {
         this.users = [];
+        this._failures = new Map(); // username → { count, until } (login lockout)
         this.loadUsers();
     }
 
@@ -51,17 +55,19 @@ class AuthService {
                 
                 // Quick migration: Ensure all existing users have an orgId
                 let modified = false;
-                this.users.forEach((u, index) => {
+                this.users.forEach((u) => {
                     if (!u.orgId) {
                         u.orgId = uuidv4();
                         modified = true;
                     }
-                    // The first user in the system is always the Super Admin
-                    if (index === 0 && u.role !== 'superadmin') {
-                        u.role = 'superadmin';
-                        modified = true;
-                    }
                 });
+                // Legacy self-hosted data from before roles existed: make the first
+                // account Super Admin ONLY if there is none at all. Never in SaaS —
+                // there a deleted first account would hand the platform to a customer.
+                if (process.env.KUBEEZ_MODE !== 'saas' && this.users.length && !this.users.some(u => u.role === 'superadmin')) {
+                    this.users[0].role = 'superadmin';
+                    modified = true;
+                }
                 if (modified) this.saveUsers();
             }
         } catch (error) {
@@ -71,7 +77,7 @@ class AuthService {
     }
 
     saveUsers() {
-        fs.writeFileSync(USERS_FILE, JSON.stringify(this.users, null, 2));
+        writeFileAtomicSync(USERS_FILE, JSON.stringify(this.users, null, 2));
     }
 
     isSetupRequired() {
@@ -81,7 +87,11 @@ class AuthService {
         return this.users.length === 0;
     }
 
-    async registerUser(username, password, email) {
+    // { setup: true } only from the one-time /api/auth/setup of a self-hosted
+    // server — that first account becomes the platform Super Admin. Every other
+    // sign-up is the admin of its own new workspace. SaaS Super Admins are made
+    // with scripts/make-superadmin.js, never by signing up.
+    async registerUser(username, password, email, { setup = false } = {}) {
         const existing = this.users.find(u => u.username.toLowerCase() === username.toLowerCase() || (u.email && email && u.email.toLowerCase() === email.toLowerCase()));
         if (existing) {
             throw new Error('Username or email is already taken');
@@ -91,7 +101,7 @@ class AuthService {
         
         // Every new registration is a Tenant Admin with a unique orgId
         // BUT the very first user is the Global Super Admin
-        const role = this.users.length === 0 ? 'superadmin' : 'admin';
+        const role = (setup && this.users.length === 0 && process.env.KUBEEZ_MODE !== 'saas') ? 'superadmin' : 'admin';
         const orgId = uuidv4();
 
         const newUser = {
@@ -154,15 +164,28 @@ class AuthService {
     }
 
     async login(username, password) {
-        const user = this.users.find(u => u.username === username);
-        if (!user) {
-            throw new Error('Invalid credentials');
+        const name = String(username || '')
+        const user = this.users.find(u => u.username === name);
+
+        // Per-account lockout: 10 wrong passwords → 15 minutes (on top of the
+        // per-IP limit, which a distributed attack would get around)
+        const lock = this._failures.get(name.toLowerCase());
+        if (lock && lock.until > Date.now()) {
+            throw new Error('Too many failed attempts for this account. Try again in 15 minutes.');
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
+        // Always run one bcrypt comparison, so the response time does not reveal
+        // whether the username exists
+        const isMatch = await bcrypt.compare(String(password || ''), user ? user.password : DUMMY_HASH);
+        if (!user || !isMatch) {
+            const f = this._failures.get(name.toLowerCase()) || { count: 0, until: 0 };
+            f.count += 1;
+            if (f.count >= 10) { f.until = Date.now() + 15 * 60 * 1000; f.count = 0; }
+            this._failures.set(name.toLowerCase(), f);
             throw new Error('Invalid credentials');
         }
+        this._failures.delete(name.toLowerCase());
+        if (user.isSuspended) throw new Error('This account is suspended. Contact your administrator.');
 
         return this.generateToken(user);
     }

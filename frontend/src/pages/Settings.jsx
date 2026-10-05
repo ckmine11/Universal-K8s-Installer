@@ -143,8 +143,8 @@ export default function Settings() {
         if (pwdForm.newPwd !== pwdForm.confirm) {
             toast({ title: 'Error', message: 'New password and confirmation do not match', type: 'error' }); return
         }
-        if (pwdForm.newPwd.length < 6) {
-            toast({ title: 'Error', message: 'New password must be at least 6 characters', type: 'error' }); return
+        if (pwdForm.newPwd.length < 8) {
+            toast({ title: 'Error', message: 'New password must be at least 8 characters', type: 'error' }); return
         }
         setPwdLoading(true)
         try {
@@ -1096,7 +1096,7 @@ export default function Settings() {
                                 <div className="relative">
                                     <input
                                         type={showPwds.newPwd ? 'text' : 'password'}
-                                        placeholder="Min 6 characters"
+                                        placeholder="Min 8 characters"
                                         value={pwdForm.newPwd}
                                         onChange={e => setPwdForm(p => ({ ...p, newPwd: e.target.value }))}
                                         className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3.5 pr-12 text-sm text-white placeholder-slate-600 outline-none transition-colors"

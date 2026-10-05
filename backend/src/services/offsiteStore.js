@@ -3,6 +3,7 @@ import path from 'path'
 import crypto from 'crypto'
 import { encrypt, decrypt } from '../utils/cryptoUtils.js'
 import { DATA_DIR } from '../utils/paths.js'
+import { writeFileAtomicSync } from '../utils/atomicWrite.js'
 
 // Offsite (S3 / MinIO) backup target — one per workspace (orgId).
 // Secrets (access/secret key, bundle encryption key) are stored encrypted.
@@ -19,7 +20,7 @@ class OffsiteStore {
 
     _write(all) {
         fs.mkdirSync(DATA_DIR, { recursive: true })
-        fs.writeFileSync(FILE, JSON.stringify(all, null, 2))
+        writeFileAtomicSync(FILE, JSON.stringify(all, null, 2))
     }
 
     /** Full record incl. decrypted secrets — backend use only. */

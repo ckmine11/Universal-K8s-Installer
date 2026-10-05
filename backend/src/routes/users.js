@@ -3,6 +3,7 @@ import { authService } from '../services/authService.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 import { ROLES, PERMISSION_GROUPS, PERMISSIONS, permissionsForRole } from '../config/permissions.js'
 import bcrypt from 'bcryptjs'
+import { passwordProblem } from '../utils/passwordPolicy.js'
 
 const router = express.Router()
 
@@ -52,9 +53,8 @@ router.post('/auth/change-password', requireAuth, async (req, res) => {
         if (!currentPassword || !newPassword) {
             return res.status(400).json({ error: 'Current and new password are required' })
         }
-        if (newPassword.length < 6) {
-            return res.status(400).json({ error: 'New password must be at least 6 characters' })
-        }
+        const pwProblem = passwordProblem(newPassword)
+        if (pwProblem) return res.status(400).json({ error: pwProblem })
 
         // Load all users to find this one
         const users = authService.users
@@ -109,6 +109,9 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
     try {
         const { username, password, email, role } = req.body
         if (!username || !password) return res.status(400).json({ error: 'Username and password are required' })
+        const problem = passwordProblem(password) ||
+            (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username) ? 'Username must be 3-32 characters: letters, numbers, ".", "-" and "_"' : null)
+        if (problem) return res.status(400).json({ error: problem })
         if (role && !ASSIGNABLE_ROLES.includes(role)) {
             return res.status(400).json({ error: `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` })
         }
@@ -187,9 +190,8 @@ router.delete('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
 router.post('/admin/users/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
     try {
         const { newPassword } = req.body
-        if (!newPassword || newPassword.length < 6) {
-            return res.status(400).json({ error: 'New password must be at least 6 characters' })
-        }
+        const pwProblem = passwordProblem(newPassword)
+        if (pwProblem) return res.status(400).json({ error: pwProblem })
 
         const userIdx = authService.users.findIndex(u => u.id === req.params.id && u.orgId === req.user.orgId)
         if (userIdx < 0) return res.status(404).json({ error: 'User not found in your organization' })

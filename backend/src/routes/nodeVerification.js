@@ -1,13 +1,17 @@
 import express from 'express'
 import { nodeVerifier } from '../services/nodeVerifier.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
+import { fillStoredCredentials } from '../services/clusterCredentials.js'
 
 const router = express.Router()
 
 // Verify a single node
 router.post('/verify', requireAuth, async (req, res) => {
     try {
-        const { ip, username, password, sshKey } = req.body
+        // Re-verifying a node of an existing cluster: no password from the browser —
+        // use the stored one (only for a cluster this user may access)
+        const [filled] = await fillStoredCredentials(req.user, req.body.clusterId, [req.body])
+        const { ip, username, password, sshKey } = filled
 
         if (!ip || !username) {
             return res.status(400).json({
@@ -49,9 +53,15 @@ router.post('/verify-batch', requireAuth, async (req, res) => {
             })
         }
 
+        // Each node opens an SSH session — keep one request from fanning out without limit
+        if (nodes.length > 50) {
+            return res.status(400).json({ error: 'At most 50 nodes per request' })
+        }
+        const filled = await fillStoredCredentials(req.user, req.body.clusterId, nodes)
+
         // Verify all nodes in parallel
         const results = await Promise.all(
-            nodes.map(node => nodeVerifier.verifyNode({
+            filled.map(node => nodeVerifier.verifyNode({
                 ...node,
                 ownerId: req.user.id,
                 orgId: req.user.orgId

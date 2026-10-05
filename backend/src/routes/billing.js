@@ -9,9 +9,11 @@ router.get('/subscription', requireAuth, (req, res) => {
         const user = authService.getUserById(req.user.id)
         if (!user) return res.status(404).json({ error: 'User not found' })
         
-        // Return current subscription or default
-        const sub = user.subscription || { plan: 'FREE', maxClusters: 1, maxNodes: 2, maxMembers: 1 }
-        res.json(sub)
+        // Team members have plan "MEMBER" — what counts is the WORKSPACE plan
+        // (the owner's subscription), the same one the server enforces.
+        const owner = authService.getOrgOwner(req.user.orgId) || user
+        const sub = owner.subscription || { plan: 'FREE', maxClusters: 1, maxNodes: 2, maxMembers: 1 }
+        res.json({ ...sub, isOwner: owner.id === user.id })
     } catch (e) {
         res.status(500).json({ error: e.message })
     }

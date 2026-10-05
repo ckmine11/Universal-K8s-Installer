@@ -1,6 +1,6 @@
 // Boots the real backend (src/server.js) in a child process with an isolated,
 // throw-away data directory, so tests never touch backend/data.
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -12,10 +12,16 @@ export function tempDataDir(prefix = 'kubeez-test-') {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
 }
 
+// SaaS sign-ups never become Super Admin: like a real operator, create the
+// platform admin "root" / "secret123" with the official tool before starting.
 export async function startServer(extraEnv = {}) {
     const dataDir = tempDataDir()
     const port = 31000 + Math.floor(Math.random() * 8000)
     const logs = []
+    if ((extraEnv.KUBEEZ_MODE || 'saas') === 'saas' && extraEnv.NO_SUPERADMIN !== '1') {
+        execFileSync(process.execPath, ['scripts/make-superadmin.js', 'root', 'secret123', 'root@example.com'],
+            { cwd: BACKEND, env: { ...process.env, KUBEEZ_DATA_DIR: dataDir }, stdio: 'ignore' })
+    }
     const child = spawn(process.execPath, ['src/server.js'], {
         cwd: BACKEND,
         env: {

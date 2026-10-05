@@ -3,6 +3,7 @@ import { WebSocketServer } from 'ws'
 import { createServer } from 'http'
 import path from 'path';
 import { readFileSync } from 'fs'
+import { passwordProblem } from './utils/passwordPolicy.js'
 import { fileURLToPath } from 'url';
 import cors from 'cors'
 import helmet from 'helmet'
@@ -38,7 +39,17 @@ const app = express()
 // Value 1 = one proxy hop (nginx) directly in front of the backend.
 app.set('trust proxy', 1)
 const server = createServer(app)
-const wss = new WebSocketServer({ server }) // Allow all paths, we filter below
+// Browsers always send Origin on a WebSocket handshake. Accept only our own
+// frontend origins (cross-site WebSocket hijacking); agents send no Origin.
+const wss = new WebSocketServer({
+    server,
+    verifyClient: ({ origin, req }) => {
+        if (!origin) return true
+        const allowed = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000').split(',').map(o => o.trim())
+        const sameHost = (() => { try { return new URL(origin).host === req.headers.host } catch { return false } })()
+        return allowed.includes(origin) || sameHost
+    }
+})
 
 import { authService } from './services/authService.js'
 import { requireAuth } from './middleware/authMiddleware.js'
@@ -75,6 +86,7 @@ app.use('/api/', apiLimiter) // Apply to all API routes
 app.use('/api/auth/login', authLimiter)
 app.use('/api/auth/setup', authLimiter)
 app.use('/api/auth/register', authLimiter)
+app.use('/api/auth/change-password', authLimiter)
 
 // Public Auth & System Config Routes
 app.get('/api/config', (req, res) => {
@@ -96,12 +108,8 @@ app.get('/api/auth/status', (req, res) => {
 })
 
 // Shared signup validation (setup + register + reset)
-function validatePassword(password) {
-    // Same minimum as change-password / admin reset (and the UI hints)
-    if (typeof password !== 'string' || password.length < 6) return 'Password must be at least 6 characters'
-    if (password.length > 128) return 'Password is too long'
-    return null
-}
+// Same rule for setup, register, reset, change-password and team members
+const validatePassword = passwordProblem
 function validateUsername(username) {
     if (typeof username !== 'string' || username.length < 3 || username.length > 32) return 'Username must be 3-32 characters'
     if (!/^[a-zA-Z0-9_.-]+$/.test(username)) return 'Username can only contain letters, numbers, ".", "-" and "_"'
@@ -117,7 +125,7 @@ app.post('/api/auth/setup', async (req, res) => {
         if (!authService.isSetupRequired()) {
             return res.status(400).json({ error: 'Setup already completed. Please register or login.' })
         }
-        const token = await authService.registerUser(username, password, email)
+        const token = await authService.registerUser(username, password, email, { setup: true })
         const decoded = authService.verifyToken(token)
         res.cookie('token', token, {
             httpOnly: true,
@@ -134,6 +142,11 @@ app.post('/api/auth/setup', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password, email } = req.body
+        // While no account exists, only /setup may create the first one (it becomes the
+        // platform super admin) — otherwise any visitor of a fresh server could take it over.
+        if (authService.isSetupRequired()) {
+            return res.status(403).json({ error: 'This server is not set up yet. The administrator must complete the initial setup first.' })
+        }
         if (!username || !password || !email) return res.status(400).json({ error: 'Username, password, and email are required' })
         const inputError = validateUsername(username) || validatePassword(password)
             || (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'Please enter a valid email address' : null)
@@ -231,9 +244,10 @@ app.get('/agent-install.:ext(sh|ps1)', (req, res) => {
 })
 
 
-// Secure Advanced Health & Backup Info (Only Admins allowed)
+// Server internals (hostname, OS, Node.js, CPU, memory) are for the platform
+// super admin only — every SaaS customer is an "admin" of their own workspace.
 app.use('/api/health/detailed', requireAuth, (req, res, next) => {
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') return res.status(403).json({ error: 'Admin access required' })
+    if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Super Admin access required' })
     next()
 })
 app.use('/api/health/backups', requireAuth, (req, res, next) => {
