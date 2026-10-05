@@ -111,7 +111,7 @@ TARGET_VERSION=${TARGET_VERSION#v}
 VER_MAJOR_MINOR=$(echo "$TARGET_VERSION" | cut -d. -f1,2)
 TARGET_MINOR=$(echo "$TARGET_VERSION" | cut -d. -f2)
 
-if ! echo "$TARGET_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+if ! grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$TARGET_VERSION"; then
     fail "INVALID_VERSION" "'${TARGET_VERSION}' is not a valid Kubernetes version." "Use a version like 1.35.0."
 fi
 
@@ -132,7 +132,7 @@ else
 fi
 # "Ignore excludes" flag: yum/dnf4 take --disableexcludes, dnf5 (Fedora 41+) only --setopt
 NOEXCL="--disableexcludes=all"
-dnf --version 2>/dev/null | grep -q dnf5 && NOEXCL="--setopt=disable_excludes=*"
+grep -q dnf5 <<< "$(dnf --version 2>/dev/null)" && NOEXCL="--setopt=disable_excludes=*"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. PREFLIGHT GATE — read-only. Every known blocker for the target version is
@@ -199,7 +199,10 @@ if [ "$PKG_MGR" = "apt" ]; then
     # Best effort: only conclusive when the index was actually downloaded
     # (the authoritative check is 'apt-cache madison' after the repo switch).
     PKG_INDEX=$(curl -4 -sL -m 30 "https://pkgs.k8s.io/core:/stable:/v${VER_MAJOR_MINOR}/deb/Packages" 2>/dev/null)
-    if echo "$PKG_INDEX" | grep -q '^Package: kubeadm' && ! echo "$PKG_INDEX" | grep -q "^Version: ${TARGET_VERSION}-"; then
+    # Here-strings, not "echo | grep -q": with pipefail, grep -q exits at the first
+    # match and echo dies of SIGPIPE once the index is bigger than the pipe buffer
+    # (64 KB — v1.35 already is), which reported a published version as missing.
+    if grep -q '^Package: kubeadm' <<< "$PKG_INDEX" && ! grep -q "^Version: ${TARGET_VERSION}-" <<< "$PKG_INDEX"; then
         fail "VERSION_NOT_AVAILABLE" "Package version ${TARGET_VERSION} is not available in the v${VER_MAJOR_MINOR} repository." "Pick a released patch version of v${VER_MAJOR_MINOR} and retry."
     fi
 fi
@@ -382,7 +385,7 @@ REPOEOF
 
     # CentOS 8 (non-Stream) is also EOL → repoint to vault. CentOS Stream 8 is
     # still supported, so skip it (NAME contains "Stream").
-    if [ "${ID:-}" = "centos" ] && [ "$(echo "${VERSION_ID:-0}" | cut -d. -f1)" = "8" ] && ! echo "${NAME:-}" | grep -qi stream; then
+    if [ "${ID:-}" = "centos" ] && [ "$(echo "${VERSION_ID:-0}" | cut -d. -f1)" = "8" ] && ! grep -qi stream <<< "${NAME:-}"; then
         log "CentOS 8 (EOL) detected — repointing base repos to vault.centos.org"
         rm -f /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
         cat > /etc/yum.repos.d/CentOS-Vault.repo <<'REPOEOF8'
@@ -450,7 +453,10 @@ APTEOF
     if ! apt_get update -o Dir::Etc::sourcelist="sources.list.d/kubernetes.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"; then
         fail "REPO_UPDATE_FAILED" "apt could not read the Kubernetes v${VER_MAJOR_MINOR} repository." "Check internet/DNS on the node and that /etc/apt/sources.list.d/kubernetes.list is valid, then retry."
     fi
-    if ! apt-cache madison kubeadm 2>/dev/null | grep -q " ${TARGET_VERSION}-"; then
+    # (captured first: under pipefail "cmd | grep -q" can report a match as a
+    #  failure when grep exits before the writer is done — see PKG_INDEX above)
+    MADISON=$(apt-cache madison kubeadm 2>/dev/null)
+    if ! grep -q " ${TARGET_VERSION}-" <<< "$MADISON"; then
         AVAILABLE=$(apt-cache madison kubeadm 2>/dev/null | awk '{print $3}' | head -5 | tr '\n' ' ')
         fail "VERSION_NOT_AVAILABLE" "kubeadm ${TARGET_VERSION} is not available from the repository (available: ${AVAILABLE:-none})." "Choose one of the available versions and retry."
     fi
@@ -641,31 +647,31 @@ diagnose_kubeadm() {
 
     # Where did it stop? Before the static-pod swap kubeadm rolls back; in the
     # post-upgrade phase the control plane is ALREADY on the new version.
-    if echo "$err" | grep -qi 'phase post-upgrade'; then
+    if grep -qi 'phase post-upgrade' <<< "$err"; then
         state="The control plane was already upgraded; only kubeadm's final post-upgrade step failed, so a retry finishes the job."
-    elif ! echo "$out" | grep -qiE 'upgrade/staticpods|upgrade/etcd|Moving new manifest|Moved new manifest'; then
+    elif ! grep -qiE 'upgrade/staticpods|upgrade/etcd|Moving new manifest|Moved new manifest' <<< "$out"; then
         state="kubeadm stopped before changing anything, so the cluster is unchanged."
     else
         state="kubeadm rolled the control plane back, so the cluster is still running on its previous version."
     fi
 
-    if echo "$err" | grep -qiE 'only supports deploying clusters with the control plane version'; then
+    if grep -qiE 'only supports deploying clusters with the control plane version' <<< "$err"; then
         echo "KUBEADM_CONFIG_STALE|kubeadm's record of the cluster version (kubeadm-config) is older than the control plane that actually runs — usually after restoring an etcd snapshot taken before an upgrade. ${state}|Retry the upgrade — KubeEZ now corrects kubeadm-config automatically before running kubeadm."
-    elif echo "$err" | grep -qiE 'kubelet env file|kubeadm-flags\.env|no flags found'; then
+    elif grep -qiE 'kubelet env file|kubeadm-flags\.env|no flags found' <<< "$err"; then
         echo "KUBELET_ENV_FILE|kubeadm could not read /var/lib/kubelet/kubeadm-flags.env (it has no kubelet flags left — newer Kubernetes removed the only flag it had). ${state}|Retry the upgrade — KubeEZ repairs this file automatically before running kubeadm."
-    elif echo "$err" | grep -qiE 'ErrImagePull|ImagePullBackOff|failed to pull image|pull access denied'; then
+    elif grep -qiE 'ErrImagePull|ImagePullBackOff|failed to pull image|pull access denied' <<< "$err"; then
         echo "IMAGE_PULL_FAILED|A new control-plane image could not be downloaded. ${state}|Check internet/DNS access to registry.k8s.io and free disk space, then retry."
-    elif echo "$err" | grep -qiE 'etcd.*(deadline|timed out|not healthy)|(deadline|timed out).*etcd'; then
+    elif grep -qiE 'etcd.*(deadline|timed out|not healthy)|(deadline|timed out).*etcd' <<< "$err"; then
         echo "ETCD_UPGRADE_TIMEOUT|The new etcd did not become healthy in time. ${state}|Usually a slow disk or a stale sandbox image. Check the etcd container on the master ('crictl ps -a --name etcd', then 'crictl logs <id>'), then retry."
-    elif echo "$err" | grep -qiE 'context deadline exceeded|timed out waiting for the condition|static Pod hash|did not change after'; then
+    elif grep -qiE 'context deadline exceeded|timed out waiting for the condition|static Pod hash|did not change after' <<< "$err"; then
         echo "CONTROL_PLANE_TIMEOUT|A control-plane component did not become healthy in time after the upgrade. ${state}|Check the component logs shown above (crictl ps -a / crictl logs). Slow nodes usually succeed on retry because images are now cached."
-    elif echo "$err" | grep -qiE 'connection refused.*6443|6443.*connection refused|unable to connect to the server|6443.*(Client.Timeout|i/o timeout|TLS handshake timeout|no route to host|EOF)|failed to get config ?map'; then
+    elif grep -qiE 'connection refused.*6443|6443.*connection refused|unable to connect to the server|6443.*(Client.Timeout|i/o timeout|TLS handshake timeout|no route to host|EOF)|failed to get config ?map' <<< "$err"; then
         echo "API_SERVER_DOWN|kubeadm could not reach the API server on port 6443 (it did not answer in time). ${state}|Make sure the kube-apiserver container is running ('crictl ps --name kube-apiserver') and port 6443 is free, then retry."
-    elif echo "$err" | grep -qiE '\[ERROR '; then
+    elif grep -qiE '\[ERROR ' <<< "$err"; then
         echo "KUBEADM_PREFLIGHT|kubeadm preflight check failed: ${last_err}|Fix the reported item on the node, then retry."
-    elif echo "$err" | grep -qiE 'version skew|is not supported|Specified version to upgrade to'; then
+    elif grep -qiE 'version skew|is not supported|Specified version to upgrade to' <<< "$err"; then
         echo "VERSION_SKEW|kubeadm refused this version jump: ${last_err}|Upgrade one minor version at a time, and make sure all nodes are on the same version first."
-    elif echo "$err" | grep -qiE 'x509|certificate (has )?expired|certificate is not valid|certificate signed by unknown'; then
+    elif grep -qiE 'x509|certificate (has )?expired|certificate is not valid|certificate signed by unknown' <<< "$err"; then
         echo "CERTIFICATE_ERROR|A certificate problem stopped the upgrade: ${last_err}|Check certificate expiry with 'kubeadm certs check-expiration' and renew if needed ('kubeadm certs renew all'), then retry."
     else
         echo "KUBEADM_UPGRADE_FAILED|kubeadm upgrade failed: ${last_err:-see the log above}. ${state}|Read the kubeadm output above for the exact cause, fix it, then retry."
@@ -820,11 +826,11 @@ for i in $(seq 1 12); do   # up to ~60s
 done
 if [ -z "$KUBELET_UP" ]; then
     KERR=$(journalctl -u kubelet -n 80 --no-pager 2>/dev/null | grep -iE 'error|fail|unknown flag|invalid' | tail -3 | sed 's/^.*kubelet\[[0-9]*\]: //' | tr '\n' ' ' | cut -c1-400)
-    if echo "$KERR" | grep -qi 'cgroup'; then
+    if grep -qi 'cgroup' <<< "$KERR"; then
         fail "KUBELET_CGROUP" "kubelet ${TARGET_VERSION} will not start because of the cgroup setup: ${KERR}" "Make sure the node uses cgroups v2 and containerd uses 'SystemdCgroup = true', then retry."
-    elif echo "$KERR" | grep -qi 'unknown flag'; then
+    elif grep -qi 'unknown flag' <<< "$KERR"; then
         fail "KUBELET_FLAG" "kubelet ${TARGET_VERSION} rejected an old command-line flag: ${KERR}" "Remove the flag from /var/lib/kubelet/kubeadm-flags.env (and /etc/default/kubelet), run 'systemctl restart kubelet', then retry."
-    elif echo "$KERR" | grep -qi 'swap'; then
+    elif grep -qi 'swap' <<< "$KERR"; then
         fail "KUBELET_SWAP" "kubelet will not start because swap is enabled: ${KERR}" "Run 'swapoff -a' and remove swap from /etc/fstab, then retry."
     else
         fail "KUBELET_NOT_STARTING" "kubelet ${TARGET_VERSION} does not stay running after the upgrade: ${KERR:-no error found in the journal}" "Check 'journalctl -u kubelet -n 100' on the node, fix the cause, then retry."

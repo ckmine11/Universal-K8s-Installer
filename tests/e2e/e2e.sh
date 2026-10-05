@@ -90,16 +90,19 @@ cmd_upgrade() {
     local master_distro="$1"; shift
     local master="$PREFIX-$master_distro-cp" workers=() d
     image "$master_distro"; start_node "$master" "$master_distro"
-    docker exec "$master" bash /k/node-install.sh master 1.35.0 || return 1
+    # UPGRADE_FROM=1.34.0 → upgrades 1.34 → 1.35 → 1.36 → 1.37 (default starts at 1.35)
+    local from="${UPGRADE_FROM:-1.35.0}"; local fminor; fminor=$(echo "$from" | cut -d. -f2)
+    local versions="" m; for m in $(seq $((fminor + 1)) 37); do versions="$versions 1.$m.0"; done
+    docker exec "$master" bash /k/node-install.sh master "$from" || return 1
     local join; join=$(docker exec "$master" cat /tmp/kubeadm-join-command.txt)
     for d in "$@"; do
         image "$d"; start_node "$PREFIX-$d-w" "$d"; workers+=("$PREFIX-$d-w")
-        docker exec "$PREFIX-$d-w" bash /k/node-install.sh worker 1.35.0 "$join" || return 1
+        docker exec "$PREFIX-$d-w" bash /k/node-install.sh worker "$from" "$join" || return 1
     done
     local count=$(( ${#workers[@]} + 1 ))
-    verify_cluster "$master" 1.35 "${workers[0]}" "$count" || return 1
+    verify_cluster "$master" "1.$fminor" "${workers[0]}" "$count" || return 1
 
-    for v in 1.36.0 1.37.0; do
+    for v in $versions; do
         echo "== upgrade to $v"
         upgrade_node "$master" "$v" master true || return 1
         for w in "${workers[@]}"; do upgrade_node "$w" "$v" worker false || return 1; done

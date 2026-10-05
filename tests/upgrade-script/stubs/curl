@@ -8,7 +8,10 @@ if [ -n "$want_code" ]; then
   esac; exit 0
 fi
 case "$url" in
-  *Packages) printf 'Package: kubeadm\nVersion: %s-1.1\n' "${K_PKGVER:-1.35.0}";;
+  *Packages) printf 'Package: kubeadm\nVersion: %s-1.1\n' "${K_PKGVER:-1.35.0}"
+             # K_BIGINDEX: a real-size index (> 64 KB pipe buffer, like v1.35)
+             [ -n "${K_BIGINDEX:-}" ] && awk 'BEGIN{for(i=0;i<1500;i++) printf "Package: kubectl\nVersion: 1.99.%d-1.1\nDescription: filler line for a realistic index size\n\n", i}'
+             exit 0;;
   *Release.key) echo "KEY";;
   *github.com*) exit 22;;
   *) exit 0;;

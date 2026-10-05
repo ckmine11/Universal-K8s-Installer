@@ -251,7 +251,7 @@ while true; do
         fail STORAGE_PENDING "The storage volume for SeaweedFS is still Pending: the default StorageClass '$DEFAULT_SC' is not providing volumes." \
              "Check the storage add-on (e.g. 'kubectl -n longhorn-system get pods'), or remove the default StorageClass annotation so SeaweedFS uses node storage, then install again."
     fi
-    if [ -n "$SCHED" ] && [ $ELAPSED -ge 90 ] && ! echo "$SCHED" | grep -qi 'PersistentVolumeClaim'; then
+    if [ -n "$SCHED" ] && [ $ELAPSED -ge 90 ] && ! grep -qi 'PersistentVolumeClaim' <<< "$SCHED"; then
         fail POD_UNSCHEDULABLE "No node can run SeaweedFS: $SCHED" "Free up CPU/memory (it needs 100m CPU and 256Mi memory) or check node taints, then install again."
     fi
     if [ $ELAPSED -ge 480 ]; then

@@ -39,6 +39,8 @@ scenario "cgroups v1 blocked on 1.35"             "K_CGROUP=tmpfs"              
 scenario "CentOS 7 kernel blocked on 1.35"        "K_KERNEL=3.10.0-1160.el7"                KERNEL_UNSUPPORTED    -   1.35.0 master true check
 scenario "1.36 + containerd 1.7 passes (auto-upgrade)" "K_CTR=1.7.27 K_SERVER_MINOR=35 K_PKGVER=1.36.0" OK     -   1.36.0 master true check
 scenario "unreleased version blocked"             "K_REPO=404 K_SERVER_MINOR=36"            VERSION_NOT_PUBLISHED -   1.37.0 master true check
+scenario "published version found in a >64 KB index" "K_BIGINDEX=1 K_SERVER_MINOR=34 K_PKGVER=1.35.0" OK - 1.35.0 master true check
+scenario "missing version detected in a >64 KB index" "K_BIGINDEX=1 K_SERVER_MINOR=34 K_PKGVER=1.35.1" VERSION_NOT_AVAILABLE - 1.35.0 master true check
 scenario "missing patch version blocked"          "K_PKGVER=1.35.1"                         VERSION_NOT_AVAILABLE -   1.35.0 master true check
 scenario "registry unreachable"                   "K_REG=000"                               REGISTRY_UNREACHABLE  -   1.35.0 master true check
 scenario "skip-level 1.33 → 1.35 blocked"         "K_SERVER_MINOR=33"                       SKIP_LEVEL            -   1.35.0 master true check
