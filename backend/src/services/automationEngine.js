@@ -3,6 +3,7 @@ import { sshRefusedMessage } from '../utils/sshFixHint.js'
 import { assertDirectConnectAllowed } from '../utils/netGuard.js'
 import { readFileSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
+import { volumeBackupStore } from './volumeBackupStore.js'
 import { fileURLToPath } from 'url'
 import { agentService } from './agentService.js'
 
@@ -148,6 +149,24 @@ class AutomationEngine {
                 await ssh.execCommand(`rm -f ${remotePath}`).catch(() => { })
             }
         }
+    }
+
+    /**
+     * Velero needs its storage settings (incl. keys) on the node while it is
+     * installed: written root-only to /etc/kubeez/velero.env, which velero.sh
+     * moves into the cluster Secret and deletes. Keys travel base64 on stdin of
+     * the remote shell, never as arguments of a long-running process.
+     */
+    async writeVeleroSettings(ssh, clusterId) {
+        const cfg = volumeBackupStore.get(clusterId)
+        if (!cfg) return   // velero.sh explains what to do
+        const lines = Object.entries({
+            VB_PROVIDER: cfg.provider, VB_ENDPOINT: cfg.endpoint, VB_REGION: cfg.region, VB_BUCKET: cfg.bucket,
+            VB_PREFIX: cfg.prefix, VB_ACCESS: cfg.accessKey, VB_SECRET: cfg.secretKey, VB_INSECURE: cfg.insecureTls ? '1' : '0'
+        }).map(([k, v]) => `${k}=${Buffer.from(String(v ?? ''), 'utf8').toString('base64')}`).join('\n') + '\n'
+        const payload = Buffer.from(lines, 'utf8').toString('base64')
+        const r = await ssh.execCommand(`sudo mkdir -p /etc/kubeez && echo ${payload} | base64 -d | sudo bash -c 'umask 077; cat > /etc/kubeez/velero.env'`)
+        if (r.code !== 0) throw new Error(`Could not hand the volume backup settings to the node: ${(r.stderr || r.stdout || '').trim()}`)
     }
 
     analyzeError(output) {
@@ -1085,10 +1104,11 @@ class AutomationEngine {
             if (addons.longhorn) addonsToInstall.push({ type: 'script', script: 'addons/longhorn.sh', label: 'Longhorn Storage' })
             if (addons.argocd) addonsToInstall.push({ type: 'script', script: 'addons/argocd.sh', label: 'ArgoCD' })
             if (addons.seaweedfs) addonsToInstall.push({ type: 'script', script: 'addons/seaweedfs.sh', label: 'S3 Object Storage (SeaweedFS)' })
+            if (addons.velero) addonsToInstall.push({ type: 'script', script: 'addons/velero.sh', label: 'Velero (Volume Backups)', prepare: 'velero' })
 
             // Any other add-on: a script named automation/addons/<key>.sh is enough
             // (no code change needed to add one).
-            const KNOWN = new Set(['ingress', 'monitoring', 'logging', 'dashboard', 'certManager', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs'])
+            const KNOWN = new Set(['ingress', 'monitoring', 'logging', 'dashboard', 'certManager', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs', 'velero'])
             for (const [key, on] of Object.entries(addons)) {
                 if (!on || KNOWN.has(key) || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(key)) continue
                 if (existsSync(join(__dirname, '../automation/addons', `${key}.sh`))) {
@@ -1127,6 +1147,7 @@ class AutomationEngine {
                         await this.executeScript(ssh, legacyScriptPath, [item.name], onLog, addonOpts)
                     } else {
                         const scriptPath = join(__dirname, '../automation', item.script)
+                        if (item.prepare === 'velero') await this.writeVeleroSettings(ssh, installation.originalClusterId || installation.id)
                         await this.executeScript(ssh, scriptPath, [], onLog, addonOpts)
                     }
                     onLog('success', `✓ ${item.label} installed successfully`)

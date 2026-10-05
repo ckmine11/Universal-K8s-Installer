@@ -156,7 +156,8 @@ class ResumeAnalyzer {
                     certManager: { ns: 'cert-manager',          label: 'Cert-Manager' },
                     longhorn:   { ns: 'longhorn-system',        label: 'Longhorn Storage' },
                     argocd:     { ns: 'argocd',                 label: 'ArgoCD' },
-                    seaweedfs:  { ns: 'seaweedfs',              label: 'S3 Object Storage (SeaweedFS)' }
+                    seaweedfs:  { ns: 'seaweedfs',              label: 'S3 Object Storage (SeaweedFS)' },
+                    velero:     { ns: 'velero',                 label: 'Velero (Volume Backups)' }
                 }
 
                 for (const [key, { ns, label }] of Object.entries(addonNsMap)) {

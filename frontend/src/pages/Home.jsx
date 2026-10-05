@@ -495,8 +495,8 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     {[
                         { title: "Multi-OS", icon: Server, desc: "Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, Amazon Linux — and CentOS 7 up to Kubernetes 1.34.", color: "blue" },
                         { title: "Safe Upgrades", icon: Rocket, desc: "Kubernetes 1.27 → 1.37, one version at a time. Automatic etcd snapshot first, clear failure reasons, auto-retry.", color: "cyan" },
-                        { title: "Add-ons, Managed", icon: Package, desc: "Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 — install, repair, uninstall and logs from the UI.", color: "pink" },
-                        { title: "Backups & Restore", icon: Database, desc: "etcd snapshots before every upgrade and on demand, one-click restore, AES-256 offsite copies to S3 / MinIO.", color: "emerald" },
+                        { title: "Add-ons, Managed", icon: Package, desc: "Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3, Velero — install, repair, uninstall and logs from the UI.", color: "pink" },
+                        { title: "Backups & Restore", icon: Database, desc: "Verified etcd snapshots, a preview of every restore with automatic rollback and undo, volume data backups (Velero), encrypted offsite copies and disaster recovery.", color: "emerald" },
                         { title: "Auto-Healing", icon: HeartPulse, desc: "Detects NotReady nodes, disk / memory pressure and crash-looping pods, and fixes what it safely can.", color: "orange" },
                         { title: "Resume & Scale", icon: RotateCcw, desc: "A stopped install resumes where it left off; add worker nodes to a running cluster any time.", color: "purple" },
                         { title: "Topology & Terminal", icon: Network, desc: "Live 3D topology, CPU / memory / disk and a browser terminal on every node.", color: "blue" },

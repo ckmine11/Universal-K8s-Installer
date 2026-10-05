@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
     BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
     Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse,
-    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus
+    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive
 } from 'lucide-react'
 
 // ── Small building blocks ────────────────────────────────────────────────────
@@ -108,7 +108,9 @@ const NAV = [
     ] },
     { title: 'Backups', items: [
         { id: 'etcd', label: 'etcd Snapshots & Restore' },
+        { id: 'volume-backups', label: 'Volume Backups' },
         { id: 'offsite', label: 'Offsite Backups' },
+        { id: 'recovery', label: 'Disaster Recovery' },
         { id: 'config-backups', label: 'Config Backups' }
     ] },
     { title: 'Operations', items: [
@@ -193,8 +195,8 @@ export default function Docs() {
                             {[
                                 [Server, 'Deploy', 'Guided install with pre-flight checks on 8 Linux distros.'],
                                 [ArrowUpCircle, 'Upgrade', '1.27 → 1.37, one version at a time, snapshot first.'],
-                                [Puzzle, 'Add-ons', '7 add-ons — install, repair, uninstall, logs from the UI.'],
-                                [DatabaseBackup, 'Back up', 'etcd snapshots, 1-click restore, encrypted offsite copies.'],
+                                [Puzzle, 'Add-ons', '8 add-ons — install, repair, uninstall, logs from the UI.'],
+                                [DatabaseBackup, 'Back up', 'Verified snapshots, previewed restores with undo, volume data, offsite copies, disaster recovery.'],
                                 [HeartPulse, 'Heal', 'Detects node and pod problems and fixes what it safely can.'],
                                 [Users, 'Teams', 'Admin / Operator / Viewer roles in isolated workspaces.']
                             ].map(([Icon, t, d]) => (
@@ -262,7 +264,7 @@ export default function Docs() {
                         <Table head={['Tab', 'What you find there']} rows={[
                             ['Overview', 'Version, network plugin, nodes, API endpoint · 3D / list topology · live CPU, memory and disk.'],
                             ['Add-ons', <><b>Access & logins</b>: URLs, usernames, passwords, web UIs. <b>Manage & logs</b>: health, pods, logs, Install / Repair / Reinstall / Uninstall.</>],
-                            ['Backups', 'etcd snapshots (Backup Now, restore) and Offsite Backup settings.']
+                            ['Backups', 'etcd snapshots (Backup Now, verify, preview + restore, undo), disaster recovery, Offsite Backup settings and Volume Backups.']
                         ]} />
                         <P>The open tab is part of the address (e.g. <C>?tab=backups</C>), so refresh, the back button and shared links keep you in place. If a cluster failed, a banner at the top says what to do next with one-click buttons.</P>
                     </Section>
@@ -334,12 +336,36 @@ export default function Docs() {
                     <Section id="etcd" Icon={DatabaseBackup} color="text-cyan-400" title="etcd Snapshots & Restore"
                         intro="etcd holds the whole cluster state (deployments, services, secrets…). Snapshots live on the control-plane node in /var/lib/etcd-backup.">
                         <Table head={['', '']} rows={[
-                            ['When', <><b>Backup Now</b> (manual) and automatically <b>before every upgrade</b>. No scheduled daily snapshots.</>],
-                            ['Retention', '45 days; the newest snapshot is always kept.'],
-                            ['Restore', 'Pick a snapshot → Restore. The whole control plane is stopped, the data restored, health verified and kubelets on every node resynced.'],
-                            ['Safety', 'The previous data is kept as /var/lib/etcd-prerestore-<time> for a manual rollback.']
+                            ['When', <><b>Backup Now</b> (manual), automatically <b>before every upgrade</b> and <b>before every restore</b> (your undo point).</>],
+                            ['Verified', 'Every snapshot is checked with etcd’s own integrity check and gets a SHA-256 checksum. “Verify” re-checks a snapshot any time.'],
+                            ['Retention', '45 days; the newest snapshot is always kept. Old restore leftovers on the node are cleaned up (newest 2 kept).'],
+                            ['HA clusters', 'Supported: the other control-planes are stopped first and re-join the restored etcd one by one.']
                         ]} />
-                        <Note kind="warn">Automated restore supports single control-plane clusters. Restoring rolls the cluster state back to the snapshot time — anything created later is gone.</Note>
+                        <P>A restore runs in the background with a live log — you can close the page and come back.</P>
+                        <Steps items={[
+                            <><b>Preview</b> — KubeEZ reads the snapshot (with a throw-away etcd, nothing is touched) and lists what will be <b>removed</b> (created after the snapshot), what <b>comes back</b> (deleted after it) and what is <b>reverted</b> (edited after it). Volumes created or deleted since are flagged.</>,
+                            <><b>Confirm</b> by typing the cluster name.</>,
+                            'Checks first: checksum + integrity and free disk space. A damaged snapshot is refused before anything stops.',
+                            <>A <b>safety snapshot</b> of the current state is taken, then the control plane is stopped, the snapshot restored (with etcd’s revision moved forward so every controller re-reads the restored state) and the control plane started again.</>,
+                            <>If the control plane does not come back, KubeEZ <b>rolls back automatically</b> to the data from before the restore.</>,
+                            <>Done: kubelets on every node are refreshed (<b>Refresh workers</b> retries ones that were offline) and <b>Undo this restore</b> brings back the state from right before it.</>
+                        ]} />
+                        <Note kind="warn">A restore rolls the cluster <b>state</b> back — not the Kubernetes version (binaries stay) and not the files inside volumes (see Volume Backups). Everything created after the snapshot is gone; the preview shows what.</Note>
+                    </Section>
+
+                    <Section id="volume-backups" Icon={HardDrive} color="text-violet-400" title="Volume Backups (Velero)"
+                        intro="etcd snapshots never contain the data inside persistent volumes. Volume Backups copy those files — databases, uploads — together with the namespace’s objects to S3-compatible storage, using Velero.">
+                        <Steps items={[
+                            <>Backups tab → <b>Volume Backups</b>: use the workspace’s offsite storage or enter separate storage (recommended: a key that can only reach one bucket — Velero runs inside the cluster, so the key is stored there).</>,
+                            <><b>Save &amp; install Velero</b> — installs Velero and a small agent on every node, then checks it can reach the storage.</>,
+                            <><b>Back up</b> chosen namespaces (or everything) any time, and turn on <b>automatic backups</b> (daily at 02:00 by default, kept 30 days).</>
+                        ]} />
+                        <Table head={['Restore mode', 'What happens']} rows={[
+                            ['Bring back what is missing', 'Deleted apps come back with their volume data; existing objects are not touched.'],
+                            ['Restore as a copy', 'Into new namespaces <name>-restored-<time> next to the original — compare or recover single files.'],
+                            ['Replace', 'Deletes the chosen namespaces, then restores them from the backup (typed confirmation). Data written since the backup is lost.']
+                        ]} />
+                        <Note>Volume data is copied at file level from running pods, so it works with any storage (Longhorn, local, NFS…). Uninstalling Velero keeps the backups in the bucket.</Note>
                     </Section>
 
                     <Section id="offsite" Icon={Cloud} color="text-indigo-400" title="Offsite Backups"
@@ -354,12 +380,23 @@ export default function Docs() {
                             'Create a bucket and an access key allowed to Put, Get, List and Delete in it.',
                             'Enter endpoint, bucket and keys → Test connection → Test & Connect.',
                             <><b>Download the recovery key</b> shown once. Bundles are encrypted with it (AES-256) — without it a backup cannot be opened if KubeEZ itself is lost.</>,
-                            'New snapshots are copied automatically (also right after each upgrade); use Sync now any time.'
+                            'New snapshots are copied automatically (after Backup Now, each upgrade and each restore); use Sync now any time.'
                         ]} />
                         <Note>The upload runs from the cluster&apos;s control-plane, so it must reach the storage. Your keys stay encrypted in KubeEZ — the node only receives short-lived signed links.</Note>
                         <Note kind="warn">Storage on a node of the same cluster is not offsite — KubeEZ warns about it. Use another cluster, another server or a cloud bucket.</Note>
                         <P>Decrypt a bundle by hand:</P>
                         <Code>{"openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:<RECOVERY-KEY> -in <file>.tar.gz.enc | tar xz"}</Code>
+                    </Section>
+
+                    <Section id="recovery" Icon={LifeBuoy} color="text-sky-400" title="Disaster Recovery"
+                        intro="When the control-plane MACHINE is lost (disk failure, deleted VM), KubeEZ rebuilds it from an encrypted offsite backup — the cluster keeps its identity, so workers, kubeconfigs and service-account tokens stay valid.">
+                        <Steps items={[
+                            <>Bring up a fresh Linux machine with the <b>same IP</b> and the same SSH login as the lost control-plane.</>,
+                            <>Backups tab → <b>Control-plane machine lost? → Recover</b>, pick an offsite backup, type the cluster name.</>,
+                            'KubeEZ prepares the machine, downloads and decrypts the bundle on it, installs the Kubernetes version the backup was taken on, puts the certificate authorities back, restores etcd and lets kubeadm rebuild the control plane around it.',
+                            'Workers reconnect by themselves; still-running control-planes of an HA cluster are re-joined.'
+                        ]} />
+                        <Note>A snapshot whose local copy is gone (pruned, disk replaced) shows as <b>offsite only</b> — <b>Download from offsite</b> brings it back to the control-plane, then preview and restore it like any other.</Note>
                     </Section>
 
                     <Section id="config-backups" Icon={Shield} color="text-amber-400" title="Config Backups"
@@ -392,7 +429,9 @@ export default function Docs() {
                             ['Deploy, upgrade, scale, resume', '✓', '✓'],
                             ['Add-ons', 'Kubernetes Dashboard', 'All add-ons'],
                             ['etcd snapshots & restore', '—', '✓'],
-                            ['Offsite backups', '—', '✓'],
+                            ['Restore preview, undo, automatic rollback', '—', '✓'],
+                            ['Offsite backups & disaster recovery', '—', '✓'],
+                            ['Volume backups (Velero)', '—', '✓'],
                             ['Daily config backups', '—', '✓']
                         ]} />
                         <P>Cluster and node limits depend on the plan — see <Link to="/pricing" className="text-blue-400 hover:underline">Pricing</Link>.</P>
@@ -407,6 +446,10 @@ export default function Docs() {
                             ['Offsite test: bucket does not exist', 'Create the bucket first (KubeEZ S3 creates "backups").'],
                             ['Upgrade: API server did not answer', 'Retried automatically; if it persists check kube-apiserver with crictl on the master.'],
                             ['Upgrade: kubeadm-config is older than the control plane', 'Happens after restoring a pre-upgrade snapshot — KubeEZ corrects it automatically; just retry.'],
+                            ['Restore: “The snapshot is damaged”', 'Its checksum or etcd’s integrity check failed — nothing was changed. Pick another snapshot (or download its offsite copy).'],
+                            ['Restore: “rolled the cluster back automatically”', 'The control plane did not start on the restored data; the cluster runs on its previous data. The failed attempt is kept in /var/lib/etcd-failed-restore-<time> for diagnosis.'],
+                            ['Recovery: “does not have the IP …”', 'The replacement machine must use the lost control-plane’s IP so the workers can find it.'],
+                            ['Volume Backups: storage unavailable', 'Velero cannot reach the bucket — check endpoint, bucket and keys, save, then Repair Velero in Add-ons.'],
                             ['Add-on Failing / Starting for long', 'Add-ons → Manage & logs → Logs shows why (image pull, storage pending, crash). Fix, then Repair.'],
                             ['Install stopped midway', 'Resume Installation — finished steps are skipped.']
                         ]} />

@@ -12,6 +12,9 @@
 #                                             Node + npm install in backend/)
 #   e2e.sh cluster <master> <worker>...       build a 1.35 cluster and leave it running
 #   e2e.sh restore <master> <worker>...       etcd restore on a multi-node cluster (needs Node)
+#   e2e.sh restore-ha [distro]                etcd restore on an HA cluster: 2 control-planes + 1 worker
+#   e2e.sh recover [distro]                   control-plane machine lost → rebuilt from the offsite backup
+#   e2e.sh velero [distro]                    volume backups: Velero install, file data backup + restore
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
 #   e2e.sh agent [distro]                     Gateway Agent install as a service, crash/reboot recovery
@@ -36,7 +39,7 @@ start_node() {
     docker run -d --name "$name" --hostname "$name" --privileged --cgroupns=private \
         --add-host=host.docker.internal:host-gateway \
         --tmpfs /run --tmpfs /run/lock -v /var/lib/containerd -v /var/lib/kubelet \
-        "kubeez-e2e/$distro" >/dev/null || { echo "could not start $name"; exit 1; }
+        ${NODE_NET_ARGS:-} "kubeez-e2e/$distro" >/dev/null || { echo "could not start $name"; exit 1; }
     for _ in $(seq 1 30); do docker exec "$name" systemctl is-system-running >/dev/null 2>&1 && break
         [ "$(docker exec "$name" systemctl is-system-running 2>/dev/null)" = degraded ] && break; sleep 1; done
     docker exec "$name" mkdir -p /k
@@ -230,6 +233,79 @@ cmd_restore_upgrade() {
     return 0
 }
 
+# etcd restore on an HA cluster (2 control-planes + 1 worker): the first
+# control-plane is restored, the second re-joins the restored etcd.
+cmd_restore_ha() {
+    local distro="${1:-ubuntu2204}"
+    local m1="$PREFIX-$distro-cp" m2="$PREFIX-$distro-cp2" w="$PREFIX-$distro-w"
+    image "$distro"
+    start_node "$m1" "$distro"
+    docker exec "$m1" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local join key; join=$(docker exec "$m1" cat /tmp/kubeadm-join-command.txt); key=$(docker exec "$m1" cat /tmp/kubeadm-cert-key.txt)
+    start_node "$m2" "$distro"
+    docker exec "$m2" bash /k/node-install.sh cpjoin 1.35.0 "$join" "$key" | grep -E 'RESULT' || return 1
+    start_node "$w" "$distro"
+    docker exec "$w" bash /k/node-install.sh worker 1.35.0 "$join" | grep RESULT || return 1
+    kubectl_on "$m1" "get nodes"
+    local rc
+    MASTER_CONTAINERS="$m1,$m2" WORKER_CONTAINERS="$w" node "$E2E/restore-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
+# fresh-node <name> <distro> <ip> — (re)create a node on the fixed-IP e2e network
+NET="$PREFIX-net"; NET_SUBNET="172.31.250.0/24"
+cmd_fresh_node() {
+    docker network inspect "$NET" >/dev/null 2>&1 || docker network create --subnet "$NET_SUBNET" "$NET" >/dev/null
+    image "$2"
+    NODE_NET_ARGS="--network $NET --ip $3" start_node "$1" "$2"
+}
+
+# The control-plane MACHINE is lost: a fresh machine with the same IP is
+# rebuilt from the encrypted offsite backup (certificates + etcd), the worker
+# reconnects by itself and the workloads are still there.
+cmd_recover() {
+    local distro="${1:-ubuntu2204}"
+    local m="$PREFIX-$distro-cp" w="$PREFIX-$distro-w" s3="$PREFIX-s3"
+    cmd_fresh_node "$m" "$distro" 172.31.250.10
+    docker exec "$m" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local join; join=$(docker exec "$m" cat /tmp/kubeadm-join-command.txt)
+    cmd_fresh_node "$w" "$distro" 172.31.250.11
+    docker exec "$w" bash /k/node-install.sh worker 1.35.0 "$join" | grep RESULT || return 1
+
+    echo "== S3 storage outside the cluster (SeaweedFS container)"
+    docker rm -f "$s3" >/dev/null 2>&1
+    # config written inside the container (no host temp file: Git Bash paths differ)
+    local s3cfg='{"identities":[{"name":"e2e","credentials":[{"accessKey":"E2EACCESS","secretKey":"e2e-secret-key-1234567890"}],"actions":["Admin","Read","Write","List","Tagging"]}]}'
+    docker run -d --name "$s3" --network "$NET" --ip 172.31.250.5 --entrypoint sh chrislusf/seaweedfs:4.48         -c "echo '$s3cfg' > /etc/s3.json && exec weed server -s3 -dir=/data -s3.config=/etc/s3.json" >/dev/null || return 1
+    for _ in $(seq 1 30); do docker exec "$s3" sh -c 'echo "s3.bucket.create -name backups" | weed shell' 2>/dev/null | grep -qv error && break; sleep 2; done
+
+    local rc
+    MASTER_CONTAINER="$m" WORKER_CONTAINERS="$w" DISTRO="$distro" S3_ENDPOINT="http://172.31.250.5:8333" node "$E2E/recover-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && { cmd_clean; docker network rm "$NET" >/dev/null 2>&1; }
+    return $rc
+}
+
+# Velero volume backups on a real node, S3 = the cluster's own S3 add-on:
+# install, file data in a pod volume backed up, namespace deleted, restored
+# (in place and as a copy), schedule, uninstall.
+cmd_velero() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
+    image "$distro"; start_node "$node" "$distro"
+    docker cp "$AUTOMATION/addons/seaweedfs.sh" "$node:/k/" >/dev/null
+    docker cp "$AUTOMATION/addons/velero.sh" "$node:/k/" >/dev/null
+    docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    echo "== installing the S3 Object Storage add-on (backup target)"
+    docker exec "$node" bash /k/seaweedfs.sh > /tmp/kz-seaweedfs.log 2>&1 || { tail -30 /tmp/kz-seaweedfs.log; return 1; }
+    local rc
+    NODE_CONTAINER="$node" node "$E2E/velero-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
 cmd_clean() { docker ps -aq --filter "name=$PREFIX-" | xargs -r docker rm -f >/dev/null 2>&1; true; }
 
 case "${1:-}" in
@@ -239,6 +315,10 @@ case "${1:-}" in
     cluster) shift; cmd_cluster "$@" ;;
     restore) shift; cmd_restore "$@" ;;
     restore-upgrade) shift; cmd_restore_upgrade "$@" ;;
+    restore-ha) shift; cmd_restore_ha "$@" ;;
+    recover) shift; cmd_recover "$@" ;;
+    fresh-node) shift; cmd_fresh_node "$@" ;;
+    velero)  shift; cmd_velero "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
     agent)   shift; cmd_agent "$@" ;;
     agent-health) shift; cmd_agent_health "$@" ;;

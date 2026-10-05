@@ -12,6 +12,10 @@
 #   inventory → list local snapshots + offsite objects (KZ_LIST)
 #   upload    → build + encrypt + PUT bundles (UPLOAD=<snapshot>|<url>, repeatable)
 #               and delete expired offsite bundles (DELETE=<url>, repeatable)
+#   download  → GET + decrypt one bundle (KZ_GET, KZ_NAME = snapshot file name):
+#               the snapshot lands in /var/lib/etcd-backup like a local one;
+#               KZ_RECOVERY=1 also keeps the whole bundle (pki, kubeadm config)
+#               in /var/lib/kubeez-recovery for rebuilding a lost control-plane
 #
 # Input arrives on stdin (never on the command line) as KEY=<base64 value> lines.
 # Bundle = etcd snapshot + /etc/kubernetes/pki + kubeadm config + MANIFEST,
@@ -19,7 +23,7 @@
 #   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:<KEY> -in X.tar.gz.enc | tar xz
 #
 # Every run ends with one machine line: OFFSITE_OK|... or OFFSITE_FAIL|CODE|reason
-# KUBEEZ_ETCD_OFFSITE_SCRIPT_VERSION=2
+# KUBEEZ_ETCD_OFFSITE_SCRIPT_VERSION=3
 
 set -o pipefail
 export PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
@@ -32,26 +36,29 @@ fail() { echo "OFFSITE_FAIL|$1|$(printf '%s' "$2" | tr '|\n' '/ ')"; rm -rf "$WO
 
 # ── Input from stdin ─────────────────────────────────────────────────────────
 UPLOADS=(); DELETES=()
-while IFS='=' read -r k v; do
+# split at the FIRST '=' only: 'IFS== read' would drop a trailing '=' (base64 padding)
+while IFS= read -r line; do
+    k="${line%%=*}"; v="${line#*=}"
     val="$(printf '%s' "$v" | base64 -d 2>/dev/null)"
     case "$k" in
-        KZ_INSECURE|KZ_ENC_KEY|KZ_CLUSTER|KZ_PUT|KZ_GET|KZ_DEL|KZ_LIST|KZ_HOST) printf -v "$k" '%s' "$val" ;;
+        KZ_INSECURE|KZ_ENC_KEY|KZ_CLUSTER|KZ_PUT|KZ_GET|KZ_DEL|KZ_LIST|KZ_HOST|KZ_NAME|KZ_RECOVERY) printf -v "$k" '%s' "$val" ;;
         UPLOAD) UPLOADS+=("$val") ;;
         DELETE) DELETES+=("$val") ;;
     esac
 done
-case "$MODE" in test|inventory|upload) ;; *) fail BAD_INPUT "Unknown mode '$MODE'." ;; esac
+case "$MODE" in test|inventory|upload|download) ;; *) fail BAD_INPUT "Unknown mode '$MODE'." ;; esac
 
 CURL=(curl -sS --retry 2 --connect-timeout 15)
 [ "${KZ_INSECURE:-0}" = "1" ] && CURL+=(-k)
 RESP=$(mktemp /tmp/kubeez-s3.XXXXXX)
 trap 'rm -f "$RESP"' EXIT
 
-# s3 <description> <curl args...> — run a request; on failure explain it and stop
+# s3 <description> <curl args...> — run a request; on failure explain it and stop.
+# The body goes to $RESP, or to $S3_OUT when set (large downloads: not /tmp).
 s3() {
     local what="$1"; shift
-    local code rc
-    code=$("${CURL[@]}" -o "$RESP" -w '%{http_code}' "$@" 2>"$RESP.err"); rc=$?
+    local code rc out="${S3_OUT:-$RESP}"
+    code=$("${CURL[@]}" -o "$out" -w '%{http_code}' "$@" 2>"$RESP.err"); rc=$?
     if [ $rc -ne 0 ]; then
         local err; err=$(cat "$RESP.err" 2>/dev/null); rm -f "$RESP.err"
         case $rc in
@@ -64,11 +71,11 @@ s3() {
     rm -f "$RESP.err"
     case "$code" in 2??) return 0 ;; esac
     local s3code msg
-    s3code=$(grep -oE '<Code>[^<]*</Code>' "$RESP" | head -1 | sed -E 's#</?Code>##g')
-    msg=$(grep -oE '<Message>[^<]*</Message>' "$RESP" | head -1 | sed -E 's#</?Message>##g')
+    s3code=$(grep -oE '<Code>[^<]*</Code>' "$out" | head -1 | sed -E 's#</?Code>##g')
+    msg=$(grep -oE '<Message>[^<]*</Message>' "$out" | head -1 | sed -E 's#</?Message>##g')
     # No S3 error document at all → this address is not an S3 API (a web UI,
     # a different service, a wrong port)
-    if [ -z "$s3code" ] && { grep -qiE '<html|<!doctype' "$RESP" || [ "$code" = 404 ] || [ "$code" = 405 ]; }; then
+    if [ -z "$s3code" ] && { grep -qiE '<html|<!doctype' "$out" || [ "$code" = 404 ] || [ "$code" = 405 ]; }; then
         fail WRONG_ENDPOINT "${KZ_HOST} answered (HTTP ${code}), but it is not an S3 API — probably a web page or the wrong port. For KubeEZ's S3 add-on use its S3 endpoint (port 30833), not the web UI (30834)."
     fi
     case "$s3code" in
@@ -104,6 +111,41 @@ if [ "$MODE" = "inventory" ]; then
     grep -oE '<Key>[^<]*</Key>' "$RESP" | sed -E 's#</?Key>##g' | while read -r key; do echo "REMOTE|$key"; done
     grep -q '<IsTruncated>true</IsTruncated>' "$RESP" && echo "TRUNCATED|1"
     echo "OFFSITE_OK|inventory"
+    exit 0
+fi
+
+# ── download ─────────────────────────────────────────────────────────────────
+if [ "$MODE" = "download" ]; then
+    case "${KZ_NAME:-}" in ""|*/*|*..*) fail BAD_INPUT "Invalid snapshot name." ;; *.db) ;; *) fail BAD_INPUT "Invalid snapshot name." ;; esac
+    [ -n "${KZ_ENC_KEY:-}" ] || fail BAD_INPUT "Missing encryption key."
+    export KZ_ENC_KEY
+    mkdir -p "$BK"
+    rm -rf "$WORK"; mkdir -p "$WORK/bundle"; chmod 700 "$WORK"
+    S3_OUT="$WORK/bundle.enc" s3 "Downloading $KZ_NAME" "$KZ_GET"
+    openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:KZ_ENC_KEY -in "$WORK/bundle.enc" 2>/dev/null         | tar -xz -C "$WORK/bundle" 2>/dev/null         || fail BAD_KEY "Could not decrypt the offsite backup — it was made with a different recovery key, or the file is damaged."
+    [ -s "$WORK/bundle/etcd-snapshot.db" ] || fail BUNDLE_FAILED "The offsite backup has no etcd snapshot inside."
+    BCLUSTER=$(sed -n 's/^cluster: *//p' "$WORK/bundle/MANIFEST" 2>/dev/null)
+    if [ -n "$BCLUSTER" ] && [ -n "${KZ_CLUSTER:-}" ] && [ "$BCLUSTER" != "$KZ_CLUSTER" ]; then
+        fail WRONG_CLUSTER "This offsite backup belongs to another cluster ($BCLUSTER)."
+    fi
+    CREATED=$(sed -n 's/^created: *//p' "$WORK/bundle/MANIFEST" 2>/dev/null)
+    if [ -f "$BK/$KZ_NAME" ]; then
+        echo "LOCAL_EXISTS|$KZ_NAME"
+    else
+        mv "$WORK/bundle/etcd-snapshot.db" "$BK/$KZ_NAME"
+        # keep the snapshot's own time (retention + "taken at" use it)
+        [ -n "$CREATED" ] && touch -d "$CREATED" "$BK/$KZ_NAME" 2>/dev/null
+        sha256sum "$BK/$KZ_NAME" | awk -v n="$KZ_NAME" '{print $1"  "n}' > "$BK/$KZ_NAME.sha256"
+    fi
+    if [ "${KZ_RECOVERY:-0}" = "1" ]; then
+        rm -rf /var/lib/kubeez-recovery; mkdir -p /var/lib/kubeez-recovery; chmod 700 /var/lib/kubeez-recovery
+        cp "$BK/$KZ_NAME" /var/lib/kubeez-recovery/etcd-snapshot.db
+        for x in pki kubeadm-config.yaml MANIFEST; do [ -e "$WORK/bundle/$x" ] && cp -a "$WORK/bundle/$x" /var/lib/kubeez-recovery/; done
+        echo "RECOVERY|$(sed -n 's/^kubeadm: *//p' /var/lib/kubeez-recovery/MANIFEST 2>/dev/null)"
+    fi
+    rm -rf "$WORK"
+    echo "DOWNLOADED|$KZ_NAME"
+    echo "OFFSITE_OK|download"
     exit 0
 fi
 

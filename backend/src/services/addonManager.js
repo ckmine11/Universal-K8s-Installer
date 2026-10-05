@@ -11,7 +11,8 @@ export const ADDON_REGISTRY = {
     'cert-manager': { label: 'cert-manager',                  ns: 'cert-manager',         detect: 'deploy/cert-manager' },
     longhorn:       { label: 'Longhorn Storage',              ns: 'longhorn-system',      detect: 'ds/longhorn-manager', keepsData: true },
     argocd:         { label: 'ArgoCD',                        ns: 'argocd',               detect: 'deploy/argocd-server' },
-    seaweedfs:      { label: 'S3 Object Storage (SeaweedFS)', ns: 'seaweedfs',            detect: 'deploy/seaweedfs', keepsData: true }
+    seaweedfs:      { label: 'S3 Object Storage (SeaweedFS)', ns: 'seaweedfs',            detect: 'deploy/seaweedfs', keepsData: true },
+    velero:         { label: 'Velero (Volume Backups)',       ns: 'velero',               detect: 'deploy/velero' }
 }
 
 const BROKEN = /CrashLoopBackOff|ErrImagePull|ImagePullBackOff|InvalidImageName|CreateContainerConfigError|CreateContainerError|RunContainerError|OOMKilled|Error/

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from './ToastProvider'
 import { ADDONS_LIST } from '../config/addons'
@@ -27,7 +28,8 @@ const UNINSTALL_NOTES = {
     'cert-manager': 'Every Certificate, Issuer and ClusterIssuer in the cluster is removed (existing TLS secrets stay).',
     longhorn: 'Refused while any volume still uses Longhorn — delete those PVCs first. Longhorn\'s own uninstaller then runs (takes a few minutes).',
     argocd: 'ArgoCD and its Applications are removed. Apps it already deployed keep running.',
-    seaweedfs: 'Every bucket and object is deleted (data stored directly on a node folder is kept there).'
+    seaweedfs: 'Every bucket and object is deleted (data stored directly on a node folder is kept there).',
+    velero: 'Volume backups stop. Backups already in the storage bucket are kept — set it up again under Backups to see them.'
 }
 
 function fmtAge(iso) {
@@ -70,7 +72,7 @@ function LogsModal({ clusterId, addon, onClose }) {
     }, [follow, pod, tail])
     useEffect(() => { if (follow) bottom.current?.scrollIntoView() }, [data])
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
             <div className="glass w-full max-w-5xl max-h-[88vh] flex flex-col rounded-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                 <div className="flex flex-wrap items-center gap-3 p-4 border-b border-white/5">
@@ -122,7 +124,8 @@ function LogsModal({ clusterId, addon, onClose }) {
                     <div ref={bottom} />
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     )
 }
 
@@ -131,7 +134,7 @@ function UninstallModal({ addon, action, onCancel, onConfirm, busy }) {
     const ok = !addon.keepsData || typed.trim() === addon.key
     const reinstall = action === 'reinstall'
     const ActionIcon = reinstall ? RotateCcw : Trash2
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onCancel}>
             <div className="glass w-full max-w-md rounded-2xl border border-red-500/20 p-6" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3 mb-4">
@@ -161,7 +164,8 @@ function UninstallModal({ addon, action, onCancel, onConfirm, busy }) {
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     )
 }
 
@@ -323,6 +327,12 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                                                         <Trash2 className="w-3.5 h-3.5" /> Uninstall
                                                     </button>
                                                 </>
+                                            ) : a.key === 'velero' ? (
+                                                // Needs storage settings first — set up where the backups live
+                                                <button className={`${btn} text-blue-200 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20`}
+                                                    onClick={() => navigate('?tab=backups')}>
+                                                    <Download className="w-3.5 h-3.5" /> Set up under Backups
+                                                </button>
                                             ) : (
                                                 <button className={`${btn} text-blue-200 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20`} disabled={disabled}
                                                     onClick={() => install(a, false)}>

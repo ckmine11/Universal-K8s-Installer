@@ -267,11 +267,20 @@ if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
         A=amd64; [ "$(uname -m)" = "aarch64" ] && A=arm64
         curl -fsSL --retry 3 -m 120 "https://github.com/etcd-io/etcd/releases/download/v${EV}/etcd-v${EV}-linux-${A}.tar.gz" -o /tmp/etcd.tgz 2>/dev/null \
             && tar xzf /tmp/etcd.tgz -C /tmp 2>/dev/null \
-            && install -m0755 "/tmp/etcd-v${EV}-linux-${A}/etcdctl" /usr/local/bin/etcdctl 2>/dev/null
+            && install -m0755 "/tmp/etcd-v${EV}-linux-${A}/etcdctl" /usr/local/bin/etcdctl 2>/dev/null \
+            && install -m0755 "/tmp/etcd-v${EV}-linux-${A}/etcdutl" /usr/local/bin/etcdutl 2>/dev/null
     fi
     if command -v etcdctl >/dev/null 2>&1; then
         if ETCDCTL_API=3 etcdctl $ETCD_CERTS snapshot save "$SNAP" >/dev/null 2>&1; then
-            log "✓ etcd snapshot saved: $SNAP"
+            # Verify it (etcd's own integrity check) and record a checksum, so a
+            # restore can tell later whether the file is still intact
+            if command -v etcdutl >/dev/null 2>&1 && ! etcdutl snapshot status "$SNAP" >/dev/null 2>&1; then
+                rm -f "$SNAP"
+                log "⚠️ etcd snapshot failed verification (unreadable) — continuing WITHOUT a backup."
+            else
+                sha256sum "$SNAP" | awk -v n="$(basename "$SNAP")" '{print $1"  "n}' > "$SNAP.sha256"
+                log "✓ etcd snapshot saved and verified: $SNAP"
+            fi
         else
             log "⚠️ etcd snapshot failed — continuing WITHOUT a backup."
         fi
@@ -282,7 +291,7 @@ if [ "$NODE_ROLE" = "master" ] && [ "$IS_FIRST_MASTER" = "true" ]; then
     # than 45 days, but always keep the newest one.
     NEWEST_SNAP=$(ls -1t "$BK_DIR"/*.db 2>/dev/null | head -1)
     find "$BK_DIR" -maxdepth 1 -type f -name '*.db' -mmin +$((45 * 1440)) 2>/dev/null \
-        | while IFS= read -r f; do [ "$f" != "$NEWEST_SNAP" ] && rm -f "$f"; done
+        | while IFS= read -r f; do [ "$f" != "$NEWEST_SNAP" ] && rm -f "$f" "$f.sha256"; done
     true
 fi
 

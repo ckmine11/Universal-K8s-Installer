@@ -34,12 +34,13 @@ import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
 import AddonManagerPanel from '../components/AddonManagerPanel'
 import EtcdBackupPanel from '../components/EtcdBackupPanel'
+import VolumeBackupPanel from '../components/VolumeBackupPanel'
 
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
-    { key: 'backups', label: 'Backups', hint: 'etcd snapshots & offsite', Icon: Database }
+    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
 ]
 const ADDON_SECTIONS = [
     { key: 'access', label: 'Access & logins' },
@@ -559,7 +560,12 @@ export default function ClusterDetails({ onScaleCluster }) {
             )}
 
             {/* ── Backups ──────────────────────────────────────────────── */}
-            {tab === 'backups' && <EtcdBackupPanel clusterId={id} canManage={canUpgrade} />}
+            {tab === 'backups' && (
+                <div className="space-y-6">
+                    <EtcdBackupPanel clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={canUpgrade} />
+                    <VolumeBackupPanel clusterId={id} clusterName={cluster.clusterName} canManage={canUpgrade} />
+                </div>
+            )}
 
 
             {/* UPGRADE MODAL */}

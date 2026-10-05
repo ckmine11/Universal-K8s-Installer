@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
     Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key, CheckCircle2,
-    ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users
+    ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users, HardDrive
 } from 'lucide-react';
 
 // What KubeEZ does — shown to everyone arriving at the login page.
@@ -16,15 +16,16 @@ const FEATURE_GROUPS = [
     },
     {
         group: 'Operate', features: [
-            { Icon: Puzzle, color: 'text-fuchsia-400', title: 'Add-ons, managed', desc: 'Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage — install, repair, reinstall, uninstall and read logs from the UI.' },
+            { Icon: Puzzle, color: 'text-fuchsia-400', title: 'Add-ons, managed', desc: 'Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage, Velero — install, repair, reinstall, uninstall and read logs from the UI.' },
             { Icon: HeartPulse, color: 'text-rose-400', title: 'Auto-healing', desc: 'Detects NotReady nodes, disk/memory pressure and crash-looping pods, and fixes what it safely can.' },
             { Icon: TerminalSquare, color: 'text-blue-400', title: 'Terminal & live health', desc: 'Browser terminal, live CPU / memory / disk and a 3D topology of every node.' }
         ]
     },
     {
         group: 'Protect', features: [
-            { Icon: DatabaseBackup, color: 'text-cyan-400', title: 'etcd backups & restore', desc: 'Backup Now plus automatic pre-upgrade snapshots, kept 45 days, one-click restore.' },
-            { Icon: Cloud, color: 'text-indigo-400', title: 'Encrypted offsite copies', desc: 'AES-256 encrypted copies to AWS S3, MinIO or any S3 storage. Your keys never reach the nodes.' }
+            { Icon: DatabaseBackup, color: 'text-cyan-400', title: 'Safe etcd restore', desc: 'Verified snapshots (on demand, before every upgrade and restore). See exactly what a restore changes, automatic rollback, one-click undo — HA clusters too.' },
+            { Icon: HardDrive, color: 'text-violet-400', title: 'Volume data backups', desc: 'Velero backs up the files inside volumes — databases, uploads — and restores a deleted app or a side-by-side copy. Daily schedule.' },
+            { Icon: Cloud, color: 'text-indigo-400', title: 'Offsite & disaster recovery', desc: 'AES-256 encrypted copies to AWS S3, MinIO or any S3 storage. Lost the control-plane machine? Rebuild it from the offsite backup.' }
         ]
     },
     {
@@ -38,7 +39,7 @@ const FEATURE_GROUPS = [
 const STATS = [
     { value: '8', label: 'Linux distros' },
     { value: '1.27 → 1.37', label: 'Kubernetes' },
-    { value: '7', label: 'add-ons' },
+    { value: '8', label: 'add-ons' },
     { value: 'AES-256', label: 'offsite backups' }
 ];
 

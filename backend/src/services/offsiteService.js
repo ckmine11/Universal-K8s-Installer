@@ -75,7 +75,7 @@ function parseResult(r) {
     }
     const fields = Object.fromEntries(ok.split('|').slice(2).map(kv => kv.split('=')))
     const pick = (tag) => lines.filter(l => l.startsWith(tag + '|')).map(l => l.slice(tag.length + 1).trim())
-    return { ok: true, ...fields, local: pick('LOCAL'), remote: pick('REMOTE'), uploadedNames: pick('UPLOADED'), truncated: pick('TRUNCATED').length > 0 }
+    return { ok: true, ...fields, local: pick('LOCAL'), remote: pick('REMOTE'), uploadedNames: pick('UPLOADED'), recovery: pick('RECOVERY'), truncated: pick('TRUNCATED').length > 0 }
 }
 
 // <prefix>/<clusterId> — each cluster gets its own folder in the bucket
@@ -162,6 +162,26 @@ class OffsiteService {
     async list(cluster, target) {
         const r = await this.inventory(cluster, target)
         return r.ok ? { ok: true, remote: r.remote } : r
+    }
+
+    /**
+     * Fetch one offsite bundle back to the control-plane: the snapshot lands in
+     * /var/lib/etcd-backup like a local one (checksummed), ready to restore.
+     * `recovery`: also keep certificates + kubeadm config for rebuilding a lost
+     * control-plane. `node` overrides the target machine (recovery).
+     */
+    async download(cluster, target, snapshot, { recovery = false } = {}) {
+        if (!/^[A-Za-z0-9._-]+\.db$/.test(snapshot || '')) return { ok: false, code: 'BAD_INPUT', error: 'Invalid snapshot name' }
+        const folder = folderOf(target, cluster.id)
+        const r = await this._run(cluster, 'download', [
+            ...this._common(target, cluster.id),
+            ['KZ_ENC_KEY', target.encKey],
+            ['KZ_NAME', snapshot],
+            ['KZ_RECOVERY', recovery ? '1' : '0'],
+            ['KZ_GET', presign(target, { method: 'GET', key: `${folder}/${bundleName(snapshot)}`, expires: 6 * 3600 })]
+        ])
+        if (!r.ok) return r
+        return { ok: true, snapshot, kubeadm: r.recovery[0] || null }
     }
 
     /**

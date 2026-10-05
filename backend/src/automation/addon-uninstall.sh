@@ -2,7 +2,7 @@
 # KubeEZ — uninstall an add-on cleanly (run on the primary control-plane).
 #
 # Usage: addon-uninstall.sh <addon> [kubeconfig] [namespace]
-#   addon: ingress | monitoring | dashboard | cert-manager | longhorn | argocd | seaweedfs
+#   addon: ingress | monitoring | dashboard | cert-manager | longhorn | argocd | seaweedfs | velero
 #   (any other add-on: pass its namespace as the 3rd argument → generic removal)
 #
 # Removes exactly what the KubeEZ installer created: the namespace AND the
@@ -158,11 +158,24 @@ seaweedfs)
     delete_ns seaweedfs
     ;;
 
+velero)
+    # Backups already in the bucket are NOT deleted — reinstalling with the
+    # same settings lists them again.
+    if command -v velero >/dev/null 2>&1 && kubectl get ns velero >/dev/null 2>&1; then
+        log "Running 'velero uninstall'..."
+        timeout 300 velero uninstall --force 2>&1 | tail -3 | sed 's/^/  /' || true
+    fi
+    delete_ns velero
+    del clusterrolebinding velero
+    del crd -l component=velero
+    log "Backups already in the storage bucket are kept."
+    ;;
+
 *)
     # Any other registered add-on: its namespace is passed in (generic removal),
     # so a new add-on is manageable from the UI without a script change.
     GENERIC_NS="${3:-}"
-    [ -n "$GENERIC_NS" ] || fail UNKNOWN_ADDON "Unknown add-on '$ADDON'." "Choose one of: ingress, monitoring, dashboard, cert-manager, longhorn, argocd, seaweedfs."
+    [ -n "$GENERIC_NS" ] || fail UNKNOWN_ADDON "Unknown add-on '$ADDON'." "Choose one of: ingress, monitoring, dashboard, cert-manager, longhorn, argocd, seaweedfs, velero."
     case "$GENERIC_NS" in kube-system|kube-public|kube-node-lease|default) fail UNSAFE_NAMESPACE "Refusing to delete the system namespace '$GENERIC_NS'." "Add a dedicated uninstall step for '$ADDON' to addon-uninstall.sh." ;; esac
     delete_ns "$GENERIC_NS"
     ;;

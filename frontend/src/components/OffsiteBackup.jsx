@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../context/AuthContext'
 import {
     Cloud, Server, Boxes, Loader2, CheckCircle2, AlertTriangle, KeyRound,
@@ -289,7 +290,7 @@ export default function OffsiteBackup({ clusterId, offsite, canConfigure, canSyn
             )}
 
             {/* ── Recovery key ───────────────────────────────────────────── */}
-            {recoveryKey && (
+            {recoveryKey && createPortal(
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="glass border border-amber-500/30 rounded-3xl max-w-lg w-full p-7 shadow-2xl">
                         <div className="flex items-center gap-3 mb-3">
@@ -310,7 +311,7 @@ export default function OffsiteBackup({ clusterId, offsite, canConfigure, canSyn
                             {savedKey ? 'I have saved it — close' : 'Download or copy the key first'}
                         </button>
                     </div>
-                </div>
+                </div>, document.body
             )}
         </div>
     )

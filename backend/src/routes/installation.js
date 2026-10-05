@@ -9,17 +9,31 @@ import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
 import { addonManager, ADDON_REGISTRY } from '../services/addonManager.js'
 import { stripCredentials, fillStoredCredentials } from '../services/clusterCredentials.js'
-import { etcdBackupService } from '../services/etcdBackupService.js'
+import { etcdBackupService, SNAPSHOT_RE } from '../services/etcdBackupService.js'
+import { etcdJobs } from '../services/etcdJobs.js'
+import { disasterRecovery } from '../services/disasterRecovery.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
 import { isPaidPlan } from '../config/planFeatures.js'
 import { canAccessResource } from '../utils/access.js'
 import { offsiteStore } from '../services/offsiteStore.js'
-import { offsiteService, sameClusterWarning } from '../services/offsiteService.js'
+import { offsiteService, sameClusterWarning, normaliseConfig } from '../services/offsiteService.js'
+import { volumeBackupStore } from '../services/volumeBackupStore.js'
+import { volumeBackupService } from '../services/volumeBackupService.js'
 
 
 const router = express.Router()
+
+// Anything running on this cluster right now: an install/upgrade/add-on job or
+// an etcd backup/restore/recovery. Two of them at once would fight each other.
+function clusterBusy(clusterId) {
+    const job = installationManager.runningJobFor(clusterId)
+    if (job) return { message: `Another operation (${job.mode || 'installation'}) is still running on this cluster — wait for it to finish.`, jobId: job.id }
+    const ej = etcdJobs.activeFor(clusterId)
+    if (ej) return { message: `An etcd ${ej.kind} is still running on this cluster — wait for it to finish.`, jobId: ej.id }
+    return null
+}
 
 // ─── Tenant-isolation helpers ───────────────────────────────────────────────
 // Load a saved cluster and enforce workspace (org) ownership.
@@ -443,8 +457,8 @@ router.post('/:id/addons/:key/:action(uninstall|reinstall)', requireAuth, requir
             if (!addonCheck.allowed) return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
         }
 
-        const busy = installationManager.runningJobFor(existingCluster.id)
-        if (busy) return res.status(409).json({ error: 'Another operation is still running on this cluster — wait for it to finish.', runningJobId: busy.id })
+        const busy = clusterBusy(existingCluster.id)
+        if (busy) return res.status(409).json({ error: busy.message, runningJobId: busy.jobId })
 
         const newInstallationId = uuidv4()
         installationManager.startInstallation({
@@ -484,12 +498,41 @@ function requireEtcdPlan(req, res) {
     return true
 }
 
+// Load cluster + plan check in one go (route helper)
+async function etcdCluster(req, res) {
+    const cluster = await loadOwnedCluster(req, res)
+    if (!cluster) return null
+    if (!requireEtcdPlan(req, res)) return null
+    return cluster
+}
+
+// Restore / recovery replace the whole cluster state → the user types the
+// cluster name, so a mis-click can't trigger it
+function confirmedByName(req, res, cluster) {
+    if (String(req.body?.confirm || '').trim() !== String(cluster.clusterName || '').trim()) {
+        res.status(400).json({ error: `Type the cluster name (${cluster.clusterName}) to confirm.` })
+        return false
+    }
+    return true
+}
+
+// Start a background etcd job → 202 { jobId } (or 409 when the cluster is busy)
+function startEtcdJob(res, cluster, kind, fn, meta) {
+    const busy = clusterBusy(cluster.id)
+    if (busy) return res.status(409).json({ error: busy.message, jobId: busy.jobId })
+    try {
+        const job = etcdJobs.start(cluster.id, kind, fn, meta)
+        res.status(202).json({ success: true, jobId: job.id })
+    } catch (e) {
+        res.status(e.status || 500).json({ error: e.message, jobId: e.jobId })
+    }
+}
+
 // List etcd snapshots on the cluster (any org member who can view the cluster)
 router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
     try {
-        const cluster = await loadOwnedCluster(req, res)
+        const cluster = await etcdCluster(req, res)
         if (!cluster) return
-        if (!requireEtcdPlan(req, res)) return
         const result = await etcdBackupService.listBackups(cluster)
         // Which snapshots also exist offsite (S3 / MinIO)?
         const target = offsiteStore.getConnected(req.user.orgId)
@@ -504,6 +547,8 @@ router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
         } else {
             result.offsite = { connected: false }
         }
+        result.controlPlanes = cluster.masterNodes?.length || 0
+        result.activeJob = etcdJobs.view(etcdJobs.activeFor(cluster.id))
         res.json(result)
     } catch (error) {
         console.error('etcd list error:', error)
@@ -511,52 +556,175 @@ router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
     }
 })
 
-// Take an on-demand etcd snapshot (control-plane maintenance → operator/admin)
+// Offsite backups only — no Kubernetes needed, so it also works on a freshly
+// installed replacement machine (disaster recovery); the listing runs there
+router.get('/:id/etcd/offsite', requireAuth, async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const target = offsiteStore.getConnected(req.user.orgId)
+        if (!target) return res.json({ connected: false, remote: [] })
+        const r = await offsiteService.list(cluster, target)
+        res.json({ connected: true, ...r })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Take an on-demand etcd snapshot (control-plane maintenance → operator/admin).
+// Runs as a job: the offsite upload right after it can take minutes.
 router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
-        const cluster = await loadOwnedCluster(req, res)
+        const cluster = await etcdCluster(req, res)
         if (!cluster) return
-        if (!requireEtcdPlan(req, res)) return
-        const result = await etcdBackupService.createBackup(cluster)
-        // Copy it offsite right away when S3 / MinIO is connected
-        const target = result.success && offsiteStore.getConnected(req.user.orgId)
-        if (target) {
-            const s = await offsiteService.sync(cluster, target)
-            offsiteStore.recordSync(req.user.orgId, cluster.id, s)
-            result.offsite = { uploaded: s.ok, error: s.ok ? null : s.error }
-        }
-        if (result.success) res.json(result)
-        else res.status(500).json(result)
+        const orgId = req.user.orgId
+        startEtcdJob(res, cluster, 'backup', async ({ log, progress }) => {
+            progress(10, 'Taking the snapshot')
+            const result = await etcdBackupService.createBackup(cluster)
+            if (!result.success) throw new Error(result.error || 'Snapshot failed')
+            log('info', `✓ Snapshot ${result.filename} taken and verified${result.keys ? ` (${result.keys} keys)` : ''}`)
+            // Copy it offsite right away when S3 / MinIO is connected
+            const target = offsiteStore.getConnected(orgId)
+            if (target) {
+                progress(50, 'Uploading the encrypted copy offsite')
+                const s = await offsiteService.sync(cluster, target)
+                offsiteStore.recordSync(orgId, cluster.id, s)
+                result.offsite = { uploaded: s.ok, error: s.ok ? null : s.error }
+                log(s.ok ? 'info' : 'warning', s.ok ? '✓ Encrypted copy uploaded offsite' : `⚠️ Offsite upload failed: ${s.error}`)
+            }
+            return result
+        })
     } catch (error) {
         console.error('etcd backup error:', error)
         res.status(500).json({ error: error.message })
     }
 })
 
-// Restore etcd from a snapshot (DESTRUCTIVE → operator/admin, single control-plane only)
-router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
-    const logs = []
+// Checksum + integrity check of one snapshot (read-only)
+router.post('/:id/etcd/verify', requireAuth, async (req, res) => {
     try {
-        const cluster = await loadOwnedCluster(req, res)
+        const cluster = await etcdCluster(req, res)
         if (!cluster) return
-        if (!requireEtcdPlan(req, res)) return
-        const { filename } = req.body
-        if (!filename || /[\/\\]|\.\./.test(filename)) {
+        res.json(await etcdBackupService.verifyBackup(cluster, req.body?.filename))
+    } catch (error) {
+        res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+// What would a restore change? (read-only — a throw-away etcd reads the snapshot)
+router.get('/:id/etcd/preview', requireAuth, async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        res.json(await etcdBackupService.previewRestore(cluster, String(req.query.filename || '')))
+    } catch (error) {
+        console.error('etcd preview error:', error)
+        res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+// Restore etcd from a snapshot (DESTRUCTIVE → operator/admin). Works for HA
+// clusters too. source=offsite fetches the encrypted bundle first.
+router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const { filename, source = 'local' } = req.body || {}
+        if (!SNAPSHOT_RE.test(filename || '')) {
             return res.status(400).json({ error: 'Invalid or missing snapshot filename' })
         }
-        // Safety: automated restore is only supported for a single control-plane.
-        if ((cluster.masterNodes?.length || 0) > 1) {
-            return res.status(400).json({
-                error: 'Automated restore is only supported for single control-plane clusters. For HA clusters, restore etcd manually on each member.'
-            })
-        }
-        await etcdBackupService.restoreBackup(cluster, filename, (level, msg) => logs.push({ level, msg }))
-        res.json({ success: true, message: 'etcd restore completed', logs })
+        if (!confirmedByName(req, res, cluster)) return
+        const target = source === 'offsite' ? offsiteStore.getConnected(req.user.orgId) : null
+        if (source === 'offsite' && !target) return res.status(400).json({ error: 'Offsite storage is not connected.' })
+        const orgId = req.user.orgId
+
+        startEtcdJob(res, cluster, 'restore', async ({ log, progress }) => {
+            if (target) {
+                progress(2, 'Downloading the offsite backup')
+                log('info', `Downloading ${filename} from offsite storage...`)
+                const dl = await offsiteService.download(cluster, target, filename)
+                if (!dl.ok) throw new Error(`Could not fetch the offsite backup: ${dl.error}`)
+                log('info', '✓ Offsite backup downloaded and decrypted on the control-plane')
+            }
+            const result = await etcdBackupService.restoreBackup(cluster, filename, log, progress)
+            // Keep the safety snapshot offsite too (best effort)
+            const t = offsiteStore.getConnected(orgId)
+            if (t && result.safetySnapshot) {
+                const s = await offsiteService.sync(cluster, t).catch(e => ({ ok: false, error: e.message }))
+                offsiteStore.recordSync(orgId, cluster.id, s)
+            }
+            return result
+        }, { filename, source })
     } catch (error) {
         console.error('etcd restore error:', error)
-        // Return the collected step-by-step logs even on failure (transparency).
-        res.status(500).json({ success: false, error: error.message, logs })
+        res.status(500).json({ error: error.message })
     }
+})
+
+// Bring an offsite-only snapshot back to the control-plane (decrypted,
+// checksummed) — then it can be previewed and restored like a local one
+router.post('/:id/etcd/offsite/fetch', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const { filename } = req.body || {}
+        if (!SNAPSHOT_RE.test(filename || '')) return res.status(400).json({ error: 'Invalid snapshot filename' })
+        const target = offsiteStore.getConnected(req.user.orgId)
+        if (!target) return res.status(400).json({ error: 'Offsite storage is not connected.' })
+        startEtcdJob(res, cluster, 'fetch', async ({ log, progress }) => {
+            progress(10, 'Downloading from offsite storage')
+            const dl = await offsiteService.download(cluster, target, filename)
+            if (!dl.ok) throw new Error(`Could not fetch the offsite backup: ${dl.error}`)
+            log('info', `✓ ${filename} downloaded and decrypted on the control-plane`)
+            progress(80, 'Verifying the snapshot')
+            const v = await etcdBackupService.verifyBackup(cluster, filename)
+            if (!v.ok) throw new Error(`The downloaded snapshot is damaged: ${v.error}`)
+            log('info', `✓ Verified (revision ${v.revision}, ${v.keys} keys)`)
+            return { filename }
+        }, { filename })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Rebuild a LOST control-plane machine from an offsite backup (disaster recovery)
+router.post('/:id/etcd/recover', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const { filename } = req.body || {}
+        if (!SNAPSHOT_RE.test(filename || '')) return res.status(400).json({ error: 'Choose an offsite backup to recover from.' })
+        if (!confirmedByName(req, res, cluster)) return
+        const target = offsiteStore.getConnected(req.user.orgId)
+        if (!target) return res.status(400).json({ error: 'Recovery needs the offsite backups — connect the offsite storage first.' })
+        startEtcdJob(res, cluster, 'recover', ({ log, progress }) =>
+            disasterRecovery.recover(cluster, target, filename, log, progress), { filename })
+    } catch (error) {
+        console.error('etcd recover error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Restart the kubelet on every worker again (after a restore some may have been offline)
+router.post('/:id/etcd/refresh-workers', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const logs = []
+        const results = await etcdBackupService.refreshWorkerKubelets(cluster, (level, msg) => logs.push({ level, msg }))
+        res.json({ success: results.every(r => r.ok), results, logs })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Progress + log of a backup / restore / recovery job
+router.get('/:id/etcd/jobs/:jobId', requireAuth, async (req, res) => {
+    const cluster = await loadOwnedCluster(req, res)
+    if (!cluster) return
+    const job = etcdJobs.get(req.params.jobId)
+    if (!job || job.clusterId !== cluster.id) return res.status(404).json({ error: 'Job not found (it may have finished more than 2 hours ago, or the server restarted).' })
+    res.json(etcdJobs.view(job))
 })
 
 // Analyze failed cluster — detect what completed, what's missing, where to resume
@@ -615,8 +783,8 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
         // Load cluster config (decrypted)
         const existingCluster = await loadOwnedCluster(req, res)
         if (!existingCluster) return
-        const busy = installationManager.runningJobFor(existingCluster.id)
-        if (busy) return res.status(409).json({ error: 'Another operation is still running on this cluster — wait for it to finish.', runningJobId: busy.id })
+        const busy = clusterBusy(existingCluster.id)
+        if (busy) return res.status(409).json({ error: busy.message, runningJobId: busy.jobId })
 
         // Plan-gate add-ons by the WORKSPACE plan (team members have plan 'MEMBER')
         const addonCheck = checkAddonPlan(addons, authService.getOrgPlan(req.user.orgId))
@@ -661,6 +829,8 @@ router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), a
         // Load cluster config
         const existingCluster = await loadOwnedCluster(req, res)
         if (!existingCluster) return
+        const busy = clusterBusy(existingCluster.id)
+        if (busy) return res.status(409).json({ error: busy.message, runningJobId: busy.jobId })
 
         const newInstallationId = uuidv4()
         const upgradeInstallation = {
@@ -688,6 +858,138 @@ router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), a
     } catch (error) {
         console.error('Upgrade error:', error)
         res.status(500).json({ error: 'Failed to start cluster upgrade' })
+    }
+})
+
+// ─── Volume backups (Velero) — files inside persistent volumes ────────────────
+
+// Status of Velero + its backups/restores, and the saved storage settings
+router.get('/:id/volume-backups', requireAuth, async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const off = offsiteStore.publicView(req.user.orgId)
+        const result = {
+            config: volumeBackupStore.publicView(cluster.id),
+            offsite: off.connected ? { connected: true, provider: off.provider, endpoint: off.endpoint, bucket: off.bucket } : { connected: false },
+            runningJob: (() => { const j = installationManager.runningJobFor(cluster.id); return j ? { id: j.id, mode: j.mode } : null })()
+        }
+        try {
+            Object.assign(result, await volumeBackupService.status(cluster))
+        } catch (e) {
+            result.error = `Could not read Velero's state from the cluster: ${e.message}`
+        }
+        res.json(result)
+    } catch (error) {
+        console.error('volume backups status error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Save where backups go (own keys, or the workspace's offsite storage) and
+// install / update Velero with it. Keys → admin only (backup:manage).
+router.put('/:id/volume-backups/config', requireAuth, requirePermission('backup:manage'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const body = req.body || {}
+        let cfg
+        if (body.useOffsite) {
+            const t = offsiteStore.getConnected(req.user.orgId)
+            if (!t) return res.status(400).json({ error: 'The workspace has no offsite storage connected — enter the storage details instead.' })
+            cfg = { ...t, source: 'offsite', prefix: [t.prefix, cluster.id, 'velero'].filter(Boolean).join('/') }
+        } else {
+            const existing = volumeBackupStore.get(cluster.id)
+            try {
+                cfg = normaliseConfig({ ...body, prefix: body.prefix || `kubeez-velero/${cluster.id}` }, existing?.source === 'custom' ? existing : null)
+            } catch (e) {
+                return res.status(400).json({ error: e.message })
+            }
+            cfg.source = 'custom'
+        }
+        if (sameClusterWarning(cluster, cfg.endpoint || '') && !body.allowSameCluster) {
+            return res.status(400).json({ error: sameClusterWarning(cluster, cfg.endpoint), sameCluster: true })
+        }
+        const busy = clusterBusy(cluster.id)
+        if (busy) return res.status(409).json({ error: busy.message, runningJobId: busy.jobId })
+        volumeBackupStore.save(cluster.id, cfg)
+
+        // Install (or re-apply the settings to) Velero as an add-on job
+        const addonCheck = checkAddonPlan({ velero: true }, authService.getOrgPlan(req.user.orgId))
+        if (!addonCheck.allowed) return res.status(402).json({ error: addonCheck.error, limitExceeded: true })
+        const newInstallationId = uuidv4()
+        installationManager.startInstallation({
+            ...cluster,
+            id: newInstallationId,
+            ownerId: cluster.ownerId || req.user.id,
+            orgId: cluster.orgId || req.user.orgId,
+            originalClusterId: cluster.id,
+            addons: { velero: true },
+            mode: 'addon-only',
+            status: 'pending',
+            logs: [],
+            progress: 0,
+            createdAt: new Date().toISOString()
+        })
+        res.json({ success: true, newInstallationId, config: volumeBackupStore.publicView(cluster.id) })
+    } catch (error) {
+        console.error('volume backups config error:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Back up now (all namespaces, or the chosen ones)
+router.post('/:id/volume-backups/backups', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        res.json({ success: true, ...(await volumeBackupService.backupNow(cluster, req.body || {})) })
+    } catch (error) {
+        res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+router.delete('/:id/volume-backups/backups/:name', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        res.json({ success: true, ...(await volumeBackupService.deleteBackup(cluster, req.params.name)) })
+    } catch (error) {
+        res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+// Restore (missing only / side-by-side copy / replace). Replace deletes the
+// namespaces first → typed cluster-name confirmation.
+router.post('/:id/volume-backups/restores', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        const { backup, namespaces = [], mode = 'missing' } = req.body || {}
+        if (mode === 'replace' && !confirmedByName(req, res, cluster)) return
+        res.json({ success: true, ...(await volumeBackupService.restore(cluster, backup, { namespaces, mode })) })
+    } catch (error) {
+        res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+router.put('/:id/volume-backups/schedule', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        res.json({ success: true, ...(await volumeBackupService.setSchedule(cluster, req.body || {})) })
+    } catch (error) {
+        res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+router.get('/:id/volume-backups/describe/:kind/:name', requireAuth, async (req, res) => {
+    try {
+        const cluster = await etcdCluster(req, res)
+        if (!cluster) return
+        res.json(await volumeBackupService.describe(cluster, req.params.kind, req.params.name))
+    } catch (error) {
+        res.status(error.status || 500).json({ error: error.message })
     }
 })
 

@@ -5,9 +5,10 @@
 #
 #   node-install.sh master <k8s-version e.g. 1.35.0>
 #   node-install.sh worker <k8s-version> "<kubeadm join command>"
+#   node-install.sh cpjoin <k8s-version> "<kubeadm join command>" <certificate key>   (HA control-plane)
 #
 # Prints "STEP <name> rc=<code>" per step and finally RESULT=PASS|FAIL@<step>.
-ROLE="$1"; K8S_VERSION="$2"; JOIN_CMD="${3:-}"   # not VERSION: /etc/os-release sets that
+ROLE="$1"; K8S_VERSION="$2"; JOIN_CMD="${3:-}"; CERT_KEY="${4:-}"   # not VERSION: /etc/os-release sets that
 MINOR="${K8S_VERSION%.*}"
 cd /k || exit 1
 IP=$(hostname -I | awk '{print $1}')
@@ -29,12 +30,17 @@ step() {
 }
 
 step preflight  preflight-checks.sh
-step firewall   configure-firewall.sh "$ROLE"
+step firewall   configure-firewall.sh "$([ "$ROLE" = cpjoin ] && echo master || echo "$ROLE")"
 step containerd install-containerd.sh
 step kubernetes install-kubernetes.sh "$MINOR"
 
 if [ "$ROLE" = "worker" ]; then
     step join join-worker.sh "$JOIN_CMD"
+    echo "RESULT=PASS"
+    exit 0
+fi
+if [ "$ROLE" = "cpjoin" ]; then
+    step join join-master.sh "$JOIN_CMD" "$CERT_KEY"
     echo "RESULT=PASS"
     exit 0
 fi
