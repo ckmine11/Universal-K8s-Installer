@@ -104,11 +104,40 @@ async function target(cluster, fresh = false) {
             throw Object.assign(new Error('The Cluster Explorer is not installed on this cluster — install it from Add-ons.'), { status: 404, code: 'NOT_INSTALLED' })
         }
         targets.set(cluster.id, { ip, at: Date.now() })
+        if (!gateChecked.has(cluster.id)) {
+            // Explorers installed before the Helm gate existed get it here, so
+            // Helm installs work without a manual Repair (same YAML as explorer.sh)
+            const b64 = Buffer.from(HELM_GATE_YAML).toString('base64')
+            const g = await ssh.execCommand(`${KB} get clusterrolebinding kubeez-explorer-helm-gate >/dev/null 2>&1 || (echo ${b64} | base64 -d | ${KB} apply -f - >/dev/null)`)
+            if (g.code === 0) gateChecked.add(cluster.id)
+        }
         return ip
     } finally {
         ssh.dispose?.()
     }
 }
+
+// Radar 1.15 opens Helm writes only when its service account may create
+// Secrets; installs then run as the signed-in user (see explorer.sh)
+const gateChecked = new Set()
+const HELM_GATE_YAML = `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubeez-explorer-helm-gate
+  labels: { app.kubernetes.io/part-of: kubeez-explorer }
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubeez-explorer-helm-gate
+  labels: { app.kubernetes.io/part-of: kubeez-explorer }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubeez-explorer-helm-gate }
+subjects: [{ kind: ServiceAccount, name: radar, namespace: ${EXPLORER_NS} }]
+`
 
 async function openUpstream(cluster) {
     const ip = await target(cluster)
