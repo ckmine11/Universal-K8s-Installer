@@ -253,7 +253,7 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
                                     </select>
                                 </div>
                                 <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[10px] text-slate-500">{backupNs.length ? `${backupNs.length} selected` : 'Nothing selected = all namespaces'} · kept 30 days</span>
+                                    <span className="text-[10px] text-slate-500">{backupNs.length ? `${backupNs.length} selected` : 'Nothing selected = all namespaces (Velero and its own storage are skipped)'} · kept 30 days</span>
                                     <button onClick={() => call('backup', 'POST', `/api/clusters/${clusterId}/volume-backups/backups`, { namespaces: backupNs, ttlDays: 30 }, (j) => `Backup ${j.name} started.`)}
                                         disabled={busy === 'backup' || !storageOk} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black disabled:opacity-50">
                                         {busy === 'backup' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Back up
@@ -293,6 +293,7 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
                                                 {(b.errors > 0 || b.warnings > 0) && <span className="text-[10px] text-amber-300">{b.errors} errors · {b.warnings} warnings</span>}
                                             </div>
                                             <p className="text-slate-400 truncate">{nsLabel(b.namespaces)}{b.items ? ` · ${b.items.done}/${b.items.total} items` : ''}{b.expires ? ` · until ${fmt(b.expires)}` : ''}</p>
+                                            {(b.failureReason || b.validationErrors?.length > 0) && <p className="text-red-300 text-[10px]">{[b.failureReason, ...(b.validationErrors || [])].filter(Boolean).join(' · ')}</p>}
                                             <p className="font-mono text-[10px] text-slate-600 truncate">{b.name}</p>
                                         </div>
                                         <div className="flex gap-1.5 shrink-0">
@@ -322,6 +323,7 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2"><Phase phase={r.phase} /> <span className="text-white">{fmt(r.started)}</span> <span className="text-slate-500 truncate">from {r.backup}</span></div>
                                             <p className="text-slate-400 truncate">{r.mappings ? Object.entries(r.mappings).map(([a, b]) => `${a} → ${b}`).join(', ') : nsLabel(r.namespaces)}{(r.errors || r.warnings) ? ` · ${r.errors} errors · ${r.warnings} warnings` : ''}</p>
+                                            {(r.failureReason || r.validationErrors?.length > 0) && <p className="text-red-300 text-[10px]">{[r.failureReason, ...(r.validationErrors || [])].filter(Boolean).join(' · ')}</p>}
                                         </div>
                                         <button onClick={async () => { const x = await apiFetch(`/api/clusters/${clusterId}/volume-backups/describe/restore/${r.name}`); const j = await x.json().catch(() => ({})); setDetails({ title: r.name, text: j.text || j.error }) }}
                                             aria-label="Details" className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 shrink-0"><FileText className="w-3.5 h-3.5" /></button>

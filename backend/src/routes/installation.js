@@ -938,12 +938,20 @@ router.put('/:id/volume-backups/config', requireAuth, requirePermission('backup:
     }
 })
 
+// Namespaces a full backup must skip: the in-cluster S3 add-on when it is
+// the backup target (never taken from the request)
+function volumeBackupExcludes(cluster) {
+    const cfg = volumeBackupStore.get(cluster.id)
+    return cfg && sameClusterWarning(cluster, cfg.endpoint || '') ? ['seaweedfs'] : []
+}
+
 // Back up now (all namespaces, or the chosen ones)
 router.post('/:id/volume-backups/backups', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
-        res.json({ success: true, ...(await volumeBackupService.backupNow(cluster, req.body || {})) })
+        const { namespaces, ttlDays } = req.body || {}
+        res.json({ success: true, ...(await volumeBackupService.backupNow(cluster, { namespaces, ttlDays, exclude: volumeBackupExcludes(cluster) })) })
     } catch (error) {
         res.status(error.status || 500).json({ error: error.message })
     }
@@ -977,7 +985,8 @@ router.put('/:id/volume-backups/schedule', requireAuth, requirePermission('clust
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
-        res.json({ success: true, ...(await volumeBackupService.setSchedule(cluster, req.body || {})) })
+        const { enabled, cron, ttlDays } = req.body || {}
+        res.json({ success: true, ...(await volumeBackupService.setSchedule(cluster, { enabled, cron, ttlDays, exclude: volumeBackupExcludes(cluster) })) })
     } catch (error) {
         res.status(error.status || 500).json({ error: error.message })
     }

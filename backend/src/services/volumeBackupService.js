@@ -35,7 +35,8 @@ export function summarizeBackup(b) {
         volumes: s.backupItemOperationsAttempted ?? null,
         errors: s.errors || 0,
         warnings: s.warnings || 0,
-        failureReason: s.failureReason || null
+        failureReason: s.failureReason || null,
+        validationErrors: s.validationErrors || []
     }
 }
 
@@ -52,8 +53,17 @@ export function summarizeRestore(r) {
         items: s.progress ? { done: s.progress.itemsRestored || 0, total: s.progress.totalItems || 0 } : null,
         errors: s.errors || 0,
         warnings: s.warnings || 0,
-        failureReason: s.failureReason || null
+        failureReason: s.failureReason || null,
+        validationErrors: s.validationErrors || []
     }
+}
+
+// "All namespaces" never includes Velero itself, nor the S3 storage the
+// backups are written to when it runs in this cluster: copying the storage's
+// own volume into itself grows without end (and fills the disk).
+function excludeArg(exclude = []) {
+    const list = [...new Set(['velero', ...exclude])].filter(n => NS_RE.test(n))
+    return ` --exclude-namespaces ${list.join(',')}`
 }
 
 class VolumeBackupService {
@@ -108,12 +118,12 @@ class VolumeBackupService {
     }
 
     /** Back up namespaces (all when empty) incl. the files in their volumes. */
-    backupNow(cluster, { namespaces = [], ttlDays = 30 } = {}) {
+    backupNow(cluster, { namespaces = [], ttlDays = 30, exclude = [] } = {}) {
         if (!Array.isArray(namespaces) || namespaces.some(n => !NS_RE.test(n))) throw bad('Invalid namespace list')
         const ttl = Math.max(1, Math.min(365, parseInt(ttlDays, 10) || 30))
         const name = `kubeez-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}`
         return this._ssh(cluster, async (ssh) => {
-            const ns = namespaces.length ? ` --include-namespaces ${namespaces.join(',')}` : ''
+            const ns = namespaces.length ? ` --include-namespaces ${namespaces.join(',')}` : excludeArg(exclude)
             const r = await run(ssh, `${VEL} backup create ${name}${ns} --ttl ${ttl * 24}h0m0s --wait=false 2>&1`)
             if (!r.ok) throw new Error(`Velero did not accept the backup: ${r.out || r.err}`)
             return { name }
@@ -159,13 +169,13 @@ class VolumeBackupService {
     }
 
     /** Daily (or custom cron) backup of everything; enabled=false removes it. */
-    setSchedule(cluster, { enabled, cron = '0 2 * * *', ttlDays = 30 } = {}) {
+    setSchedule(cluster, { enabled, cron = '0 2 * * *', ttlDays = 30, exclude = [] } = {}) {
         if (enabled && !CRON_RE.test(String(cron).trim())) throw bad('Invalid schedule (cron with 5 fields, e.g. "0 2 * * *")')
         const ttl = Math.max(1, Math.min(365, parseInt(ttlDays, 10) || 30))
         return this._ssh(cluster, async (ssh) => {
             await run(ssh, `${VEL} schedule delete ${SCHEDULE_NAME} --confirm 2>&1`)
             if (!enabled) return { enabled: false }
-            const r = await run(ssh, `${VEL} schedule create ${SCHEDULE_NAME} --schedule "${String(cron).trim()}" --ttl ${ttl * 24}h0m0s 2>&1`)
+            const r = await run(ssh, `${VEL} schedule create ${SCHEDULE_NAME} --schedule "${String(cron).trim()}" --ttl ${ttl * 24}h0m0s${excludeArg(exclude)} 2>&1`)
             if (!r.ok) throw new Error(`Velero did not accept the schedule: ${r.out || r.err}`)
             return { enabled: true, cron: String(cron).trim(), ttlDays: ttl }
         })
