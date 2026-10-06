@@ -6,6 +6,7 @@
 #   node-install.sh master <k8s-version e.g. 1.35.0>
 #   node-install.sh worker <k8s-version> "<kubeadm join command>"
 #   node-install.sh cpjoin <k8s-version> "<kubeadm join command>" <certificate key>   (HA control-plane)
+#   VIP=<ip> in the environment: control-plane virtual IP (kube-vip) for master/cpjoin
 #
 # Prints "STEP <name> rc=<code>" per step and finally RESULT=PASS|FAIL@<step>.
 ROLE="$1"; K8S_VERSION="$2"; JOIN_CMD="${3:-}"; CERT_KEY="${4:-}"   # not VERSION: /etc/os-release sets that
@@ -40,12 +41,12 @@ if [ "$ROLE" = "worker" ]; then
     exit 0
 fi
 if [ "$ROLE" = "cpjoin" ]; then
-    step join join-master.sh "$JOIN_CMD" "$CERT_KEY"
+    step join join-master.sh "$JOIN_CMD" "$CERT_KEY" ${VIP:+"$VIP" "$IP"}
     echo "RESULT=PASS"
     exit 0
 fi
 
-step init init-control-plane.sh "$IP" 10.244.0.0/16 "$K8S_VERSION"
+step init init-control-plane.sh "$IP" 10.244.0.0/16 "$K8S_VERSION" ${VIP:+"$VIP"}
 export KUBECONFIG=/etc/kubernetes/admin.conf
 # TEST ENVIRONMENT ONLY (same as 'kind'): inside a container kube-proxy may not
 # set nf_conntrack_max ("permission denied"). Real VMs don't need this.

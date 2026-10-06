@@ -20,7 +20,16 @@
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 MANIFESTS=/etc/kubernetes/manifests
 HELD=/etc/kubernetes/manifests-held
-KC=/etc/kubernetes/admin.conf
+KC=/root/.kubeez-local.conf
+
+# The API on THIS machine, not the cluster endpoint: with a virtual IP
+# (kube-vip) the VIP can be on another control-plane, or nowhere while etcd is
+# stopped — checks must not fail (or roll back) because of that.
+local_kc() {
+    [ -f /etc/kubernetes/admin.conf ] || return 0
+    awk '/^ *server: /{match($0, /^ */); i = substr($0, 1, RLENGTH); print i "server: https://127.0.0.1:6443"; print i "tls-server-name: kubernetes"; next} {print}'         /etc/kubernetes/admin.conf > /root/.kubeez-local.conf 2>/dev/null && chmod 600 /root/.kubeez-local.conf
+}
+local_kc
 CP_PODS="kube-apiserver kube-controller-manager kube-scheduler etcd"
 C="--cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key --endpoints=https://127.0.0.1:2379"
 TS=$(date +%s)
@@ -43,7 +52,7 @@ need_etcdctl() {
     command -v etcdctl >/dev/null 2>&1 || /usr/local/sbin/kubeez-etcd-backup tools >/dev/null 2>&1
     command -v etcdctl >/dev/null 2>&1 || fail "etcdctl is not available on this control-plane"
 }
-api_ready() { [ "$(KUBECONFIG=$KC kubectl get --raw='/readyz' --request-timeout=5s 2>/dev/null)" = "ok" ]; }
+api_ready() { local_kc; [ "$(KUBECONFIG=$KC kubectl get --raw='/readyz' --request-timeout=5s 2>/dev/null)" = "ok" ]; }
 valid() { [[ "$1" =~ ^[a-zA-Z0-9._-]+$ ]]; }
 valid_url() { [[ "$1" =~ ^https?://[a-zA-Z0-9.:_-]+$ ]]; }
 

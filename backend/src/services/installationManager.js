@@ -3,6 +3,7 @@ import { automationEngine } from './automationEngine.js'
 import { clusterStore } from './clusterStore.js'
 import { terminalService } from './terminalService.js'
 import { sameTenant } from '../utils/access.js'
+import { notifier } from './notifier.js'
 
 // Day-2 jobs that touch one add-on of an existing cluster
 const ADDON_JOB_MODES = new Set(['addon-only', 'addon-uninstall', 'addon-reinstall'])
@@ -219,6 +220,13 @@ class InstallationManager {
             installation.progress = 100
             installation.clusterInfo = clusterInfo
             installation.completedAt = new Date().toISOString()
+            if (installation.mode === 'upgrade') {
+                notifier.emit(installation.orgId, {
+                    type: 'upgrade_done', severity: 'success', title: `Upgrade to v${installation.targetVersion} finished`,
+                    text: 'Every node runs the new version.', clusterId: installation.originalClusterId, clusterName: installation.clusterName,
+                    link: `/cluster/${installation.originalClusterId}`
+                })
+            }
 
             // On upgrade, the cluster version must reflect the TARGET version —
             // installation.k8sVersion is a copy of the OLD cluster's version.
@@ -234,6 +242,7 @@ class InstallationManager {
                 clusterName: installation.clusterName,
                 k8sVersion: effectiveVersion,
                 networkPlugin: installation.networkPlugin,
+                ...(installation.controlPlaneVip ? { controlPlaneVip: installation.controlPlaneVip } : {}),
                 masterNodes: installation.masterNodes,
                 workerNodes: installation.workerNodes,
                 addons: installation.addons,
@@ -337,6 +346,12 @@ class InstallationManager {
             installation.diagnosis = error.diagnosis   // reason + fix, re-shown after a page refresh
             installation.failedAt = new Date().toISOString()
 
+            const cid = installation.originalClusterId || installationId
+            const reason = (error.diagnosis?.message || error.message || 'unknown error').split('\n')[0].slice(0, 300)
+            notifier.emit(installation.orgId, installation.mode === 'upgrade'
+                ? { type: 'upgrade_done', severity: 'critical', title: `Upgrade to v${installation.targetVersion} failed`, text: reason, clusterId: cid, clusterName: installation.clusterName, link: `/dashboard/${installationId}` }
+                : { type: 'install_failed', severity: 'critical', title: ADDON_JOB_MODES.has(installation.mode) ? 'Add-on job failed' : 'Cluster installation failed', text: reason, clusterId: cid, clusterName: installation.clusterName, link: `/dashboard/${installationId}` })
+
             // An add-on job failing says nothing about the cluster itself — keep the
             // cluster's saved state (it used to become "Installation Failed").
             if (ADDON_JOB_MODES.has(installation.mode)) return
@@ -349,6 +364,7 @@ class InstallationManager {
                 clusterName:   installation.clusterName,
                 k8sVersion:    installation.k8sVersion,
                 networkPlugin: installation.networkPlugin,
+                ...(installation.controlPlaneVip ? { controlPlaneVip: installation.controlPlaneVip } : {}),
                 masterNodes:   installation.masterNodes,
                 workerNodes:   installation.workerNodes,
                 addons:        installation.addons,
@@ -481,6 +497,7 @@ class InstallationManager {
             clusterName:   installation.clusterName,
             k8sVersion:    installation.k8sVersion,
             networkPlugin: installation.networkPlugin,
+            ...(installation.controlPlaneVip ? { controlPlaneVip: installation.controlPlaneVip } : {}),
             masterNodes:   installation.masterNodes,
             workerNodes:   installation.workerNodes,
             addons:        installation.addons,
@@ -538,7 +555,7 @@ class InstallationManager {
 clusters:
 - cluster:
     certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN5RENDQWJ...
-    server: https://${cluster.masterNodes[0].ip}:6443
+    server: https://${cluster.controlPlaneVip || cluster.masterNodes[0].ip}:6443
   name: ${cluster.clusterName}
 contexts:
 - context:

@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url'
 import { v4 as uuidv4 } from 'uuid'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomic } from '../utils/atomicWrite.js'
+import { notifier } from './notifier.js'
+const AGENT_OFFLINE_ALERT_MS = Number(process.env.KUBEEZ_AGENT_OFFLINE_ALERT_MS) || 5 * 60 * 1000
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -19,6 +21,7 @@ class AgentService {
         this.agentSockets = new Map() // agentId -> WebSocket
         this.pendingCommands = new Map() // commandId -> { resolve, reject, timeout }
         this.agentCaps = new Map()       // agentId -> Set of capabilities the agent build offers
+        this.offlineAlerts = new Map()   // agentId -> { timer, alerted }
         this.tcpStreams = new Map()      // streamId -> { agentId, duplex, opened }
         this.ensureDataDir()
     }
@@ -136,6 +139,7 @@ class AgentService {
             try { previous.close(4000, 'Replaced by a newer connection') } catch { }
         }
         this.agentSockets.set(agentId, ws)
+        this._agentOnline(agent)
 
         // Mark online + update lastSeen
         await this._updateAgentStatus(agentId, 'online')
@@ -190,6 +194,7 @@ class AgentService {
             this.agentCaps.delete(agentId)
             this._rejectPendingForAgent(agentId, new Error(`Agent ${agentId} disconnected`))
             this._closeTcpForAgent(agentId, new Error('The Gateway Agent disconnected'))
+            this._agentOffline(agentId)
             await this._updateAgentStatus(agentId, 'offline')
             console.log(`[AgentService] Agent ${agentId} disconnected`)
         })
@@ -292,6 +297,28 @@ class AgentService {
             this.pendingCommands.set(commandId, { agentId, resolve, reject, timeout })
             ws.send(JSON.stringify(payload))
         })
+    }
+
+    // ─── Offline alerts: only after 5 minutes away (restarts and blips stay quiet) ──
+    async _agentOffline(agentId) {
+        const prev = this.offlineAlerts.get(agentId)
+        if (prev?.timer) clearTimeout(prev.timer)
+        const timer = setTimeout(async () => {
+            if (this.agentSockets.has(agentId)) return
+            const agent = (await this._readAgents().catch(() => [])).find(a => a.agentId === agentId)
+            if (!agent) return
+            this.offlineAlerts.set(agentId, { alerted: true })
+            notifier.emit(agent.orgId, { type: 'agent_offline', severity: 'critical', key: `agent|${agentId}`, title: `Gateway Agent "${agent.label || agentId.slice(0, 8)}" is offline`, text: 'Clusters reached through it cannot be managed, monitored or healed until it reconnects. Check the machine it runs on.', link: '/agents' })
+        }, AGENT_OFFLINE_ALERT_MS)
+        timer.unref?.()
+        this.offlineAlerts.set(agentId, { timer, alerted: false })
+    }
+
+    _agentOnline(agent) {
+        const prev = this.offlineAlerts.get(agent.agentId)
+        if (prev?.timer) clearTimeout(prev.timer)
+        this.offlineAlerts.delete(agent.agentId)
+        if (prev?.alerted) notifier.emit(agent.orgId, { type: 'agent_offline', severity: 'success', key: `agent-back|${agent.agentId}`, title: `Gateway Agent "${agent.label || agent.agentId.slice(0, 8)}" is back online`, link: '/agents' })
     }
 
     // ─── TCP streams through the agent ───────────────────────────

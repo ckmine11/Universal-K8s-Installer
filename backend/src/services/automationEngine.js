@@ -548,7 +548,7 @@ class AutomationEngine {
                         }))
                     ],
                     nodeCount: installation.masterNodes.length + (installation.workerNodes?.length || 0),
-                    endpoint: `https://${installation.masterNodes[0].ip}:6443`,
+                    endpoint: `https://${installation.controlPlaneVip || installation.masterNodes[0].ip}:6443`,
                     simulationMode: installation.simulationMode
                 }
 
@@ -593,7 +593,7 @@ class AutomationEngine {
                 onComplete({
                     name: installation.clusterName,
                     version: installation.k8sVersion,
-                    endpoint: `https://${installation.masterNodes[0].ip}:6443`,
+                    endpoint: `https://${installation.controlPlaneVip || installation.masterNodes[0].ip}:6443`,
                     simulationMode: installation.simulationMode
                 })
                 return
@@ -732,7 +732,7 @@ class AutomationEngine {
                     }))
                 ],
                 nodeCount: installation.masterNodes.length + (installation.workerNodes?.length || 0),
-                endpoint: `https://${installation.masterNodes[0].ip}:6443`,
+                endpoint: `https://${installation.controlPlaneVip || installation.masterNodes[0].ip}:6443`,
                 simulationMode: installation.simulationMode
             }
 
@@ -972,9 +972,13 @@ class AutomationEngine {
             const k8sVersion = installation.k8sVersion
             const podNetworkCidr = this.podNetworkCidr(installation)
 
-            onLog('info', `Control plane endpoint: ${masterNode.ip}:6443`)
+            const vip = installation.controlPlaneVip
+            onLog('info', vip
+                ? `Control plane endpoint: ${vip}:6443 (virtual IP, kube-vip — moves to a healthy control-plane)`
+                : `Control plane endpoint: ${masterNode.ip}:6443`)
             onLog('info', `Pod network CIDR: ${podNetworkCidr}`)
             args = [masterNode.ip, podNetworkCidr, k8sVersion]
+            if (vip) args.push(vip)
         }
 
         try {
@@ -988,7 +992,7 @@ class AutomationEngine {
             const certKey = certKeyResult.stdout.trim()
 
             onLog('success', '✓ Control plane join data refreshed')
-            onLog('info', `Cluster endpoint: https://${masterNode.ip}:6443`)
+            onLog('info', `Cluster endpoint: https://${installation.controlPlaneVip || masterNode.ip}:6443`)
 
             return { joinCommand, certKey }
         } finally {
@@ -1050,7 +1054,7 @@ class AutomationEngine {
             onLog('info', `Joining additional Master node ${i + 1}: ${node.ip}`)
             try {
                 // Use join-master.sh with certKey for control plane join
-                await this.executeScript(ssh, masterScriptPath, [joinCommand, certKey], onLog)
+                await this.executeScript(ssh, masterScriptPath, installation.controlPlaneVip ? [joinCommand, certKey, installation.controlPlaneVip, node.ip] : [joinCommand, certKey], onLog)
                 onLog('success', `✓ Master node ${i + 1} (${node.ip}) joined control plane`)
             } finally {
                 ssh.dispose()
@@ -1566,7 +1570,7 @@ class AutomationEngine {
                     }))
                 ],
                 nodeCount: cluster.masterNodes.length + (cluster.workerNodes?.length || 0),
-                endpoint: `https://${cluster.masterNodes[0].ip}:6443`,
+                endpoint: `https://${cluster.controlPlaneVip || cluster.masterNodes[0].ip}:6443`,
                 simulationMode: false
             }
 

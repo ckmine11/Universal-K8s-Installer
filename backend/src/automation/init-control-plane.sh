@@ -8,10 +8,13 @@ set -e
 MASTER_IP=${1:-""}
 POD_NETWORK_CIDR=${2:-"10.244.0.0/16"}
 K8S_VERSION=${3:-"1.28.0"}
+# Optional: a free IP on the control-plane network that floats between the
+# control-planes (kube-vip). Without it the API endpoint is this node's IP.
+VIP=${4:-""}
 
 if [ -z "$MASTER_IP" ]; then
     echo "Error: Master IP address is required"
-    echo "Usage: $0 <master-ip> [pod-network-cidr] [k8s-version]"
+    echo "Usage: $0 <master-ip> [pod-network-cidr] [k8s-version] [control-plane-vip]"
     exit 1
 fi
 
@@ -27,12 +30,108 @@ if [ -n "$DETECTED_VER" ]; then
     K8S_VERSION="$DETECTED_VER"
 fi
 
+# kube-vip: a floating virtual IP (VIP) for the Kubernetes API, held by one
+# healthy control-plane at a time (ARP + leader election). Runs as a static pod.
+# write_kube_vip <vip> <node-ip> <kubeconfig-on-host>
+KUBE_VIP_IMAGE="ghcr.io/kube-vip/kube-vip:v1.2.4"
+write_kube_vip() {
+    local vip="$1" node_ip="$2" kubeconfig="$3" iface
+    iface=$(ip -o -4 addr show | awk -v ip="$node_ip" '{split($4, a, "/"); if (a[1] == ip) {print $2; exit}}')
+    if [ -z "$iface" ]; then
+        echo "KUBEEZ_FAIL|VIP_NO_INTERFACE|No network interface on this node has the address $node_ip.|Use the node's own LAN address for this control-plane."
+        exit 1
+    fi
+    echo "kube-vip: VIP $vip on interface $iface (node $node_ip)"
+    crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock pull "$KUBE_VIP_IMAGE" >/dev/null 2>&1 \
+        || ctr -n k8s.io images pull "$KUBE_VIP_IMAGE" >/dev/null 2>&1 \
+        || echo "warning: could not pre-pull $KUBE_VIP_IMAGE — the kubelet will try again"
+    mkdir -p /etc/kubernetes/manifests
+    cat > /etc/kubernetes/manifests/kube-vip.yaml <<KVEOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-vip
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/managed-by: kubeez
+spec:
+  containers:
+  - args:
+    - manager
+    env:
+    - name: vip_arp
+      value: "true"
+    - name: port
+      value: "6443"
+    - name: vip_nodename
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+    - name: vip_interface
+      value: $iface
+    - name: vip_subnet
+      value: "32"
+    - name: dns_mode
+      value: first
+    - name: cp_enable
+      value: "true"
+    - name: cp_namespace
+      value: kube-system
+    - name: vip_leaderelection
+      value: "true"
+    - name: vip_leasename
+      value: plndr-cp-lock
+    - name: vip_leaseduration
+      value: "15"
+    - name: vip_renewdeadline
+      value: "10"
+    - name: vip_retryperiod
+      value: "2"
+    - name: address
+      value: "$vip"
+    image: $KUBE_VIP_IMAGE
+    imagePullPolicy: IfNotPresent
+    name: kube-vip
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
+        - NET_RAW
+        drop:
+        - ALL
+    volumeMounts:
+    - mountPath: /etc/kubernetes/admin.conf
+      name: kubeconfig
+  hostAliases:
+  - hostnames:
+    - kubernetes
+    ip: 127.0.0.1
+  hostNetwork: true
+  priorityClassName: system-node-critical
+  volumes:
+  - hostPath:
+      path: $kubeconfig
+    name: kubeconfig
+KVEOF
+    chmod 600 /etc/kubernetes/manifests/kube-vip.yaml
+}
+
+ENDPOINT="$MASTER_IP"
+if [ -n "$VIP" ]; then
+    if [ "$VIP" = "$MASTER_IP" ]; then
+        echo "KUBEEZ_FAIL|VIP_IS_NODE|The virtual IP $VIP is this node's own address.|Pick a free address on the same network that no machine uses."
+        exit 1
+    fi
+    ENDPOINT="$VIP"
+fi
+
 echo "========================================="
 echo "Initializing Kubernetes Control Plane"
 echo "========================================="
 echo "Master IP: $MASTER_IP"
 echo "Pod Network CIDR: $POD_NETWORK_CIDR"
 echo "Kubernetes Version: v$K8S_VERSION"
+[ -n "$VIP" ] && echo "API endpoint (VIP): $VIP:6443"
 echo "========================================="
 
 # 1. Smart Check: Is this node already an initialized Control Plane?
@@ -56,6 +155,25 @@ else
     iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
 
     systemctl start containerd
+
+    if [ -n "$VIP" ]; then
+        # A previous attempt's kube-vip may have left the VIP on this node
+        ip -o -4 addr show | awk -v v="$VIP" '{split($4, a, "/"); if (a[1] == v) print $2}' | while read -r dev; do
+            ip addr del "$VIP/32" dev "$dev" 2>/dev/null || true
+        done
+        # The VIP must be free before kube-vip claims it
+        if ping -c 1 -W 1 "$VIP" >/dev/null 2>&1; then
+            echo "KUBEEZ_FAIL|VIP_IN_USE|The virtual IP $VIP already answers on the network.|Pick a free address on the control-plane network (not a node, not in a DHCP range)."
+            exit 1
+        fi
+        # From 1.29, admin.conf only gets its rights after init — kube-vip uses
+        # super-admin.conf until then, and admin.conf afterwards.
+        if [ "$(echo "$K8S_VERSION" | cut -d. -f2)" -ge 29 ]; then
+            write_kube_vip "$VIP" "$MASTER_IP" /etc/kubernetes/super-admin.conf
+        else
+            write_kube_vip "$VIP" "$MASTER_IP" /etc/kubernetes/admin.conf
+        fi
+    fi
 fi
 
 # 2. Pick the kubeadm config API for the INSTALLED kubeadm:
@@ -93,7 +211,11 @@ nodeRegistration:
 apiVersion: $KUBEADM_API_VERSION
 kind: ClusterConfiguration
 kubernetesVersion: v$K8S_VERSION
-controlPlaneEndpoint: "$MASTER_IP:6443"
+controlPlaneEndpoint: "$ENDPOINT:6443"
+apiServer:
+  certSANs:
+  - "$MASTER_IP"
+  - "$ENDPOINT"
 networking:
   podSubnet: $POD_NETWORK_CIDR
 etcd:
@@ -118,6 +240,8 @@ else
     # FIX: Check for Legacy Kernel (Kernel < 4.x) and ignore SystemVerification globally
     KERNEL_MAJOR=$(uname -r | cut -d. -f1)
     IGNORE_FLAGS="--ignore-preflight-errors=NumCPU,Mem"
+    # kube-vip's static pod is already in the manifests folder
+    [ -n "$VIP" ] && IGNORE_FLAGS="${IGNORE_FLAGS},DirAvailable--etc-kubernetes-manifests"
     if [ "$KERNEL_MAJOR" -lt 4 ]; then
         echo "⚠️ Warning: Legacy Kernel detected ($(uname -r)). Bypassing SystemVerification check."
         IGNORE_FLAGS="${IGNORE_FLAGS},SystemVerification"
@@ -125,6 +249,11 @@ else
 
     # Removed FileContent--proc-sys-net-bridge-bridge-nf-call-iptables from ignore list as we settled it in system prep
     kubeadm init --config /tmp/kubeadm-config.yaml --upload-certs $IGNORE_FLAGS
+
+    # Back from super-admin.conf to admin.conf (has its rights now)
+    if [ -n "$VIP" ] && grep -q super-admin.conf /etc/kubernetes/manifests/kube-vip.yaml 2>/dev/null; then
+        sed -i 's#path: /etc/kubernetes/super-admin.conf#path: /etc/kubernetes/admin.conf#' /etc/kubernetes/manifests/kube-vip.yaml
+    fi
 fi
 
 # 4. Setup kubeconfig

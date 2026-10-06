@@ -67,7 +67,8 @@ export const PERMISSIONS = {
     'team:view':         ['admin'],
     'team:manage':       ['admin'],   // invite / remove / change roles / reset passwords
     'billing:manage':    ['admin'],
-    'backup:manage':     ['admin']
+    'backup:manage':     ['admin'],
+    'alerts:manage':     ['admin']
 }
 
 // Human-readable grouping for the transparency matrix shown in the UI
@@ -94,7 +95,8 @@ export const PERMISSION_GROUPS = [
     { group: 'Workspace', items: [
         { key: 'team:manage',    label: 'Manage team & roles' },
         { key: 'billing:manage', label: 'Manage billing & plan' },
-        { key: 'backup:manage',  label: 'Manage config backups' }
+        { key: 'backup:manage',  label: 'Manage config backups' },
+        { key: 'alerts:manage',  label: 'Manage alert channels' }
     ]}
 ]
 

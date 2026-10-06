@@ -11,13 +11,13 @@ const FEATURE_GROUPS = [
         group: 'Deploy', features: [
             { Icon: Zap, color: 'text-amber-400', title: 'One-click clusters', desc: 'Guided wizard with pre-flight checks and live logs. Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, Amazon Linux (CentOS 7 up to 1.34) · Flannel or Calico.' },
             { Icon: ArrowUpCircle, color: 'text-emerald-400', title: 'Safe upgrades', desc: 'Kubernetes 1.27 → 1.37, one version at a time. Upgrade safety check finds blockers first, automatic etcd snapshot, clear failure reasons, auto-retry.' },
-            { Icon: RotateCcw, color: 'text-sky-400', title: 'Resume, not restart', desc: 'If an install stops, resume it — finished steps are skipped. Scale out by adding workers any time.' }
+            { Icon: RotateCcw, color: 'text-sky-400', title: 'Resume, not restart', desc: 'If an install stops, resume it — finished steps are skipped. Scale out any time; HA control-planes share a floating virtual IP (kube-vip).' }
         ]
     },
     {
         group: 'Operate', features: [
             { Icon: Puzzle, color: 'text-fuchsia-400', title: 'Add-ons, managed', desc: 'Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage, Velero, KubeEZ Explorer — install, repair, reinstall, uninstall and read logs from the UI.' },
-            { Icon: HeartPulse, color: 'text-rose-400', title: 'Auto-healing', desc: 'Detects NotReady nodes, disk/memory pressure and crash-looping pods, and fixes what it safely can.' },
+            { Icon: HeartPulse, color: 'text-rose-400', title: 'Auto-healing', desc: 'Detects NotReady nodes, disk/memory pressure and crash-looping pods, fixes what it safely can — and alerts you on Telegram, Slack, Teams, WhatsApp or email.' },
             { Icon: TerminalSquare, color: 'text-blue-400', title: 'Terminal & live health', desc: 'Browser terminal, live CPU / memory / disk and a 3D topology of every node.' },
             { Icon: Compass, color: 'text-cyan-400', title: 'KubeEZ Explorer', desc: 'Every resource, logs, timeline, Helm, GitOps and a 31-check audit inside KubeEZ — your login, your RBAC, no open ports.' }
         ]

@@ -142,8 +142,8 @@ class VolumeBackupService {
         if (!['missing', 'copy', 'replace'].includes(mode)) throw bad('Invalid restore mode')
         if (mode !== 'missing' && !namespaces.length) throw bad('Choose the namespaces to copy or replace.')
         if (mode === 'replace' && namespaces.some(n => /^(kube-|velero$|default$)/.test(n))) throw bad('System namespaces (kube-*, default, velero) cannot be replaced.')
-        const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(4, 12)
-        const name = `${backup.slice(0, 40)}-r${stamp}`.replace(/-+$/, '')
+        const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(4, 14)
+        const name = `${backup.slice(0, 40)}-r${stamp}${Math.random().toString(36).slice(2, 5)}`
         return this._ssh(cluster, async (ssh) => {
             if (mode === 'replace') {
                 const d = await run(ssh, `${KB} delete ns ${namespaces.join(' ')} --ignore-not-found --wait=true --timeout=300s 2>&1`)

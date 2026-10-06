@@ -1,0 +1,231 @@
+import { useState, useEffect } from 'react'
+import { apiFetch } from '../context/AuthContext'
+import {
+    Bell, Send, MessageCircle, Mail, Webhook, Hash, Users, Plus, Trash2, Loader2, CheckCircle2,
+    XCircle, X, Moon, Clock, History, Pencil, AlertTriangle, Power
+} from 'lucide-react'
+
+// Alert channels + rules for the workspace (Workspace Settings → Alerts)
+
+const TYPE_META = {
+    telegram: { Icon: Send, color: 'text-sky-300', help: 'Create a bot with @BotFather, add it to your group/channel, then use the chat ID (e.g. -1001234567890 or @yourchannel).' },
+    slack: { Icon: Hash, color: 'text-fuchsia-300', help: 'Slack → Apps → Incoming Webhooks → Add to a channel → copy the webhook URL.' },
+    teams: { Icon: Users, color: 'text-indigo-300', help: 'Teams channel → Workflows → "Post to a channel when a webhook request is received" → copy the URL.' },
+    whatsapp: { Icon: MessageCircle, color: 'text-emerald-300', help: 'Uses Twilio\'s WhatsApp API: Account SID + Auth Token from the Twilio console, your Twilio WhatsApp number as From. Messages outside a 24-hour conversation need an approved template on Twilio.' },
+    email: { Icon: Mail, color: 'text-amber-300', help: 'Sent through the server\'s SMTP settings. Up to 10 addresses, comma-separated.' },
+    webhook: { Icon: Webhook, color: 'text-slate-300', help: 'KubeEZ POSTs a JSON event (type, severity, title, text, cluster, link) to this HTTPS URL — for PagerDuty, Opsgenie, n8n, your own tools.' }
+}
+const FIELD_LABEL = { botToken: 'Bot token', chatId: 'Chat ID', webhookUrl: 'Webhook URL', accountSid: 'Account SID', authToken: 'Auth token', from: 'From (WhatsApp number)', to: 'To', url: 'URL' }
+const FIELD_HINT = { to: { whatsapp: '+919812345678', email: 'ops@company.com, oncall@company.com' }, from: { whatsapp: '+14155238886' }, chatId: { telegram: '-1001234567890' } }
+const SEV = { critical: 'text-red-300', warning: 'text-amber-300', success: 'text-emerald-300', info: 'text-sky-300' }
+const input = 'w-full bg-black/40 border border-white/10 focus:border-blue-500/50 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 outline-none'
+const fmt = (iso) => iso ? new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+
+export default function AlertsPanel() {
+    const [data, setData] = useState(null)
+    const [error, setError] = useState(null)
+    const [form, setForm] = useState(null)          // { id?, type, name, config, enabled }
+    const [busy, setBusy] = useState(null)
+    const [notice, setNotice] = useState(null)
+    const [rules, setRules] = useState(null)
+
+    const load = async () => {
+        try {
+            const r = await apiFetch('/api/notifications')
+            const j = await r.json().catch(() => ({}))
+            if (!r.ok) throw new Error(j.error || 'Could not load alerts')
+            setData(j); setRules(j.rules)
+        } catch (e) { setError(e.message) }
+    }
+    useEffect(() => { load() }, [])
+
+    const call = async (key, method, path, body, ok) => {
+        setBusy(key); setNotice(null)
+        try {
+            const r = await apiFetch(path, { method, body: body ? JSON.stringify(body) : undefined })
+            const j = await r.json().catch(() => ({}))
+            if (!r.ok || j.ok === false) throw new Error(j.error || 'Request failed')
+            if (ok) setNotice({ ok: true, msg: ok })
+            await load()
+            return true
+        } catch (e) { setNotice({ ok: false, msg: e.message }); return false } finally { setBusy(null) }
+    }
+
+    const saveForm = async () => {
+        const body = { type: form.type, name: form.name, config: form.config, enabled: form.enabled }
+        const done = form.id
+            ? await call('save', 'PUT', `/api/notifications/channels/${form.id}`, body, 'Channel saved.')
+            : await call('save', 'POST', '/api/notifications/channels', body, 'Channel added — send a test to check it.')
+        if (done) setForm(null)
+    }
+
+    if (error) return <div className="glass rounded-2xl border border-white/8 p-6 text-sm text-red-300">{error}</div>
+    if (!data) return <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
+
+    return (
+        <div className="space-y-6">
+            <div className="glass rounded-2xl border border-white/8 p-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20"><Bell className="w-5 h-5 text-blue-400" /></div>
+                        <div>
+                            <h3 className="text-lg font-black text-white">Alert channels</h3>
+                            <p className="text-xs text-slate-500">Where KubeEZ tells your team about incidents, failed backups, upgrades and offline agents</p>
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 justify-end">
+                        {Object.entries(data.types).map(([k, t]) => {
+                            const M = TYPE_META[k]
+                            return (
+                                <button key={k} onClick={() => setForm({ type: k, name: t.label, config: {}, enabled: true })}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] font-bold text-slate-200">
+                                    <Plus className="w-3 h-3" /><M.Icon className={`w-3.5 h-3.5 ${M.color}`} /> {t.label}
+                                </button>
+                            )
+                        })}
+                    </div>
+                </div>
+
+                {notice && (
+                    <div className={`mb-4 flex items-start gap-2 rounded-xl p-3 text-xs ${notice.ok ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border border-red-500/20 text-red-300'}`}>
+                        {notice.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}<span className="flex-1">{notice.msg}</span>
+                        <button onClick={() => setNotice(null)} aria-label="Dismiss"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                )}
+                {!data.linksConfigured && <p className="mb-3 text-[11px] text-slate-500">Tip: set KUBEEZ_PUBLIC_URL on the server so alerts link straight to the cluster in KubeEZ.</p>}
+
+                {!data.channels.length ? (
+                    <div className="py-10 text-center rounded-xl border border-dashed border-white/10">
+                        <Bell className="w-9 h-9 text-slate-700 mx-auto mb-2" />
+                        <p className="text-sm text-slate-400">No alert channels yet.</p>
+                        <p className="text-xs text-slate-600 mt-1">Add Telegram, Slack, Teams, WhatsApp, email or a webhook above.</p>
+                    </div>
+                ) : (
+                    <div className="grid md:grid-cols-2 gap-3">
+                        {data.channels.map(c => {
+                            const M = TYPE_META[c.type] || TYPE_META.webhook
+                            return (
+                                <div key={c.id} className={`rounded-xl border p-3.5 ${c.enabled ? 'border-white/10 bg-white/[0.02]' : 'border-white/5 bg-white/[0.01] opacity-60'}`}>
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="p-2 rounded-lg bg-black/30 border border-white/5"><M.Icon className={`w-4 h-4 ${M.color}`} /></div>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-bold text-white truncate">{c.name}</p>
+                                                <p className="text-[11px] text-slate-500 truncate">{data.types[c.type]?.label} · {Object.values(c.config).filter(Boolean).slice(0, 2).join(' · ')}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-1 shrink-0">
+                                            <button onClick={() => call(`test-${c.id}`, 'POST', `/api/notifications/channels/${c.id}/test`, null, `Test sent to ${c.name}.`)} disabled={busy === `test-${c.id}`}
+                                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold disabled:opacity-50">
+                                                {busy === `test-${c.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Test
+                                            </button>
+                                            <button onClick={() => setForm({ id: c.id, type: c.type, name: c.name, config: Object.fromEntries(Object.entries(c.config).map(([k, v]) => [k, data.types[c.type].secret.includes(k) ? '' : v])), enabled: c.enabled })}
+                                                aria-label="Edit" className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5"><Pencil className="w-3 h-3" /></button>
+                                            <button onClick={() => call(`tog-${c.id}`, 'PUT', `/api/notifications/channels/${c.id}`, { enabled: !c.enabled })}
+                                                aria-label={c.enabled ? 'Pause' : 'Resume'} className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5"><Power className="w-3 h-3" /></button>
+                                            <button onClick={() => { if (window.confirm(`Delete ${c.name}?`)) call(`del-${c.id}`, 'DELETE', `/api/notifications/channels/${c.id}`) }}
+                                                aria-label="Delete" className="p-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-red-300 hover:bg-red-500/10"><Trash2 className="w-3 h-3" /></button>
+                                        </div>
+                                    </div>
+                                    {c.lastResult && (
+                                        <p className={`mt-2 text-[10px] ${c.lastResult.ok ? 'text-emerald-300' : 'text-red-300'}`}>
+                                            {c.lastResult.ok ? '✓ Last delivery worked' : `✗ Last delivery failed: ${c.lastResult.error}`} · {fmt(c.lastResult.at)}
+                                        </p>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Rules */}
+            {rules && (
+                <div className="glass rounded-2xl border border-white/8 p-6">
+                    <h3 className="text-lg font-black text-white mb-1">What to alert on</h3>
+                    <p className="text-xs text-slate-500 mb-4">Applies to every channel of the workspace.</p>
+                    <div className="grid md:grid-cols-2 gap-2 mb-5">
+                        {Object.entries(data.events).map(([k, label]) => (
+                            <label key={k} className="flex items-center gap-2.5 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-xs text-slate-300 cursor-pointer">
+                                <input type="checkbox" checked={!!rules.events[k]} onChange={e => setRules(r => ({ ...r, events: { ...r.events, [k]: e.target.checked } }))} /> {label}
+                            </label>
+                        ))}
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
+                            <label className="flex items-center gap-2 text-sm font-bold text-white mb-2 cursor-pointer">
+                                <input type="checkbox" checked={rules.quietHours.enabled} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, enabled: e.target.checked } }))} />
+                                <Moon className="w-4 h-4 text-indigo-300" /> Quiet hours
+                            </label>
+                            <p className="text-[11px] text-slate-500 mb-2">Only critical alerts (node down, failures) during these hours.</p>
+                            <div className="flex items-center gap-2 text-xs text-slate-300">
+                                <input type="time" aria-label="Quiet hours start" value={rules.quietHours.start} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, start: e.target.value } }))} className={`${input} !py-1.5 !w-28`} />
+                                to
+                                <input type="time" aria-label="Quiet hours end" value={rules.quietHours.end} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, end: e.target.value } }))} className={`${input} !py-1.5 !w-28`} />
+                                <input aria-label="Time zone" value={rules.quietHours.timezone} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, timezone: e.target.value } }))} className={`${input} !py-1.5`} />
+                            </div>
+                        </div>
+                        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
+                            <p className="flex items-center gap-2 text-sm font-bold text-white mb-2"><Clock className="w-4 h-4 text-amber-300" /> Don't repeat the same alert for</p>
+                            <div className="flex items-center gap-2 text-xs text-slate-300">
+                                <input type="number" min="0" max="1440" aria-label="Cooldown minutes" value={rules.cooldownMinutes} onChange={e => setRules(r => ({ ...r, cooldownMinutes: e.target.value }))} className={`${input} !py-1.5 !w-24`} /> minutes
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex justify-end mt-4">
+                        <button onClick={() => call('rules', 'PUT', '/api/notifications/rules', rules, 'Alert rules saved.')} disabled={busy === 'rules'}
+                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black disabled:opacity-50">
+                            {busy === 'rules' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Save rules
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* History */}
+            <div className="glass rounded-2xl border border-white/8 p-6">
+                <h3 className="flex items-center gap-2 text-lg font-black text-white mb-3"><History className="w-5 h-5 text-slate-400" /> Recent alerts</h3>
+                {!data.history.length ? <p className="text-xs text-slate-500">Nothing sent yet.</p> : (
+                    <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                        {data.history.map((h, i) => (
+                            <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.02] border border-white/5 px-3 py-2 text-[11px]">
+                                <span className="min-w-0 truncate"><span className={SEV[h.severity] || 'text-slate-300'}>●</span> <span className="text-white">{h.title}</span>{h.clusterName ? <span className="text-slate-500"> · {h.clusterName}</span> : null}</span>
+                                <span className={`shrink-0 ${h.failures?.length ? 'text-red-300' : 'text-slate-500'}`}>{h.outcome} · {fmt(h.at)}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Add / edit dialog */}
+            {form && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="glass border border-white/10 rounded-3xl max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
+                        <button onClick={() => setForm(null)} aria-label="Close" className="absolute top-5 right-5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                        {(() => { const M = TYPE_META[form.type]; return <h2 className="flex items-center gap-2 text-lg font-black text-white mb-1"><M.Icon className={`w-5 h-5 ${M.color}`} /> {form.id ? 'Edit' : 'Add'} {data.types[form.type].label}</h2> })()}
+                        <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">{TYPE_META[form.type].help}</p>
+                        {form.type === 'email' && !data.emailConfigured && <p className="mb-3 text-[11px] text-amber-300">The server has no SMTP settings yet — email alerts will fail until SMTP_HOST / SMTP_USER / SMTP_PASS are set.</p>}
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1" htmlFor="ch-name">Name</label>
+                        <input id="ch-name" className={`${input} mb-3`} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+                        {data.types[form.type].fields.map(k => {
+                            const secret = data.types[form.type].secret.includes(k)
+                            return (
+                                <div key={k} className="mb-3">
+                                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1" htmlFor={`ch-${k}`}>{FIELD_LABEL[k] || k}</label>
+                                    <input id={`ch-${k}`} type={secret ? 'password' : 'text'} autoComplete="off" className={input}
+                                        placeholder={secret && form.id ? 'unchanged' : (FIELD_HINT[k]?.[form.type] || '')}
+                                        value={form.config[k] || ''} onChange={e => setForm(f => ({ ...f, config: { ...f.config, [k]: e.target.value } }))} />
+                                </div>
+                            )
+                        })}
+                        <div className="flex justify-end gap-2 mt-2">
+                            <button onClick={() => setForm(null)} className="px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold">Cancel</button>
+                            <button onClick={saveForm} disabled={busy === 'save'} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black disabled:opacity-50">
+                                {busy === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}

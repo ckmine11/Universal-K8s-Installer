@@ -43,7 +43,16 @@ SNAP="${BK_DIR}/${SNAP_NAME}"
 MANIFESTS="/etc/kubernetes/manifests"
 HELD="/etc/kubernetes/manifests-held"
 TOOL=/usr/local/sbin/kubeez-etcd-backup
-KC=/etc/kubernetes/admin.conf
+KC=/root/.kubeez-local.conf
+
+# The API on THIS machine, not the cluster endpoint: with a virtual IP
+# (kube-vip) the VIP can be on another control-plane, or nowhere while etcd is
+# stopped — checks must not fail (or roll back) because of that.
+local_kc() {
+    [ -f /etc/kubernetes/admin.conf ] || return 0
+    awk '/^ *server: /{match($0, /^ */); i = substr($0, 1, RLENGTH); print i "server: https://127.0.0.1:6443"; print i "tls-server-name: kubernetes"; next} {print}'         /etc/kubernetes/admin.conf > /root/.kubeez-local.conf 2>/dev/null && chmod 600 /root/.kubeez-local.conf
+}
+local_kc
 TS=$(date +%s)
 PRE="/var/lib/etcd-prerestore-${TS}"
 
@@ -138,7 +147,7 @@ stop_cp() {      # 0 = stopped
     [ -z "$(running_cp)" ]
 }
 
-api_ready() { [ "$(KUBECONFIG=$KC kubectl get --raw='/readyz' --request-timeout=5s 2>/dev/null)" = "ok" ]; }
+api_ready() { local_kc; [ "$(KUBECONFIG=$KC kubectl get --raw='/readyz' --request-timeout=5s 2>/dev/null)" = "ok" ]; }
 wait_api() {     # $1 = seconds (a real deadline, however long each check takes)
     local end=$(( SECONDS + $1 ))
     while [ $SECONDS -lt $end ]; do api_ready && return 0; sleep 5; done

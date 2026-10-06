@@ -5,6 +5,14 @@ import { automationEngine } from './automationEngine.js'
 import { remediationEngine } from './remediationEngine.js'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomic } from '../utils/atomicWrite.js'
+import { notifier } from './notifier.js'
+
+// Alert wording (same names as the UI)
+const ALERT_LABEL = {
+    NodeNotReady: 'Node down', DiskPressure: 'Disk pressure', MemoryPressure: 'Memory pressure', PIDPressure: 'Process pressure',
+    CrashLoopBackOff: 'Pod crash loop', ImagePullBackOff: 'Image pull failed', OOMKilled: 'Out of memory', PodPendingTooLong: 'Pod stuck pending'
+}
+const alertTarget = (inc) => inc.namespace ? `${inc.namespace}/${inc.target}` : inc.target
 
 const NODE_POLL_INTERVAL  = 60 * 1000       // 60s — node conditions
 const POD_POLL_INTERVAL   = 90 * 1000       // 90s — pod states
@@ -231,6 +239,11 @@ class IncidentDetector {
             inc.details = 'No longer detected — the problem went away'
             inc.updatedAt = new Date().toISOString()
             changed = true
+            notifier.emit(inc.orgId, {
+                type: 'incident_resolved', severity: 'success', key: `resolved|${inc._key}`,
+                title: `Cleared: ${ALERT_LABEL[inc.reason] || inc.reason} — ${alertTarget(inc)}`,
+                text: 'The problem is no longer detected.', clusterId: inc.clusterId, clusterName: inc.clusterName, link: '/incidents'
+            })
         }
         if (changed) this._save()
     }
@@ -278,6 +291,11 @@ class IncidentDetector {
         }
 
         console.log(`[AutoHealing] Incident — [${reason}] target=${target} cluster=${cname(cluster)}`)
+        notifier.emit(cluster.orgId, {
+            type: 'incident', severity: reason === 'NodeNotReady' ? 'critical' : 'warning', key: `incident|${key}`,
+            title: `${ALERT_LABEL[reason] || reason} — ${alertTarget(incident)}`,
+            text: message || '', clusterId: cluster.id, clusterName: cname(cluster), link: '/incidents'
+        })
 
         this.incidents.unshift(incident)
         this.incidents = this.incidents

@@ -27,6 +27,7 @@ import stripeRoutes from './routes/stripe.js'
 import { agentService } from './services/agentService.js'
 import superadminRoutes from './routes/superadmin.js'
 import offsiteRoutes from './routes/offsite.js'
+import notificationsRoutes from './routes/notifications.js'
 import { canAccessResource } from './utils/access.js'
 import { clusterStore } from './services/clusterStore.js'
 import { can } from './config/permissions.js'
@@ -240,6 +241,7 @@ app.use('/api/billing', billingRoutes)
 app.use('/api/incidents', incidentsRoutes)
 app.use('/api/superadmin', superadminRoutes)
 app.use('/api/offsite', offsiteRoutes)
+app.use('/api/notifications', requireAuth, notificationsRoutes)
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 

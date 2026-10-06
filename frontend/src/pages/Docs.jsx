@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import {
+import { Bell,
     BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
     Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse,
     LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass
@@ -116,6 +116,7 @@ const NAV = [
     ] },
     { title: 'Operations', items: [
         { id: 'healing', label: 'Auto-Healing & Incidents' },
+        { id: 'alerts', label: 'Alerts' },
         { id: 'roles', label: 'Teams & Roles' },
         { id: 'plans', label: 'Plans' },
         { id: 'troubleshooting', label: 'Troubleshooting' }
@@ -255,9 +256,11 @@ export default function Docs() {
                             <>Click <b>Deploy New Cluster</b> on the dashboard.</>,
                             'Add the control-plane and worker nodes (IP + SSH user/password or key; in SaaS mode the Gateway Agent must be online).',
                             'Pick the Kubernetes version (1.27 – 1.37; 1.35 / 1.36 / 1.37 receive upstream security fixes), the network plugin (Flannel or Calico) and any add-ons.',
+                            <>High availability: with 2 or more control-planes, enter a <b>virtual IP</b> — a free address on their network. KubeEZ runs <b>kube-vip</b> on every control-plane; one holds the IP and another takes it over within seconds if that machine dies. kubectl, workers and KubeEZ use the virtual IP.</>,
                             'Pre-flight checks verify connectivity, OS, CPU, memory and ports before anything is installed.',
                             'Start. Every step streams a live log with a progress bar. On a failure you see the reason and the fix, with Auto-Fix & Resume where possible.'
                         ]} />
+                        <Note>Use 3 control-planes for real HA: etcd needs a majority, so 2 of 3 must be up (with 2 control-planes, losing either one stops the API). The virtual IP must be unused and outside your DHCP range; all control-planes must be in the same network (layer 2). Without a virtual IP the API address is the first control-plane&apos;s IP.</Note>
                     </Section>
 
                     <Section id="cluster-page" Icon={LayoutGrid} color="text-sky-400" title="The Cluster Page"
@@ -434,6 +437,28 @@ export default function Docs() {
                             ['Out of memory, image pull failure, pod stuck Pending', 'Explains the cause (limits, image name / pull secret, resources or taints) — these need your decision.']
                         ]} />
                         <P>A problem that keeps happening stays <b className="text-white">one</b> incident (&quot;seen 12×&quot;); a fix is retried at most 3 times. When the problem goes away it is marked <b className="text-white">Cleared</b>. Incidents are kept 24 hours and survive a KubeEZ restart. If a cluster can&apos;t be reached, the page says so instead of showing &quot;all healthy&quot;.</P>
+                    </Section>
+
+                    <Section id="alerts" Icon={Bell} color="text-amber-400" title="Alerts"
+                        intro="Get told when something needs you — on Telegram, Slack, Microsoft Teams, WhatsApp, email or your own webhook. Settings → Alerts (workspace admins).">
+                        <Table head={['Channel', 'What you need']} rows={[
+                            ['Telegram', <>A bot from <b>@BotFather</b> (its token) and the chat ID — add the bot to the group first.</>],
+                            ['Slack', <>An <b>Incoming Webhook</b> URL (<C>https://hooks.slack.com/…</C>).</>],
+                            ['Microsoft Teams', <>A <b>Workflows</b> webhook: in the channel, ⋯ → Workflows → &quot;Post to a channel when a webhook request is received&quot;.</>],
+                            ['WhatsApp', 'A Twilio account: Account SID, Auth Token, the WhatsApp sender and the number to alert.'],
+                            ['Email', 'One or more addresses — sent with the server’s SMTP settings.'],
+                            ['Webhook', 'Any URL: KubeEZ POSTs a JSON event (type, severity, cluster, title, text, link).']
+                        ]} />
+                        <Table head={['Alert', 'When']} rows={[
+                            ['Incident / resolved', 'Auto-healing finds a problem (node down is critical) and when it is gone.'],
+                            ['Backup failed', 'An etcd snapshot or its offsite copy failed.'],
+                            ['Restore / recovery finished', 'An etcd restore or disaster recovery finished — or failed.'],
+                            ['Upgrade finished / failed', 'A Kubernetes upgrade completed or stopped.'],
+                            ['Install failed', 'An install, scale or add-on job failed.'],
+                            ['Gateway Agent offline', 'An agent has been disconnected for 5 minutes (and when it is back).']
+                        ]} />
+                        <P>Each channel has a <b className="text-white">Test</b> button and shows its last delivery. Rules: turn single alert types off, <b className="text-white">quiet hours</b> in your time zone (critical alerts still go out) and a <b className="text-white">cooldown</b> so the same alert is not repeated. Tokens and webhook URLs are encrypted and never shown again after saving.</P>
+                        <Note>Set <C>KUBEEZ_PUBLIC_URL</C> on the server so alerts link straight to the cluster. Email needs <C>SMTP_HOST</C>, <C>SMTP_USER</C> and <C>SMTP_PASS</C>. In SaaS mode webhooks must use https and cannot reach private addresses.</Note>
                     </Section>
 
                     <Section id="roles" Icon={Users} color="text-blue-400" title="Teams & Roles"

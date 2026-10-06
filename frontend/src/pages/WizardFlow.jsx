@@ -51,6 +51,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
         networkPlugin: 'flannel',
         masterNodes: [{ ip: '', username: 'root', password: '', sshKey: '', verified: false, verificationResult: null }],
         workerNodes: [],
+        controlPlaneVip: '',
         addons: {
             ingress: true,
             monitoring: false,
@@ -196,6 +197,15 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
         setShowPasswords(prev => ({ ...prev, [key]: !prev[key] }))
     }
 
+    // The control-plane virtual IP (kube-vip), asked for 2+ control-planes
+    const vipProblem = () => {
+        const vip = (formData.controlPlaneVip || '').trim()
+        if (mode === 'scale' || formData.masterNodes.length < 2 || !vip) return null
+        if (!/^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(vip)) return 'Enter an IPv4 address, e.g. 192.168.1.50'
+        if ([...formData.masterNodes, ...formData.workerNodes].some(n => n.ip.trim() === vip)) return "This is a node's own address — pick a free one"
+        return null
+    }
+
     const canProceedToNextStep = () => {
         if (currentStep === 1) {
             return formData.clusterName.trim() !== ''
@@ -214,7 +224,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                 (node.verificationResult.status === 'ready' || node.verificationResult.status === 'ready-with-warnings')
             )
 
-            return allMastersVerified && allWorkersVerified
+            return allMastersVerified && allWorkersVerified && !vipProblem()
         }
         return true
     }
@@ -271,6 +281,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                 mode: mode,
                 // scaling: existing nodes are sent without passwords — the server uses the stored ones
                 clusterId: mode === 'scale' ? initialData?.id : undefined,
+                controlPlaneVip: mode !== 'scale' && formData.masterNodes.length >= 2 && formData.controlPlaneVip.trim() ? formData.controlPlaneVip.trim() : undefined,
                 masterNodes: sanitizeNodeData(formData.masterNodes),
                 workerNodes: sanitizeNodeData(formData.workerNodes || [])
             }
@@ -849,6 +860,28 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                             </div>
                                         </div>
                                     ))}
+                                    {formData.masterNodes.length >= 2 && (
+                                        <div className="p-6 rounded-[24px] border border-emerald-500/25 bg-emerald-500/5 space-y-3">
+                                            <div className="flex items-start gap-3">
+                                                <Shield className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
+                                                <div className="text-sm text-slate-300 leading-relaxed">
+                                                    <p className="font-semibold text-white">Virtual IP for the API (recommended)</p>
+                                                    <p className="text-xs text-slate-400 mt-1">A free address on the control-planes' network. KubeEZ runs kube-vip on every control-plane: one of them holds this IP, and if it goes down another takes it over within seconds — kubectl, workers and KubeEZ keep working.</p>
+                                                </div>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. 192.168.1.50 — not used by any machine, outside the DHCP range"
+                                                className={`w-full px-5 py-3 rounded-xl bg-black/40 border outline-none placeholder:text-slate-700 ${vipProblem() ? 'border-red-500/60' : 'border-white/10 focus:border-emerald-500'}`}
+                                                value={formData.controlPlaneVip}
+                                                onChange={(e) => setFormData(prev => ({ ...prev, controlPlaneVip: e.target.value }))}
+                                            />
+                                            {vipProblem() && <p className="text-xs text-red-400">{vipProblem()}</p>}
+                                            {!formData.controlPlaneVip.trim() && (
+                                                <p className="text-xs text-amber-400">Without a virtual IP the API address is the first control-plane's IP — if that machine is down, the cluster can't be managed even though the others still run.</p>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

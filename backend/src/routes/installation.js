@@ -9,8 +9,10 @@ import { resumeAnalyzer } from '../services/resumeAnalyzer.js'
 import { addonAccessService } from '../services/addonAccessService.js'
 import { addonManager, ADDON_REGISTRY } from '../services/addonManager.js'
 import { stripCredentials, fillStoredCredentials } from '../services/clusterCredentials.js'
+import { clusterStore } from '../services/clusterStore.js'
 import { etcdBackupService, SNAPSHOT_RE } from '../services/etcdBackupService.js'
 import { etcdJobs } from '../services/etcdJobs.js'
+import { notifier } from '../services/notifier.js'
 import { disasterRecovery } from '../services/disasterRecovery.js'
 import { upgradeReadiness, clusterHealth } from '../services/explorerInsights.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
@@ -109,6 +111,16 @@ function installInputProblem({ clusterName, k8sVersion, networkPlugin, mode }, m
     return null
 }
 
+// The control-plane virtual IP (kube-vip): a free IPv4 address on the
+// control-planes' network, never one of the nodes
+export function vipProblem(vip, masterNodes, workerNodes) {
+    if (vip === undefined || vip === null || vip === '') return null
+    if (typeof vip !== 'string' || net.isIP(vip) !== 4) return 'The virtual IP must be an IPv4 address, e.g. 192.168.1.50'
+    if ([...(masterNodes || []), ...(workerNodes || [])].some(n => n?.ip === vip)) return `The virtual IP ${vip} is a node's own address — pick a free address on the same network`
+    if (/^(127.|0.|169.254.|22[4-9].|23d.|24d.|25[0-5].)/.test(vip)) return 'The virtual IP must be a normal LAN address (not loopback, link-local or multicast)'
+    return null
+}
+
 // Start cluster installation
 router.post('/install', requirePermission('cluster:create'), async (req, res) => {
     try {
@@ -119,6 +131,15 @@ router.post('/install', requirePermission('cluster:create'), async (req, res) =>
         const workerNodes = await fillStoredCredentials(req.user, clusterId, req.body.workerNodes)
         const inputProblem = (masterNodes?.length || mode !== 'scale') ? installInputProblem(req.body, masterNodes, workerNodes) : null
         if (inputProblem) return res.status(400).json({ error: inputProblem })
+        // A scaled cluster keeps its VIP: new control-planes run kube-vip too
+        let controlPlaneVip = req.body.controlPlaneVip || undefined
+        if (mode === 'scale') {
+            const existing = clusterId && (await clusterStore.getClusters()).find(c => c.id === clusterId)
+            controlPlaneVip = existing?.controlPlaneVip
+        } else {
+            const vp = vipProblem(controlPlaneVip, masterNodes, workerNodes)
+            if (vp) return res.status(400).json({ error: vp })
+        }
 
         console.log('Received installation request:', { clusterName, masterNodes: masterNodes?.length, workerNodes: workerNodes?.length, mode })
 
@@ -180,6 +201,7 @@ router.post('/install', requirePermission('cluster:create'), async (req, res) =>
             masterNodes,
             workerNodes,
             addons,
+            controlPlaneVip,
             mode: mode || 'install', // Add mode field (defaults to 'install' if not provided)
             status: 'pending',
             createdAt: new Date().toISOString()
@@ -518,11 +540,35 @@ function confirmedByName(req, res, cluster) {
 }
 
 // Start a background etcd job → 202 { jobId } (or 409 when the cluster is busy)
+// Alert on the outcome of an etcd job (backup failures, restore/recovery results)
+function alertEtcdJob(cluster, kind, ok, detail) {
+    const base = { clusterId: cluster.id, clusterName: cluster.clusterName, link: `/cluster/${cluster.id}?tab=backups` }
+    if (kind === 'backup') {
+        if (!ok) notifier.emit(cluster.orgId, { ...base, type: 'backup_failed', severity: 'critical', title: 'etcd backup failed', text: detail })
+        else if (detail) notifier.emit(cluster.orgId, { ...base, type: 'backup_failed', severity: 'warning', title: 'Offsite upload failed', text: detail })
+    }
+    if (kind === 'restore' || kind === 'recover') {
+        const what = kind === 'restore' ? 'etcd restore' : 'Control-plane recovery'
+        notifier.emit(cluster.orgId, { ...base, type: 'restore_done', severity: ok ? 'success' : 'critical', title: `${what} ${ok ? 'finished' : 'failed'}`, text: detail || '' })
+    }
+}
+
 function startEtcdJob(res, cluster, kind, fn, meta) {
     const busy = clusterBusy(cluster.id)
     if (busy) return res.status(409).json({ error: busy.message, jobId: busy.jobId })
+    const watched = async (ctx) => {
+        try {
+            const result = await fn(ctx)
+            alertEtcdJob(cluster, kind, true, kind === 'backup' ? (result?.offsite && !result.offsite.uploaded ? result.offsite.error : null)
+                : (result?.warnings?.length ? result.warnings.join(' ') : 'The cluster runs on the restored state.'))
+            return result
+        } catch (e) {
+            alertEtcdJob(cluster, kind, false, e.message)
+            throw e
+        }
+    }
     try {
-        const job = etcdJobs.start(cluster.id, kind, fn, meta)
+        const job = etcdJobs.start(cluster.id, kind, watched, meta)
         res.status(202).json({ success: true, jobId: job.id })
     } catch (e) {
         res.status(e.status || 500).json({ error: e.message, jobId: e.jobId })

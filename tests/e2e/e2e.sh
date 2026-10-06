@@ -13,6 +13,7 @@
 #   e2e.sh cluster <master> <worker>...       build a 1.35 cluster and leave it running
 #   e2e.sh restore <master> <worker>...       etcd restore on a multi-node cluster (needs Node)
 #   e2e.sh restore-ha [distro]                etcd restore on an HA cluster: 2 control-planes + 1 worker
+#   e2e.sh ha-vip [distro]                    3 control-planes behind a kube-vip virtual IP: failover when the holder dies
 #   e2e.sh recover [distro]                   control-plane machine lost → rebuilt from the offsite backup
 #   e2e.sh velero [distro]                    volume backups: Velero install, file data backup + restore
 #   e2e.sh explorer [distro]                  KubeEZ Explorer (Radar) behind KubeEZ's proxy: RBAC, checks, uninstall
@@ -201,6 +202,7 @@ cmd_agent() {
 cmd_agent_health() {
     local distro="${1:-ubuntu2204}"
     cmd_cluster "$distro" || return 1
+    docker cp "$AUTOMATION/addons/explorer.sh" "$PREFIX-$distro-cp:/k/" >/dev/null
     local rc
     NODE_CONTAINER="$PREFIX-$distro-cp" node "$E2E/health-check.mjs"
     rc=$?
@@ -261,6 +263,51 @@ cmd_fresh_node() {
     docker network inspect "$NET" >/dev/null 2>&1 || docker network create --subnet "$NET_SUBNET" "$NET" >/dev/null
     image "$2"
     NODE_NET_ARGS="--network $NET --ip $3" start_node "$1" "$2"
+}
+
+# Real HA: 3 control-planes, the API on a virtual IP (kube-vip). The machine
+# holding the VIP is switched off — another one takes the VIP over and the API
+# keeps answering on the same address.
+cmd_ha_vip() {
+    local distro="${1:-ubuntu2204}" vip=172.31.250.100 rc=0
+    local m1="$PREFIX-$distro-cp1" m2="$PREFIX-$distro-cp2" m3="$PREFIX-$distro-cp3"
+    cmd_fresh_node "$m1" "$distro" 172.31.250.21
+    docker exec -e VIP=$vip "$m1" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE|STEP' || return 1
+    local join key; join=$(docker exec "$m1" cat /tmp/kubeadm-join-command.txt); key=$(docker exec "$m1" cat /tmp/kubeadm-cert-key.txt)
+    check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; rc=1; fi; }
+    check "join command uses the virtual IP" "grep -q '$vip:6443' <<< \"$join\""
+    for n in 2 3; do
+        cmd_fresh_node "$PREFIX-$distro-cp$n" "$distro" 172.31.250.2$n
+        docker exec -e VIP=$vip "$PREFIX-$distro-cp$n" bash /k/node-install.sh cpjoin 1.35.0 "$join" "$key" | grep -E 'RESULT|STEP' || return 1
+    done
+    kubectl_on "$m1" "get nodes -o wide"
+    check "kubeadm endpoint is the VIP" "kubectl_on $m1 \"-n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}'\" | grep -q 'controlPlaneEndpoint: $vip:6443'"
+    check "kube-vip runs on all 3 control-planes" "[ $(kubectl_on $m1 '-n kube-system get pods --no-headers' | grep -c '^kube-vip-.* Running') -eq 3 ]"
+    check "admin.conf uses the VIP" "docker exec $m1 grep -q 'server: https://$vip:6443' /etc/kubernetes/admin.conf"
+    check "kube-vip uses admin.conf after init (not super-admin.conf)" "! docker exec $m1 grep -q super-admin /etc/kubernetes/manifests/kube-vip.yaml"
+    local holder
+    holder=$(kubectl_on "$m1" "-n kube-system get lease plndr-cp-lock -o jsonpath='{.spec.holderIdentity}'")
+    echo "VIP holder: $holder"
+    check "the API answers on the VIP" "[ \"$(docker exec $m2 curl -sk --max-time 5 https://$vip:6443/readyz)\" = ok ]"
+    case "$holder" in *cp1) ;; *cp2|*cp3) ;; *) echo "FAIL no VIP holder"; rc=1 ;; esac
+    local ok=no other
+    other=$m1; [ "$holder" = "$m1" ] && other=$m2
+    echo "== switching off the VIP holder $holder"
+    docker stop "$holder" >/dev/null
+    local t0; t0=$(date +%s)
+    for _ in $(seq 1 60); do
+        [ "$(docker exec "$other" curl -sk --max-time 3 https://$vip:6443/readyz 2>/dev/null)" = ok ] && { ok=yes; break; }
+        sleep 2
+    done
+    check "API back on the VIP after the holder died ($(( $(date +%s) - t0 ))s)" "[ $ok = yes ]"
+    local new
+    new=$(docker exec "$other" bash -c "KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n kube-system get lease plndr-cp-lock -o jsonpath='{.spec.holderIdentity}'")
+    check "another control-plane holds the VIP ($new)" "[ -n \"$new\" ] && [ \"$new\" != \"$holder\" ]"
+    check "kubectl through the VIP works on a surviving node" "docker exec $other bash -c 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes' | grep -q Ready"
+    check "local API check (restore scripts) ignores the VIP" "docker exec $other bash -c 'source <(sed -n \"/^local_kc()/,/^}/p\" /k/etcd-member.sh); local_kc; KUBECONFIG=/root/.kubeez-local.conf kubectl get --raw=/readyz --request-timeout=5s' | grep -qx ok"
+    [ -z "${KEEP:-}" ] && cmd_clean
+    [ $rc = 0 ] && echo "ALL PASSED" || echo "SOME CHECKS FAILED"
+    return $rc
 }
 
 # The control-plane MACHINE is lost: a fresh machine with the same IP is
@@ -333,6 +380,7 @@ case "${1:-}" in
     recover) shift; cmd_recover "$@" ;;
     fresh-node) shift; cmd_fresh_node "$@" ;;
     velero)  shift; cmd_velero "$@" ;;
+    ha-vip)  shift; cmd_ha_vip "$@" ;;
     explorer) shift; cmd_explorer "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
     agent)   shift; cmd_agent "$@" ;;

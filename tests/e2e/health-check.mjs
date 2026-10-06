@@ -72,6 +72,44 @@ try {
     await check('c-user', 'health after reconnect (non-root, first)')
     await check('c-root', 'health after reconnect (root)')
 
+    // The KubeEZ Explorer through the agent's TCP relay (tcp-open/data/close):
+    // the page, its API and a live WebSocket, with no SSH port forwarding
+    if (dx('test -f /k/explorer.sh').code === 0) {
+        dx("mkdir -p /etc/kubeez && echo 'KZ_BASE_PATH=/api/clusters/c-root/explorer' > /etc/kubeez/explorer.env")
+        console.log('== installing the KubeEZ Explorer')
+        const inst = dx('bash /k/explorer.sh 2>&1')
+        ok(inst.code === 0, 'Explorer installed' + (inst.code ? ': ' + inst.out.split('\n').slice(-5).join(' | ') : ''))
+        const base = `${URL}/api/clusters/c-root/explorer`
+        const cookie = { cookie: `token=${admin.token}` }
+        let r = await fetch(base + '/', { headers: { ...cookie, accept: 'text/html' } })
+        const html = await r.text()
+        ok(r.status === 200 && /<title>KubeEZ Explorer<\/title>/.test(html), `Explorer page through the agent relay (HTTP ${r.status})`)
+        r = await fetch(base + '/api/rbac/whoami', { headers: cookie })
+        const who = await r.json().catch(() => null)
+        ok(r.status === 200 && Array.isArray(who?.resourceRules), `Explorer API through the agent relay (HTTP ${r.status})`)
+        const many = await Promise.all(Array.from({ length: 8 }, () => fetch(base + '/api/rbac/whoami', { headers: cookie }).then(x => x.status).catch(() => 0)))
+        ok(many.every(c => c === 200), `8 parallel requests through the relay: ${many.join(',')}`)
+        // Live updates (SSE) stay open through the relay
+        const ac = new AbortController()
+        const sse = await fetch(base + '/api/events/stream', { headers: { ...cookie, accept: 'text/event-stream' }, signal: ac.signal }).catch(e => ({ status: 0, e }))
+        let first = ''
+        if (sse.body) { const rd = sse.body.getReader(); const t = setTimeout(() => ac.abort(), 15000); try { const { value } = await rd.read(); first = new TextDecoder().decode(value || new Uint8Array()) } catch { } clearTimeout(t); ac.abort() }
+        ok(sse.status === 200 && first.length > 0, `live updates (SSE) through the relay (HTTP ${sse.status}, ${first.length} bytes)`)
+        // Pod terminal: a WebSocket through KubeEZ → agent → Explorer → kubelet
+        const pod = dx("KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n kube-system get pods -l k8s-app=kube-dns -o jsonpath='{.items[0].metadata.name}'").out
+        const ws = await new Promise((resolve) => {
+            const sock = new WebSocket(`${base.replace('http', 'ws')}/api/pods/kube-system/${pod}/exec?container=coredns&command=/coredns&command=-version`, { headers: cookie })
+            let got = ''
+            const done = (v) => { try { sock.close() } catch { } resolve(v) }
+            sock.onopen = () => { got = 'open' }
+            sock.onmessage = (m) => { got = 'data'; done('data') }
+            sock.onerror = () => done(got || 'error')
+            sock.onclose = () => done(got || 'closed')
+            setTimeout(() => done(got || 'timeout'), 20000)
+        })
+        ok(ws === 'open' || ws === 'data', `pod terminal WebSocket through the relay (${ws})`)
+    }
+
     // Agent offline: health must answer quickly with a reason, not hang
     dx('systemctl stop kubeez-agent')
     for (let i = 0; i < 40 && await status(t.agentId) === 'online'; i++) await sleep(500)

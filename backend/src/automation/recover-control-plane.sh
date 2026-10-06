@@ -23,6 +23,99 @@ KC=/etc/kubernetes/admin.conf
 log()  { echo "[recover] $1"; }
 fail() { echo "KUBEEZ_FAIL|$1|$2|$3"; echo "[recover] ❌ $2"; exit 1; }
 progress() { echo "KUBEEZ_PROGRESS|$1|$2"; }
+# kube-vip: a floating virtual IP (VIP) for the Kubernetes API, held by one
+# healthy control-plane at a time (ARP + leader election). Runs as a static pod.
+# write_kube_vip <vip> <node-ip> <kubeconfig-on-host>
+KUBE_VIP_IMAGE="ghcr.io/kube-vip/kube-vip:v1.2.4"
+write_kube_vip() {
+    local vip="$1" node_ip="$2" kubeconfig="$3" iface
+    iface=$(ip -o -4 addr show | awk -v ip="$node_ip" '{split($4, a, "/"); if (a[1] == ip) {print $2; exit}}')
+    if [ -z "$iface" ]; then
+        echo "KUBEEZ_FAIL|VIP_NO_INTERFACE|No network interface on this node has the address $node_ip.|Use the node's own LAN address for this control-plane."
+        exit 1
+    fi
+    echo "kube-vip: VIP $vip on interface $iface (node $node_ip)"
+    crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock pull "$KUBE_VIP_IMAGE" >/dev/null 2>&1 \
+        || ctr -n k8s.io images pull "$KUBE_VIP_IMAGE" >/dev/null 2>&1 \
+        || echo "warning: could not pre-pull $KUBE_VIP_IMAGE — the kubelet will try again"
+    mkdir -p /etc/kubernetes/manifests
+    cat > /etc/kubernetes/manifests/kube-vip.yaml <<KVEOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-vip
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/managed-by: kubeez
+spec:
+  containers:
+  - args:
+    - manager
+    env:
+    - name: vip_arp
+      value: "true"
+    - name: port
+      value: "6443"
+    - name: vip_nodename
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+    - name: vip_interface
+      value: $iface
+    - name: vip_subnet
+      value: "32"
+    - name: dns_mode
+      value: first
+    - name: cp_enable
+      value: "true"
+    - name: cp_namespace
+      value: kube-system
+    - name: vip_leaderelection
+      value: "true"
+    - name: vip_leasename
+      value: plndr-cp-lock
+    - name: vip_leaseduration
+      value: "15"
+    - name: vip_renewdeadline
+      value: "10"
+    - name: vip_retryperiod
+      value: "2"
+    - name: address
+      value: "$vip"
+    image: $KUBE_VIP_IMAGE
+    imagePullPolicy: IfNotPresent
+    name: kube-vip
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
+        - NET_RAW
+        drop:
+        - ALL
+    volumeMounts:
+    - mountPath: /etc/kubernetes/admin.conf
+      name: kubeconfig
+  hostAliases:
+  - hostnames:
+    - kubernetes
+    ip: 127.0.0.1
+  hostNetwork: true
+  priorityClassName: system-node-critical
+  volumes:
+  - hostPath:
+      path: $kubeconfig
+    name: kubeconfig
+KVEOF
+    chmod 600 /etc/kubernetes/manifests/kube-vip.yaml
+}
+
+# The API on THIS machine, not the cluster endpoint: with a virtual IP
+# (kube-vip) the VIP can be on another control-plane, or nowhere while etcd is
+# stopped — checks must not fail (or roll back) because of that.
+local_kc() {
+    [ -f /etc/kubernetes/admin.conf ] || return 0
+    awk '/^ *server: /{match($0, /^ */); i = substr($0, 1, RLENGTH); print i "server: https://127.0.0.1:6443"; print i "tls-server-name: kubernetes"; next} {print}'         /etc/kubernetes/admin.conf > /root/.kubeez-local.conf 2>/dev/null && chmod 600 /root/.kubeez-local.conf
+}
 
 [[ "$IP" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || fail BAD_INPUT "Missing or invalid node IP" "This is a KubeEZ bug — please report it."
 [ -s "$R/etcd-snapshot.db" ] && [ -f "$R/pki/ca.crt" ] && [ -f "$R/pki/ca.key" ] \
@@ -99,11 +192,21 @@ log "✓ etcd data restored"
 # ── 4. kubeadm builds the control plane around the restored data ─────────────
 progress 50 "Starting the control plane (kubeadm init)"
 IGNORE="DirAvailable--var-lib-etcd,NumCPU,Mem"
+# A cluster with a virtual IP (kube-vip): this machine takes the VIP again
+VIP=$(grep -m1 '^controlPlaneEndpoint:' <<< "$CC" | grep -oE '[0-9]+(\.[0-9]+){3}')
+if [ -n "$VIP" ] && [ "$VIP" != "$IP" ]; then
+    log "The cluster uses the virtual IP $VIP — starting kube-vip on this machine"
+    if [ "$(cut -d. -f2 <<< "${KVER#v}")" -ge 29 ]; then write_kube_vip "$VIP" "$IP" /etc/kubernetes/super-admin.conf
+    else write_kube_vip "$VIP" "$IP" /etc/kubernetes/admin.conf; fi
+    IGNORE="$IGNORE,DirAvailable--etc-kubernetes-manifests"
+fi
 [ "$(uname -r | cut -d. -f1)" -lt 4 ] && IGNORE="$IGNORE,SystemVerification"
 kubeadm init --config /tmp/kubeez-recover.yaml --ignore-preflight-errors="$IGNORE" > /tmp/kubeez-recover-init.log 2>&1 \
     || fail INIT_FAILED "kubeadm init failed: $(grep -iE 'error|fatal' /tmp/kubeez-recover-init.log | tail -2 | tr '\n' ' ')" "Full log on the node: /tmp/kubeez-recover-init.log"
-export KUBECONFIG=$KC
+sed -i 's#path: /etc/kubernetes/super-admin.conf#path: /etc/kubernetes/admin.conf#' /etc/kubernetes/manifests/kube-vip.yaml 2>/dev/null || true
 mkdir -p "$HOME/.kube" && cp -f $KC "$HOME/.kube/config"
+local_kc
+export KUBECONFIG=/root/.kubeez-local.conf
 log "✓ Control plane started on the restored data"
 
 progress 75 "Waiting for the cluster"

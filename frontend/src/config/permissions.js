@@ -26,6 +26,7 @@ export const PERMISSIONS = {
     'team:manage':         ['admin'],
     'billing:manage':      ['admin'],
     'backup:manage':       ['admin'],
+    'alerts:manage':       ['admin'],
 }
 
 /** Does a role have a given permission? superadmin always true. */
