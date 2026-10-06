@@ -33,8 +33,7 @@ import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
 import AddonManagerPanel from '../components/AddonManagerPanel'
-import EtcdBackupPanel from '../components/EtcdBackupPanel'
-import VolumeBackupPanel from '../components/VolumeBackupPanel'
+import BackupsTab from '../components/backups/BackupsTab'
 
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
@@ -561,10 +560,7 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* ── Backups ──────────────────────────────────────────────── */}
             {tab === 'backups' && (
-                <div className="space-y-6">
-                    <EtcdBackupPanel clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={canUpgrade} />
-                    <VolumeBackupPanel clusterId={id} clusterName={cluster.clusterName} canManage={canUpgrade} />
-                </div>
+                <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={canUpgrade} />
             )}
 
 

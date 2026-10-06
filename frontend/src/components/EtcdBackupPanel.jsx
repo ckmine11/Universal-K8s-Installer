@@ -6,10 +6,11 @@ import RestoreWizard from './backups/RestoreWizard'
 import RecoverWizard from './backups/RecoverWizard'
 import JobProgress from './backups/JobProgress'
 import { useEtcdJob, startJob } from './backups/useEtcdJob'
+import SnapshotTimeline, { KIND_COLORS } from './backups/SnapshotTimeline'
 import {
     Database, RefreshCw, Loader2, ShieldCheck, HardDriveDownload,
     RotateCcw, AlertTriangle, Clock, Zap, Lock, Info, CheckCircle2,
-    ChevronDown, Hand, Archive, Cloud, Undo2, BadgeCheck, LifeBuoy, DownloadCloud, X
+    Hand, Archive, Cloud, Undo2, BadgeCheck, LifeBuoy, DownloadCloud, X
 } from 'lucide-react'
 
 function fmtBytes(b) {
@@ -68,7 +69,9 @@ function groupByAge(backups) {
     return buckets.filter(g => g.items.length)
 }
 
-export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canManage = false }) {
+// view: 'snapshots' (the snapshots themselves) or 'offsite' (offsite storage + disaster recovery).
+// onData: lets the Backups overview read what was loaded (no second request).
+export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canManage = false, view = 'snapshots', onData }) {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -99,10 +102,11 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
         try {
             const res = await apiFetch(`/api/clusters/${clusterId}/etcd/backups`)
             const json = await res.json().catch(() => ({}))
-            if (res.status === 402 || json.upgradeRequired) { setLocked(true); return }
+            if (res.status === 402 || json.upgradeRequired) { setLocked(true); onData?.({ locked: true }); return }
             if (!res.ok) throw new Error(json.error || 'Failed to load etcd backups')
             setLocked(false)
             setData(json)
+            onData?.(json)
             // Re-attach to an operation that is still running (page reload, other tab)
             const aj = json.activeJob
             if (aj && aj.status === 'running') {
@@ -112,6 +116,7 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
             }
         } catch (err) {
             setError(err.message)
+            onData?.({ error: err.message })
         } finally {
             setLoading(false)
         }
@@ -180,12 +185,14 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                 <div className="flex items-center gap-3 min-w-0">
                     <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
                     <div className="min-w-0">
-                        <h3 className="text-lg font-black text-white tracking-tight">etcd Snapshots</h3>
-                        <p className="text-slate-500 text-xs mt-0.5">The whole cluster state (every Kubernetes object) — verified, restorable in one click</p>
+                        <h3 className="text-lg font-black text-white tracking-tight">{view === 'offsite' ? 'Offsite & Disaster Recovery' : 'etcd Snapshots'}</h3>
+                        <p className="text-slate-500 text-xs mt-0.5">{view === 'offsite'
+                            ? 'Encrypted copies outside the cluster — and the way back if the control-plane machine is lost'
+                            : 'The whole cluster state (every Kubernetes object) — verified, restorable in one click'}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                    {canManage && !locked && (
+                    {canManage && !locked && view === 'snapshots' && (
                         <button onClick={backupNow} disabled={busyJob}
                             className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all active:scale-95 disabled:opacity-50">
                             {busyJob && inline.job?.kind === 'backup' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <HardDriveDownload className="w-3.5 h-3.5" />}
@@ -204,7 +211,7 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
             </div>
 
             {/* Transparency: what is backed up & how restore works */}
-            {showInfo && (
+            {showInfo && view === 'snapshots' && (
                 <div className="mb-5 rounded-2xl border border-blue-500/20 bg-blue-500/[0.03] p-4 text-xs animate-in fade-in duration-200">
                     <p className="text-slate-300 leading-relaxed mb-3">
                         An <span className="font-bold text-white">etcd snapshot</span> captures the <span className="font-bold text-white">entire Kubernetes cluster state</span> —
@@ -302,6 +309,17 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                     </div>
                     {recoverCard}
                 </div>
+            ) : view === 'offsite' ? (
+                <div className="space-y-4">
+                    {recoverCard}
+                    <OffsiteBackup
+                        clusterId={clusterId}
+                        offsite={data?.offsite}
+                        canConfigure={can(user?.role, 'backup:manage')}
+                        canSync={canManage}
+                        onChanged={fetchBackups}
+                    />
+                </div>
             ) : (
                 <div className="space-y-4">
                     {/* Summary */}
@@ -328,23 +346,37 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                         </div>
                     ) : (
                         <>
-                            <div>
-                                <label htmlFor="etcd-snapshot" className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Choose a snapshot</label>
-                                <div className="relative">
-                                    <select id="etcd-snapshot" value={selected} onChange={(e) => setSelected(e.target.value)}
-                                        className="w-full appearance-none cursor-pointer bg-black/40 border border-white/10 hover:border-white/20 focus:border-emerald-500/50 rounded-xl pl-4 pr-10 py-3 text-sm text-white outline-none transition-colors">
-                                        {groupByAge(all).map(g => (
-                                            <optgroup key={g.label} label={g.label} className="bg-slate-900 text-slate-400">
-                                                {g.items.map(b => (
-                                                    <option key={b.filename} value={b.filename} className="bg-slate-900 text-white">
-                                                        {fmtWhen(b.created)} — {typeOf(b).short}{b.offsiteOnly ? ' · ☁ offsite only' : ` · ${fmtBytes(b.size)}${isOffsite(b) ? ' · ☁' : ''}${b.verified ? ' · ✓' : ''}`}
-                                                    </option>
-                                                ))}
-                                            </optgroup>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                                </div>
+                            <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                                <SnapshotTimeline snapshots={all} selected={selected} onSelect={setSelected} days={retentionDays} />
+                            </div>
+
+                            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                                {groupByAge(all).map(g => (
+                                    <div key={g.label}>
+                                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-600 mb-1.5">{g.label}</p>
+                                        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                                            {g.items.map(b => {
+                                                const k = KIND_COLORS[b.type] || KIND_COLORS.other
+                                                const on = b.filename === selected
+                                                return (
+                                                    <button key={b.filename} onClick={() => setSelected(b.filename)} data-snapshot={b.filename}
+                                                        className={`relative text-left rounded-xl border pl-4 pr-3 py-2.5 overflow-hidden transition-all ${on ? 'border-emerald-500/40 bg-emerald-500/[0.06] shadow-lg shadow-emerald-500/5' : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15'}`}>
+                                                        <span className={`absolute left-0 top-0 bottom-0 w-1 ${b.offsiteOnly ? 'bg-sky-400/60' : k.dot}`} />
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className={`text-[10px] font-black uppercase tracking-wider ${k.text}`}>{typeOf(b).short}</span>
+                                                            <span className="flex items-center gap-1 text-[10px]">
+                                                                {b.verified && <BadgeCheck className="w-3.5 h-3.5 text-emerald-400" aria-label="verified" />}
+                                                                {(b.offsiteOnly || isOffsite(b)) && <Cloud className="w-3.5 h-3.5 text-sky-400" aria-label="offsite" />}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-sm font-bold text-white mt-0.5">{fmtWhen(b.created)}</p>
+                                                        <p className="text-[11px] text-slate-500">{fmtAgo(b.created)}{b.offsiteOnly ? ' · offsite only' : ` · ${fmtBytes(b.size)}`}</p>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
 
                             {sel && (() => {
@@ -402,19 +434,10 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                         </>
                     )}
 
-                    {recoverCard}
-
-                    <OffsiteBackup
-                        clusterId={clusterId}
-                        offsite={data?.offsite}
-                        canConfigure={can(user?.role, 'backup:manage')}
-                        canSync={canManage}
-                        onChanged={fetchBackups}
-                    />
                 </div>
             )}
 
-            {data?.node && (
+            {data?.node && view === 'snapshots' && (
                 <p className="text-[11px] text-slate-600 mt-4 text-center">
                     Stored on the control-plane <code className="text-slate-400">{data.node}</code> at <code className="text-slate-400">/var/lib/etcd-backup</code>
                 </p>

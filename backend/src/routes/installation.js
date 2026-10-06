@@ -871,6 +871,8 @@ router.get('/:id/volume-backups', requireAuth, async (req, res) => {
         const off = offsiteStore.publicView(req.user.orgId)
         const result = {
             config: volumeBackupStore.publicView(cluster.id),
+            // offsite keys changed since Velero was set up → it still uses the old ones
+            staleOffsite: volumeBackupStore.isStale(cluster.id, req.user.orgId),
             offsite: off.connected ? { connected: true, provider: off.provider, endpoint: off.endpoint, bucket: off.bucket } : { connected: false },
             runningJob: (() => { const j = installationManager.runningJobFor(cluster.id); return j ? { id: j.id, mode: j.mode } : null })()
         }

@@ -157,9 +157,10 @@ class AutomationEngine {
      * moves into the cluster Secret and deletes. Keys travel base64 on stdin of
      * the remote shell, never as arguments of a long-running process.
      */
-    async writeVeleroSettings(ssh, clusterId) {
-        const cfg = volumeBackupStore.get(clusterId)
+    async writeVeleroSettings(ssh, clusterId, orgId) {
+        const cfg = volumeBackupStore.effective(clusterId, orgId)
         if (!cfg) return   // velero.sh explains what to do
+        if (volumeBackupStore.isStale(clusterId, orgId)) volumeBackupStore.save(clusterId, cfg)   // follow the offsite connection
         const lines = Object.entries({
             VB_PROVIDER: cfg.provider, VB_ENDPOINT: cfg.endpoint, VB_REGION: cfg.region, VB_BUCKET: cfg.bucket,
             VB_PREFIX: cfg.prefix, VB_ACCESS: cfg.accessKey, VB_SECRET: cfg.secretKey, VB_INSECURE: cfg.insecureTls ? '1' : '0'
@@ -1147,7 +1148,7 @@ class AutomationEngine {
                         await this.executeScript(ssh, legacyScriptPath, [item.name], onLog, addonOpts)
                     } else {
                         const scriptPath = join(__dirname, '../automation', item.script)
-                        if (item.prepare === 'velero') await this.writeVeleroSettings(ssh, installation.originalClusterId || installation.id)
+                        if (item.prepare === 'velero') await this.writeVeleroSettings(ssh, installation.originalClusterId || installation.id, installation.orgId)
                         await this.executeScript(ssh, scriptPath, [], onLog, addonOpts)
                     }
                     onLog('success', `✓ ${item.label} installed successfully`)

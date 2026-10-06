@@ -3,6 +3,7 @@ import path from 'path'
 import { encrypt, decrypt } from '../utils/cryptoUtils.js'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomicSync } from '../utils/atomicWrite.js'
+import { offsiteStore } from './offsiteStore.js'
 
 // Where Velero (volume backups) stores its backups — one setting per cluster.
 // Keys are stored encrypted. Unlike etcd offsite bundles (presigned URLs only),
@@ -43,6 +44,28 @@ class VolumeBackupStore {
             accessKeyHint: r.accessKey ? `••••${r.accessKey.slice(-4)}` : '',
             configuredAt: r.configuredAt
         }
+    }
+
+    /**
+     * The settings Velero must use. "Use the workspace's offsite storage"
+     * follows that connection: when its keys change (e.g. the S3 add-on was
+     * reinstalled and the offsite connection updated), Velero gets the new ones
+     * on the next install/repair instead of a stale copy.
+     */
+    effective(clusterId, orgId) {
+        const cfg = this.get(clusterId)
+        if (!cfg || cfg.source !== 'offsite') return cfg
+        const t = orgId ? offsiteStore.getConnected(orgId) : null
+        if (!t) return cfg
+        return { ...cfg, provider: t.provider, endpoint: t.endpoint, region: t.region || cfg.region, bucket: t.bucket, insecureTls: !!t.insecureTls, accessKey: t.accessKey, secretKey: t.secretKey }
+    }
+
+    /** Offsite-sourced settings whose copy no longer matches the offsite connection. */
+    isStale(clusterId, orgId) {
+        const cfg = this.get(clusterId)
+        if (!cfg || cfg.source !== 'offsite') return false
+        const e = this.effective(clusterId, orgId)
+        return ['endpoint', 'bucket', 'accessKey', 'secretKey', 'region', 'insecureTls'].some(k => String(e[k] ?? '') !== String(cfg[k] ?? ''))
     }
 
     save(clusterId, cfg) {

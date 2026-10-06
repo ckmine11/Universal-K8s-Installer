@@ -39,7 +39,7 @@ function Phase({ phase }) {
     )
 }
 
-export default function VolumeBackupPanel({ clusterId, clusterName, canManage = false }) {
+export default function VolumeBackupPanel({ clusterId, clusterName, canManage = false, onData }) {
     const navigate = useNavigate()
     const { user } = useAuth()
     const canConfigure = can(user?.role, 'backup:manage')
@@ -63,9 +63,10 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
         try {
             const r = await apiFetch(`/api/clusters/${clusterId}/volume-backups`)
             const j = await r.json().catch(() => ({}))
-            if (r.status === 402 || j.upgradeRequired) { setLocked(true); return }
+            if (r.status === 402 || j.upgradeRequired) { setLocked(true); onData?.({ locked: true }); return }
             if (!r.ok) throw new Error(j.error || 'Could not load volume backups')
             setData(j)
+            onData?.(j)
             if (!j.offsite?.connected) setForm(f => ({ ...f, useOffsite: false }))
         } catch (e) { setError(e.message) } finally { setLoading(false) }
     }
@@ -92,8 +93,9 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
 
     // Storage on a node of THIS cluster is refused first (backups would die
     // with the cluster); the user may still accept it, e.g. for testing.
-    const saveConfig = async (allowSameCluster = false) => {
-        const body = { ...(form.useOffsite ? { useOffsite: true } : { ...form, useOffsite: false }), allowSameCluster }
+    // override: e.g. { useOffsite: true } to re-apply the (changed) offsite settings
+    const saveConfig = async (allowSameCluster = false, override = null) => {
+        const body = { ...(override || (form.useOffsite ? { useOffsite: true } : { ...form, useOffsite: false })), allowSameCluster }
         setBusy('config'); setNotice(null); setSameCluster(null)
         try {
             const r = await apiFetch(`/api/clusters/${clusterId}/volume-backups/config`, { method: 'PUT', body: JSON.stringify(body) })
@@ -239,7 +241,16 @@ export default function VolumeBackupPanel({ clusterId, clusterName, canManage = 
                         <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-slate-300">Node agents {data.nodeAgent || '?'}</span>
                         {canConfigure && <button onClick={() => setSetup(true)} className="text-[11px] text-blue-300 hover:underline">Change storage</button>}
                     </div>
-                    {!storageOk && data.storage?.message && <p className="text-xs text-red-300">{data.storage.message}</p>}
+                    {data.staleOffsite && (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-red-500/25 bg-red-500/[0.06] p-3 text-xs text-red-200">
+                            <span className="flex gap-2"><AlertTriangle className="w-4 h-4 shrink-0 text-red-400" /> The offsite storage settings (keys or bucket) changed after Velero was set up — Velero still uses the old ones, so it cannot reach the storage.</span>
+                            {canConfigure && <button onClick={() => saveConfig(true, { useOffsite: true })} disabled={busy === 'config'}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-black shrink-0 disabled:opacity-50">
+                                {busy === 'config' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Settings2 className="w-3.5 h-3.5" />} Apply the new settings
+                            </button>}
+                        </div>
+                    )}
+                    {!storageOk && !data.staleOffsite && data.storage?.message && <p className="text-xs text-red-300">{data.storage.message}</p>}
 
                     {canManage && (
                         <div className="grid md:grid-cols-2 gap-3">

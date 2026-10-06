@@ -189,3 +189,18 @@ test('routes: typed cluster name, valid names, plan gate; one operation per clus
         await srv.stop()
     }
 })
+
+test('volume backups using the offsite storage follow its key changes (no stale copy)', async () => {
+    const { offsiteStore } = await import('../src/services/offsiteStore.js')
+    const base = { provider: 'other', endpoint: 'http://10.1.1.1:30833', region: 'us-east-1', bucket: 'test', prefix: 'kubeez', accessKey: 'OLDKEY', secretKey: 'old-secret' }
+    offsiteStore.connect('org-vb', base)
+    volumeBackupStore.save('c-follow', { ...offsiteStore.getConnected('org-vb'), source: 'offsite', prefix: 'kubeez/c-follow/velero' })
+    assert.equal(volumeBackupStore.isStale('c-follow', 'org-vb'), false)
+    offsiteStore.connect('org-vb', { ...base, accessKey: 'NEWKEY', secretKey: 'new-secret' })   // S3 add-on reinstalled
+    assert.equal(volumeBackupStore.isStale('c-follow', 'org-vb'), true)
+    const e = volumeBackupStore.effective('c-follow', 'org-vb')
+    assert.deepEqual([e.accessKey, e.secretKey, e.prefix], ['NEWKEY', 'new-secret', 'kubeez/c-follow/velero'])
+    volumeBackupStore.save('c-custom', { ...base, source: 'custom', prefix: 'p' })
+    assert.equal(volumeBackupStore.isStale('c-custom', 'org-vb'), false, 'own keys are never replaced')
+    assert.equal(volumeBackupStore.effective('c-custom', 'org-vb').accessKey, 'OLDKEY')
+})
