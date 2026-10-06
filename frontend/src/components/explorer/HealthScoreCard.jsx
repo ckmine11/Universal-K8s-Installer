@@ -4,7 +4,7 @@ import { Activity, Loader2, ExternalLink, Compass, RefreshCw } from 'lucide-reac
 
 const CAT_COLOR = { Security: 'bg-rose-400', Reliability: 'bg-sky-400', Efficiency: 'bg-amber-400' }
 
-/** Best-practice health score of the cluster (Cluster Explorer audit). */
+/** Best-practice health score of the cluster (KubeEZ Explorer audit). */
 export default function HealthScoreCard({ clusterId, installed, onOpenExplorer }) {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(false)
@@ -23,7 +23,7 @@ export default function HealthScoreCard({ clusterId, installed, onOpenExplorer }
                 <Activity className="w-5 h-5 text-slate-500" />
                 <div>
                     <p className="text-sm font-black text-white">Cluster health score</p>
-                    <p className="text-[11px] text-slate-500">31 security, reliability and efficiency checks — with the Cluster Explorer add-on.</p>
+                    <p className="text-[11px] text-slate-500">31 security, reliability and efficiency checks — with the KubeEZ Explorer add-on.</p>
                 </div>
             </div>
             <button onClick={onOpenExplorer} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 text-xs font-bold shrink-0"><Compass className="w-3.5 h-3.5" /> Get it</button>

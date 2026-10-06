@@ -833,7 +833,7 @@ router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), a
         const busy = clusterBusy(existingCluster.id)
         if (busy) return res.status(409).json({ error: busy.message, runningJobId: busy.jobId })
 
-        // Upgrade safety check (Cluster Explorer): blockers stop the upgrade
+        // Upgrade safety check (KubeEZ Explorer): blockers stop the upgrade
         // unless a workspace admin explicitly accepts them. Without the
         // Explorer (or when it can't be reached) the upgrade runs as before.
         const override = req.body?.skipSafetyCheck === true
@@ -1026,7 +1026,7 @@ router.get('/:id/volume-backups/describe/:kind/:name', requireAuth, async (req, 
     }
 })
 
-// ─── Cluster Explorer insights (Radar's analysis in KubeEZ's own screens) ─────
+// ─── KubeEZ Explorer insights (Radar's analysis in KubeEZ's own screens) ─────
 
 // Upgrade safety check for a target version
 router.get('/:id/explorer-insights/upgrade', requireAuth, async (req, res) => {

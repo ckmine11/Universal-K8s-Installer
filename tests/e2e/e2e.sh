@@ -15,7 +15,7 @@
 #   e2e.sh restore-ha [distro]                etcd restore on an HA cluster: 2 control-planes + 1 worker
 #   e2e.sh recover [distro]                   control-plane machine lost → rebuilt from the offsite backup
 #   e2e.sh velero [distro]                    volume backups: Velero install, file data backup + restore
-#   e2e.sh explorer [distro]                  Cluster Explorer (Radar) behind KubeEZ's proxy: RBAC, checks, uninstall
+#   e2e.sh explorer [distro]                  KubeEZ Explorer (Radar) behind KubeEZ's proxy: RBAC, checks, uninstall
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
 #   e2e.sh agent [distro]                     Gateway Agent install as a service, crash/reboot recovery
@@ -307,7 +307,7 @@ cmd_velero() {
     return $rc
 }
 
-# Cluster Explorer (Radar) on a real node, reached through KubeEZ's own proxy
+# KubeEZ Explorer (Radar) on a real node, reached through KubeEZ's own proxy
 cmd_explorer() {
     local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
     image "$distro"; start_node "$node" "$distro"

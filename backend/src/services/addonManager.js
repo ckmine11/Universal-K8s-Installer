@@ -13,7 +13,7 @@ export const ADDON_REGISTRY = {
     argocd:         { label: 'ArgoCD',                        ns: 'argocd',               detect: 'deploy/argocd-server' },
     seaweedfs:      { label: 'S3 Object Storage (SeaweedFS)', ns: 'seaweedfs',            detect: 'deploy/seaweedfs', keepsData: true },
     velero:         { label: 'Velero (Volume Backups)',       ns: 'velero',               detect: 'deploy/velero' },
-    explorer:       { label: 'Cluster Explorer',              ns: 'kubeez-explorer',      detect: 'deploy/radar' }
+    explorer:       { label: 'KubeEZ Explorer',              ns: 'kubeez-explorer',      detect: 'deploy/kubeez-explorer deploy/radar' }
 }
 
 const BROKEN = /CrashLoopBackOff|ErrImagePull|ImagePullBackOff|InvalidImageName|CreateContainerConfigError|CreateContainerError|RunContainerError|OOMKilled|Error/

@@ -501,7 +501,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
                         { title: "Auto-Healing", icon: HeartPulse, desc: "Detects NotReady nodes, disk / memory pressure and crash-looping pods, and fixes what it safely can.", color: "orange" },
                         { title: "Resume & Scale", icon: RotateCcw, desc: "A stopped install resumes where it left off; add worker nodes to a running cluster any time.", color: "purple" },
                         { title: "Topology & Terminal", icon: Network, desc: "Live 3D topology, CPU / memory / disk and a browser terminal on every node.", color: "blue" },
-                        { title: "Cluster Explorer", icon: Compass, desc: "Every resource, logs, timeline, Helm, GitOps and a 31-check health audit — inside KubeEZ, with your login and role.", color: "cyan" },
+                        { title: "KubeEZ Explorer", icon: Compass, desc: "Every resource, logs, timeline, Helm, GitOps and a 31-check health audit — inside KubeEZ, with your login and role.", color: "cyan" },
                         { title: "Gateway Agent", icon: Shield, desc: "Manage private servers through an outbound tunnel — no inbound firewall ports.", color: "cyan" },
                         { title: "Teams & Roles", icon: Users, desc: "Admin, Operator and Viewer roles in isolated workspaces. Viewers never see credentials.", color: "emerald" }
                     ].map((feature, i) => (

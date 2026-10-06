@@ -159,14 +159,17 @@ seaweedfs)
     ;;
 
 explorer)
-    if command -v helm >/dev/null 2>&1 && helm -n kubeez-explorer status radar >/dev/null 2>&1; then
-        log "Removing Radar (helm uninstall)..."
-        helm -n kubeez-explorer uninstall radar --wait --timeout 3m 2>&1 | tail -2 | sed 's/^/  /' || true
-    fi
+    for rel in kubeez-explorer radar; do   # "radar": installs from before the rename
+        if command -v helm >/dev/null 2>&1 && helm -n kubeez-explorer status "$rel" >/dev/null 2>&1; then
+            log "Removing the Explorer (helm uninstall $rel)..."
+            helm -n kubeez-explorer uninstall "$rel" --wait --timeout 3m 2>&1 | tail -2 | sed 's/^/  /' || true
+        fi
+    done
     delete_ns kubeez-explorer
     del clusterrolebinding kubeez-explorer-admins kubeez-explorer-operators kubeez-explorer-viewers kubeez-explorer-cluster-read kubeez-explorer-helm-gate
     del clusterrole kubeez-explorer-cluster-read kubeez-explorer-helm-gate
     del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=radar
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=kubeez-explorer
     ;;
 
 velero)

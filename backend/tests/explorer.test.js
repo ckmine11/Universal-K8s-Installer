@@ -1,4 +1,4 @@
-// Cluster Explorer (Radar behind KubeEZ): the proxy is the ONLY way into Radar,
+// KubeEZ Explorer (Radar behind KubeEZ): the proxy is the ONLY way into Radar,
 // so it must (1) authenticate + check the workspace, (2) never forward KubeEZ
 // credentials, (3) replace any identity the browser tries to send, (4) pin
 // Radar's inline scripts in the CSP, (5) carry SSE + WebSockets. A fake Radar
@@ -193,4 +193,16 @@ test('proxy: cross-site changes are refused (CSRF), same-site ones pass', async 
     assert.equal(evil.status, 403)
     const ok = await fetch(kzUrl + '/api/clusters/c-ex/explorer/api/apply', { method: 'POST', headers: { cookie: 'token=tok-admin', origin: kzUrl }, body: 'x' })
     assert.equal(ok.status, 200)
+})
+
+test('Explorer pages carry KubeEZ branding (title, icon, engine links hidden) and stay CSP-pinned', async () => {
+    const { brandPage } = await import('../src/services/explorerProxy.js')
+    const out = brandPage('<!doctype html><html><head><link rel="icon" href="/favicon.svg" /><link rel="apple-touch-icon" href="/a.png" /><title>Radar</title><script>boot()</script></head><body></body></html>')
+    assert.match(out, /<title>KubeEZ Explorer<\/title>/)
+    assert.doesNotMatch(out, /favicon\.svg|apple-touch-icon/)
+    assert.match(out, /rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,/)
+    assert.match(out, /\[aria-label="Radar Cloud"\]/)
+    assert.equal((cspFor(out).match(/'sha256-/g) || []).length, 2, 'the engine script and the branding script are both pinned')
+    const r = await get('/api/clusters/c-ex/explorer/', { cookie: 'token=tok-admin', accept: 'text/html' })
+    assert.match(await r.text(), /<title>KubeEZ Explorer<\/title>/)
 })

@@ -29,7 +29,7 @@ const UNINSTALL_NOTES = {
     longhorn: 'Refused while any volume still uses Longhorn — delete those PVCs first. Longhorn\'s own uninstaller then runs (takes a few minutes).',
     argocd: 'ArgoCD and its Applications are removed. Apps it already deployed keep running.',
     seaweedfs: 'Every bucket and object is deleted (data stored directly on a node folder is kept there).',
-    explorer: 'The Explorer (Radar) and its role bindings are removed. Nothing in your workloads changes.',
+    explorer: 'The KubeEZ Explorer and its role bindings are removed. Nothing in your workloads changes.',
     velero: 'Volume backups stop. Backups already in the storage bucket are kept — set it up again under Backups to see them.'
 }
 

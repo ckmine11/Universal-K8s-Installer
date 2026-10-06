@@ -1,6 +1,6 @@
 import { explorerApi, basePath } from './explorerProxy.js'
 
-// KubeEZ's own screens built from the Cluster Explorer's (Radar's) analysis:
+// KubeEZ's own screens built from the KubeEZ Explorer's (Radar's) analysis:
 // the upgrade safety check and the cluster health score.
 
 const minorOf = (v) => String(v || '').replace(/^v/, '').split('.').slice(0, 2).join('.')

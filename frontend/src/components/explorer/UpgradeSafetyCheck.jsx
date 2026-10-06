@@ -35,7 +35,7 @@ function Finding({ f, clusterId }) {
 }
 
 /**
- * Upgrade safety check (powered by the Cluster Explorer): runs when a target
+ * Upgrade safety check (powered by the KubeEZ Explorer): runs when a target
  * version is chosen, reports the verdict to the parent (onResult).
  */
 export default function UpgradeSafetyCheck({ clusterId, target, onResult }) {
@@ -65,7 +65,7 @@ export default function UpgradeSafetyCheck({ clusterId, target, onResult }) {
     if (!data.installed) return (
         <div className="flex gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-[11px] text-slate-400">
             <Info className="w-4 h-4 shrink-0 text-slate-500" />
-            <span>Install the <span className="text-white font-bold">Cluster Explorer</span> add-on to check this upgrade for removed APIs, skew and other blockers before it starts. An etcd snapshot is taken automatically either way.</span>
+            <span>Install the <span className="text-white font-bold">KubeEZ Explorer</span> add-on to check this upgrade for removed APIs, skew and other blockers before it starts. An etcd snapshot is taken automatically either way.</span>
         </div>
     )
     if (data.error) return (

@@ -17,7 +17,7 @@ const FEATURES = [
 ]
 
 /**
- * The Cluster Explorer inside the cluster page. Radar runs in the cluster;
+ * The KubeEZ Explorer inside the cluster page. Radar runs in the cluster;
  * KubeEZ is its only door (your login, your role → Kubernetes RBAC).
  */
 export default function ExplorerTab({ clusterId, installed, canInstall, role }) {
@@ -59,7 +59,7 @@ export default function ExplorerTab({ clusterId, installed, canInstall, role }) 
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20"><Compass className="w-6 h-6 text-cyan-400" /></div>
                         <div>
-                            <h2 className="text-xl font-black text-white">Cluster Explorer</h2>
+                            <h2 className="text-xl font-black text-white">KubeEZ Explorer</h2>
                             <p className="text-xs text-slate-500">A full Kubernetes UI — right here, with your KubeEZ login</p>
                         </div>
                     </div>
@@ -83,7 +83,7 @@ export default function ExplorerTab({ clusterId, installed, canInstall, role }) 
                             {installing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Install the Explorer
                         </button>
                     ) : <p className="text-sm text-slate-400">Ask an Org Admin or Operator to install the Explorer.</p>}
-                    <p className="text-[10px] text-slate-600 mt-4">Powered by Radar (Apache-2.0) by Skyhook — runs inside your cluster, ~200 MB memory.</p>
+                    <p className="text-[10px] text-slate-600 mt-4">Runs inside your cluster · about 200 MB of memory.</p>
                 </div>
             </div>
         )
@@ -94,8 +94,8 @@ export default function ExplorerTab({ clusterId, installed, canInstall, role }) 
             <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-white/8 bg-black/20">
                 <div className="flex items-center gap-2 min-w-0">
                     <Compass className="w-4 h-4 text-cyan-400 shrink-0" />
-                    <span className="text-sm font-black text-white">Cluster Explorer</span>
-                    <span className="hidden sm:inline text-[10px] text-slate-500 truncate">signed in as you · {role === 'viewer' ? 'read-only' : role === 'operator' ? 'edit' : 'full access'} · powered by Radar</span>
+                    <span className="text-sm font-black text-white">KubeEZ Explorer</span>
+                    <span className="hidden sm:inline text-[10px] text-slate-500 truncate">signed in as you · {role === 'viewer' ? 'read-only' : role === 'operator' ? 'edit' : 'full access'}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                     <button onClick={() => { if (frame.current) frame.current.src = src; probe() }} aria-label="Reload" className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5"><RefreshCw className="w-3.5 h-3.5" /></button>
@@ -115,11 +115,11 @@ export default function ExplorerTab({ clusterId, installed, canInstall, role }) 
                     <AlertTriangle className="w-7 h-7 text-amber-400" />
                     <p className="text-sm text-slate-300 max-w-lg">{error}</p>
                     <button onClick={probe} className="text-xs font-bold text-blue-300 hover:underline">Try again</button>
-                    <p className="text-[11px] text-slate-500">If it keeps failing: Add-ons → Cluster Explorer → Logs / Repair.</p>
+                    <p className="text-[11px] text-slate-500">If it keeps failing: Add-ons → KubeEZ Explorer → Logs / Repair.</p>
                 </div>
             )}
             {state === 'ready' && (
-                <iframe ref={frame} title="Cluster Explorer" src={src}
+                <iframe ref={frame} title="KubeEZ Explorer" src={src}
                     className={full ? 'flex-1 w-full border-0' : 'w-full h-[78vh] border-0'}
                     allow="clipboard-read; clipboard-write" />
             )}

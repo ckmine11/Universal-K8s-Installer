@@ -1,4 +1,4 @@
-// Deep links into the Cluster Explorer (Radar served under the cluster's path)
+// Deep links into the KubeEZ Explorer (Radar served under the cluster's path)
 
 export const explorerBase = (clusterId) => `/api/clusters/${clusterId}/explorer`
 

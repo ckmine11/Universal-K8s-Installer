@@ -158,7 +158,7 @@ class ResumeAnalyzer {
                     argocd:     { ns: 'argocd',                 label: 'ArgoCD' },
                     seaweedfs:  { ns: 'seaweedfs',              label: 'S3 Object Storage (SeaweedFS)' },
                     velero:     { ns: 'velero',                 label: 'Velero (Volume Backups)' },
-                    explorer:   { ns: 'kubeez-explorer',        label: 'Cluster Explorer' }
+                    explorer:   { ns: 'kubeez-explorer',        label: 'KubeEZ Explorer' }
                 }
 
                 for (const [key, { ns, label }] of Object.entries(addonNsMap)) {

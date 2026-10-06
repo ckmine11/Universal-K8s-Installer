@@ -34,7 +34,7 @@ bash tests/e2e/e2e.sh recover ubuntu2204
 # volume data backups with Velero: backup, namespace deleted, restore, copy, schedule, uninstall
 bash tests/e2e/e2e.sh velero ubuntu2204
 
-# Cluster Explorer (Radar) through KubeEZ's proxy: page + CSP, identity → RBAC
+# KubeEZ Explorer (Radar engine) through KubeEZ's proxy: page + CSP, identity → RBAC
 # (viewer can't scale, operator can), upgrade safety check, health score, uninstall
 bash tests/e2e/e2e.sh explorer ubuntu2204
 

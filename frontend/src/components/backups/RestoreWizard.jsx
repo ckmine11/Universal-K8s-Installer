@@ -32,7 +32,7 @@ function ObjectList({ items, total, icon: Icon, title, tone, empty, linkTo }) {
         return (
             <li key={i} className="flex items-baseline gap-2 min-w-0">
                 <span className="text-slate-500 shrink-0">{o.kind}</span>
-                {href ? <a href={href} target="_blank" rel="noopener" className="text-white truncate hover:underline hover:text-cyan-200" title="Open in the Cluster Explorer">{label}</a>
+                {href ? <a href={href} target="_blank" rel="noopener" className="text-white truncate hover:underline hover:text-cyan-200" title="Open in the KubeEZ Explorer">{label}</a>
                     : <span className="text-white truncate">{label}</span>}
             </li>
         )

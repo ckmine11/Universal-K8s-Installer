@@ -1113,7 +1113,7 @@ class AutomationEngine {
             if (addons.argocd) addonsToInstall.push({ type: 'script', script: 'addons/argocd.sh', label: 'ArgoCD' })
             if (addons.seaweedfs) addonsToInstall.push({ type: 'script', script: 'addons/seaweedfs.sh', label: 'S3 Object Storage (SeaweedFS)' })
             if (addons.velero) addonsToInstall.push({ type: 'script', script: 'addons/velero.sh', label: 'Velero (Volume Backups)', prepare: 'velero' })
-            if (addons.explorer) addonsToInstall.push({ type: 'script', script: 'addons/explorer.sh', label: 'Cluster Explorer', prepare: 'explorer' })
+            if (addons.explorer) addonsToInstall.push({ type: 'script', script: 'addons/explorer.sh', label: 'KubeEZ Explorer', prepare: 'explorer' })
 
             // Any other add-on: a script named automation/addons/<key>.sh is enough
             // (no code change needed to add one).

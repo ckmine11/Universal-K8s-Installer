@@ -16,10 +16,10 @@ const FEATURE_GROUPS = [
     },
     {
         group: 'Operate', features: [
-            { Icon: Puzzle, color: 'text-fuchsia-400', title: 'Add-ons, managed', desc: 'Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage, Velero, Cluster Explorer — install, repair, reinstall, uninstall and read logs from the UI.' },
+            { Icon: Puzzle, color: 'text-fuchsia-400', title: 'Add-ons, managed', desc: 'Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage, Velero, KubeEZ Explorer — install, repair, reinstall, uninstall and read logs from the UI.' },
             { Icon: HeartPulse, color: 'text-rose-400', title: 'Auto-healing', desc: 'Detects NotReady nodes, disk/memory pressure and crash-looping pods, and fixes what it safely can.' },
             { Icon: TerminalSquare, color: 'text-blue-400', title: 'Terminal & live health', desc: 'Browser terminal, live CPU / memory / disk and a 3D topology of every node.' },
-            { Icon: Compass, color: 'text-cyan-400', title: 'Cluster Explorer', desc: 'Every resource, logs, timeline, Helm, GitOps and a 31-check audit inside KubeEZ — your login, your RBAC, no open ports.' }
+            { Icon: Compass, color: 'text-cyan-400', title: 'KubeEZ Explorer', desc: 'Every resource, logs, timeline, Helm, GitOps and a 31-check audit inside KubeEZ — your login, your RBAC, no open ports.' }
         ]
     },
     {

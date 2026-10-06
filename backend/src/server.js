@@ -55,7 +55,7 @@ import { authService } from './services/authService.js'
 import { requireAuth } from './middleware/authMiddleware.js'
 import { explorerHttp, explorerUpgrade, EXPLORER_PATH } from './services/explorerProxy.js'
 
-// One HTTP 'upgrade' entry: Cluster Explorer WebSockets (pod terminal, log
+// One HTTP 'upgrade' entry: KubeEZ Explorer WebSockets (pod terminal, log
 // streams) are tunnelled to the cluster; everything else is KubeEZ's own.
 server.on('upgrade', (req, socket, head) => {
     if (EXPLORER_PATH.test(req.url || '')) {
@@ -73,7 +73,7 @@ app.use(helmet({
     contentSecurityPolicy: false, // Disable CSP to avoid frontend conflicts (API-focused)
     crossOriginEmbedderPolicy: false
 }))
-// Cluster Explorer: streamed straight through (SSE, uploads) — before
+// KubeEZ Explorer: streamed straight through (SSE, uploads) — before
 // compression, the JSON body parser and the API rate limit (a Radar page
 // loads dozens of assets). requireAuth + workspace check inside.
 app.use(EXPLORER_PATH, cookieParser(), requireAuth, explorerHttp)

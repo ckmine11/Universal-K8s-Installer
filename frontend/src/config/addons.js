@@ -61,8 +61,8 @@ export const ADDONS_LIST = [
     },
     {
         key: 'explorer',
-        name: 'Cluster Explorer',
-        desc: 'Full Kubernetes UI inside KubeEZ — resources, logs, topology, timeline, Helm, audit, upgrade checks (Radar)',
+        name: 'KubeEZ Explorer',
+        desc: 'Full Kubernetes UI inside KubeEZ — resources, logs, topology, timeline, Helm, audit, upgrade checks',
         iconName: 'Compass',
         gradient: 'from-cyan-500 via-blue-500 to-indigo-600',
         badge: '✨ New',

@@ -1,5 +1,5 @@
 #!/bin/bash
-# KubeEZ - Install the Cluster Explorer (Radar, Apache-2.0, by Skyhook)
+# KubeEZ - Install the KubeEZ Explorer (Radar, Apache-2.0, by Skyhook)
 #
 # A full Kubernetes UI inside KubeEZ: resources + YAML + logs, topology,
 # timeline, Helm, GitOps, cluster audit and upgrade impact.
@@ -15,6 +15,9 @@
 #       kubeez:viewers   → view (+ the same cluster-wide reads)
 #   - Served under /api/clusters/<id>/explorer (KubeEZ writes the id to
 #     /etc/kubeez/explorer.env right before this script runs)
+#   - Everything is named kubeez-explorer (release, Deployment, Service,
+#     ServiceAccount); installs from before the rename (release "radar") are
+#     migrated on the next run (Repair)
 #
 # Idempotent: re-running (Repair) upgrades/repairs in place.
 # Failures end with KUBEEZ_FAIL|CODE|reason|fix.
@@ -34,7 +37,7 @@ fail() { echo "KUBEEZ_FAIL|$1|$(printf '%s' "$2" | tr '|\n' '/ ')|$(printf '%s' 
 progress() { echo "KUBEEZ_PROGRESS|$1|$2"; }
 
 echo "========================================="
-echo "Installing the Cluster Explorer (Radar ${RADAR_CHART_VERSION})"
+echo "Installing the KubeEZ Explorer"
 echo "========================================="
 
 BASE_PATH=""
@@ -117,11 +120,16 @@ subjects:
 EOF
 log "✓ Roles mapped (admins → cluster-admin, operators → edit, viewers → view)"
 
-# ── 3. Radar ─────────────────────────────────────────────────────────────────
-progress 40 "Installing Radar"
+# ── 3. Explorer engine (Radar chart) ─────────────────────────────────────────────────────────────────
+# Installs from before the rename used release/resources "radar" — replace them
+if helm -n "$NS" status radar >/dev/null 2>&1; then
+    log "Moving the Explorer to its new resource names..."
+    helm -n "$NS" uninstall radar --wait --timeout 3m >/dev/null 2>&1 || true
+fi
+progress 40 "Installing the Explorer"
 VALUES=$(mktemp)
 cat > "$VALUES" <<EOF
-fullnameOverride: radar
+fullnameOverride: kubeez-explorer
 basePath: "${BASE_PATH}"
 service:
   type: ClusterIP
@@ -138,16 +146,16 @@ resources:
 EOF
 helm repo add skyhook https://skyhook-io.github.io/helm-charts >/dev/null 2>&1 || true
 helm repo update skyhook >/dev/null 2>&1 \
-    || fail NO_INTERNET "Could not reach the Radar Helm repository (skyhook-io.github.io)." "Allow this control-plane to reach skyhook-io.github.io and ghcr.io, then retry."
-OUT=$(helm upgrade --install radar skyhook/radar --version "$RADAR_CHART_VERSION" \
+    || fail NO_INTERNET "Could not reach the Explorer's Helm repository (skyhook-io.github.io)." "Allow this control-plane to reach skyhook-io.github.io and ghcr.io, then retry."
+OUT=$(helm upgrade --install kubeez-explorer skyhook/radar --version "$RADAR_CHART_VERSION" \
     --namespace "$NS" --create-namespace -f "$VALUES" --wait --timeout 10m 2>&1)
 RC=$?
 rm -f "$VALUES"
 echo "$OUT" | tail -4 | sed 's/^/  /'
 if [ $RC -ne 0 ]; then
     kubectl -n "$NS" get pods 2>/dev/null | sed 's/^/  /'
-    fail INSTALL_FAILED "Radar did not start: $(echo "$OUT" | tail -1)" \
-        "Check 'kubectl -n $NS describe pod -l app.kubernetes.io/name=radar' (image pull from ghcr.io? memory?), then Repair."
+    fail INSTALL_FAILED "The Explorer did not start: $(echo "$OUT" | tail -1)" \
+        "Check 'kubectl -n $NS describe pod -l app.kubernetes.io/instance=kubeez-explorer' (image pull from ghcr.io? memory?), then Repair."
 fi
 
 # Helm installs from the Explorer (charts, traffic sources like Caretta):
@@ -173,21 +181,21 @@ metadata:
   name: kubeez-explorer-helm-gate
   labels: { app.kubernetes.io/part-of: kubeez-explorer }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubeez-explorer-helm-gate }
-subjects: [{ kind: ServiceAccount, name: radar, namespace: kubeez-explorer }]
+subjects: [{ kind: ServiceAccount, name: kubeez-explorer, namespace: kubeez-explorer }]
 EOF
 
-progress 85 "Checking Radar"
-IP=$(kubectl -n "$NS" get svc radar -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
-[ -n "$IP" ] || fail INSTALL_FAILED "Radar's Service was not created." "Repair the add-on."
+progress 85 "Checking the Explorer"
+IP=$(kubectl -n "$NS" get svc kubeez-explorer -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+[ -n "$IP" ] || fail INSTALL_FAILED "The Explorer's Service was not created." "Repair the add-on."
 CODE=""
 for _ in $(seq 1 24); do
     CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://$IP:9280${BASE_PATH}/api/health" 2>/dev/null)
     [ "$CODE" = "200" ] && break
     sleep 5
 done
-[ "$CODE" = "200" ] || fail NOT_READY "Radar runs but does not answer on ${IP}:9280 (HTTP ${CODE:-none})." "Check 'kubectl -n $NS logs deploy/radar', then Repair."
+[ "$CODE" = "200" ] || fail NOT_READY "The Explorer runs but does not answer on ${IP}:9280 (HTTP ${CODE:-none})." "Check 'kubectl -n $NS logs deploy/kubeez-explorer', then Repair."
 rm -f "$CFG"
 
-progress 100 "Cluster Explorer ready"
-echo "✓ Cluster Explorer installed — open it from the cluster page (Explorer tab)"
+progress 100 "KubeEZ Explorer ready"
+echo "✓ KubeEZ Explorer installed — open it from the cluster page (Explorer tab)"
 echo "========================================="

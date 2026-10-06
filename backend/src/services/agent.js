@@ -11,7 +11,7 @@
 //
 // Besides commands, the agent relays TCP streams (tcp-open/-data/-close) to
 // addresses its SSH sessions can reach — used for in-cluster web tools like the
-// Cluster Explorer, so they need no open ports either.
+// KubeEZ Explorer, so they need no open ports either.
 //
 // Exit codes: 78 = this agent was removed / its token revoked in KubeEZ (a
 // service manager must NOT restart it); 0 = replaced by another copy of itself.

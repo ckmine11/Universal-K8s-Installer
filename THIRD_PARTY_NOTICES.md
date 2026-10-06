@@ -6,7 +6,7 @@ releases (container images / Helm charts) and talks to them over their APIs.
 
 | Component | Used for | License | Source |
 |---|---|---|---|
-| **Radar** by Skyhook | Cluster Explorer add-on: Kubernetes UI, best-practice audit, upgrade impact analysis | Apache-2.0 | https://github.com/skyhook-io/radar |
+| **Radar** by Skyhook | Engine of the KubeEZ Explorer add-on: Kubernetes UI, best-practice audit, upgrade impact analysis (used unmodified; KubeEZ branding is applied when pages are served) | Apache-2.0 | https://github.com/skyhook-io/radar |
 | **Velero** | Volume Backups add-on | Apache-2.0 | https://github.com/velero-io/velero |
 | **SeaweedFS** | S3 Object Storage add-on | Apache-2.0 | https://github.com/seaweedfs/seaweedfs |
 | **Longhorn** | Longhorn Storage add-on | Apache-2.0 | https://github.com/longhorn/longhorn |
@@ -18,4 +18,4 @@ releases (container images / Helm charts) and talks to them over their APIs.
 | **etcd** (etcdctl / etcdutl) | etcd snapshots, restore, recovery | Apache-2.0 | https://github.com/etcd-io/etcd |
 
 "Radar" and "Skyhook" are names of their respective owners; KubeEZ calls the
-feature "Cluster Explorer" and credits Radar wherever it appears.
+feature "KubeEZ Explorer"; this file is where the engine is credited.

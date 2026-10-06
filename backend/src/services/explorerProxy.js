@@ -7,7 +7,7 @@ import { authService } from './authService.js'
 import { canAccessResource } from '../utils/access.js'
 
 /**
- * Cluster Explorer (Radar, Apache-2.0) behind KubeEZ.
+ * KubeEZ Explorer (Radar, Apache-2.0) behind KubeEZ.
  *
  * Radar runs in the cluster with auth.mode=proxy behind a ClusterIP Service.
  * KubeEZ is its ONLY way in: this proxy authenticates the KubeEZ user, checks
@@ -17,7 +17,8 @@ import { canAccessResource } from '../utils/access.js'
  * Kubernetes RBAC (explorer.sh maps the groups) decides what is allowed.
  */
 export const EXPLORER_NS = 'kubeez-explorer'
-const SVC = 'radar'
+// Service name; installs from before the KubeEZ rename still have "radar"
+const SVCS = ['kubeez-explorer', 'radar']
 const PORT = 9280
 export const basePath = (clusterId) => `/api/clusters/${clusterId}/explorer`
 // Lookahead, not a consumed "/": an Express mount must end on a path boundary
@@ -61,6 +62,43 @@ export function upstreamHeaders(reqHeaders, user, { keepUpgrade = false, proto =
     return out
 }
 
+// ── KubeEZ branding for the Explorer UI ──────────────────────────────────────
+// The engine (Radar, Apache-2.0) is used unmodified; its pages get KubeEZ's
+// name, logo and title here. Engine links (GitHub, its cloud offer, release
+// notes) are hidden. Credit for the engine stays in THIRD_PARTY_NOTICES.md.
+const LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2563eb"/><rect x="8" y="8" width="16" height="6" rx="1.5" fill="none" stroke="#fff" stroke-width="2"/><rect x="8" y="18" width="16" height="6" rx="1.5" fill="none" stroke="#fff" stroke-width="2"/><circle cx="11.5" cy="11" r="1" fill="#fff"/><circle cx="11.5" cy="21" r="1" fill="#fff"/></svg>'
+export const EXPLORER_LOGO = 'data:image/svg+xml,' + encodeURIComponent(LOGO_SVG)
+const BRAND_CSS = `[aria-label="Radar Cloud"],[aria-label*="Radar on GitHub"],a[href*="github.com/skyhook-io"],a[href*="radarhq.io"]{display:none!important}`
+// Runs in the page: renames the engine's texts, swaps its logo, keeps the
+// tab title on KubeEZ — again whenever the app re-renders.
+const BRAND_JS = `(function(){
+var L=${JSON.stringify(EXPLORER_LOGO)};
+function t(){var d=document.title;if(/Radar/.test(d))document.title=d.replace(/ · Radar$/,' · KubeEZ Explorer').replace(/^Radar$/,'KubeEZ Explorer');}
+function fix(root){
+ if(!root||!root.querySelectorAll)return;
+ var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),n;
+ while((n=w.nextNode())){var v=n.nodeValue,s=v.trim();
+  if(s==='Radar')n.nodeValue=v.replace('Radar','KubeEZ');
+  else if(/^by Skyhook$/i.test(s))n.nodeValue=v.replace(/by Skyhook/i,'Explorer');
+  else if(/^· by Skyhook$/i.test(s))n.nodeValue=v.replace(/· by Skyhook/i,'· KubeEZ Explorer');
+  else if(s==="What's new"){var b=n.parentElement&&n.parentElement.closest('button,a,li');if(b)b.style.display='none';}}
+ root.querySelectorAll('img').forEach(function(i){if(/radar/i.test(i.getAttribute('src')||'')&&i.src!==L)i.src=L;});}
+var q=false;function run(){q=false;fix(document.body);t();}
+new MutationObserver(function(){if(!q){q=true;requestAnimationFrame(run);}}).observe(document.documentElement,{childList:true,subtree:true,characterData:true});
+document.addEventListener('DOMContentLoaded',run);t();
+})();`
+
+/** An Explorer page with KubeEZ's title, icon and branding script. */
+export function brandPage(html) {
+    if (!/<head[\s>]/i.test(html)) return html
+    let out = html
+        .replace(/<title>[^<]*<\/title>/i, '<title>KubeEZ Explorer</title>')
+        .replace(/<link[^>]+rel="(?:icon|shortcut icon|apple-touch-icon)"[^>]*>\s*/gi, '')
+    const title = /<title>/i.test(out) ? '' : '<title>KubeEZ Explorer</title>'
+    const inject = `${title}<link rel="icon" type="image/svg+xml" href="${EXPLORER_LOGO}"><style>${BRAND_CSS}</style><script>${BRAND_JS}</script>`
+    return out.replace(/<\/head>/i, inject + '</head>')
+}
+
 /** Strict CSP for an Explorer page: Radar's own inline scripts allowed by hash only. */
 export function cspFor(html) {
     const hashes = []
@@ -97,11 +135,11 @@ async function target(cluster, fresh = false) {
     if (t && !fresh && Date.now() - t.at < TARGET_TTL) return t.ip
     const ssh = await automationEngine.connectSSH({ ...cluster.masterNodes[0], ownerId: cluster.ownerId, orgId: cluster.orgId })
     try {
-        const r = await ssh.execCommand(`${KB} -n ${EXPLORER_NS} get svc ${SVC} -o jsonpath='{.spec.clusterIP}' 2>/dev/null`)
+        const r = await ssh.execCommand(SVCS.map(n => `${KB} -n ${EXPLORER_NS} get svc ${n} -o jsonpath='{.spec.clusterIP}' 2>/dev/null`).join(' || '))
         const ip = (r.stdout || '').trim()
         if (!/^[0-9a-f.:]+$/i.test(ip)) {
             targets.delete(cluster.id)
-            throw Object.assign(new Error('The Cluster Explorer is not installed on this cluster — install it from Add-ons.'), { status: 404, code: 'NOT_INSTALLED' })
+            throw Object.assign(new Error('The KubeEZ Explorer is not installed on this cluster — install it from Add-ons.'), { status: 404, code: 'NOT_INSTALLED' })
         }
         targets.set(cluster.id, { ip, at: Date.now() })
         if (!gateChecked.has(cluster.id)) {
@@ -136,7 +174,9 @@ metadata:
   name: kubeez-explorer-helm-gate
   labels: { app.kubernetes.io/part-of: kubeez-explorer }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubeez-explorer-helm-gate }
-subjects: [{ kind: ServiceAccount, name: radar, namespace: ${EXPLORER_NS} }]
+subjects:
+  - { kind: ServiceAccount, name: kubeez-explorer, namespace: ${EXPLORER_NS} }
+  - { kind: ServiceAccount, name: radar, namespace: ${EXPLORER_NS} }
 `
 
 async function openUpstream(cluster) {
@@ -177,7 +217,7 @@ export async function explorerHttp(req, res) {
     try {
         stream = await openUpstream(cluster)
     } catch (e) {
-        return sendError(res, e.status || 502, e.status ? e.message : `Could not reach the Cluster Explorer: ${e.message}`, e.code)
+        return sendError(res, e.status || 502, e.status ? e.message : `Could not reach the KubeEZ Explorer: ${e.message}`, e.code)
     }
 
     const headers = upstreamHeaders(req.headers, req.user, { proto: req.protocol })
@@ -204,15 +244,16 @@ export async function explorerHttp(req, res) {
         const chunks = []
         pres.on('data', c => chunks.push(c))
         pres.on('end', () => {
-            const body = Buffer.concat(chunks)
-            h['content-security-policy'] = cspFor(body.toString('utf8'))
+            const html = brandPage(Buffer.concat(chunks).toString('utf8'))
+            const body = Buffer.from(html, 'utf8')
+            h['content-security-policy'] = cspFor(html)
             h['content-length'] = String(body.length)
             delete h['transfer-encoding']
             res.writeHead(pres.statusCode, h)
             res.end(body)
         })
     })
-    up.on('error', (e) => sendError(res, 502, `The Cluster Explorer connection failed: ${e.message}`))
+    up.on('error', (e) => sendError(res, 502, `The KubeEZ Explorer connection failed: ${e.message}`))
     // browser gone (closed tab, ended SSE) → close the tunnel stream too
     res.on('close', () => { try { up.destroy() } catch { } try { stream.destroy() } catch { } })
     req.pipe(up)
