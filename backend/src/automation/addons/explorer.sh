@@ -150,6 +150,32 @@ if [ $RC -ne 0 ]; then
         "Check 'kubectl -n $NS describe pod -l app.kubernetes.io/name=radar' (image pull from ghcr.io? memory?), then Repair."
 fi
 
+# Helm installs from the Explorer (charts, traffic sources like Caretta):
+# Radar 1.15 opens its Helm-write gate only if ITS service account may create
+# Secrets (where Helm stores releases). The install itself then runs AS THE
+# SIGNED-IN USER (impersonation), so Kubernetes RBAC still decides what each
+# KubeEZ role may install. This is the smallest grant that opens the gate —
+# NOT the chart's rbac.helm, which would give Radar write access to everything.
+cat <<'EOF' | kubectl apply -f - >/dev/null || log "⚠ Could not grant the Helm gate — Helm installs from the Explorer will be refused"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubeez-explorer-helm-gate
+  labels: { app.kubernetes.io/part-of: kubeez-explorer }
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubeez-explorer-helm-gate
+  labels: { app.kubernetes.io/part-of: kubeez-explorer }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubeez-explorer-helm-gate }
+subjects: [{ kind: ServiceAccount, name: radar, namespace: kubeez-explorer }]
+EOF
+
 progress 85 "Checking Radar"
 IP=$(kubectl -n "$NS" get svc radar -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
 [ -n "$IP" ] || fail INSTALL_FAILED "Radar's Service was not created." "Repair the add-on."

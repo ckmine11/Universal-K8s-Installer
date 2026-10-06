@@ -46,11 +46,11 @@ export function upstreamHeaders(reqHeaders, user, { keepUpgrade = false, proto =
         const key = k.toLowerCase()
         if (key === 'authorization' || key.startsWith('x-forwarded-') || key === 'x-real-ip' || key === 'forwarded') continue
         if (!keepUpgrade && HOP.has(key)) continue
-        if (key === 'cookie') {
-            const rest = String(v).split(';').map(c => c.trim()).filter(c => c && !/^token=/.test(c))
-            if (rest.length) out.cookie = rest.join('; ')
-            continue
-        }
+        // No cookies at all: Radar trusts its own session cookie BEFORE the
+        // identity headers, so a cookie left by an earlier KubeEZ user in the
+        // same browser would act as that user. The headers below are the only
+        // identity Radar ever gets (and KubeEZ's token never leaves KubeEZ).
+        if (key === 'cookie') continue
         out[key] = v
     }
     const id = identityFor(user)
@@ -162,6 +162,7 @@ export async function explorerHttp(req, res) {
         const h = { ...pres.headers }
         delete h['content-security-policy']
         delete h['x-frame-options']
+        delete h['set-cookie']   // see upstreamHeaders: Radar sessions are never used
         h['x-frame-options'] = 'SAMEORIGIN'
         h['x-content-type-options'] = 'nosniff'
         const isHtml = /text\/html/i.test(h['content-type'] || '')

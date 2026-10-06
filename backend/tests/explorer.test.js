@@ -88,7 +88,7 @@ test('identity: KubeEZ role → Kubernetes groups, no reserved names', () => {
     assert.equal(identityFor({ username: 'x', role: 'superadmin' }).groups[0], 'kubeez:admins')
     assert.equal(identityFor({ username: 'evil,system:masters', role: 'viewer' }).user, 'kubeez:evil_system_masters')
     const h = upstreamHeaders({ cookie: 'token=SECRET; radar_session=abc', authorization: 'Bearer SECRET', 'X-Forwarded-User': 'admin', 'x-forwarded-groups': 'system:masters', host: 'k' }, { username: 'v', role: 'viewer', orgId: 'o' })
-    assert.equal(h.cookie, 'radar_session=abc')
+    assert.equal(h.cookie, undefined, 'no cookies reach Radar (its session cookie would beat the headers)')
     assert.equal(h.authorization, undefined)
     assert.equal(h['x-forwarded-user'], 'kubeez:v')
     assert.equal(h['x-forwarded-groups'], 'kubeez:viewers,kubeez:org:o')
@@ -115,7 +115,7 @@ test('proxy: spoofed identity replaced, KubeEZ credentials never reach Radar', a
     assert.equal(r.status, 200)
     assert.equal(lastHeaders['x-forwarded-user'], 'kubeez:vic')
     assert.equal(lastHeaders['x-forwarded-groups'], 'kubeez:viewers,kubeez:org:org-a')
-    assert.equal(lastHeaders.cookie, 'radar_session=r1')
+    assert.equal(lastHeaders.cookie, undefined)
     assert.ok(!JSON.stringify(lastHeaders).includes('tok-viewer'))
 })
 

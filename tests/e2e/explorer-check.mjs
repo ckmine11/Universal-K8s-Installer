@@ -64,6 +64,7 @@ if (r.code !== 0) console.log(r.stdout.split('\n').slice(-25).join('\n'))
 ok(K('-n kubeez-explorer get svc radar -o jsonpath={.spec.type}').stdout === 'ClusterIP', 'Radar is reachable only inside the cluster (ClusterIP)')
 ok(K('get clusterrolebinding kubeez-explorer-viewers -o jsonpath={.roleRef.name}').stdout === 'view', 'viewers → view')
 ok(K('get clusterrolebinding kubeez-explorer-operators -o jsonpath={.roleRef.name}').stdout === 'edit', 'operators → edit')
+ok(K('auth can-i create secrets --as=system:serviceaccount:kubeez-explorer:radar -n default').stdout === 'yes' && K('auth can-i create deployments --as=system:serviceaccount:kubeez-explorer:radar -n default').stdout === 'no', 'Helm gate: Radar may create Secrets (opens Helm installs, done as the user) — nothing more')
 const ip = K('-n kubeez-explorer get svc radar -o jsonpath={.spec.clusterIP}').stdout
 
 // ── KubeEZ proxy in front of it ──
@@ -113,7 +114,7 @@ server.close()
 // ── Uninstall ──
 r = dx('bash /k/addon-uninstall.sh explorer /etc/kubernetes/admin.conf kubeez-explorer 2>&1')
 ok(r.code === 0, 'uninstall finished')
-ok(K('get ns kubeez-explorer -o name').code !== 0 && K('get clusterrolebinding kubeez-explorer-viewers -o name').code !== 0, 'namespace and role mapping removed')
+ok(K('get ns kubeez-explorer -o name').code !== 0 && K('get clusterrolebinding kubeez-explorer-viewers -o name').code !== 0 && K('get clusterrole kubeez-explorer-helm-gate -o name').code !== 0, 'namespace, role mapping and Helm gate removed')
 ok(K('get deploy web -o name').code === 0, 'workloads untouched')
 
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED')

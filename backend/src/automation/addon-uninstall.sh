@@ -164,8 +164,8 @@ explorer)
         helm -n kubeez-explorer uninstall radar --wait --timeout 3m 2>&1 | tail -2 | sed 's/^/  /' || true
     fi
     delete_ns kubeez-explorer
-    del clusterrolebinding kubeez-explorer-admins kubeez-explorer-operators kubeez-explorer-viewers kubeez-explorer-cluster-read
-    del clusterrole kubeez-explorer-cluster-read
+    del clusterrolebinding kubeez-explorer-admins kubeez-explorer-operators kubeez-explorer-viewers kubeez-explorer-cluster-read kubeez-explorer-helm-gate
+    del clusterrole kubeez-explorer-cluster-read kubeez-explorer-helm-gate
     del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=radar
     ;;
 
