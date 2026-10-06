@@ -1,3 +1,4 @@
+import { Duplex } from 'stream'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -17,6 +18,8 @@ class AgentService {
     constructor() {
         this.agentSockets = new Map() // agentId -> WebSocket
         this.pendingCommands = new Map() // commandId -> { resolve, reject, timeout }
+        this.agentCaps = new Map()       // agentId -> Set of capabilities the agent build offers
+        this.tcpStreams = new Map()      // streamId -> { agentId, duplex, opened }
         this.ensureDataDir()
     }
 
@@ -167,7 +170,11 @@ class AgentService {
                 } else if (msg.type === 'command-result') {
                     this._resolveCommand(agentId, msg.commandId, msg)
                 } else if (msg.type === 'register-ips') {
+                    // Agent builds from before TCP streams send no caps
+                    this.agentCaps.set(agentId, new Set(Array.isArray(msg.caps) ? msg.caps : []))
                     await this._updateAgentIps(agentId, msg.ips || [])
+                } else if (msg.type === 'tcp-opened' || msg.type === 'tcp-data' || msg.type === 'tcp-close') {
+                    this._onTcpMessage(agentId, msg)
                 }
             } catch (e) {
                 console.error('[AgentService] Failed to parse agent message:', e.message)
@@ -180,7 +187,9 @@ class AgentService {
             // a replaced socket must not unregister its newer reconnection.
             if (this.agentSockets.get(agentId) !== ws) return
             this.agentSockets.delete(agentId)
+            this.agentCaps.delete(agentId)
             this._rejectPendingForAgent(agentId, new Error(`Agent ${agentId} disconnected`))
+            this._closeTcpForAgent(agentId, new Error('The Gateway Agent disconnected'))
             await this._updateAgentStatus(agentId, 'offline')
             console.log(`[AgentService] Agent ${agentId} disconnected`)
         })
@@ -283,6 +292,84 @@ class AgentService {
             this.pendingCommands.set(commandId, { agentId, resolve, reject, timeout })
             ws.send(JSON.stringify(payload))
         })
+    }
+
+    // ─── TCP streams through the agent ───────────────────────────
+    /** Does this (online) agent build relay TCP streams? */
+    agentSupports(agentId, cap) {
+        return !!this.agentCaps.get(agentId)?.has(cap)
+    }
+
+    /**
+     * A TCP connection to host:port as seen from nodeConfig's machine, through
+     * the agent's SSH session to it. Resolves to a Duplex once it is open.
+     */
+    openTcp(agentId, nodeConfig, host, port, timeoutMs = 30000) {
+        const ws = this.agentSockets.get(agentId)
+        if (!ws) return Promise.reject(new Error(`Agent ${agentId} is not online`))
+        if (!this.agentSupports(agentId, 'tcp')) {
+            return Promise.reject(Object.assign(new Error('This Gateway Agent is too old for in-cluster web tools — reinstall it from the Tunnels page (one command, same token).'), { code: 'AGENT_OUTDATED' }))
+        }
+        const streamId = uuidv4()
+        const send = (o) => { try { if (ws.readyState === 1) ws.send(JSON.stringify(o)) } catch { } }
+        let closedByUs = false
+        const streams = this.tcpStreams
+        const duplex = new Duplex({
+            read() { },
+            write(chunk, enc, cb) { send({ type: 'tcp-data', streamId, data: Buffer.from(chunk).toString('base64') }); cb() },
+            final(cb) { closedByUs = true; send({ type: 'tcp-close', streamId }); cb() },
+            destroy(err, cb) {
+                streams.delete(streamId)
+                if (!closedByUs) send({ type: 'tcp-close', streamId })
+                cb(err)
+            }
+        })
+        // An agent drop destroys the stream with an error — never let that be an
+        // unhandled 'error' event (it would take the whole server down)
+        duplex.on('error', () => { })
+        const entry = { agentId, duplex, opened: false }
+        streams.set(streamId, entry)
+        return new Promise((resolve, reject) => {
+            entry.timer = setTimeout(() => {
+                this.tcpStreams.delete(streamId)
+                send({ type: 'tcp-close', streamId })
+                reject(new Error(`Could not reach ${host}:${port} through the Gateway Agent (timeout)`))
+            }, timeoutMs)
+            entry.resolve = resolve
+            entry.reject = reject
+            send({
+                type: 'tcp-open', streamId, host, port,
+                ip: nodeConfig.ip, username: nodeConfig.username, password: nodeConfig.password, privateKey: nodeConfig.sshKey
+            })
+        })
+    }
+
+    _onTcpMessage(agentId, msg) {
+        const entry = this.tcpStreams.get(msg.streamId)
+        // An agent may only feed streams that were opened through IT
+        if (!entry || entry.agentId !== agentId) return
+        if (msg.type === 'tcp-opened') {
+            entry.opened = true
+            clearTimeout(entry.timer)
+            entry.resolve(entry.duplex)
+        } else if (msg.type === 'tcp-data') {
+            entry.duplex.push(Buffer.from(msg.data || '', 'base64'))
+        } else if (msg.type === 'tcp-close') {
+            this.tcpStreams.delete(msg.streamId)
+            clearTimeout(entry.timer)
+            if (!entry.opened) entry.reject(new Error(msg.error || 'The connection was refused'))
+            else entry.duplex.push(null)
+        }
+    }
+
+    _closeTcpForAgent(agentId, error) {
+        for (const [id, entry] of this.tcpStreams) {
+            if (entry.agentId !== agentId) continue
+            this.tcpStreams.delete(id)
+            clearTimeout(entry.timer)
+            if (!entry.opened) entry.reject(error)
+            else entry.duplex.destroy(error)
+        }
     }
 
     _rejectPendingForAgent(agentId, error) {

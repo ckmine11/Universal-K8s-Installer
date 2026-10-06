@@ -29,7 +29,7 @@ import {
     AlertTriangle,
     Lock,
     Rocket
-} from 'lucide-react'
+, Compass } from 'lucide-react'
 
 export default function InstallationDashboard({ installationId, onGoHome, onScaleCluster }) {
     const { toast } = useToast()
@@ -568,6 +568,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                             {ADDONS_LIST.map(addon => {
                                 // Map icon name to component
                                 const iconMap = {
+                                        Compass,
                                     Network,
                                     BarChart3,
                                     LayoutDashboard,

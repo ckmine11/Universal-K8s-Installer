@@ -9,6 +9,10 @@
 //   node agent-bundle.js --config <file>
 //   node agent-bundle.js --token T --agent-id A --server wss://…
 //
+// Besides commands, the agent relays TCP streams (tcp-open/-data/-close) to
+// addresses its SSH sessions can reach — used for in-cluster web tools like the
+// Cluster Explorer, so they need no open ports either.
+//
 // Exit codes: 78 = this agent was removed / its token revoked in KubeEZ (a
 // service manager must NOT restart it); 0 = replaced by another copy of itself.
 const WebSocket = require('ws');
@@ -55,8 +59,38 @@ const crypto = require('crypto');
 const sessionKey = (ip, username, password, privateKey) =>
     crypto.createHash('sha256').update([ip, username, password || '', privateKey || ''].join('\0')).digest('hex');
 let attempt = 0;
+// Capabilities this agent build offers (KubeEZ checks before using them)
+const CAPS = ['tcp'];
+const tcpStreams = new Map();   // streamId → ssh forwarding channel
+
+// One SSH login per account+host, shared by commands and TCP streams
+async function getSession(ip, username, password, privateKey) {
+    const key = sessionKey(ip, username, password, privateKey);
+    let ssh = sshSessions.get(key);
+    if (ssh && ssh.isConnected()) return { ssh, key };
+    // Several requests arrive at once (live metrics sends 5): share ONE login
+    // instead of opening 5 connections and leaking 4 of them
+    let pending = connecting.get(key);
+    if (!pending) {
+        pending = (async () => {
+            const s = new NodeSSH();
+            await s.connect({ host: ip, username, password, privateKey, tryKeyboard: true, readyTimeout: 60000 });
+            sshSessions.set(key, s);
+            log(`SSH connected to ${ip}`);
+            return s;
+        })().finally(() => connecting.delete(key));
+        connecting.set(key, pending);
+    }
+    return { ssh: await pending, key };
+}
+
+function closeStreams() {
+    for (const st of tcpStreams.values()) { try { st.destroy(); } catch (_) {} }
+    tcpStreams.clear();
+}
 
 function closeSessions() {
+    closeStreams();
     for (const ssh of sshSessions.values()) { try { ssh.dispose(); } catch (_) {} }
     sshSessions.clear();
 }
@@ -73,7 +107,7 @@ function connect() {
         attempt = 0;
         lastHeard = Date.now();
         log(`Connected to ${server} — bridging the local network`);
-        send({ type: 'register-ips', ips: ['gateway'] });
+        send({ type: 'register-ips', ips: ['gateway'], caps: CAPS });
         pingTimer = setInterval(() => {
             // A connection that died silently (NAT/proxy/Wi-Fi change) never fires
             // 'close' — notice the missing answers and reconnect.
@@ -89,28 +123,38 @@ function connect() {
         lastHeard = Date.now();
         let msg;
         try { msg = JSON.parse(data); } catch (e) { return log('Ignoring malformed message:', e.message); }
+        // ── TCP streams: KubeEZ ⇄ (this agent) ⇄ SSH session ⇄ host:port ──
+        if (msg.type === 'tcp-open') {
+            const { streamId, ip, username, password, privateKey, host, port } = msg;
+            try {
+                const { ssh } = await getSession(ip, username, password, privateKey);
+                const ch = await ssh.forwardOut('127.0.0.1', 0, String(host), Number(port));
+                tcpStreams.set(streamId, ch);
+                ch.on('data', (d) => send({ type: 'tcp-data', streamId, data: d.toString('base64') }));
+                ch.on('close', () => { if (tcpStreams.delete(streamId)) send({ type: 'tcp-close', streamId }); });
+                ch.on('error', () => {});
+                send({ type: 'tcp-opened', streamId });
+            } catch (error) {
+                send({ type: 'tcp-close', streamId, error: error.message });
+            }
+            return;
+        }
+        if (msg.type === 'tcp-data') {
+            const ch = tcpStreams.get(msg.streamId);
+            if (ch) ch.write(Buffer.from(msg.data || '', 'base64'));
+            return;
+        }
+        if (msg.type === 'tcp-close') {
+            const ch = tcpStreams.get(msg.streamId);
+            if (ch) { tcpStreams.delete(msg.streamId); try { ch.end(); } catch (_) {} }
+            return;
+        }
         if (msg.type !== 'execute-ssh') return;
 
         const { commandId, ip, username, password, command, privateKey } = msg;
         const key = sessionKey(ip, username, password, privateKey);
         try {
-            let ssh = sshSessions.get(key);
-            if (!ssh || !ssh.isConnected()) {
-                // Several commands arrive at once (live metrics sends 5): share ONE
-                // login instead of opening 5 connections and leaking 4 of them
-                let pending = connecting.get(key);
-                if (!pending) {
-                    pending = (async () => {
-                        const s = new NodeSSH();
-                        await s.connect({ host: ip, username, password, privateKey, tryKeyboard: true, readyTimeout: 60000 });
-                        sshSessions.set(key, s);
-                        log(`SSH connected to ${ip}`);
-                        return s;
-                    })().finally(() => connecting.delete(key));
-                    connecting.set(key, pending);
-                }
-                ssh = await pending;
-            }
+            const { ssh } = await getSession(ip, username, password, privateKey);
             log(`Running on ${ip}: ${String(command).substring(0, 50)}...`);
             const result = await ssh.execCommand(command, { options: { pty: true } });
             // code is null when the process was killed by a signal — that's a failure, not success

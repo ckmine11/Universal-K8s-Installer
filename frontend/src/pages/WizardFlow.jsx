@@ -33,7 +33,7 @@ import {
     Database,
     GitBranch,
     Sparkles
-} from 'lucide-react'
+, Compass } from 'lucide-react'
 import NodeVerificationCard from '../components/NodeVerificationCard'
 import DeploymentPlan from '../components/DeploymentPlan'
 
@@ -996,6 +996,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {ADDONS_LIST.map((addon) => {
                                     const iconMap = {
+                                        Compass,
                                         Network,
                                         BarChart3,
                                         LayoutDashboard,

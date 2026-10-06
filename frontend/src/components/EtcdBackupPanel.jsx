@@ -71,7 +71,7 @@ function groupByAge(backups) {
 
 // view: 'snapshots' (the snapshots themselves) or 'offsite' (offsite storage + disaster recovery).
 // onData: lets the Backups overview read what was loaded (no second request).
-export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canManage = false, view = 'snapshots', onData }) {
+export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canManage = false, view = 'snapshots', onData, explorer = false }) {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
@@ -451,6 +451,7 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                     snapshot={wizard.snapshot}
                     resumeJobId={wizard.resumeJobId}
                     controlPlanes={data?.controlPlanes || 1}
+                    explorer={explorer}
                     onClose={() => { setWizard(null); fetchBackups() }}
                     onFinished={fetchBackups}
                     onUndo={(f) => setWizard({ snapshot: { filename: f, created: new Date().toISOString(), type: 'pre-restore' }, key: Date.now() })}

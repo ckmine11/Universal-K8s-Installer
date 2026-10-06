@@ -12,7 +12,8 @@ export const ADDON_REGISTRY = {
     longhorn:       { label: 'Longhorn Storage',              ns: 'longhorn-system',      detect: 'ds/longhorn-manager', keepsData: true },
     argocd:         { label: 'ArgoCD',                        ns: 'argocd',               detect: 'deploy/argocd-server' },
     seaweedfs:      { label: 'S3 Object Storage (SeaweedFS)', ns: 'seaweedfs',            detect: 'deploy/seaweedfs', keepsData: true },
-    velero:         { label: 'Velero (Volume Backups)',       ns: 'velero',               detect: 'deploy/velero' }
+    velero:         { label: 'Velero (Volume Backups)',       ns: 'velero',               detect: 'deploy/velero' },
+    explorer:       { label: 'Cluster Explorer',              ns: 'kubeez-explorer',      detect: 'deploy/radar' }
 }
 
 const BROKEN = /CrashLoopBackOff|ErrImagePull|ImagePullBackOff|InvalidImageName|CreateContainerConfigError|CreateContainerError|RunContainerError|OOMKilled|Error/

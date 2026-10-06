@@ -5,7 +5,7 @@ import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST } from '../config/addons'
-import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock, Eye, HeartPulse, Users, RotateCcw } from 'lucide-react'
+import { Server, Zap, Plus, Settings, Cpu, Network, Rocket, Trash2, ExternalLink, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles, Lock, Eye, HeartPulse, Users, RotateCcw , Compass } from 'lucide-react'
 
 // Full class names per colour (Tailwind drops classes built from `${color}`)
 const TONE = {
@@ -180,6 +180,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
                                 {ADDONS_LIST.map(addon => {
                                     // Map icon name to component
                                     const iconMap = {
+                                        Compass,
                                         Network,
                                         BarChart3,
                                         LayoutDashboard,
@@ -494,12 +495,13 @@ export default function Home({ onStartNew, onScaleExisting }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {[
                         { title: "Multi-OS", icon: Server, desc: "Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, Amazon Linux — and CentOS 7 up to Kubernetes 1.34.", color: "blue" },
-                        { title: "Safe Upgrades", icon: Rocket, desc: "Kubernetes 1.27 → 1.37, one version at a time. Automatic etcd snapshot first, clear failure reasons, auto-retry.", color: "cyan" },
-                        { title: "Add-ons, Managed", icon: Package, desc: "Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3, Velero — install, repair, uninstall and logs from the UI.", color: "pink" },
+                        { title: "Safe Upgrades", icon: Rocket, desc: "Kubernetes 1.27 → 1.37, one version at a time. Safety check for blockers, automatic etcd snapshot first, clear failure reasons, auto-retry.", color: "cyan" },
+                        { title: "Add-ons, Managed", icon: Package, desc: "Ingress, Prometheus + Grafana, Dashboard, cert-manager, Longhorn, ArgoCD, S3, Velero, Explorer — install, repair, uninstall and logs from the UI.", color: "pink" },
                         { title: "Backups & Restore", icon: Database, desc: "Verified etcd snapshots, a preview of every restore with automatic rollback and undo, volume data backups (Velero), encrypted offsite copies and disaster recovery.", color: "emerald" },
                         { title: "Auto-Healing", icon: HeartPulse, desc: "Detects NotReady nodes, disk / memory pressure and crash-looping pods, and fixes what it safely can.", color: "orange" },
                         { title: "Resume & Scale", icon: RotateCcw, desc: "A stopped install resumes where it left off; add worker nodes to a running cluster any time.", color: "purple" },
                         { title: "Topology & Terminal", icon: Network, desc: "Live 3D topology, CPU / memory / disk and a browser terminal on every node.", color: "blue" },
+                        { title: "Cluster Explorer", icon: Compass, desc: "Every resource, logs, timeline, Helm, GitOps and a 31-check health audit — inside KubeEZ, with your login and role.", color: "cyan" },
                         { title: "Gateway Agent", icon: Shield, desc: "Manage private servers through an outbound tunnel — no inbound firewall ports.", color: "cyan" },
                         { title: "Teams & Roles", icon: Users, desc: "Admin, Operator and Viewer roles in isolated workspaces. Viewers never see credentials.", color: "emerald" }
                     ].map((feature, i) => (

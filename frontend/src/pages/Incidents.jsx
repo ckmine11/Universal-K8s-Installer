@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../context/AuthContext'
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, Activity, Eye, EyeOff, RotateCcw, WifiOff } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, Activity, Eye, EyeOff, RotateCcw, WifiOff, Compass } from 'lucide-react'
+import { explorerResourceLink, explorerPages } from '../components/explorer/explorerLinks'
 
 // Friendly names (same as the toast notifications)
 const REASON_LABEL = {
@@ -47,6 +48,7 @@ export default function Incidents() {
     const [monitor, setMonitor] = useState(null)   // { clusters, connected }
     const [loading, setLoading] = useState(true)
     const [showAll, setShowAll] = useState(false)
+    const [explorerOn, setExplorerOn] = useState(new Set())   // cluster ids with the Explorer installed
 
     const load = async () => {
         try {
@@ -63,8 +65,19 @@ export default function Incidents() {
     useEffect(() => {
         load()
         const t = setInterval(load, 10000)
+        apiFetch('/api/clusters/list').then(r => r.ok ? r.json() : []).then(list => {
+            setExplorerOn(new Set((Array.isArray(list) ? list : []).filter(c => c.addons?.explorer).map(c => c.id)))
+        }).catch(() => {})
         return () => clearInterval(t)
     }, [])
+
+    // Where to look in the Explorer: the pod, the node, or the cluster's timeline
+    const investigate = (inc) => {
+        if (!explorerOn.has(inc.clusterId)) return null
+        if (inc.namespace && inc.target && inc.target !== 'cluster-wide') return explorerResourceLink(inc.clusterId, 'Pod', inc.namespace, inc.target)
+        if (!inc.namespace && inc.target && inc.target !== 'cluster-wide') return explorerResourceLink(inc.clusterId, 'Node', '', inc.target)
+        return explorerPages(inc.clusterId).timeline
+    }
 
     const open = incidents.filter(i => !CLOSED.has(i.status))
     const shown = showAll ? incidents : open
@@ -174,6 +187,11 @@ export default function Incidents() {
                                             </td>
                                             <td className="px-5 py-4 font-mono text-xs text-slate-400 break-all">
                                                 {inc.namespace ? `${inc.namespace}/` : ''}{inc.target || 'cluster-wide'}
+                                                {investigate(inc) && (
+                                                    <a href={investigate(inc)} target="_blank" rel="noopener" className="mt-1.5 flex items-center gap-1 font-sans text-[11px] font-bold text-cyan-300 hover:underline">
+                                                        <Compass className="w-3 h-3" /> Investigate in Explorer
+                                                    </a>
+                                                )}
                                             </td>
                                             <td className="px-5 py-4 max-w-sm"><Status inc={inc} /></td>
                                         </tr>

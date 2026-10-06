@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../../context/AuthContext'
 import JobProgress from './JobProgress'
+import { explorerResourceLink } from '../explorer/explorerLinks'
 import { useEtcdJob, startJob } from './useEtcdJob'
 import {
     X, Loader2, AlertTriangle, RotateCcw, Trash2, Undo2, PencilLine, ShieldCheck,
@@ -15,7 +16,8 @@ function fmtWhen(iso) {
 }
 
 // One list of objects (removed / back / reverted), app objects first, system ones folded
-function ObjectList({ items, total, icon: Icon, title, tone, empty }) {
+// linkTo(o): Explorer link for an object that exists right now (removed / reverted)
+function ObjectList({ items, total, icon: Icon, title, tone, empty, linkTo }) {
     const [showSystem, setShowSystem] = useState(false)
     const app = items.filter(o => !SYSTEM_NS.has(o.namespace))
     const sys = items.filter(o => SYSTEM_NS.has(o.namespace))
@@ -24,12 +26,17 @@ function ObjectList({ items, total, icon: Icon, title, tone, empty }) {
         emerald: 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300',
         amber: 'border-amber-500/20 bg-amber-500/[0.04] text-amber-300'
     }
-    const row = (o, i) => (
-        <li key={i} className="flex items-baseline gap-2 min-w-0">
-            <span className="text-slate-500 shrink-0">{o.kind}</span>
-            <span className="text-white truncate">{o.namespace ? <span className="text-slate-400">{o.namespace}/</span> : null}{o.name}</span>
-        </li>
-    )
+    const row = (o, i) => {
+        const href = linkTo?.(o)
+        const label = <>{o.namespace ? <span className="text-slate-400">{o.namespace}/</span> : null}{o.name}</>
+        return (
+            <li key={i} className="flex items-baseline gap-2 min-w-0">
+                <span className="text-slate-500 shrink-0">{o.kind}</span>
+                {href ? <a href={href} target="_blank" rel="noopener" className="text-white truncate hover:underline hover:text-cyan-200" title="Open in the Cluster Explorer">{label}</a>
+                    : <span className="text-white truncate">{label}</span>}
+            </li>
+        )
+    }
     return (
         <div className={`rounded-xl border p-3 ${tones[tone]}`}>
             <div className="flex items-center gap-1.5 font-black uppercase tracking-wider text-[10px] mb-2">
@@ -58,7 +65,8 @@ function ObjectList({ items, total, icon: Icon, title, tone, empty }) {
  * Restore one snapshot: what will change → typed confirmation → live progress
  * → result (with one-click undo via the safety snapshot).
  */
-export default function RestoreWizard({ clusterId, clusterName, snapshot, controlPlanes = 1, resumeJobId = null, onClose, onFinished, onUndo }) {
+export default function RestoreWizard({ clusterId, clusterName, snapshot, controlPlanes = 1, resumeJobId = null, onClose, onFinished, onUndo, explorer = false }) {
+    const live = explorer ? (o) => explorerResourceLink(clusterId, o.kind, o.namespace, o.name) : null
     const [phase, setPhase] = useState(resumeJobId ? 'running' : 'preview')
     const [preview, setPreview] = useState(null)
     const [previewErr, setPreviewErr] = useState(null)
@@ -140,9 +148,9 @@ export default function RestoreWizard({ clusterId, clusterName, snapshot, contro
                         {preview && (
                             <div className="space-y-3 mb-4">
                                 <div className="grid sm:grid-cols-3 gap-3">
-                                    <ObjectList items={preview.removed} total={preview.counts.removed} icon={Trash2} tone="red" title="Removed" empty="Nothing was created after the snapshot." />
+                                    <ObjectList linkTo={live} items={preview.removed} total={preview.counts.removed} icon={Trash2} tone="red" title="Removed" empty="Nothing was created after the snapshot." />
                                     <ObjectList items={preview.restored} total={preview.counts.restored} icon={Undo2} tone="emerald" title="Comes back" empty="Nothing was deleted after the snapshot." />
-                                    <ObjectList items={preview.reverted} total={preview.counts.reverted} icon={PencilLine} tone="amber" title="Reverted" empty="No tracked object was edited after the snapshot." />
+                                    <ObjectList linkTo={live} items={preview.reverted} total={preview.counts.reverted} icon={PencilLine} tone="amber" title="Reverted" empty="No tracked object was edited after the snapshot." />
                                 </div>
                                 <p className="text-[10px] text-slate-500 leading-relaxed">
                                     <span className="text-slate-400 font-bold">Removed</span> = created after the snapshot. <span className="text-slate-400 font-bold">Comes back</span> = deleted after it. <span className="text-slate-400 font-bold">Reverted</span> = edited after it (configs, secrets, services, workloads — for workloads this includes status-only changes like replicas becoming ready). Pods are recreated by their controllers either way.

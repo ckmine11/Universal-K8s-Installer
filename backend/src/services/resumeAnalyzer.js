@@ -157,7 +157,8 @@ class ResumeAnalyzer {
                     longhorn:   { ns: 'longhorn-system',        label: 'Longhorn Storage' },
                     argocd:     { ns: 'argocd',                 label: 'ArgoCD' },
                     seaweedfs:  { ns: 'seaweedfs',              label: 'S3 Object Storage (SeaweedFS)' },
-                    velero:     { ns: 'velero',                 label: 'Velero (Volume Backups)' }
+                    velero:     { ns: 'velero',                 label: 'Velero (Volume Backups)' },
+                    explorer:   { ns: 'kubeez-explorer',        label: 'Cluster Explorer' }
                 }
 
                 for (const [key, { ns, label }] of Object.entries(addonNsMap)) {

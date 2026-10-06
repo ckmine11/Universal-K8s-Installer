@@ -42,7 +42,7 @@ const server = createServer(app)
 // Browsers always send Origin on a WebSocket handshake. Accept only our own
 // frontend origins (cross-site WebSocket hijacking); agents send no Origin.
 const wss = new WebSocketServer({
-    server,
+    noServer: true,   // upgrades are routed below (Explorer WebSockets go to the cluster)
     verifyClient: ({ origin, req }) => {
         if (!origin) return true
         const allowed = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000').split(',').map(o => o.trim())
@@ -53,6 +53,18 @@ const wss = new WebSocketServer({
 
 import { authService } from './services/authService.js'
 import { requireAuth } from './middleware/authMiddleware.js'
+import { explorerHttp, explorerUpgrade, EXPLORER_PATH } from './services/explorerProxy.js'
+
+// One HTTP 'upgrade' entry: Cluster Explorer WebSockets (pod terminal, log
+// streams) are tunnelled to the cluster; everything else is KubeEZ's own.
+server.on('upgrade', (req, socket, head) => {
+    if (EXPLORER_PATH.test(req.url || '')) {
+        const allowed = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000').split(',').map(o => o.trim())
+        explorerUpgrade(req, socket, head, allowed).catch(() => { try { socket.destroy() } catch { } })
+        return
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+})
 
 import { requestLogger, errorLogger } from './middleware/logger.js'
 
@@ -61,6 +73,11 @@ app.use(helmet({
     contentSecurityPolicy: false, // Disable CSP to avoid frontend conflicts (API-focused)
     crossOriginEmbedderPolicy: false
 }))
+// Cluster Explorer: streamed straight through (SSE, uploads) — before
+// compression, the JSON body parser and the API rate limit (a Radar page
+// loads dozens of assets). requireAuth + workspace check inside.
+app.use(EXPLORER_PATH, cookieParser(), requireAuth, explorerHttp)
+
 app.use(compression()) // Gzip compression
 
 // Restrict CORS to known frontend origins — never wildcard in production

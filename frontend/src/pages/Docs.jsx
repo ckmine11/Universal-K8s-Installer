@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
     BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
     Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse,
-    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive
+    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass
 } from 'lucide-react'
 
 // ── Small building blocks ────────────────────────────────────────────────────
@@ -104,7 +104,8 @@ const NAV = [
     { title: 'Add-ons', items: [
         { id: 'addons', label: 'Add-on Catalogue' },
         { id: 'addon-manage', label: 'Manage, Logs & Uninstall' },
-        { id: 's3', label: 'S3 Object Storage' }
+        { id: 's3', label: 'S3 Object Storage' },
+        { id: 'explorer', label: 'Cluster Explorer' }
     ] },
     { title: 'Backups', items: [
         { id: 'etcd', label: 'etcd Snapshots & Restore' },
@@ -264,7 +265,8 @@ export default function Docs() {
                         <Table head={['Tab', 'What you find there']} rows={[
                             ['Overview', 'Version, network plugin, nodes, API endpoint · 3D / list topology · live CPU, memory and disk.'],
                             ['Add-ons', <><b>Access & logins</b>: URLs, usernames, passwords, web UIs. <b>Manage & logs</b>: health, pods, logs, Install / Repair / Reinstall / Uninstall.</>],
-                            ['Backups', 'etcd snapshots (Backup Now, verify, preview + restore, undo), disaster recovery, Offsite Backup settings and Volume Backups.']
+                            ['Backups', 'etcd snapshots (Backup Now, verify, preview + restore, undo), disaster recovery, Offsite Backup settings and Volume Backups.'],
+                            ['Explorer', 'The Cluster Explorer: every resource, logs, topology, timeline, Helm, GitOps, audit — with your KubeEZ login.']
                         ]} />
                         <P>The open tab is part of the address (e.g. <C>?tab=backups</C>), so refresh, the back button and shared links keep you in place. If a cluster failed, a banner at the top says what to do next with one-click buttons.</P>
                     </Section>
@@ -282,6 +284,7 @@ export default function Docs() {
                     <Section id="upgrade" Icon={ArrowUpCircle} color="text-emerald-400" title="Upgrade Kubernetes"
                         intro="Click Upgrade in the cluster header. Kubernetes only supports one minor version per step (e.g. 1.36 → 1.37), so that is what KubeEZ offers.">
                         <Steps items={[
+                            <>With the <b>Cluster Explorer</b> add-on, an <b>upgrade safety check</b> runs as soon as you pick the version: APIs removed in the target release, kubelet/kube-proxy skew, disruption budgets that would block draining, release-specific changes. <b>Blockers stop the upgrade</b> — only a workspace admin can continue anyway.</>,
                             'Pre-flight checks: version path, package availability, registry access, free disk, API health.',
                             'An automatic etcd snapshot is taken first (kept 45 days) — your way back if anything goes wrong.',
                             'The control plane is upgraded, then kubelet and kubectl on every node. Known issues are repaired automatically (old kubelet flags, sandbox image, containerd 2.x for 1.36+, stale kubeadm-config after a restore).',
@@ -304,7 +307,9 @@ export default function Docs() {
                             ['cert-manager', 'Automatic TLS certificates; a self-signed ClusterIssuer is ready', 'in-cluster'],
                             ['Longhorn', 'Replicated block storage; becomes the default StorageClass', 'UI :30080'],
                             ['ArgoCD', 'GitOps delivery', 'https :30443'],
-                            ['S3 Object Storage (SeaweedFS)', 'S3-compatible storage with a ready "backups" bucket + web admin UI', 'S3 :30833 · Web UI :30834']
+                            ['S3 Object Storage (SeaweedFS)', 'S3-compatible storage with a ready "backups" bucket + web admin UI', 'S3 :30833 · Web UI :30834'],
+                            ['Cluster Explorer (Radar)', 'Full Kubernetes UI, audit, upgrade safety check', 'Explorer tab — no port, through KubeEZ'],
+                            ['Velero', 'Volume data backups (set up under Backups)', 'Backups → Volume data']
                         ]} />
                         <P>Logins and tokens are shown under <b className="text-white">Access & logins</b> — no server login needed. Viewers see the URLs but never the credentials.</P>
                     </Section>
@@ -320,6 +325,22 @@ export default function Docs() {
                         ]} />
                         <Note kind="warn">Uninstalling SeaweedFS or Longhorn deletes data, so you type the add-on name to confirm. Longhorn is refused while any volume still uses it, and runs Longhorn&apos;s official uninstaller.</Note>
                         <P>Every action runs as a job with a live log, and only one job runs per cluster at a time.</P>
+                    </Section>
+
+                    <Section id="explorer" Icon={Compass} color="text-cyan-400" title="Cluster Explorer"
+                        intro="A full Kubernetes UI inside KubeEZ — powered by Radar (open source, Apache-2.0, by Skyhook). Install it from Add-ons, then open the Explorer tab of the cluster.">
+                        <Table head={['View', 'What you get']} rows={[
+                            ['Resources', 'Every object and CRD — YAML, events, logs, problem filters (CrashLoopBackOff, ImagePullBackOff…)'],
+                            ['Topology & Timeline', 'How workloads, services and ingresses connect; what changed and when, with diffs'],
+                            ['Helm & GitOps', 'Releases, values, revision diffs, rollback; Argo CD / Flux sync and drift'],
+                            ['Checks', '31-check best-practice audit and the upgrade impact report for the next version']
+                        ]} />
+                        <Steps items={[
+                            <>Radar runs <b>inside the cluster</b> behind a ClusterIP — no port is opened. KubeEZ is its only door: requests go through the same tunnel as everything else (SSH or Gateway Agent).</>,
+                            <><b>No second login.</b> KubeEZ passes your identity; Kubernetes RBAC decides: Viewer → view (read-only), Operator → edit, Admin → cluster-admin. Buttons you may not use don't work for you.</>,
+                            <>KubeEZ also uses it for the <b>upgrade safety check</b>, the <b>cluster health score</b> on Overview, and <b>Investigate in Explorer</b> links on incidents and restore previews.</>
+                        ]} />
+                        <Note>Clusters behind a Gateway Agent need an agent from this version or newer (it relays the Explorer's live connections) — reinstall it from the Tunnels page with the same command. About 200 MB of memory per cluster.</Note>
                     </Section>
 
                     <Section id="s3" Icon={Cloud} color="text-cyan-400" title="S3 Object Storage (SeaweedFS)">
@@ -432,6 +453,7 @@ export default function Docs() {
                             ['Restore preview, undo, automatic rollback', '—', '✓'],
                             ['Offsite backups & disaster recovery', '—', '✓'],
                             ['Volume backups (Velero)', '—', '✓'],
+                            ['Cluster Explorer, upgrade safety check, health score', '—', '✓'],
                             ['Daily config backups', '—', '✓']
                         ]} />
                         <P>Cluster and node limits depend on the plan — see <Link to="/pricing" className="text-blue-400 hover:underline">Pricing</Link>.</P>
@@ -450,6 +472,8 @@ export default function Docs() {
                             ['Restore: “rolled the cluster back automatically”', 'The control plane did not start on the restored data; the cluster runs on its previous data. The failed attempt is kept in /var/lib/etcd-failed-restore-<time> for diagnosis.'],
                             ['Recovery: “does not have the IP …”', 'The replacement machine must use the lost control-plane’s IP so the workers can find it.'],
                             ['Volume Backups: storage unavailable', 'Velero cannot reach the bucket — check endpoint, bucket and keys, save, then Repair Velero in Add-ons.'],
+                            ['Explorer: “Gateway Agent is too old”', 'Reinstall the agent from the Tunnels page (same command) — the new agent relays the Explorer.'],
+                            ['Upgrade: “safety check found blockers”', 'Open the full report (link in the dialog), fix the listed resources, retry. Admins can upgrade anyway.'],
                             ['Add-on Failing / Starting for long', 'Add-ons → Manage & logs → Logs shows why (image pull, storage pending, crash). Fix, then Repair.'],
                             ['Install stopped midway', 'Resume Installation — finished steps are skipped.']
                         ]} />

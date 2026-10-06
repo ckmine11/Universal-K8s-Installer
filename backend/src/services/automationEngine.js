@@ -157,6 +157,13 @@ class AutomationEngine {
      * moves into the cluster Secret and deletes. Keys travel base64 on stdin of
      * the remote shell, never as arguments of a long-running process.
      */
+    /** The Explorer is served under this cluster's KubeEZ path (Radar --base-path). */
+    async writeExplorerSettings(ssh, clusterId) {
+        if (!/^[A-Za-z0-9-]+$/.test(String(clusterId))) throw new Error('Invalid cluster id')
+        const r = await ssh.execCommand(`sudo mkdir -p /etc/kubeez && echo 'KZ_BASE_PATH=/api/clusters/${clusterId}/explorer' | sudo tee /etc/kubeez/explorer.env >/dev/null`)
+        if (r.code !== 0) throw new Error(`Could not prepare the Explorer settings on the node: ${(r.stderr || r.stdout || '').trim()}`)
+    }
+
     async writeVeleroSettings(ssh, clusterId, orgId) {
         const cfg = volumeBackupStore.effective(clusterId, orgId)
         if (!cfg) return   // velero.sh explains what to do
@@ -1106,10 +1113,11 @@ class AutomationEngine {
             if (addons.argocd) addonsToInstall.push({ type: 'script', script: 'addons/argocd.sh', label: 'ArgoCD' })
             if (addons.seaweedfs) addonsToInstall.push({ type: 'script', script: 'addons/seaweedfs.sh', label: 'S3 Object Storage (SeaweedFS)' })
             if (addons.velero) addonsToInstall.push({ type: 'script', script: 'addons/velero.sh', label: 'Velero (Volume Backups)', prepare: 'velero' })
+            if (addons.explorer) addonsToInstall.push({ type: 'script', script: 'addons/explorer.sh', label: 'Cluster Explorer', prepare: 'explorer' })
 
             // Any other add-on: a script named automation/addons/<key>.sh is enough
             // (no code change needed to add one).
-            const KNOWN = new Set(['ingress', 'monitoring', 'logging', 'dashboard', 'certManager', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs', 'velero'])
+            const KNOWN = new Set(['ingress', 'monitoring', 'logging', 'dashboard', 'certManager', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs', 'velero', 'explorer'])
             for (const [key, on] of Object.entries(addons)) {
                 if (!on || KNOWN.has(key) || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(key)) continue
                 if (existsSync(join(__dirname, '../automation/addons', `${key}.sh`))) {
@@ -1148,6 +1156,7 @@ class AutomationEngine {
                         await this.executeScript(ssh, legacyScriptPath, [item.name], onLog, addonOpts)
                     } else {
                         const scriptPath = join(__dirname, '../automation', item.script)
+                        if (item.prepare === 'explorer') await this.writeExplorerSettings(ssh, installation.originalClusterId || installation.id)
                         if (item.prepare === 'velero') await this.writeVeleroSettings(ssh, installation.originalClusterId || installation.id, installation.orgId)
                         await this.executeScript(ssh, scriptPath, [], onLog, addonOpts)
                     }

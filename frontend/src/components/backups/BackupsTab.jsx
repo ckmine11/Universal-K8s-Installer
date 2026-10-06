@@ -131,7 +131,7 @@ const TABS = [
  * Backups tab: how well is this cluster protected (score + four checks +
  * what to do next), then one section at a time.
  */
-export default function BackupsTab({ clusterId, clusterName, masterIp, canManage }) {
+export default function BackupsTab({ clusterId, clusterName, masterIp, canManage, explorer = false }) {
     const [etcd, setEtcd] = useState(null)
     const [vol, setVol] = useState(null)
     const [sub, setSub] = useState(() => {
@@ -228,7 +228,7 @@ export default function BackupsTab({ clusterId, clusterName, masterIp, canManage
                 {/* One etcd panel serves two sections (one load, one state) */}
                 <div className={sub === 'volumes' ? 'hidden' : ''}>
                     <EtcdBackupPanel clusterId={clusterId} clusterName={clusterName} masterIp={masterIp} canManage={canManage}
-                        view={sub === 'offsite' ? 'offsite' : 'snapshots'} onData={setEtcd} />
+                        view={sub === 'offsite' ? 'offsite' : 'snapshots'} onData={setEtcd} explorer={explorer} />
                 </div>
                 <div className={sub === 'volumes' ? '' : 'hidden'}>
                     <VolumeBackupPanel clusterId={clusterId} clusterName={clusterName} canManage={canManage} onData={setVol} />

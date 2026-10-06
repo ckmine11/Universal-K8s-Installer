@@ -12,6 +12,7 @@ import { stripCredentials, fillStoredCredentials } from '../services/clusterCred
 import { etcdBackupService, SNAPSHOT_RE } from '../services/etcdBackupService.js'
 import { etcdJobs } from '../services/etcdJobs.js'
 import { disasterRecovery } from '../services/disasterRecovery.js'
+import { upgradeReadiness, clusterHealth } from '../services/explorerInsights.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
@@ -832,6 +833,27 @@ router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), a
         const busy = clusterBusy(existingCluster.id)
         if (busy) return res.status(409).json({ error: busy.message, runningJobId: busy.jobId })
 
+        // Upgrade safety check (Cluster Explorer): blockers stop the upgrade
+        // unless a workspace admin explicitly accepts them. Without the
+        // Explorer (or when it can't be reached) the upgrade runs as before.
+        const override = req.body?.skipSafetyCheck === true
+        if (override && !['admin', 'superadmin'].includes(req.user.role)) {
+            return res.status(403).json({ error: 'Only a workspace admin can upgrade despite safety-check blockers.' })
+        }
+        if (!override && targetVersion && existingCluster.addons?.explorer) {
+            try {
+                const check = await upgradeReadiness(existingCluster, req.user, targetVersion)
+                if (check.verdict === 'blocked') {
+                    return res.status(409).json({
+                        error: `The upgrade safety check found ${check.blockers.length} blocker${check.blockers.length === 1 ? '' : 's'} for v${targetVersion} — fix ${check.blockers.length === 1 ? 'it' : 'them'} first${['admin', 'superadmin'].includes(req.user.role) ? ', or upgrade anyway' : ''}.`,
+                        safetyCheck: check
+                    })
+                }
+            } catch (e) {
+                if (e.code !== 'NOT_INSTALLED') console.warn('[upgrade] safety check skipped:', e.message)
+            }
+        }
+
         const newInstallationId = uuidv4()
         const upgradeInstallation = {
             ...existingCluster,
@@ -1001,6 +1023,32 @@ router.get('/:id/volume-backups/describe/:kind/:name', requireAuth, async (req, 
         res.json(await volumeBackupService.describe(cluster, req.params.kind, req.params.name))
     } catch (error) {
         res.status(error.status || 500).json({ error: error.message })
+    }
+})
+
+// ─── Cluster Explorer insights (Radar's analysis in KubeEZ's own screens) ─────
+
+// Upgrade safety check for a target version
+router.get('/:id/explorer-insights/upgrade', requireAuth, async (req, res) => {
+    const cluster = await loadOwnedCluster(req, res)
+    if (!cluster) return
+    try {
+        res.json(await upgradeReadiness(cluster, req.user, String(req.query.target || '')))
+    } catch (e) {
+        if (e.code === 'NOT_INSTALLED') return res.json({ installed: false })
+        res.status(e.status === 400 ? 400 : 200).json({ installed: true, error: e.message })
+    }
+})
+
+// Cluster health score (best-practice audit)
+router.get('/:id/explorer-insights/health', requireAuth, async (req, res) => {
+    const cluster = await loadOwnedCluster(req, res)
+    if (!cluster) return
+    try {
+        res.json(await clusterHealth(cluster, req.user))
+    } catch (e) {
+        if (e.code === 'NOT_INSTALLED') return res.json({ installed: false })
+        res.json({ installed: true, error: e.message })
     }
 })
 

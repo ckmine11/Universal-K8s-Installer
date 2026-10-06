@@ -8,9 +8,9 @@ import {
     Network, LayoutDashboard, BarChart3, Shield, Database, GitBranch, Package,
     RefreshCw, Loader2, ScrollText, Wrench, Trash2, Download, X, ChevronDown, RotateCcw,
     AlertTriangle, CheckCircle2, CircleDashed, XCircle, Settings2, ExternalLink
-} from 'lucide-react'
+, Compass } from 'lucide-react'
 
-const ICONS = { Network, LayoutDashboard, BarChart3, Shield, Database, GitBranch }
+const ICONS = { Network, LayoutDashboard, BarChart3, Shield, Database, GitBranch, Compass }
 
 const HEALTH = {
     healthy:         { label: 'Healthy',       cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', Icon: CheckCircle2 },
@@ -29,6 +29,7 @@ const UNINSTALL_NOTES = {
     longhorn: 'Refused while any volume still uses Longhorn — delete those PVCs first. Longhorn\'s own uninstaller then runs (takes a few minutes).',
     argocd: 'ArgoCD and its Applications are removed. Apps it already deployed keep running.',
     seaweedfs: 'Every bucket and object is deleted (data stored directly on a node folder is kept there).',
+    explorer: 'The Explorer (Radar) and its role bindings are removed. Nothing in your workloads changes.',
     velero: 'Volume backups stop. Backups already in the storage bucket are kept — set it up again under Backups to see them.'
 }
 

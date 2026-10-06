@@ -60,6 +60,16 @@ export const ADDONS_LIST = [
         tier: 'pro'
     },
     {
+        key: 'explorer',
+        name: 'Cluster Explorer',
+        desc: 'Full Kubernetes UI inside KubeEZ — resources, logs, topology, timeline, Helm, audit, upgrade checks (Radar)',
+        iconName: 'Compass',
+        gradient: 'from-cyan-500 via-blue-500 to-indigo-600',
+        badge: '✨ New',
+        badgeColor: 'text-cyan-400 border-cyan-500/30',
+        tier: 'pro'
+    },
+    {
         key: 'argocd',
         name: 'ArgoCD',
         desc: 'Declarative GitOps continuous delivery',

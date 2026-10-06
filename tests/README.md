@@ -6,7 +6,7 @@ Kubernetes / containerd / distro changes).
 
 | Layer | What it proves | Run locally | Time |
 |---|---|---|---|
-| **Backend** — `backend/tests/*.test.js` | Tenant isolation, RBAC, auth, agents, upgrade failure reasons, progress bar, config backups, restore preview + jobs + route guards, volume backup validation | `cd backend && npm install && npm test` | ~10 s |
+| **Backend** — `backend/tests/*.test.js` | Tenant isolation, RBAC, auth, agents, upgrade failure reasons, progress bar, config backups, restore preview + jobs + route guards, volume backup validation, Explorer proxy (identity, CSRF, CSP, WebSockets, agent TCP relay) | `cd backend && npm install && npm test` | ~10 s |
 | **Upgrade scenarios** — `tests/upgrade-script/` | `upgrade-cluster.sh` stops with the right reason for every known failure (stubbed kubeadm/apt/…) | `bash tests/upgrade-script/scenarios.sh` | ~3 min |
 | **End-to-end** — `tests/e2e/` | The real install scripts build a working cluster on each distro; real upgrades 1.35 → 1.36 → 1.37 on a mixed-OS cluster; etcd restore (single + HA) incl. preview, undo and automatic rollback; disaster recovery of a lost control-plane; Velero volume backups; S3 Object Storage add-on (SeaweedFS) + encrypted offsite backups to it | see below | 6–25 min |
 
@@ -33,6 +33,10 @@ bash tests/e2e/e2e.sh recover ubuntu2204
 
 # volume data backups with Velero: backup, namespace deleted, restore, copy, schedule, uninstall
 bash tests/e2e/e2e.sh velero ubuntu2204
+
+# Cluster Explorer (Radar) through KubeEZ's proxy: page + CSP, identity → RBAC
+# (viewer can't scale, operator can), upgrade safety check, health score, uninstall
+bash tests/e2e/e2e.sh explorer ubuntu2204
 
 # Ubuntu control-plane + Rocky and Debian workers, then 1.35 → 1.36 → 1.37
 bash tests/e2e/e2e.sh upgrade ubuntu2204 rocky9 debian12

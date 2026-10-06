@@ -15,7 +15,7 @@ import {
     Plus,
     ArrowLeft,
     Trash2,
-    Layers,
+    Layers, Compass,
     List,
     Terminal,
     Globe,
@@ -34,12 +34,16 @@ import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
 import AddonManagerPanel from '../components/AddonManagerPanel'
 import BackupsTab from '../components/backups/BackupsTab'
+import ExplorerTab from '../components/explorer/ExplorerTab'
+import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
+import HealthScoreCard from '../components/explorer/HealthScoreCard'
 
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
-    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
+    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database },
+    { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass }
 ]
 const ADDON_SECTIONS = [
     { key: 'access', label: 'Access & logins' },
@@ -71,6 +75,8 @@ export default function ClusterDetails({ onScaleCluster }) {
     const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
     const [targetVersion, setTargetVersion] = useState('')
     const [upgradeLoading, setUpgradeLoading] = useState(false)
+    const [safety, setSafety] = useState(null)          // upgrade safety check result (Explorer)
+    const [acceptBlockers, setAcceptBlockers] = useState(false)
     const [resumeModalOpen, setResumeModalOpen] = useState(false)
 
     // Open tab + add-on section live in the URL (?tab=addons&section=manage):
@@ -96,10 +102,11 @@ export default function ClusterDetails({ onScaleCluster }) {
 
         apiFetch(`/api/clusters/${id}/upgrade`, {
             method: 'POST',
-            body: JSON.stringify({ targetVersion })
+            body: JSON.stringify({ targetVersion, skipSafetyCheck: acceptBlockers })
         })
             .then(res => res.json())
             .then(data => {
+                if (data.safetyCheck) setSafety(data.safetyCheck)
                 if (data.success) {
                     // Redirect to installation view to watch progress
                     navigate(`/dashboard/${data.newInstallationId}`)
@@ -333,6 +340,9 @@ export default function ClusterDetails({ onScaleCluster }) {
             {/* ── Overview ─────────────────────────────────────────────── */}
             {tab === 'overview' && (
                 <>
+                    <div className="mb-6">
+                        <HealthScoreCard clusterId={id} installed={!!cluster.addons?.explorer} onOpenExplorer={() => setTab('explorer')} />
+                    </div>
                     {/* Quick Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                         <div className="glass p-6 rounded-2xl border border-white/5 relative overflow-hidden">
@@ -560,14 +570,19 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* ── Backups ──────────────────────────────────────────────── */}
             {tab === 'backups' && (
-                <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={canUpgrade} />
+                <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={canUpgrade} explorer={!!cluster.addons?.explorer} />
+            )}
+
+            {/* ── Explorer (Radar behind KubeEZ) ─────────────────────── */}
+            {tab === 'explorer' && (
+                <ExplorerTab clusterId={id} installed={!!cluster.addons?.explorer} canInstall={can(user?.role, 'addon:install')} role={user?.role} />
             )}
 
 
             {/* UPGRADE MODAL */}
             {upgradeModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in duration-200">
+                    <div className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in duration-200 max-h-[92vh] overflow-y-auto">
                         <h2 className="text-xl font-bold text-white mb-2">Upgrade Cluster Version</h2>
                         <p className="text-slate-400 text-sm mb-6">Select a target version to upgrade to. This process will sequentially upgrade control plane and worker nodes.</p>
 
@@ -584,7 +599,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                                 <select
                                     className="w-full p-3 bg-slate-800 rounded-xl text-white border border-white/10 focus:border-blue-500 outline-none appearance-none"
                                     value={targetVersion}
-                                    onChange={(e) => setTargetVersion(e.target.value)}
+                                    onChange={(e) => { setTargetVersion(e.target.value); setAcceptBlockers(false) }}
                                 >
                                     <option value="" disabled>Select Version</option>
                                     {availableUpgrades.map(v => (
@@ -592,6 +607,16 @@ export default function ClusterDetails({ onScaleCluster }) {
                                     ))}
                                 </select>
                             </div>
+
+                            <UpgradeSafetyCheck clusterId={id} target={targetVersion} onResult={setSafety} />
+                            {safety?.verdict === 'blocked' && (
+                                ['admin', 'superadmin'].includes(user?.role) ? (
+                                    <label className="flex items-start gap-2 text-[11px] text-red-200 cursor-pointer">
+                                        <input type="checkbox" className="mt-0.5" checked={acceptBlockers} onChange={e => setAcceptBlockers(e.target.checked)} />
+                                        I understand the blockers above and want to upgrade anyway (an etcd snapshot is still taken first).
+                                    </label>
+                                ) : <p className="text-[11px] text-red-200">Fix the blockers first — only a workspace admin can upgrade despite them.</p>
+                            )}
 
                             <div className="pt-4 flex space-x-3">
                                 <button
@@ -602,7 +627,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                                 </button>
                                 <button
                                     onClick={handleUpgrade}
-                                    disabled={!targetVersion || upgradeLoading}
+                                    disabled={!targetVersion || upgradeLoading || (targetVersion && !safety) || (safety?.verdict === 'blocked' && !acceptBlockers)}
                                     className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 >
                                     {upgradeLoading ? 'Starting...' : 'Start Upgrade'}

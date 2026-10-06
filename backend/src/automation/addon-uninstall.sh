@@ -2,7 +2,7 @@
 # KubeEZ — uninstall an add-on cleanly (run on the primary control-plane).
 #
 # Usage: addon-uninstall.sh <addon> [kubeconfig] [namespace]
-#   addon: ingress | monitoring | dashboard | cert-manager | longhorn | argocd | seaweedfs | velero
+#   addon: ingress | monitoring | dashboard | cert-manager | longhorn | argocd | seaweedfs | velero | explorer
 #   (any other add-on: pass its namespace as the 3rd argument → generic removal)
 #
 # Removes exactly what the KubeEZ installer created: the namespace AND the
@@ -158,6 +158,17 @@ seaweedfs)
     delete_ns seaweedfs
     ;;
 
+explorer)
+    if command -v helm >/dev/null 2>&1 && helm -n kubeez-explorer status radar >/dev/null 2>&1; then
+        log "Removing Radar (helm uninstall)..."
+        helm -n kubeez-explorer uninstall radar --wait --timeout 3m 2>&1 | tail -2 | sed 's/^/  /' || true
+    fi
+    delete_ns kubeez-explorer
+    del clusterrolebinding kubeez-explorer-admins kubeez-explorer-operators kubeez-explorer-viewers kubeez-explorer-cluster-read
+    del clusterrole kubeez-explorer-cluster-read
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=radar
+    ;;
+
 velero)
     # Backups already in the bucket are NOT deleted — reinstalling with the
     # same settings lists them again.
@@ -175,7 +186,7 @@ velero)
     # Any other registered add-on: its namespace is passed in (generic removal),
     # so a new add-on is manageable from the UI without a script change.
     GENERIC_NS="${3:-}"
-    [ -n "$GENERIC_NS" ] || fail UNKNOWN_ADDON "Unknown add-on '$ADDON'." "Choose one of: ingress, monitoring, dashboard, cert-manager, longhorn, argocd, seaweedfs, velero."
+    [ -n "$GENERIC_NS" ] || fail UNKNOWN_ADDON "Unknown add-on '$ADDON'." "Choose one of: ingress, monitoring, dashboard, cert-manager, longhorn, argocd, seaweedfs, velero, explorer."
     case "$GENERIC_NS" in kube-system|kube-public|kube-node-lease|default) fail UNSAFE_NAMESPACE "Refusing to delete the system namespace '$GENERIC_NS'." "Add a dedicated uninstall step for '$ADDON' to addon-uninstall.sh." ;; esac
     delete_ns "$GENERIC_NS"
     ;;
