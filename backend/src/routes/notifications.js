@@ -60,7 +60,7 @@ router.post('/telegram/chats', async (req, res) => {
     try {
         let token = String(req.body?.botToken || '').trim()
         if (!token && req.body?.channelId) token = notificationStore.channels(org(req)).find(c => c.id === req.body.channelId && c.type === 'telegram')?.config.botToken || ''
-        res.json({ chats: await telegramChats(token) })
+        res.json(await telegramChats(token))
     } catch (e) { fail(res, e) }
 })
 

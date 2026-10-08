@@ -225,9 +225,13 @@ function mailError(e) {
 /** Chats that recently wrote to the bot (or added it) — to pick the chat ID instead of guessing it. */
 export async function telegramChats(botToken) {
     if (!/^\d{5,}:[\w-]{20,}$/.test(String(botToken || ''))) throw new Error('Enter the bot token first (from @BotFather)')
-    let r
-    try { r = await postRequest(`https://api.telegram.org/bot${botToken}/getUpdates`, { limit: 100, allowed_updates: ['message', 'channel_post', 'my_chat_member'] }) }
-    catch (e) { throw new Error(telegramError(e)) }
+    let me, r
+    try {
+        // getMe: checks the token and gives the bot's @username for the t.me link
+        me = jsonOf((await postRequest(`https://api.telegram.org/bot${botToken}/getMe`, {})).text)?.result || {}
+        r = await postRequest(`https://api.telegram.org/bot${botToken}/getUpdates`, { limit: 100, allowed_updates: ['message', 'channel_post', 'my_chat_member'] })
+    } catch (e) { throw new Error(telegramError(e)) }
+    const bot = { username: me.username || null, name: me.first_name || null }
     const chats = new Map()
     for (const u of jsonOf(r.text)?.result || []) {
         const c = (u.message || u.channel_post || u.my_chat_member || u.edited_message)?.chat
@@ -235,7 +239,7 @@ export async function telegramChats(botToken) {
         const name = c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || String(c.id)
         chats.set(String(c.id), { id: String(c.id), name, type: c.type, username: c.username || null })
     }
-    return [...chats.values()]
+    return { bot, chats: [...chats.values()] }
 }
 
 /** One message, rendered for each channel. */

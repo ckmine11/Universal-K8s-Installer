@@ -187,3 +187,19 @@ test('Email: no SMTP → clear message; SMTP errors explained', async () => {
     for (const k of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k]
     assert.throws(() => validateChannel('email', { to: 'a@b.com; c@d.com' }), /comma-separated/)
 })
+
+test('Telegram "Find my chat ID": bot username + the chats that wrote to it', async () => {
+    const { telegramChats } = await import('../src/services/notifier.js')
+    answer = (c) => /getMe$/.test(c.url) ? [200, { ok: true, result: { id: 123456, is_bot: true, first_name: 'K8s', username: 'k8sminebot' } }]
+        : [200, { ok: true, result: [
+            { update_id: 1, message: { chat: { id: 987654321, type: 'private', first_name: 'Joy', username: 'joy' }, text: '/start kubeez' } },
+            { update_id: 2, message: { chat: { id: 987654321, type: 'private', first_name: 'Joy' }, text: 'hi' } },
+            { update_id: 3, my_chat_member: { chat: { id: -1001234567890, type: 'supergroup', title: 'Ops' } } }
+        ] }]
+    const r = await telegramChats(TG.botToken)
+    assert.deepEqual(r.bot, { username: 'k8sminebot', name: 'K8s' })
+    assert.deepEqual(r.chats.map(c => [c.id, c.name, c.type]), [['987654321', 'Joy', 'private'], ['-1001234567890', 'Ops', 'supergroup']])
+    answer = () => [401, { ok: false, error_code: 401, description: 'Unauthorized' }]
+    await assert.rejects(telegramChats(TG.botToken), /token is not valid/)
+    await assert.rejects(telegramChats(''), /bot token first/)
+})

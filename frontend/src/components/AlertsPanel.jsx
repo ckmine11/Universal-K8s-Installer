@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../context/AuthContext'
 import {
     Bell, Send, MessageCircle, Mail, Webhook, Hash, Users, Plus, Trash2, Loader2, CheckCircle2,
@@ -21,34 +21,69 @@ const SEV = { critical: 'text-red-300', warning: 'text-amber-300', success: 'tex
 const input = 'w-full bg-black/40 border border-white/10 focus:border-blue-500/50 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 outline-none'
 const fmt = (iso) => iso ? new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
 
-// Lists the chats that wrote to the bot, so the chat ID is picked, not guessed
+// Connect a Telegram chat without knowing its ID: open the bot via a t.me
+// link, press Start (or add it to a group) — KubeEZ watches the bot for a few
+// minutes and fills in the chat ID itself.
 function TelegramChatFinder({ form, setForm }) {
-    const [state, setState] = useState(null)   // null | 'busy' | { chats } | { error }
-    const find = async () => {
-        setState('busy')
-        try {
-            const r = await apiFetch('/api/notifications/telegram/chats', { method: 'POST', body: JSON.stringify({ botToken: form.config.botToken || '', channelId: form.id }) })
-            const j = await r.json().catch(() => ({}))
-            if (!r.ok) throw new Error(j.error || 'Could not ask Telegram')
-            setState({ chats: j.chats || [] })
-        } catch (e) { setState({ error: e.message }) }
+    const [state, setState] = useState(null)   // null | { busy, bot, chats, error, watching }
+    const timer = useRef(null)
+    const stop = () => { clearTimeout(timer.current); timer.current = null }
+    useEffect(() => stop, [])
+    const isBotChat = (v) => !v || /bot$/i.test(v)
+    const ask = async () => {
+        const r = await apiFetch('/api/notifications/telegram/chats', { method: 'POST', body: JSON.stringify({ botToken: form.config.botToken || '', channelId: form.id }) })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(j.error || 'Could not ask Telegram')
+        return j
+    }
+    const connect = async () => {
+        stop()
+        setState({ busy: true })
+        const started = Date.now()
+        const poll = async () => {
+            try {
+                const j = await ask()
+                const chats = j.chats || []
+                // exactly one chat and nothing useful typed yet → fill it in
+                if (chats.length === 1) setForm(f => isBotChat(f.config.chatId) ? { ...f, config: { ...f.config, chatId: chats[0].id } } : f)
+                const watching = !chats.length && Date.now() - started < 180000
+                setState({ bot: j.bot, chats, watching })
+                if (watching) timer.current = setTimeout(poll, 3000)
+            } catch (e) { setState({ error: e.message }) }
+        }
+        poll()
     }
     const pick = (id) => setForm(f => ({ ...f, config: { ...f.config, chatId: id } }))
+    const u = state?.bot?.username
     return (
-        <div className="mt-2">
-            <button type="button" onClick={find} disabled={state === 'busy'} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/25 text-sky-300 text-[11px] font-bold hover:bg-sky-500/20 disabled:opacity-50">
-                {state === 'busy' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Find my chat ID
+        <div className="mt-2 space-y-2">
+            <button type="button" onClick={connect} disabled={state?.busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/25 text-sky-300 text-[11px] font-bold hover:bg-sky-500/20 disabled:opacity-50">
+                {state?.busy || state?.watching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                {state?.chats?.length ? 'Search again' : 'Find my chat ID'}
             </button>
-            {state?.error && <p className="mt-1.5 text-[11px] text-red-300">{state.error}</p>}
-            {state?.chats && !state.chats.length && (
-                <p className="mt-1.5 text-[11px] text-amber-300">No chats yet — open your bot in Telegram and send /start (or post a message in the group where you added it), then click again.</p>
+            {state?.error && <p className="text-[11px] text-red-300">{state.error}</p>}
+            {state?.watching && (
+                <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3 text-[11px] text-slate-300 space-y-2">
+                    <p className="font-bold text-white">Waiting for you in Telegram…</p>
+                    {u ? (
+                        <div className="flex flex-wrap gap-2">
+                            <a href={`https://t.me/${u}?start=kubeez`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-black">Open @{u} → press Start</a>
+                            <a href={`https://t.me/${u}?startgroup=kubeez`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg border border-white/15 text-slate-200 font-bold hover:bg-white/5">Add to a group</a>
+                        </div>
+                    ) : <p>Open your bot in Telegram and send /start (or add it to a group and post a message).</p>}
+                    <p className="text-slate-500">The chat ID fills in by itself as soon as the bot hears from you. For a channel: add the bot as an admin and post something in the channel.</p>
+                </div>
+            )}
+            {state?.chats && !state.chats.length && !state.watching && (
+                <p className="text-[11px] text-amber-300">Nothing arrived from Telegram yet — open the bot, press Start, then click Find my chat ID again.</p>
             )}
             {state?.chats?.length > 0 && (
-                <div className="mt-2 space-y-1">
+                <div className="space-y-1">
+                    <p className="text-[11px] text-slate-400">{state.chats.length === 1 ? 'Found — filled in:' : 'Pick the chat for alerts:'}</p>
                     {state.chats.map(c => (
                         <button type="button" key={c.id} onClick={() => pick(c.id)}
                             className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left text-xs ${form.config.chatId === c.id ? 'border-sky-500/50 bg-sky-500/10 text-white' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]'}`}>
-                            <span className="truncate">{c.name}{c.username ? ` (@${c.username})` : ''} <span className="text-slate-500">· {c.type === 'private' ? 'you' : c.type}</span></span>
+                            <span className="truncate">{form.config.chatId === c.id && '✓ '}{c.name}{c.username ? ` (@${c.username})` : ''} <span className="text-slate-500">· {c.type === 'private' ? 'you' : c.type}</span></span>
                             <span className="font-mono text-[11px] text-slate-400 shrink-0">{c.id}</span>
                         </button>
                     ))}
@@ -57,6 +92,7 @@ function TelegramChatFinder({ form, setForm }) {
         </div>
     )
 }
+
 
 export default function AlertsPanel() {
     const [data, setData] = useState(null)
@@ -245,7 +281,7 @@ export default function AlertsPanel() {
                         {form.type === 'email' && !data.emailConfigured && <p className="mb-3 text-[11px] text-amber-300">The server has no SMTP settings yet — email alerts will fail until SMTP_HOST / SMTP_USER / SMTP_PASS are set.</p>}
                         <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1" htmlFor="ch-name">Name</label>
                         <input id="ch-name" className={`${input} mb-3`} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-                        {data.types[form.type].fields.map(k => {
+                        {(form.type === 'telegram' ? ['botToken', 'chatId'] : data.types[form.type].fields).map(k => {
                             const secret = data.types[form.type].secret.includes(k)
                             return (
                                 <div key={k} className="mb-3">
