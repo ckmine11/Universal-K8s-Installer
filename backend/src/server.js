@@ -84,12 +84,20 @@ app.use(compression()) // Gzip compression
 // Restrict CORS to known frontend origins — never wildcard in production
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000')
     .split(',').map(o => o.trim())
-app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
-        callback(new Error('CORS: origin not allowed'))
-    },
-    credentials: true
+// The page's own site is never cross-origin: browsers send Origin on same-site
+// POSTs too (login), and KubeEZ is opened under several names (www., a LAN IP
+// from a phone, :8090). Other sites get no CORS headers — the browser blocks
+// them — instead of a 500.
+const sameSite = (req, origin) => {
+    try {
+        const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim()
+        return !!host && new URL(origin).hostname.replace(/^\[|\]$/g, '') === host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '')
+    } catch { return false }
+}
+app.use(cors((req, callback) => {
+    const origin = req.headers.origin
+    const ok = !origin || allowedOrigins.includes(origin) || sameSite(req, origin)
+    callback(null, { origin: ok, credentials: true })
 }))
 app.use(cookieParser())
 

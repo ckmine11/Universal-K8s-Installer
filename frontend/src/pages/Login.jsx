@@ -121,7 +121,8 @@ export default function Login() {
                 await login(formData.username, formData.password);
             }
         } catch (err) {
-            setError(err.message);
+            // fetch() itself failed (offline, blocked): say so instead of "Failed to fetch"
+            setError(err instanceof TypeError ? 'Could not reach the KubeEZ server — check your connection and try again.' : err.message);
         } finally {
             setLoading(false);
         }
@@ -129,7 +130,7 @@ export default function Login() {
 
 
     return (
-        <div className="min-h-screen bg-[#030712] text-white relative overflow-x-clip font-sans flex items-center justify-center selection:bg-blue-500/30">
+        <div className="min-h-screen min-h-[100dvh] bg-[#030712] text-white relative overflow-x-clip font-sans flex items-start lg:items-center justify-center py-8 lg:py-0 selection:bg-blue-500/30">
             {/* Ultra Premium Animated Background */}
             <div className="absolute inset-0 w-full h-full overflow-hidden z-0 pointer-events-none">
                 {/* Massive glowing orbs */}
@@ -143,7 +144,7 @@ export default function Login() {
                 <div className="absolute inset-0 bg-gradient-to-t from-[#030712] via-transparent to-[#030712]"></div>
             </div>
 
-            <div className={`max-w-[1400px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10 px-6 xl:px-10 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+            <div className={`max-w-[1400px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12 relative z-10 px-4 sm:px-6 xl:px-10 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
                 
                 {/* Left Side: what KubeEZ is and everything it does */}
                 <div className="hidden lg:flex flex-col justify-center lg:col-span-7 pr-8 py-10">
@@ -202,7 +203,22 @@ export default function Login() {
                     {/* Glowing effect behind the card */}
                     <div className="absolute top-1/2 right-0 -translate-y-1/2 w-[120%] h-[120%] bg-gradient-to-br from-blue-600/10 to-purple-600/10 blur-[100px] rounded-full z-0 pointer-events-none"></div>
                     
-                    <div className="w-full max-w-[460px] p-10 lg:p-12 rounded-[40px] border border-white/[0.08] shadow-[0_0_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl relative z-10 bg-[#0B101A]/90 overflow-hidden">
+                    {/* Phones/tablets: the side panel is hidden — say what KubeEZ is first */}
+                    <div className="lg:hidden w-full max-w-[460px] mb-6 text-center relative z-10">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full mb-4">
+                            <span className="h-2 w-2 rounded-full bg-blue-500" />
+                            <span className="text-[10px] font-black tracking-[0.2em] text-blue-400 uppercase">KubeEZ · Kubernetes made easy</span>
+                        </div>
+                        <h1 className="text-3xl font-black tracking-tight leading-tight">
+                            Production Kubernetes,{' '}
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">without the ops work.</span>
+                        </h1>
+                        <p className="text-sm text-slate-400 mt-3 leading-relaxed">
+                            Install, upgrade, back up and run clusters on your own servers — from one console.
+                        </p>
+                    </div>
+
+                    <div className="w-full max-w-[460px] p-6 sm:p-10 lg:p-12 rounded-[28px] sm:rounded-[40px] border border-white/[0.08] shadow-[0_0_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl relative z-10 bg-[#0B101A]/90 overflow-hidden">
                         
                         {/* Shimmer Effect */}
                         <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.03] to-transparent shimmer-animation z-0 pointer-events-none"></div>
@@ -241,7 +257,7 @@ export default function Login() {
                                         <input
                                             type="email"
                                             required
-                                            className="w-full pl-14 pr-6 py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder="Email Address"
                                             value={formData.email}
                                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -259,7 +275,7 @@ export default function Login() {
                                         <input
                                             type="text"
                                             required
-                                            className="w-full pl-14 pr-6 py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-sm font-medium placeholder:text-slate-600 text-white shadow-inner tracking-widest uppercase font-mono"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner tracking-widest uppercase font-mono"
                                             placeholder="6-Digit Reset Code"
                                             value={formData.resetCode}
                                             onChange={(e) => setFormData({ ...formData, resetCode: e.target.value })}
@@ -278,7 +294,7 @@ export default function Login() {
                                         <input
                                             type="text"
                                             required
-                                            className="w-full pl-14 pr-6 py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder="Username"
                                             value={formData.username}
                                             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -296,7 +312,7 @@ export default function Login() {
                                         <input
                                             type="password"
                                             required
-                                            className="w-full pl-14 pr-6 py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder={authMode === 'reset' ? "New Password" : "Password"}
                                             value={formData.password}
                                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -379,11 +395,29 @@ export default function Login() {
                     </div>
 
                     {/* Phones/tablets: the feature panel is hidden — show the essentials */}
-                    <div className="lg:hidden w-full max-w-[460px] mt-8 grid grid-cols-2 gap-2 relative z-10">
-                        {FEATURE_GROUPS.flatMap(g => g.features).map(f => (
-                            <div key={f.title} className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
-                                <f.Icon className={`w-3.5 h-3.5 shrink-0 ${f.color}`} />
-                                <span className="text-[11px] font-bold text-slate-300">{f.title}</span>
+                    <div className="lg:hidden w-full max-w-[460px] mt-8 space-y-5 relative z-10">
+                        <div className="grid grid-cols-2 gap-2">
+                            {STATS.map(st => (
+                                <div key={st.label} className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
+                                    <div className="text-base font-black text-white">{st.value}</div>
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{st.label}</div>
+                                </div>
+                            ))}
+                        </div>
+                        {FEATURE_GROUPS.map(g => (
+                            <div key={g.group}>
+                                <div className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2">{g.group}</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {g.features.map(f => (
+                                        <div key={f.title} className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <f.Icon className={`w-4 h-4 shrink-0 ${f.color}`} />
+                                                <span className="text-sm font-black text-white">{f.title}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-400 leading-relaxed">{f.desc}</p>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         ))}
                     </div>
