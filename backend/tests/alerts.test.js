@@ -34,6 +34,17 @@ test('channel validation gives clear messages', () => {
     assert.throws(() => validateChannel('whatsapp', { accountSid: 'AC1', authToken: 'x', from: '+1', to: '+91' }), /Account SID/)
     assert.throws(() => validateChannel('email', { to: 'not-an-email' }), /addresses/)
     validateChannel('slack', { webhookUrl: '' }, true)   // edit: blank secret = keep the saved one
+    // the bot itself as chat ID (bots cannot message bots)
+    assert.throws(() => validateChannel('telegram', { botToken: '123456:ABCdefGhIJKlmnOPQRstuVWxyz_-12', chatId: '@k8sminebot' }), /bot itself/)
+    assert.throws(() => validateChannel('telegram', { botToken: '123456:ABCdefGhIJKlmnOPQRstuVWxyz_-12', chatId: '123456' }), /bot itself/)
+})
+
+test('Telegram errors are explained', async () => {
+    const { telegramError } = await import('../src/services/notifier.js')
+    assert.match(telegramError(new Error('HTTP 403: {"ok":false,"error_code":403,"description":"Forbidden: the bot can\'t send messages to the bot"}')), /bots cannot message bots/)
+    assert.match(telegramError(new Error('HTTP 400: {"description":"Bad Request: chat not found"}')), /send \/start/)
+    assert.match(telegramError(new Error('HTTP 403: {"description":"Forbidden: bot was blocked by the user"}')), /Unblock/)
+    assert.match(telegramError(new Error('HTTP 401: {"description":"Unauthorized"}')), /token is not valid/)
 })
 
 test('secrets are encrypted at rest and never in the public view', () => {

@@ -8,7 +8,7 @@ import {
 // Alert channels + rules for the workspace (Workspace Settings → Alerts)
 
 const TYPE_META = {
-    telegram: { Icon: Send, color: 'text-sky-300', help: 'Create a bot with @BotFather, add it to your group/channel, then use the chat ID (e.g. -1001234567890 or @yourchannel).' },
+    telegram: { Icon: Send, color: 'text-sky-300', help: '1) Create a bot with @BotFather and paste its token. 2) Send /start to the bot from your Telegram — or add it to your group/channel and post a message there. 3) Click "Find my chat ID" and pick the chat. The chat ID is you or your group, never the bot.' },
     slack: { Icon: Hash, color: 'text-fuchsia-300', help: 'Slack → Apps → Incoming Webhooks → Add to a channel → copy the webhook URL.' },
     teams: { Icon: Users, color: 'text-indigo-300', help: 'Teams channel → Workflows → "Post to a channel when a webhook request is received" → copy the URL.' },
     whatsapp: { Icon: MessageCircle, color: 'text-emerald-300', help: 'Uses Twilio\'s WhatsApp API: Account SID + Auth Token from the Twilio console, your Twilio WhatsApp number as From. Messages outside a 24-hour conversation need an approved template on Twilio.' },
@@ -20,6 +20,43 @@ const FIELD_HINT = { to: { whatsapp: '+919812345678', email: 'ops@company.com, o
 const SEV = { critical: 'text-red-300', warning: 'text-amber-300', success: 'text-emerald-300', info: 'text-sky-300' }
 const input = 'w-full bg-black/40 border border-white/10 focus:border-blue-500/50 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 outline-none'
 const fmt = (iso) => iso ? new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+
+// Lists the chats that wrote to the bot, so the chat ID is picked, not guessed
+function TelegramChatFinder({ form, setForm }) {
+    const [state, setState] = useState(null)   // null | 'busy' | { chats } | { error }
+    const find = async () => {
+        setState('busy')
+        try {
+            const r = await apiFetch('/api/notifications/telegram/chats', { method: 'POST', body: JSON.stringify({ botToken: form.config.botToken || '', channelId: form.id }) })
+            const j = await r.json().catch(() => ({}))
+            if (!r.ok) throw new Error(j.error || 'Could not ask Telegram')
+            setState({ chats: j.chats || [] })
+        } catch (e) { setState({ error: e.message }) }
+    }
+    const pick = (id) => setForm(f => ({ ...f, config: { ...f.config, chatId: id } }))
+    return (
+        <div className="mt-2">
+            <button type="button" onClick={find} disabled={state === 'busy'} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/25 text-sky-300 text-[11px] font-bold hover:bg-sky-500/20 disabled:opacity-50">
+                {state === 'busy' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Find my chat ID
+            </button>
+            {state?.error && <p className="mt-1.5 text-[11px] text-red-300">{state.error}</p>}
+            {state?.chats && !state.chats.length && (
+                <p className="mt-1.5 text-[11px] text-amber-300">No chats yet — open your bot in Telegram and send /start (or post a message in the group where you added it), then click again.</p>
+            )}
+            {state?.chats?.length > 0 && (
+                <div className="mt-2 space-y-1">
+                    {state.chats.map(c => (
+                        <button type="button" key={c.id} onClick={() => pick(c.id)}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left text-xs ${form.config.chatId === c.id ? 'border-sky-500/50 bg-sky-500/10 text-white' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]'}`}>
+                            <span className="truncate">{c.name}{c.username ? ` (@${c.username})` : ''} <span className="text-slate-500">· {c.type === 'private' ? 'you' : c.type}</span></span>
+                            <span className="font-mono text-[11px] text-slate-400 shrink-0">{c.id}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
 
 export default function AlertsPanel() {
     const [data, setData] = useState(null)
@@ -38,6 +75,8 @@ export default function AlertsPanel() {
         } catch (e) { setError(e.message) }
     }
     useEffect(() => { load() }, [])
+    // a dialog shows only its own save errors, not an older message
+    useEffect(() => { setNotice(null) }, [form?.id, form?.type])
 
     const call = async (key, method, path, body, ok) => {
         setBusy(key); setNotice(null)
@@ -214,9 +253,11 @@ export default function AlertsPanel() {
                                     <input id={`ch-${k}`} type={secret ? 'password' : 'text'} autoComplete="off" className={input}
                                         placeholder={secret && form.id ? 'unchanged' : (FIELD_HINT[k]?.[form.type] || '')}
                                         value={form.config[k] || ''} onChange={e => setForm(f => ({ ...f, config: { ...f.config, [k]: e.target.value } }))} />
+                                    {form.type === 'telegram' && k === 'chatId' && <TelegramChatFinder form={form} setForm={setForm} />}
                                 </div>
                             )
                         })}
+                        {notice && !notice.ok && <p className="mb-3 text-xs text-red-300 flex items-start gap-1.5"><XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />{notice.msg}</p>}
                         <div className="flex justify-end gap-2 mt-2">
                             <button onClick={() => setForm(null)} className="px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold">Cancel</button>
                             <button onClick={saveForm} disabled={busy === 'save'} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black disabled:opacity-50">

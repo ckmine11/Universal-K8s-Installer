@@ -1,7 +1,7 @@
 import express from 'express'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { notificationStore, CHANNEL_TYPES, EVENTS } from '../services/notificationStore.js'
-import { notifier, validateChannel } from '../services/notifier.js'
+import { notifier, validateChannel, telegramChats } from '../services/notifier.js'
 
 // Alert channels + rules of the caller's workspace (admins only: channels
 // hold bot tokens and webhook URLs)
@@ -52,6 +52,16 @@ router.delete('/channels/:id', (req, res) => {
 
 router.post('/channels/:id/test', async (req, res) => {
     try { res.json(await notifier.test(org(req), req.params.id)) } catch (e) { fail(res, e) }
+})
+
+// "Find my chat ID": the chats that wrote to the bot. Token from the form, or
+// the saved one when editing (it is never sent back to the browser).
+router.post('/telegram/chats', async (req, res) => {
+    try {
+        let token = String(req.body?.botToken || '').trim()
+        if (!token && req.body?.channelId) token = notificationStore.channels(org(req)).find(c => c.id === req.body.channelId && c.type === 'telegram')?.config.botToken || ''
+        res.json({ chats: await telegramChats(token) })
+    } catch (e) { fail(res, e) }
 })
 
 router.put('/rules', (req, res) => {

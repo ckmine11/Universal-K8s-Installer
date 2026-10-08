@@ -87,6 +87,12 @@ export function validateChannel(type, config = {}, isEdit = false) {
     if (type === 'telegram') {
         need('botToken', /^\d{5,}:[\w-]{20,}$/, 'Telegram bot token looks wrong (from @BotFather, like 123456:ABC…)')
         need('chatId', /^(-?\d{3,}|@[\w]{4,})$/, 'Chat ID: a number (e.g. -1001234567890) or @channelname')
+        // Bots cannot message bots — a common mix-up is entering the bot itself
+        const chat = String(config.chatId || '').trim()
+        const botId = String(config.botToken || '').split(':')[0]
+        if (/bot$/i.test(chat) || (botId && chat === botId)) {
+            throw new Error('Chat ID is the bot itself — Telegram bots cannot message bots. Send /start to your bot (or add it to a group), then use "Find my chat ID".')
+        }
     }
     if (type === 'slack') need('webhookUrl', /^https:\/\/hooks\.slack\.com\/[\w/-]+$/, 'Slack webhook URL must start with https://hooks.slack.com/')
     if (type === 'teams') {
@@ -110,6 +116,35 @@ export function validateChannel(type, config = {}, isEdit = false) {
     if (type === 'webhook') need('url', /^https?:\/\/[^\s]+$/, 'Webhook URL must start with https://')
 }
 
+// Telegram's answers, in words a user can act on
+export function telegramError(e) {
+    const m = String(e?.message || e)
+    if (/can't send messages to the bot|bots can't send messages to bots/i.test(m)) return 'The chat ID is a bot — Telegram bots cannot message bots. Use your own chat or a group: send /start to the bot, then "Find my chat ID".'
+    if (/bot was blocked by the user/i.test(m)) return 'You blocked this bot in Telegram — open the bot, tap Restart/Unblock, then test again.'
+    if (/chat not found/i.test(m)) return 'Chat not found — send /start to the bot (or add it to the group) first, then use "Find my chat ID".'
+    if (/have no rights|not enough rights|need administrator rights/i.test(m)) return 'The bot may not post in this chat — make it an admin of the channel/group (with "Post messages").'
+    if (/bot was kicked|not a member/i.test(m)) return 'The bot is not in this group/channel any more — add it again.'
+    if (/HTTP 401|Unauthorized/i.test(m)) return 'The bot token is not valid — copy it again from @BotFather.'
+    if (/HTTP 409|webhook is active/i.test(m)) return 'This bot has a webhook set elsewhere, so KubeEZ cannot read its chats — enter the chat ID by hand, or remove the webhook.'
+    return m
+}
+
+/** Chats that recently wrote to the bot (or added it) — to pick the chat ID instead of guessing it. */
+export async function telegramChats(botToken) {
+    if (!/^\d{5,}:[\w-]{20,}$/.test(String(botToken || ''))) throw new Error('Enter the bot token first (from @BotFather)')
+    let r
+    try { r = await postRequest(`https://api.telegram.org/bot${botToken}/getUpdates`, { limit: 100, allowed_updates: ['message', 'channel_post', 'my_chat_member'] }) }
+    catch (e) { throw new Error(telegramError(e)) }
+    const chats = new Map()
+    for (const u of JSON.parse(r.text || '{}').result || []) {
+        const c = (u.message || u.channel_post || u.my_chat_member || u.edited_message)?.chat
+        if (!c || chats.has(String(c.id))) continue
+        const name = c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || String(c.id)
+        chats.set(String(c.id), { id: String(c.id), name, type: c.type, username: c.username || null })
+    }
+    return [...chats.values()]
+}
+
 /** One message, rendered for each channel. */
 function render(ev) {
     const icon = ICON[ev.severity] || 'ℹ️'
@@ -128,7 +163,7 @@ async function deliver(ch, ev) {
                 parse_mode: 'HTML',
                 disable_web_page_preview: true,
                 text: [`<b>${esc(m.title)}</b>`, ...m.lines.map(esc), m.link ? `<a href="${esc(m.link)}">Open in KubeEZ</a>` : ''].filter(Boolean).join('\n')
-            })
+            }).catch(e => { throw new Error(telegramError(e)) })
         case 'slack': {
             const u = new URL(c.webhookUrl)
             if (!SLACK_HOSTS.test(u.hostname)) throw new Error('Not a Slack webhook URL')
