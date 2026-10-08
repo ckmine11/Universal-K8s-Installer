@@ -116,6 +116,8 @@ test('routes: admins only, test endpoint, no secrets returned', async () => {
         let r = await api('POST', '/api/notifications/channels', ann.token, { type: 'slack', name: 'x', config: { webhookUrl: 'https://evil.example/hook' } })
         assert.equal(r.status, 400)
         r = await api('POST', '/api/notifications/channels', ann.token, { type: 'webhook', name: 'Mine', config: { url: hookUrl } })
+        assert.equal(r.status, 400, 'SaaS: an http webhook is refused when saving')
+        r = await api('POST', '/api/notifications/channels', ann.token, { type: 'webhook', name: 'Mine', config: { url: hookUrl.replace('http:', 'https:') } })
         assert.equal(r.status, 200)
         r = await api('GET', '/api/notifications', ann.token)
         assert.ok(!JSON.stringify(r.data).includes('/hook'), 'webhook URL is a secret')

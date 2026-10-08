@@ -21,7 +21,7 @@ router.get('/', (req, res) => {
             types: Object.fromEntries(Object.entries(CHANNEL_TYPES).map(([k, v]) => [k, { label: v.label, fields: [...v.plain, ...v.secret], secret: v.secret }])),
             events: Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [k, v.label])),
             emailConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
-            linksConfigured: !!(process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL)
+            linksConfigured: /^https?:\/\/[^/]/.test(process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || '')
         })
     } catch (e) { fail(res, e) }
 })

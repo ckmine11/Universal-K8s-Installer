@@ -15,7 +15,7 @@ export const CHANNEL_TYPES = {
     telegram: { label: 'Telegram', secret: ['botToken'], plain: ['chatId'] },
     slack: { label: 'Slack', secret: ['webhookUrl'], plain: [] },
     teams: { label: 'Microsoft Teams', secret: ['webhookUrl'], plain: [] },
-    whatsapp: { label: 'WhatsApp (Twilio)', secret: ['authToken'], plain: ['accountSid', 'from', 'to'] },
+    whatsapp: { label: 'WhatsApp (Twilio)', secret: ['authToken'], plain: ['accountSid', 'from', 'to', 'contentSid'] },
     email: { label: 'Email', secret: [], plain: ['to'] },
     webhook: { label: 'Webhook', secret: ['url'], plain: [] }
 }
