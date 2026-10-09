@@ -178,7 +178,7 @@ export default function AlertsPanel() {
                     <div className="min-w-0 flex-1 text-sm">
                         <p className="font-semibold text-white">Free plan alerts</p>
                         <p className="text-xs text-slate-300 mt-0.5">
-                            {plan.maxChannels} channel (Telegram, email or webhook) · critical alerts only (node or control plane down, failed backups / upgrades, agent offline) · {plan.emailsToday || 0}/{plan.emailPerDay} alert emails today
+                            {plan.maxChannels} channel (Telegram, email or webhook) · critical alerts and their recovery (node, control plane or cluster down, Gateway Agent offline / back online, failed backups / upgrades) · {plan.emailsToday || 0}/{plan.emailPerDay} alert emails today
                         </p>
                     </div>
                     <Link to="/pricing" className="kz-btn-primary !py-2">Upgrade for all alerts</Link>
@@ -266,7 +266,7 @@ export default function AlertsPanel() {
             {rules && !plan.rules && (
                 <div className="glass rounded-2xl border border-white/8 p-6">
                     <div className="flex items-center gap-2"><h3 className="text-lg font-black text-white">What to alert on</h3><span className="rounded px-1.5 py-0.5 text-[10px] font-bold text-amber-300 bg-amber-500/10">PRO</span></div>
-                    <p className="text-xs text-slate-400 mt-1">On Free: every <b className="text-slate-200">critical</b> alert, at any hour, the same alert at most every 15 minutes. With Pro you choose the alert types (warnings, recoveries, finished upgrades…), quiet hours and the cooldown.</p>
+                    <p className="text-xs text-slate-400 mt-1">On Free: every <b className="text-slate-200">critical</b> alert and its recovery, at any hour, the same alert at most every 15 minutes, a Gateway Agent reported after 2 minutes away. With Pro you choose the alert types (warnings, recoveries, finished upgrades…), quiet hours and the cooldown.</p>
                     <Link to="/pricing" className="inline-flex mt-3 kz-btn-ghost !py-2 !text-xs"><Lock className="w-3.5 h-3.5" /> Unlock with Pro</Link>
                 </div>
             )}
@@ -305,6 +305,11 @@ export default function AlertsPanel() {
                                 <input type="number" min="0" max="1440" aria-label="Cooldown minutes" value={rules.cooldownMinutes} onChange={e => setRules(r => ({ ...r, cooldownMinutes: e.target.value }))} className={`${input} !py-1.5 !w-24`} /> minutes
                             </div>
                             <p className="mt-2 text-[11px] text-slate-500">{Number(rules.cooldownMinutes) === 0 ? 'Every repeat is sent.' : 'The same alert for the same cluster is sent at most once in this time. Different problems are never held back.'}</p>
+                            <p className="flex items-center gap-2 text-sm font-bold text-white mt-4 mb-2"><Clock className="w-4 h-4 text-blue-300" /> Report a Gateway Agent offline after</p>
+                            <div className="flex items-center gap-2 text-xs text-slate-300">
+                                <input type="number" min="1" max="60" aria-label="Gateway Agent offline minutes" value={rules.agentOfflineMinutes ?? 2} onChange={e => setRules(r => ({ ...r, agentOfflineMinutes: e.target.value }))} className={`${input} !py-1.5 !w-24`} /> minutes
+                            </div>
+                            <p className="mt-2 text-[11px] text-slate-500">Shorter drops (restarts, network blips) stay quiet. “Back online” follows when it reconnects.</p>
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-3 mt-4">

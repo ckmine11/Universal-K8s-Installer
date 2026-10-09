@@ -153,3 +153,41 @@ test('every alert type in the list was delivered at least once', () => {
     const seen = new Set(got.map(m => m.type))
     for (const type of Object.keys(EVENTS)) assert.ok(seen.has(type), `${type} (${EVENTS[type].label}) never arrived`)
 })
+
+test('Free workspace: gateway offline AND back online both arrive (a recovery of a critical alert)', async () => {
+    const FREE = 'org-free-gw'
+    authService.users.push({ id: 'u-free-gw', username: 'freegw', orgId: FREE, role: 'admin', subscription: { plan: 'FREE' } })
+    notificationStore.saveChannel(FREE, { type: 'webhook', name: 'free hook', config: { url: hookUrl } })
+    const a = await agentService.generateToken('u-free-gw', 'freegw', FREE, 'free-gw')
+    const ws = new FakeWs()
+    await agentService.onAgentConnect(ws, a.agentId, a.token)
+    ws.emit('close')
+    assert.ok(await arrived('agent_offline', /"free-gw" is offline/), 'offline on Free')
+    await agentService.onAgentConnect(new FakeWs(), a.agentId, a.token)
+    assert.ok(await arrived('agent_offline', /"free-gw" is back online/), 'back online on Free')
+    // a plain success message is still Pro-only — and the history says why
+    await (await import('../src/services/notifier.js')).notifier.notify(FREE, { type: 'job_done', severity: 'success', title: 'Add-on installed on prod' })
+    const h = notificationStore.publicView(FREE).history
+    assert.ok(h.some(e => e.title === 'Add-on installed on prod' && /Free plan sends critical alerts only/.test(e.outcome)), 'skip reason visible in Recent alerts')
+})
+
+test('"back online" still arrives after a KubeEZ restart (offline state is saved)', async () => {
+    const a = await agentService.generateToken('u-audit', 'audit', ORG, 'survives-restart')
+    const ws = new FakeWs()
+    await agentService.onAgentConnect(ws, a.agentId, a.token)
+    ws.emit('close')
+    assert.ok(await arrived('agent_offline', /"survives-restart" is offline/))
+    agentService.offlineAlerts.clear()                       // what a restart forgets
+    const saved = JSON.parse(fs.readFileSync(path.join(DATA, 'agents.json'), 'utf8')).find(x => x.agentId === a.agentId)
+    assert.ok(saved.offlineAlertedAt, 'offline state is on disk')
+    await agentService.onAgentConnect(new FakeWs(), a.agentId, a.token)
+    assert.ok(await arrived('agent_offline', /"survives-restart" is back online/))
+    await new Promise(r => setTimeout(r, 50))
+    assert.ok(!JSON.parse(fs.readFileSync(path.join(DATA, 'agents.json'), 'utf8')).find(x => x.agentId === a.agentId).offlineAlertedAt, 'cleared once back')
+})
+
+test('rules: Gateway offline delay 1–60 minutes', () => {
+    assert.equal(notificationStore.saveRules(ORG, { agentOfflineMinutes: 3 }).agentOfflineMinutes, 3)
+    assert.throws(() => notificationStore.saveRules(ORG, { agentOfflineMinutes: 0 }), /1 to 60 minutes/)
+    assert.throws(() => notificationStore.saveRules(ORG, { agentOfflineMinutes: 90 }), /1 to 60 minutes/)
+})

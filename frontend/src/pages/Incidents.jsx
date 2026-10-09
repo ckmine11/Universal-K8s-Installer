@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { explorerResourceLink, explorerPages } from '../components/explorer/explorerLinks'
 import PageHeader from '../components/ui/PageHeader'
+import Popover from '../components/ui/Popover'
 
 const CLOSED = new Set(['resolved', 'cleared'])
 const SEV = {
@@ -358,20 +359,18 @@ function IncidentRow({ inc, kids, cat, labelOf, onOpen }) {
 }
 
 function MaintenanceMenu({ c, onSet }) {
-    const [open, setOpen] = useState(false)
     return (
-        <div className="relative">
-            <button onClick={() => setOpen(o => !o)} className={`p-2 rounded-lg ${c.maintenance ? 'text-blue-200 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Maintenance mode" aria-label="Maintenance mode">
+        <Popover width={240} button={(p) => (
+            <button {...p} className={`p-2 rounded-lg ${c.maintenance ? 'text-blue-200 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Maintenance mode" aria-label="Maintenance mode">
                 <Pause className="w-4 h-4" />
             </button>
-            {open && (
-                <div className="absolute right-0 top-10 z-20 w-56 kz-card !rounded-xl p-1.5 kz-rise" onMouseLeave={() => setOpen(false)}>
-                    <p className="px-3 py-2 text-[11px] text-slate-400">No checks, fixes or alerts while you work on it.</p>
-                    {[1, 4, 24].map(h => <button key={h} onClick={() => { setOpen(false); onSet(h) }} className="w-full text-left rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-white/5">Pause for {h} hour{h > 1 ? 's' : ''}</button>)}
-                    {c.maintenance && <button onClick={() => { setOpen(false); onSet(0) }} className="w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-300 hover:bg-emerald-500/10">End maintenance now</button>}
-                </div>
-            )}
-        </div>
+        )}>
+            {(close) => <>
+                <p className="px-3 py-2 text-[11px] text-slate-400">No checks, fixes or alerts while you work on {c.clusterName}.</p>
+                {[1, 4, 24].map(h => <button key={h} role="menuitem" onClick={() => { close(); onSet(h) }} className="w-full text-left rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-white/5">Pause for {h} hour{h > 1 ? 's' : ''}</button>)}
+                {c.maintenance && <button role="menuitem" onClick={() => { close(); onSet(0) }} className="w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-300 hover:bg-emerald-500/10">End maintenance now</button>}
+            </>}
+        </Popover>
     )
 }
 

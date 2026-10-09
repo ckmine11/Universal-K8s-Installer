@@ -5,6 +5,7 @@ import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
+import Popover from '../components/ui/Popover'
 import { ADDONS_LIST } from '../config/addons'
 import {
     Server, Zap, Plus, Cpu, Network, Trash2, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield,
@@ -242,7 +243,6 @@ function Stat({ icon: Icon, label, value, tone, onClick }) {
 }
 
 function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onScale, onDelete }) {
-    const [menu, setMenu] = useState(false)
     const masters = c.masterNodes || [], workers = c.workerNodes || []
     const addons = Object.entries(c.addons || {}).filter(([, v]) => v).map(([k]) => ADDONS_LIST.find(a => a.key === k)?.name || k)
     return (
@@ -266,14 +266,13 @@ function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onS
                     </div>
                 </div>
                 {(canCreate || canDelete) && (
-                    <div className="relative" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => setMenu(m => !m)} className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" aria-label="Cluster actions"><MoreHorizontal className="w-4 h-4" /></button>
-                        {menu && (
-                            <div className="absolute right-0 top-9 z-20 w-44 kz-card !rounded-xl p-1.5 kz-rise" onMouseLeave={() => setMenu(false)}>
-                                {canCreate && <button onClick={() => { setMenu(false); onScale() }} className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-white/5"><Scaling className="w-4 h-4" /> Add nodes</button>}
-                                {canDelete && <button onClick={() => { setMenu(false); onDelete() }} className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-300 hover:bg-red-500/10"><Trash2 className="w-4 h-4" /> Remove</button>}
-                            </div>
-                        )}
+                    <div onClick={e => e.stopPropagation()}>
+                        <Popover width={176} button={(p) => <button {...p} className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" aria-label="Cluster actions"><MoreHorizontal className="w-4 h-4" /></button>}>
+                            {(close) => <>
+                                {canCreate && <button role="menuitem" onClick={() => { close(); onScale() }} className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-white/5"><Scaling className="w-4 h-4" /> Add nodes</button>}
+                                {canDelete && <button role="menuitem" onClick={() => { close(); onDelete() }} className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-300 hover:bg-red-500/10"><Trash2 className="w-4 h-4" /> Remove</button>}
+                            </>}
+                        </Popover>
                     </div>
                 )}
             </div>

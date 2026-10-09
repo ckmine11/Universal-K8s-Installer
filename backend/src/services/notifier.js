@@ -342,11 +342,17 @@ class Notifier {
         try {
             if (!orgId) return { sent: 0, reason: 'no workspace' }
             const plan = await alertPlanFor(orgId)
-            // Free: critical alerts only (node or control plane down, failed backup / restore / upgrade, agent offline)
-            if (plan.criticalOnly && ev.severity !== 'critical') return { sent: 0, reason: 'plan' }
+            // Free: critical alerts only — and the "it's fixed / back" message of a critical one
+            if (plan.criticalOnly && ev.severity !== 'critical' && !ev.recovery) {
+                notificationStore.record(orgId, { ...pick(ev), outcome: 'not sent — the Free plan sends critical alerts only' })
+                return { sent: 0, reason: 'plan' }
+            }
             // Free: fixed default rules (events, quiet hours and cooldown are Pro)
             const rules = plan.rules ? notificationStore.rules(orgId) : structuredClone(DEFAULT_RULES)
-            if (rules.events[ev.type] === false) return { sent: 0, reason: 'event turned off' }
+            if (rules.events[ev.type] === false) {
+                notificationStore.record(orgId, { ...pick(ev), outcome: 'not sent — this alert type is turned off in the rules' })
+                return { sent: 0, reason: 'event turned off' }
+            }
             if (ev.severity !== 'critical' && inQuietHours(rules.quietHours, now)) {
                 // held, not lost: one summary goes out when quiet hours end
                 notificationStore.hold(orgId, pick(ev))
@@ -356,11 +362,17 @@ class Notifier {
             }
             const key = `${orgId}|${ev.key || `${ev.type}|${ev.clusterId || ''}|${ev.title}`}`
             const cool = (rules.cooldownMinutes || 0) * 60000
-            if (cool && now - (lastSent.get(key) || 0) < cool) return { sent: 0, reason: 'cooldown' }
+            if (cool && now - (lastSent.get(key) || 0) < cool) {
+                notificationStore.record(orgId, { ...pick(ev), outcome: `not sent — the same alert went out less than ${rules.cooldownMinutes} min ago` })
+                return { sent: 0, reason: 'cooldown' }
+            }
             const all = notificationStore.channels(orgId)
             const locked = lockedChannelIds(all, plan)
             const channels = all.filter(c => c.enabled !== false && !locked.has(c.id))
-            if (!channels.length) return { sent: 0, reason: 'no channels' }
+            if (!channels.length) {
+                notificationStore.record(orgId, { ...pick(ev), outcome: all.length ? 'not sent — every channel is paused or not on this plan' : 'not sent — no alert channel yet' })
+                return { sent: 0, reason: 'no channels' }
+            }
             lastSent.set(key, +now)
             if (lastSent.size > 5000) for (const [k, t] of lastSent) if (+now - t > 86400000) lastSent.delete(k)
             const results = {}

@@ -29,13 +29,14 @@ export const EVENTS = {
     upgrade_done: { label: 'Kubernetes upgrade finished (success or failure)', default: true },
     job_done: { label: 'Cluster ready, nodes added, add-on installed / removed', default: true },
     install_failed: { label: 'Cluster install, scale or add-on job failed', default: true },
-    agent_offline: { label: 'Gateway Agent offline for 5 minutes / back online', default: true }
+    agent_offline: { label: 'Gateway Agent offline / back online', default: true }
 }
 
 export const DEFAULT_RULES = {
     events: Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [k, v.default])),
     quietHours: { enabled: false, start: '22:00', end: '07:00', timezone: 'Asia/Kolkata' },
-    cooldownMinutes: 15
+    cooldownMinutes: 15,
+    agentOfflineMinutes: 2      // a Gateway Agent away this long is reported (shorter blips stay quiet)
 }
 
 class NotificationStore {
@@ -134,7 +135,10 @@ class NotificationStore {
         const raw = rules?.cooldownMinutes ?? o.rules.cooldownMinutes
         const cd = Number(raw)
         if (raw === '' || !Number.isFinite(cd) || cd < 0 || cd > 1440) throw bad('Cooldown: 0 to 1440 minutes')
-        o.rules = { events, quietHours: { enabled: !!q.enabled, start: q.start, end: q.end, timezone: tz }, cooldownMinutes: Math.round(cd) }
+        const rawAg = rules?.agentOfflineMinutes ?? o.rules.agentOfflineMinutes ?? DEFAULT_RULES.agentOfflineMinutes
+        const ag = Number(rawAg)
+        if (rawAg === '' || !Number.isFinite(ag) || ag < 1 || ag > 60) throw bad('Gateway Agent offline alert: after 1 to 60 minutes')
+        o.rules = { events, quietHours: { enabled: !!q.enabled, start: q.start, end: q.end, timezone: tz }, cooldownMinutes: Math.round(cd), agentOfflineMinutes: Math.round(ag) }
         this._write(all)
         return o.rules
     }

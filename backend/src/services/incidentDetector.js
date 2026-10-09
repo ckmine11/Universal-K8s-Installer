@@ -530,7 +530,7 @@ class IncidentDetector {
             this._tl(inc, inc.status, inc.details)
             changed = true
             if (!inc.causedBy) notifier.emit(inc.orgId, {
-                type: 'incident_resolved', severity: 'success', key: `resolved|${inc._key}`,
+                type: 'incident_resolved', severity: 'success', recovery: inc.severity === 'critical', key: `resolved|${inc._key}`,
                 title: `${fixedByUs ? 'Fixed' : 'Cleared'}: ${label(inc.reason)} — ${alertTarget(inc)}`,
                 text: inc.details, clusterId: inc.clusterId, clusterName: inc.clusterName, link: '/incidents'
             })

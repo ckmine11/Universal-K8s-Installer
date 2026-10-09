@@ -6,7 +6,8 @@ import { randomUUID as uuidv4 } from 'crypto'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomic } from '../utils/atomicWrite.js'
 import { notifier } from './notifier.js'
-const AGENT_OFFLINE_ALERT_MS = Number(process.env.KUBEEZ_AGENT_OFFLINE_ALERT_MS) || 5 * 60 * 1000
+// KUBEEZ_AGENT_OFFLINE_ALERT_MS overrides the workspace rule (tests)
+const AGENT_OFFLINE_ALERT_MS = Number(process.env.KUBEEZ_AGENT_OFFLINE_ALERT_MS) || 0
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -319,10 +320,25 @@ class AgentService {
         }
     }
 
+    // How long an agent may be away before it is reported (workspace rule, default 2 min)
+    async _offlineDelay(agent) {
+        if (AGENT_OFFLINE_ALERT_MS) return AGENT_OFFLINE_ALERT_MS
+        try {
+            const orgId = await this._orgOf(agent)
+            const { notificationStore, DEFAULT_RULES } = await import('./notificationStore.js')
+            const { alertPlanFor } = await import('../config/alertPlans.js')
+            const plan = orgId ? await alertPlanFor(orgId) : null
+            const min = (plan?.rules ? notificationStore.rules(orgId).agentOfflineMinutes : null) || DEFAULT_RULES.agentOfflineMinutes
+            return min * 60 * 1000
+        } catch { return 2 * 60 * 1000 }
+    }
+
     async _agentOffline(agentId) {
         const prev = this.offlineAlerts.get(agentId)
         if (prev?.timer) clearTimeout(prev.timer)
-        if (prev?.alerted) return   // already reported, wait for it to come back
+        const known = (await this._readAgents().catch(() => [])).find(a => a.agentId === agentId)
+        if (known?.offlineAlertedAt) return   // already reported, waiting for it to come back
+        const delay = await this._offlineDelay(known)
         const timer = setTimeout(async () => {
             if (this.agentSockets.has(agentId)) return
             const agent = (await this._readAgents().catch(() => [])).find(a => a.agentId === agentId)
@@ -330,8 +346,10 @@ class AgentService {
             this.offlineAlerts.set(agentId, { alerted: true })
             const orgId = await this._orgOf(agent)
             if (!orgId) return console.warn(`[AgentService] Agent ${agentId} belongs to no workspace — offline alert not sent`)
+            // remembered on disk: "back online" is sent even after a KubeEZ restart
+            await this._mutate(list => { const a = list.find(x => x.agentId === agentId); if (a) a.offlineAlertedAt = new Date().toISOString() }).catch(() => { })
             notifier.emit(orgId, { type: 'agent_offline', severity: 'critical', key: `agent|${agentId}`, title: `Gateway Agent "${agent.label || agentId.slice(0, 8)}" is offline`, text: 'Clusters reached through it cannot be managed, monitored or healed until it reconnects. Check the machine it runs on.', link: '/agents' })
-        }, AGENT_OFFLINE_ALERT_MS)
+        }, delay)
         timer.unref?.()
         this.offlineAlerts.set(agentId, { timer, alerted: false })
     }
@@ -340,7 +358,9 @@ class AgentService {
         const prev = this.offlineAlerts.get(agent.agentId)
         if (prev?.timer) clearTimeout(prev.timer)
         this.offlineAlerts.delete(agent.agentId)
-        if (prev?.alerted) this._orgOf(agent).then(orgId => orgId && notifier.emit(orgId, { type: 'agent_offline', severity: 'success', key: `agent-back|${agent.agentId}`, title: `Gateway Agent "${agent.label || agent.agentId.slice(0, 8)}" is back online`, text: 'Its clusters can be managed and watched again.', link: '/agents' }))
+        const wasReported = prev?.alerted || !!agent.offlineAlertedAt
+        if (agent.offlineAlertedAt) this._mutate(list => { const a = list.find(x => x.agentId === agent.agentId); if (a) delete a.offlineAlertedAt }).catch(() => { })
+        if (wasReported) this._orgOf(agent).then(orgId => orgId && notifier.emit(orgId, { type: 'agent_offline', severity: 'success', recovery: true, key: `agent-back|${agent.agentId}`, title: `Gateway Agent "${agent.label || agent.agentId.slice(0, 8)}" is back online`, text: 'Its clusters can be managed and watched again.', link: '/agents' }))
     }
 
     // ─── TCP streams through the agent ───────────────────────────
