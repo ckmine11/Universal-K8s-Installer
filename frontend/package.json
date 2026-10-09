@@ -9,15 +9,15 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@react-three/drei": "^9.99.0",
+        "@react-three/fiber": "^8.15.12",
+        "@xterm/addon-fit": "^0.10.0",
+        "@xterm/xterm": "^5.5.0",
+        "lucide-react": "^0.294.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
-        "lucide-react": "^0.294.0",
-        "react-router-dom": "^6.20.0",
-        "three": "^0.160.0",
-        "@react-three/fiber": "^8.15.12",
-        "@react-three/drei": "^9.99.0",
-        "@xterm/xterm": "^5.5.0",
-        "@xterm/addon-fit": "^0.10.0"
+        "react-router-dom": "^7.18.4",
+        "three": "^0.160.0"
     },
     "devDependencies": {
         "@types/react": "^18.2.43",

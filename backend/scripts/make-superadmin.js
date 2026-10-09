@@ -18,7 +18,7 @@
 import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { DATA_DIR } from '../src/utils/paths.js';
 import { passwordProblem } from '../src/utils/passwordPolicy.js';
 

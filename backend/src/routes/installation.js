@@ -1,6 +1,6 @@
 import express from 'express'
 import net from 'net'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID as uuidv4 } from 'crypto'
 import { installationManager } from '../services/installationManager.js'
 import { automationEngine } from '../services/automationEngine.js'
 import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
@@ -30,6 +30,27 @@ const router = express.Router()
 
 // Anything running on this cluster right now: an install/upgrade/add-on job or
 // an etcd backup/restore/recovery. Two of them at once would fight each other.
+// A node that cannot be reached is not a server bug: answer 502 with what to
+// check, instead of a 500 with "connect ETIMEDOUT 10.0.0.5:22".
+export function sshFailure(error) {
+    const m = String(error?.message || '')
+    const code = error?.code || (m.match(/\b(ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|ECONNRESET)\b/) || [])[1]
+    const host = error?.address || (m.match(/(\d{1,3}(?:\.\d{1,3}){3})/) || [])[1] || 'the node'
+    const via = process.env.KUBEEZ_MODE === 'saas' ? ' (or that its Gateway Agent is online on the Gateway Agents page)' : ''
+    if (code === 'ETIMEDOUT' || /Timed out while waiting for handshake/i.test(m)) return `Can't reach ${host} over SSH — it did not answer. Check that the server is running and reachable${via}.`
+    if (code === 'ECONNREFUSED') return `${host} refused the SSH connection — is the SSH service running on port 22?`
+    if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return `No network route to ${host} — check the address and the network${via}.`
+    if (code === 'ENOTFOUND') return `The address ${host} could not be resolved — check the node's address.`
+    if (code === 'ECONNRESET') return `The SSH connection to ${host} was dropped — try again.`
+    if (/All configured authentication methods failed/i.test(m)) return `${host} refused the SSH login — the saved username, password or key no longer works.`
+    return null
+}
+const sendFailure = (res, error) => {
+    const why = sshFailure(error)
+    if (why) return res.status(502).json({ error: why, code: 'NODE_UNREACHABLE' })
+    res.status(500).json({ error: error.message })
+}
+
 function clusterBusy(clusterId) {
     const job = installationManager.runningJobFor(clusterId)
     if (job) return { message: `Another operation (${job.mode || 'installation'}) is still running on this cluster — wait for it to finish.`, jobId: job.id }
@@ -72,7 +93,7 @@ router.get('/installations/active', requireAuth, (req, res) => {
         res.json(list)
     } catch (error) {
         console.error('Active installations error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -252,7 +273,7 @@ router.get('/:id/health', async (req, res) => {
         res.json(health)
     } catch (error) {
         console.error('Health check error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -270,7 +291,7 @@ router.get('/:id/kubeconfig', requirePermission('kubeconfig:download'), async (r
         res.send(kubeconfig)
     } catch (error) {
         console.error('Kubeconfig fetch error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -347,7 +368,7 @@ router.post('/action/fix', requireAuth, requirePermission('cluster:create'), asy
 
     } catch (error) {
         console.error('Auto-Fix error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -432,7 +453,7 @@ router.get('/:id/addons/access', requireAuth, async (req, res) => {
         res.json(info)
     } catch (error) {
         console.error('Addon access error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -448,7 +469,7 @@ router.get('/:id/addons/status', requireAuth, requirePermission('addon:view'), a
         res.json({ ...status, runningJob: job ? { id: job.id, mode: job.mode } : null })
     } catch (error) {
         console.error('Addon status error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -599,7 +620,7 @@ router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
         res.json(result)
     } catch (error) {
         console.error('etcd list error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -614,7 +635,7 @@ router.get('/:id/etcd/offsite', requireAuth, async (req, res) => {
         const r = await offsiteService.list(cluster, target)
         res.json({ connected: true, ...r })
     } catch (error) {
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -643,7 +664,7 @@ router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade
         })
     } catch (error) {
         console.error('etcd backup error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -704,7 +725,7 @@ router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade
         }, { filename, source })
     } catch (error) {
         console.error('etcd restore error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -730,7 +751,7 @@ router.post('/:id/etcd/offsite/fetch', requireAuth, requirePermission('cluster:u
             return { filename }
         }, { filename })
     } catch (error) {
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -748,7 +769,7 @@ router.post('/:id/etcd/recover', requireAuth, requirePermission('cluster:upgrade
             disasterRecovery.recover(cluster, target, filename, log, progress), { filename })
     } catch (error) {
         console.error('etcd recover error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -761,7 +782,7 @@ router.post('/:id/etcd/refresh-workers', requireAuth, requirePermission('cluster
         const results = await etcdBackupService.refreshWorkerKubelets(cluster, (level, msg) => logs.push({ level, msg }))
         res.json({ success: results.every(r => r.ok), results, logs })
     } catch (error) {
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -788,7 +809,7 @@ router.post('/:id/analyze', requireAuth, async (req, res) => {
 
     } catch (error) {
         console.error('Resume analyze error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -818,7 +839,7 @@ router.post('/:id/resume', requireAuth, requirePermission('cluster:resume'), asy
 
     } catch (error) {
         console.error('Resume start error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -952,7 +973,7 @@ router.get('/:id/volume-backups', requireAuth, async (req, res) => {
         res.json(result)
     } catch (error) {
         console.error('volume backups status error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 
@@ -1004,7 +1025,7 @@ router.put('/:id/volume-backups/config', requireAuth, requirePermission('backup:
         res.json({ success: true, newInstallationId, config: volumeBackupStore.publicView(cluster.id) })
     } catch (error) {
         console.error('volume backups config error:', error)
-        res.status(500).json({ error: error.message })
+        sendFailure(res, error)
     }
 })
 

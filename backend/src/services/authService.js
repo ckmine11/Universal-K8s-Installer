@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../utils/cryptoUtils.js';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { mailConfigured, mailError } from '../utils/mailer.js';
 import { welcomeEmail, resetCodeEmail, passwordChangedEmail, sendAccountEmail, sendAccountEmailLater } from '../utils/accountEmails.js';
 import crypto from 'crypto';
