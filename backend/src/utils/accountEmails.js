@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { getMailer, mailConfigured, mailFrom, mailError } from './mailer.js'
 
 // Account emails (welcome, team invite, reset code, password changed) in one
@@ -7,11 +8,12 @@ import { getMailer, mailConfigured, mailFrom, mailError } from './mailer.js'
 const siteUrl = () => (process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/+$/, '')
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-function layout({ heading, intro, body = '', button, footer }) {
+function layout({ heading, intro, body = '', button, footer, preheader = '' }) {
     const btn = button?.url
         ? `<p style="margin:28px 0"><a href="${esc(button.url)}" style="background:#2563eb;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;display:inline-block">${esc(button.label)}</a></p>`
         : ''
     return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f5f7">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(preheader)}</div>
 <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
   <div style="background:#0b101a;border-radius:14px 14px 0 0;padding:20px 28px">
     <span style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:.5px">Kube<span style="color:#60a5fa">EZ</span></span>
@@ -33,7 +35,7 @@ export function welcomeEmail(user) {
     const url = siteUrl()
     const name = esc(user.username)
     return {
-        subject: 'Welcome to KubeEZ 🎉',
+        subject: 'Welcome to KubeEZ — your account is ready',
         text: [
             `Hi ${user.username},`, '',
             'Welcome to KubeEZ — your account is ready.', '',
@@ -46,6 +48,7 @@ export function welcomeEmail(user) {
             'If you did not create this account, ignore this email.'
         ].join('\n'),
         html: layout({
+            preheader: "Your KubeEZ account is ready — get started in a few minutes.",
             heading: `Welcome, ${name} 👋`,
             intro: 'Your KubeEZ account is ready. Install, upgrade, back up and run Kubernetes clusters on your own servers — from one console.',
             body: `<p style="margin:16px 0 0;font-weight:bold">Get started in a few minutes</p>` + li([
@@ -71,6 +74,7 @@ export function memberAddedEmail(user, { addedBy, role }) {
             `Sign in${url ? ` at ${url}` : ''} with the password ${addedBy} gives you — or use "Forgot Password?" on the sign-in page to choose your own.`
         ].join('\n'),
         html: layout({
+            preheader: "Your username, role and how to sign in.",
             heading: 'You were added to a KubeEZ workspace',
             intro: `<b>${esc(addedBy)}</b> created a KubeEZ account for you.`,
             body: `<table style="margin:8px 0;border-collapse:collapse;font-size:14px">
@@ -88,6 +92,7 @@ export function resetCodeEmail(user, code) {
         subject: 'Your KubeEZ password reset code',
         text: `Hi ${user.username},\n\nYour KubeEZ password reset code is: ${code}\n\nIt is valid for 15 minutes. If you did not ask for this, ignore this email — your password stays the same.`,
         html: layout({
+            preheader: "Use this code within 15 minutes to reset your password.",
             heading: 'Reset your password',
             intro: `Hi <b>${esc(user.username)}</b>, use this code on the KubeEZ sign-in page:`,
             body: `<div style="background:#f4f4f5;padding:14px 20px;text-align:center;letter-spacing:10px;font-size:30px;font-weight:800;color:#111827;border-radius:10px;margin:8px 0">${esc(code)}</div>
@@ -103,6 +108,7 @@ export function passwordChangedEmail(user) {
         subject: 'Your KubeEZ password was changed',
         text: `Hi ${user.username},\n\nThe password of your KubeEZ account was just changed with a reset code, and all other sessions were signed out.\n\nIf this was not you, reset your password again right away and tell your workspace admin.`,
         html: layout({
+            preheader: "All other sessions were signed out.",
             heading: 'Your password was changed',
             intro: `Hi <b>${esc(user.username)}</b>, the password of your KubeEZ account was just changed with a reset code, and all other sessions were signed out.`,
             body: '<p style="margin:12px 0 0"><b>Not you?</b> Reset your password again right away and tell your workspace admin.</p>',
@@ -112,8 +118,14 @@ export function passwordChangedEmail(user) {
 }
 
 /** Send now and throw on failure (reset codes — the user waits for it). */
+// Headers that help mail land in the inbox: a reply address, and a unique ID
+// so Gmail never folds two reset codes into one thread.
 export async function sendAccountEmail(to, mail) {
-    return getMailer().sendMail({ from: mailFrom(), to, ...mail })
+    const replyTo = process.env.EMAIL_REPLY_TO || undefined
+    return getMailer().sendMail({
+        from: mailFrom(), to, replyTo, ...mail,
+        headers: { 'X-Entity-Ref-ID': crypto.randomUUID(), 'Auto-Submitted': 'auto-generated', ...(mail.headers || {}) }
+    })
 }
 
 /** Fire and forget (welcome, invites, notices) — never blocks the caller. */
