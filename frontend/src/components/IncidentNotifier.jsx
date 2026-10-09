@@ -11,7 +11,14 @@ const REASON_LABEL = {
     CrashLoopBackOff:  'Pod Crash Loop',
     OOMKilled:         'Out of Memory',
     ImagePullBackOff:  'Image Pull Failed',
-    PodPendingTooLong: 'Pod Stuck Pending'
+    PodPendingTooLong: 'Pod Stuck Pending',
+    ControlPlaneDown:  'Control Plane Down',
+    EtcdUnhealthy:     'etcd Unhealthy',
+    CertExpiring:      'Certificates Expiring',
+    ControlPlaneDiskFull: 'Control-plane Disk Filling Up',
+    WorkloadUnavailable: 'Workload Unavailable',
+    PVCPending:        'Volume Claim Pending',
+    JobFailed:         'Job Failed'
 }
 
 const POLL_MS = 8000

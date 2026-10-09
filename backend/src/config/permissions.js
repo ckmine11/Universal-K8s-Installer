@@ -68,7 +68,9 @@ export const PERMISSIONS = {
     'team:manage':       ['admin'],   // invite / remove / change roles / reset passwords
     'billing:manage':    ['admin'],
     'backup:manage':     ['admin'],
-    'alerts:manage':     ['admin']
+    'alerts:manage':     ['admin'],
+    'incident:act':      ['admin', 'operator'],   // acknowledge, run a fix now, mute, maintenance
+    'healing:manage':    ['admin']                // auto-healing policies
 }
 
 // Human-readable grouping for the transparency matrix shown in the UI
@@ -96,7 +98,9 @@ export const PERMISSION_GROUPS = [
         { key: 'team:manage',    label: 'Manage team & roles' },
         { key: 'billing:manage', label: 'Manage billing & plan' },
         { key: 'backup:manage',  label: 'Manage config backups' },
-        { key: 'alerts:manage',  label: 'Manage alert channels' }
+        { key: 'alerts:manage',  label: 'Manage alert channels' },
+        { key: 'incident:act',   label: 'Act on incidents (fix now, mute, maintenance)' },
+        { key: 'healing:manage', label: 'Change auto-healing policies' }
     ]}
 ]
 

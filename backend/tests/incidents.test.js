@@ -28,15 +28,15 @@ incidentDetector.watched.set(cluster.id, cluster)
 
 test('kubectl runs with sudo and the admin kubeconfig', async () => {
     nodesJson = node(true)
-    await incidentDetector._pollNodes(cluster)
+    await incidentDetector._pollNodes(cluster.id)
     assert.match(commands.at(-1), /^sudo KUBECONFIG=\/etc\/kubernetes\/admin\.conf kubectl get nodes/)
 })
 
 test('an ongoing problem is ONE incident with a count, not a new row every poll', async () => {
     nodesJson = node(false)
-    await incidentDetector._pollNodes(cluster)
-    await incidentDetector._pollNodes(cluster)
-    await incidentDetector._pollNodes(cluster)
+    await incidentDetector._pollNodes(cluster.id)
+    await incidentDetector._pollNodes(cluster.id)
+    await incidentDetector._pollNodes(cluster.id)
     const open = incidentDetector.getIncidents().filter(i => i.reason === 'NodeNotReady')
     assert.equal(open.length, 1)
     assert.equal(open[0].count, 3)
@@ -45,14 +45,14 @@ test('an ongoing problem is ONE incident with a count, not a new row every poll'
 
 test('when the problem goes away the incident is marked cleared', async () => {
     nodesJson = node(true)
-    await incidentDetector._pollNodes(cluster)
+    await incidentDetector._pollNodes(cluster.id)
     const inc = incidentDetector.getIncidents().find(i => i.reason === 'NodeNotReady')
     assert.equal(inc.status, 'cleared')
 })
 
 test('the same problem coming back opens a new incident', async () => {
     nodesJson = node(false)
-    await incidentDetector._pollNodes(cluster)
+    await incidentDetector._pollNodes(cluster.id)
     assert.equal(incidentDetector.getIncidents().filter(i => i.reason === 'NodeNotReady').length, 2)
 })
 

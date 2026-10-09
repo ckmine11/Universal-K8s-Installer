@@ -430,14 +430,20 @@ export default function Docs() {
 
                     {/* ── Operations ──────────────────────────────────── */}
                     <Section id="healing" Icon={HeartPulse} color="text-rose-400" title="Auto-Healing & Incidents"
-                        intro="Healthy clusters are watched continuously. Incidents are listed on the Incidents & Auto-Healing page with what was detected and what was done.">
+                        intro="Every running cluster is checked every 1–2 minutes. Known problems are fixed automatically; the rest are diagnosed, with evidence and what to check.">
                         <Table head={['Detected', 'What KubeEZ does']} rows={[
-                            ['Node down (NotReady)', 'Restarts containerd + kubelet on that node, then verifies it is Ready again.'],
-                            ['Disk / memory / process pressure', 'Frees space (old images, exited containers, journals, oversized logs are emptied — never deleted), drops caches, clears zombie processes.'],
-                            ['Pod crash loop', 'Saves the last log lines, then deletes the pod so its controller recreates it.'],
-                            ['Out of memory, image pull failure, pod stuck Pending', 'Explains the cause (limits, image name / pull secret, resources or taints) — these need your decision.']
+                            ['Node down (NotReady)', 'Saves the kubelet log, restarts containerd + kubelet, then checks the node is Ready again.'],
+                            ['Disk / memory / process pressure', 'Frees space (old images, exited containers, journals; oversized logs are emptied, never deleted), drops caches, clears zombie processes.'],
+                            ['Control plane down (API, scheduler, controller-manager, etcd)', 'Saves the component log and restarts kubelet on that control-plane, then checks the API answers.'],
+                            ['Control-plane disk filling up (90 % / 95 %)', 'Same cleanup on the control-plane — etcd stops when the disk is full.'],
+                            ['Certificates expiring (< 30 days)', 'Alerts. One click (“Run fix now”) renews them on every control-plane and restarts the components.'],
+                            ['etcd unhealthy', 'Alerts with the etcd log and disk usage.'],
+                            ['Pod crash loop', 'Saves the last log lines, then deletes the pod so its controller starts a fresh one (a pod without a controller is left alone).'],
+                            ['Out of memory, image pull failure, pod stuck pending', 'Diagnoses: memory limits, the registry error, the scheduler’s reason.'],
+                            ['Workload below its replicas, volume claim pending, job failed (> 5 min)', 'Diagnoses: workload conditions, claim events and storage classes, job logs.']
                         ]} />
-                        <P>A problem that keeps happening stays <b className="text-white">one</b> incident (&quot;seen 12×&quot;); a fix is retried at most 3 times. When the problem goes away it is marked <b className="text-white">Cleared</b>. Incidents are kept 24 hours and survive a KubeEZ restart. If a cluster can&apos;t be reached, the page says so instead of showing &quot;all healthy&quot;.</P>
+                        <P><b className="text-white">Root cause:</b> when a node is down, pod and workload problems on it are listed under it and not “fixed” separately. <b className="text-white">Each incident</b> has a timeline (detected → each fix attempt → result), the evidence collected and a suggestion. A fix is tried at most 3 times, then it needs a person; a closed incident that comes back opens a new one. History is kept 7 days, with fix success rate and mean time to recover.</P>
+                        <P><b className="text-white">Control:</b> admins choose per problem type <i>Fix automatically</i>, <i>Alert only</i> or <i>Off</i> (Policies). Operators can acknowledge, run a fix now, mute an incident for 24 h, or put a cluster in maintenance (no checks, fixes or alerts for 1–24 h).</P>
                     </Section>
 
                     <Section id="alerts" Icon={Bell} color="text-amber-400" title="Alerts"
