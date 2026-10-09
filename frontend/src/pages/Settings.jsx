@@ -3,7 +3,6 @@ import { useSearchParams, Navigate } from 'react-router-dom'
 import { PageTitle } from '../components/ui/PageHeader'
 import { useToast } from '../components/ToastProvider'
 import { useAuth, apiFetch } from '../context/AuthContext'
-import TenantManager from '../components/TenantManager'
 import { Bell, SlidersHorizontal,
     Activity,
     Database,
@@ -44,7 +43,7 @@ export default function Settings() {
     const { user } = useAuth()
     const [searchParams, setSearchParams] = useSearchParams()
     const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'licensing')
-    useEffect(() => { const t = searchParams.get('tab'); if (t && t !== activeTab) setActiveTab(t); if (!t && user) setActiveTab(user.role === 'superadmin' ? 'tenants' : 'licensing') }, [searchParams])
+    useEffect(() => { const t = searchParams.get('tab'); if (t && t !== activeTab) setActiveTab(t); if (!t && user) setActiveTab('licensing') }, [searchParams])
     const selectTab = (t) => { setActiveTab(t); setSearchParams({ tab: t }, { replace: true }) }
     
     // Health state
@@ -113,9 +112,6 @@ export default function Settings() {
 
     useEffect(() => {
         if (user) {
-            if (user.role === 'superadmin' && activeTab === 'licensing' && !searchParams.get('tab')) {
-                setActiveTab('tenants'); // Default to Global Tenants for superadmin
-            }
             if (activeTab === 'health' && user.role === 'superadmin') {
                 fetchHealth()
             } else if (activeTab === 'licensing') {
@@ -324,6 +320,7 @@ export default function Settings() {
     const canBackup = isSuperAdmin || isPaidPlan; // Daily backups = Pro feature
 
     if (searchParams.get('tab') === 'alerts') return <Navigate to="/alerts" replace />
+    if (searchParams.get('tab') === 'tenants') return <Navigate to="/admin" replace />
 
     return (
         <div className="max-w-7xl mx-auto relative">
@@ -332,26 +329,13 @@ export default function Settings() {
                 <PageTitle icon={SlidersHorizontal} eyebrow="Workspace"
                     title={isSuperAdmin ? 'Platform settings' : 'Workspace settings'}
                     description={isSuperAdmin
-                        ? 'Tenants, config backups, plans and security of this KubeEZ server.'
+                        ? 'Config backups, plans and security of this KubeEZ server — tenants are in the Admin Console.'
                         : 'Config backups, your plan and security for this workspace.'} />
             </div>
 
             {/* Navigation Tabs */}
             <div className="flex gap-1 p-1 mb-8 rounded-2xl border border-white/10 bg-black/25 w-fit max-w-full overflow-x-auto" role="tablist">
 
-                {isSuperAdmin && (
-                    <button
-                        onClick={() => selectTab('tenants')}
-                        className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                            activeTab === 'tenants'
-                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
-                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                        }`}
-                    >
-                        <Users className="w-4 h-4" />
-                        <span>Global Tenants</span>
-                    </button>
-                )}
                 {isAdmin && (
                     <button
                         onClick={() => selectTab('backups')}
@@ -392,9 +376,6 @@ export default function Settings() {
 
             {/* Tab Views */}
             <div className="space-y-6">
-                {activeTab === 'tenants' && isSuperAdmin && (
-                    <TenantManager />
-                )}
                 {activeTab === 'health' && (
                     <div className="space-y-6">
                         {healthLoading ? (
