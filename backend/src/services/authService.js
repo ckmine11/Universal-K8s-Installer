@@ -5,7 +5,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../utils/cryptoUtils.js';
 import { v4 as uuidv4 } from 'uuid';
-import { getMailer, mailConfigured, mailFrom, mailError } from '../utils/mailer.js';
+import { mailConfigured, mailError } from '../utils/mailer.js';
+import { welcomeEmail, resetCodeEmail, passwordChangedEmail, sendAccountEmail, sendAccountEmailLater } from '../utils/accountEmails.js';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { DATA_DIR } from '../utils/paths.js';
@@ -109,6 +110,7 @@ class AuthService {
 
         this.users.push(newUser);
         this.saveUsers();
+        sendAccountEmailLater(email, welcomeEmail(newUser), 'welcome');
 
         return this.generateToken(newUser);
     }
@@ -368,24 +370,7 @@ class AuthService {
         this.saveUsers();
 
         try {
-            await getMailer().sendMail({
-                from: mailFrom(),
-                to: user.email,
-                subject: 'KubeEZ — your password reset code',
-                text: `Hi ${user.username},
-
-Your KubeEZ password reset code is: ${resetCode}
-
-It is valid for 15 minutes. If you did not ask for this, ignore this email — your password stays the same.`,
-                html: `
-                    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #eee; border-radius: 12px;">
-                        <h2 style="color: #3b82f6; margin-top: 0;">KubeEZ</h2>
-                        <p>Hi <b>${user.username.replace(/[<>&]/g, '')}</b>, we received a request to reset your password.</p>
-                        <p>Your reset code:</p>
-                        <div style="background: #f4f4f5; padding: 12px 20px; text-align: center; letter-spacing: 8px; font-size: 28px; font-weight: bold; color: #18181b; border-radius: 8px;">${resetCode}</div>
-                        <p style="color: #71717a; font-size: 12px; margin-top: 20px;">Valid for 15 minutes. If you did not ask for this, ignore this email — your password stays the same.</p>
-                    </div>`
-            });
+            await sendAccountEmail(user.email, resetCodeEmail(user, resetCode));
         } catch (error) {
             // Undo, so a later attempt is not blocked by the resend limit
             user.resetToken = undefined; user.resetTokenExpiry = undefined; user.resetAttempts = undefined; user.resetRequestedAt = undefined;
@@ -424,17 +409,7 @@ It is valid for 15 minutes. If you did not ask for this, ignore this email — y
         await this.setPassword(user, newPassword);   // ends every older session
         this._failures.delete(user.username.toLowerCase());   // the lockout is over too
         // Tell the owner (best effort) — a reset they did not do is a warning sign
-        if (mailConfigured() && user.email) {
-            getMailer().sendMail({
-                from: mailFrom(), to: user.email,
-                subject: 'KubeEZ — your password was changed',
-                text: `Hi ${user.username},
-
-The password of your KubeEZ account was just changed with a reset code, and all other sessions were signed out.
-
-If this was not you, reset your password again right away and tell your workspace admin.`
-            }).catch(e => console.error('[auth] password-changed email failed:', mailError(e)));
-        }
+        sendAccountEmailLater(user.email, passwordChangedEmail(user), 'password-changed');
         return true;
     }
 }

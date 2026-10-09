@@ -93,12 +93,13 @@ export default function Login() {
     const [loading, setLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [showPw, setShowPw] = useState(false);
-    const [emailReset, setEmailReset] = useState(true);   // can this server email a reset code?
+    const [emailReset, setEmailReset] = useState(true);
+    const [selfHosted, setSelfHosted] = useState(false);   // can this server email a reset code?
     const [resendIn, setResendIn] = useState(0);
 
     useEffect(() => {
         setMounted(true);
-        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) setEmailReset(!!o.emailReset) }).catch(() => { });
+        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) { setEmailReset(!!o.emailReset); setSelfHosted(!!o.selfHosted) } }).catch(() => { });
     }, []);
     useEffect(() => {
         if (resendIn <= 0) return;
@@ -268,7 +269,7 @@ export default function Login() {
                                 <div className="p-4 rounded-2xl border border-amber-500/25 bg-amber-500/5 text-xs text-slate-300 leading-relaxed space-y-2">
                                     <p className="font-bold text-amber-300">Password reset by email is not set up on this server.</p>
                                     <p>Ask your <b className="text-white">workspace admin</b> to set a new password for you (user menu → Team &amp; Roles → Reset password).</p>
-                                    <p className="text-slate-500">Server owner: set SMTP_USER / SMTP_PASS to enable email reset, or run <span className="font-mono text-slate-300">node scripts/reset-password.js &lt;username&gt; &lt;new-password&gt;</span> in the backend container.</p>
+                                    {selfHosted && <p className="text-slate-500">Server owner: set SMTP_USER / SMTP_PASS to enable email reset, or run <span className="font-mono text-slate-300">node scripts/reset-password.js &lt;username&gt; &lt;new-password&gt;</span> in the backend container.</p>}
                                 </div>
                             )}
 

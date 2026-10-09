@@ -195,7 +195,7 @@ app.post('/api/auth/register', async (req, res) => {
 // What the login page can offer (no secrets): reset by email only when this
 // server can actually send email
 app.get('/api/auth/options', (req, res) => {
-    res.json({ emailReset: mailConfigured() })
+    res.json({ emailReset: mailConfigured(), selfHosted: process.env.KUBEEZ_MODE !== 'saas' })
 })
 
 app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {

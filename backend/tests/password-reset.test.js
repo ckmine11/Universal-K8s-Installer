@@ -109,3 +109,26 @@ test('server owner: reset-password script', () => {
     assert.throws(() => execFileSync(process.execPath, ['scripts/reset-password.js', 'owner', 'short'], { cwd: BACKEND, env, stdio: 'pipe' }))
     fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('welcome email on sign-up; team invite email without the password', async () => {
+    const srv = await startServer({ SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtp.address().port), SMTP_SECURE: 'false', SMTP_USER: 'kubeez@example.com', SMTP_PASS: 'x', KUBEEZ_PUBLIC_URL: 'https://k8scluster.space' })
+    const api = client(srv)
+    const seen = (re) => mails.find(m => re.test(m.replace(/=\r?\n/g, '')))
+    const waitFor = async (re) => { for (let i = 0; i < 40 && !seen(re); i++) await new Promise(r => setTimeout(r, 100)); return seen(re) }
+    try {
+        const ann = (await api('POST', '/api/auth/register', null, { username: 'annw', password: 'annpass12345', email: 'ann.w@example.com' })).data
+        assert.ok(ann.token)
+        const w = await waitFor(/To: ann\.w@example\.com[\s\S]*Welcome/i)
+        assert.ok(w, 'welcome email sent')
+        assert.match(w.replace(/=\r?\n/g, ''), /k8scluster\.space/)
+        assert.ok(!/annpass12345/.test(w), 'never the password')
+
+        await api('PUT', '/api/superadmin/users/' + ann.user.id + '/limits', (await api('POST', '/api/auth/login', null, { username: 'root', password: 'secret123' })).data.token, { plan: 'PRO', maxClusters: 5, maxNodes: 20, maxMembers: 5 })
+        const r = await api('POST', '/api/admin/users', ann.token, { username: 'bobw', password: 'bobpass12345', email: 'bob.w@example.com', role: 'operator' })
+        assert.equal(r.status, 200, JSON.stringify(r.data))
+        const inv = await waitFor(/To: bob\.w@example\.com/i)
+        assert.ok(inv, 'invite email sent')
+        assert.match(inv.replace(/=\r?\n/g, ''), /annw/)
+        assert.ok(!/bobpass12345/.test(inv), 'the admin hands over the password, not the email')
+    } finally { await srv.stop() }
+})

@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/authMiddleware.js'
 import { ROLES, PERMISSION_GROUPS, PERMISSIONS, permissionsForRole } from '../config/permissions.js'
 import bcrypt from 'bcryptjs'
 import { passwordProblem } from '../utils/passwordPolicy.js'
+import { memberAddedEmail, sendAccountEmailLater } from '../utils/accountEmails.js'
 
 const router = express.Router()
 
@@ -117,6 +118,8 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         }
 
         const newUser = await authService.createTeamMember(req.user.orgId, username, password, email, role || 'viewer')
+        // Tell the new member (never the password — the admin hands that over)
+        sendAccountEmailLater(newUser.email, memberAddedEmail(newUser, { addedBy: req.user.username, role: newUser.role }), 'team-invite')
         res.json({ success: true, message: 'Team member created', user: { id: newUser.id, username: newUser.username, role: newUser.role } })
     } catch (err) {
         res.status(400).json({ error: err.message })
