@@ -25,7 +25,7 @@ const STATUS = {
     failed: { cls: 'text-red-300', Icon: XCircle, text: 'Auto-fix failed — needs attention' },
     unresolved: { cls: 'text-slate-300', Icon: AlertTriangle, text: 'Needs attention' }
 }
-const CATEGORY = { node: 'Nodes', 'control-plane': 'Control plane', pod: 'Pods', workload: 'Workloads', storage: 'Storage' }
+const CATEGORY = { cluster: 'Cluster', node: 'Nodes', 'control-plane': 'Control plane', pod: 'Pods', workload: 'Workloads', storage: 'Storage' }
 
 function ago(iso) {
     if (!iso) return ''

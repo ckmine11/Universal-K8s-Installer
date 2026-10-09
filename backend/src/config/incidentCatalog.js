@@ -8,6 +8,12 @@
 //   off    → not detected at all
 
 export const CATALOG = {
+    // ── Cluster ────────────────────────────────────────────────────────────
+    ClusterUnreachable: {
+        label: 'Cluster unreachable', category: 'cluster', severity: 'critical', fixable: false, policy: 'notify',
+        suggestion: 'KubeEZ cannot reach the control-plane over SSH for 5 minutes: is the machine on and on the network? In SaaS / private networks, is its Gateway Agent online (Gateway Agents page)? While unreachable, nothing on it is watched or healed.'
+    },
+
     // ── Nodes ──────────────────────────────────────────────────────────────
     NodeNotReady: {
         label: 'Node down', category: 'node', severity: 'critical', fixable: true, policy: 'auto',

@@ -36,6 +36,8 @@ export const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 
 // Problems found by each poller — used to notice when one has gone away
 const NODE_REASONS = new Set(['NodeNotReady', 'DiskPressure', 'MemoryPressure', 'PIDPressure'])
+const UNREACHABLE = new Set(['ClusterUnreachable'])
+const UNREACHABLE_AFTER_MS = Number(process.env.KUBEEZ_UNREACHABLE_ALERT_MS) || 5 * 60 * 1000
 const POD_REASONS  = new Set(['CrashLoopBackOff', 'ImagePullBackOff', 'OOMKilled', 'PodPendingTooLong'])
 // A closed incident is not reused; the same problem coming back opens a new one
 const CLOSED = new Set(['resolved', 'cleared'])
@@ -267,6 +269,7 @@ class IncidentDetector {
         this.skipped   = []          // [{ cluster, reason }] saved clusters we do not watch
         this.firstSeen = new Map()   // condition key -> first time seen (for "unhealthy > 5 min")
         this.lastCheck = new Map()   // clusterId -> last successful health check
+        this.unreachableSince = new Map()   // clusterId -> first failed connection
         this.incidents = this._load()
     }
 
@@ -398,10 +401,14 @@ class IncidentDetector {
             ssh = await this.automationEngine.connectSSH(node)
         } catch (err) {
             console.error(`[AutoHealing] Connect failed for ${cname(cluster)}: ${err.message}`)
+            this._unreachable(cluster, err.message)
             return this._scheduleReconnect(cluster)
         }
 
         this.reconnect.set(cluster.id, 0)
+        // reachable again: the "unreachable" incident clears
+        this.unreachableSince.delete(cluster.id)
+        this._clearGone(cluster, UNREACHABLE, new Set())
         const stream = { ssh, timers: [], failCount: 0, cluster }
         this.streams.set(cluster.id, stream)
 
@@ -415,6 +422,17 @@ class IncidentDetector {
         setTimeout(() => this._pollHealth(cluster.id), 15000).unref?.()
 
         console.log(`[AutoHealing] Watching ${cname(cluster)} — node/pod/health pollers active`)
+    }
+
+    // Cannot connect for UNREACHABLE_AFTER_MS → one critical incident (+ alert)
+    _unreachable(cluster, why) {
+        if (healingPolicyStore.inMaintenance(cluster.orgId, cluster.id)) return
+        if (!this.unreachableSince.has(cluster.id)) this.unreachableSince.set(cluster.id, Date.now())
+        const since = this.unreachableSince.get(cluster.id)
+        if (Date.now() - since < UNREACHABLE_AFTER_MS) return
+        const target = cluster.masterNodes?.[0]?.ip || cname(cluster)
+        this._createIncident(cluster, { reason: 'ClusterUnreachable', target, severity: 'critical',
+            message: `${cname(cluster)} (${target}) unreachable for ${Math.round((Date.now() - since) / 60000)} min — ${String(why || 'no answer').slice(0, 160)}` })
     }
 
     _scheduleReconnect(cluster) {
@@ -454,6 +472,7 @@ class IncidentDetector {
             stream.failCount++
             if (stream.failCount >= MAX_POLL_FAILURES) {
                 console.warn(`[AutoHealing] ${cname(cluster)} SSH unhealthy (${stream.failCount}x) — reconnecting`)
+                this._unreachable(cluster, e.message)
                 this._scheduleReconnect(cluster)
             }
             return null

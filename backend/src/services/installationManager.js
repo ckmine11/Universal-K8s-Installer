@@ -7,6 +7,26 @@ import { notifier } from './notifier.js'
 
 // Day-2 jobs that touch one add-on of an existing cluster
 const ADDON_JOB_MODES = new Set(['addon-only', 'addon-uninstall', 'addon-reinstall'])
+
+// "Job finished" alert: what was done, in words
+export async function jobDoneAlert(inst) {
+    const { ADDON_REGISTRY } = await import('./addonManager.js')
+    const name = inst.clusterName || 'the cluster'
+    const cid = inst.originalClusterId || inst.id
+    const addon = (k) => ADDON_REGISTRY[k]?.label || k
+    const nodes = (inst.masterNodes?.length || 0) + (inst.workerNodes?.length || 0)
+    const base = { type: 'job_done', severity: 'success', clusterId: cid, clusterName: inst.clusterName, link: `/cluster/${cid}` }
+    if (inst.mode === 'addon-only') {
+        const list = Object.entries(inst.addons || {}).filter(([, v]) => v).map(([k]) => addon(k))
+        return { ...base, key: `job|${inst.id}`, title: `Add-on${list.length > 1 ? 's' : ''} installed on ${name}`, text: list.join(', ') || 'Add-ons updated', link: `/cluster/${cid}?tab=addons` }
+    }
+    if (inst.mode === 'addon-uninstall' || inst.mode === 'addon-reinstall') {
+        const re = inst.mode === 'addon-reinstall'
+        return { ...base, key: `job|${inst.id}`, title: `${addon(inst.uninstallAddon)} ${re ? 'reinstalled' : 'removed'} on ${name}`, text: re ? 'It was removed and installed again.' : 'The add-on and its namespace were removed.', link: `/cluster/${cid}?tab=addons` }
+    }
+    if (inst.mode === 'scale') return { ...base, key: `job|${inst.id}`, title: `Nodes added to ${name}`, text: `${(inst.workerNodes?.length || 0) + Math.max(0, (inst.masterNodes?.length || 1) - 1)} node(s) joined.` }
+    return { ...base, key: `job|${inst.id}`, title: `Cluster ${name} is ready`, text: `${nodes} node(s), Kubernetes v${inst.k8sVersion}.` }
+}
 // The same add-on can be stored under more than one key
 const addonAliases = (key) => (key === 'cert-manager' || key === 'certManager') ? ['cert-manager', 'certManager'] : [key]
 
@@ -226,6 +246,8 @@ class InstallationManager {
                     text: 'Every node runs the new version.', clusterId: installation.originalClusterId, clusterName: installation.clusterName,
                     link: `/cluster/${installation.originalClusterId}`
                 })
+            } else if (!installation.simulationMode) {
+                jobDoneAlert(installation).then(ev => notifier.emit(installation.orgId, ev)).catch(() => { })
             }
 
             // On upgrade, the cluster version must reflect the TARGET version —

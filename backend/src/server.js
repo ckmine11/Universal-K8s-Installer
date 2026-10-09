@@ -451,6 +451,7 @@ server.listen(PORT, () => {
     BackupService.initialize()
     BackupService.startDailyScheduler(24)  // Daily config backups for all users
     incidentDetector.init().catch(err => console.error('[IncidentDetector] Failed to init:', err))
+    agentService.watchAfterBoot().catch(() => { })   // agents that do not reconnect after a restart get an offline alert
 
     console.log(`
 ╔═══════════════════════════════════════════════════════╗

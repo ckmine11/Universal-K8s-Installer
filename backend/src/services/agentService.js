@@ -300,15 +300,37 @@ class AgentService {
     }
 
     // ─── Offline alerts: only after 5 minutes away (restarts and blips stay quiet) ──
+    // Agents created before workspaces existed have no orgId — use their owner's
+    async _orgOf(agent) {
+        if (agent?.orgId) return agent.orgId
+        try { return (await import('./authService.js')).authService.getUserById(agent?.ownerId)?.orgId || null } catch { return null }
+    }
+
+    /**
+     * After a KubeEZ restart every agent has to reconnect; one that does not
+     * come back within the alert delay is reported (no "close" was seen for it).
+     */
+    async watchAfterBoot() {
+        const agents = await this._readAgents().catch(() => [])
+        const day = Date.now() - 24 * 3600e3
+        for (const a of agents) {
+            const seen = a.lastSeen ? new Date(a.lastSeen).getTime() : 0
+            if (seen > day || a.status === 'online') this._agentOffline(a.agentId)
+        }
+    }
+
     async _agentOffline(agentId) {
         const prev = this.offlineAlerts.get(agentId)
         if (prev?.timer) clearTimeout(prev.timer)
+        if (prev?.alerted) return   // already reported, wait for it to come back
         const timer = setTimeout(async () => {
             if (this.agentSockets.has(agentId)) return
             const agent = (await this._readAgents().catch(() => [])).find(a => a.agentId === agentId)
             if (!agent) return
             this.offlineAlerts.set(agentId, { alerted: true })
-            notifier.emit(agent.orgId, { type: 'agent_offline', severity: 'critical', key: `agent|${agentId}`, title: `Gateway Agent "${agent.label || agentId.slice(0, 8)}" is offline`, text: 'Clusters reached through it cannot be managed, monitored or healed until it reconnects. Check the machine it runs on.', link: '/agents' })
+            const orgId = await this._orgOf(agent)
+            if (!orgId) return console.warn(`[AgentService] Agent ${agentId} belongs to no workspace — offline alert not sent`)
+            notifier.emit(orgId, { type: 'agent_offline', severity: 'critical', key: `agent|${agentId}`, title: `Gateway Agent "${agent.label || agentId.slice(0, 8)}" is offline`, text: 'Clusters reached through it cannot be managed, monitored or healed until it reconnects. Check the machine it runs on.', link: '/agents' })
         }, AGENT_OFFLINE_ALERT_MS)
         timer.unref?.()
         this.offlineAlerts.set(agentId, { timer, alerted: false })
@@ -318,7 +340,7 @@ class AgentService {
         const prev = this.offlineAlerts.get(agent.agentId)
         if (prev?.timer) clearTimeout(prev.timer)
         this.offlineAlerts.delete(agent.agentId)
-        if (prev?.alerted) notifier.emit(agent.orgId, { type: 'agent_offline', severity: 'success', key: `agent-back|${agent.agentId}`, title: `Gateway Agent "${agent.label || agent.agentId.slice(0, 8)}" is back online`, link: '/agents' })
+        if (prev?.alerted) this._orgOf(agent).then(orgId => orgId && notifier.emit(orgId, { type: 'agent_offline', severity: 'success', key: `agent-back|${agent.agentId}`, title: `Gateway Agent "${agent.label || agent.agentId.slice(0, 8)}" is back online`, text: 'Its clusters can be managed and watched again.', link: '/agents' }))
     }
 
     // ─── TCP streams through the agent ───────────────────────────

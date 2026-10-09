@@ -562,7 +562,7 @@ function confirmedByName(req, res, cluster) {
 
 // Start a background etcd job → 202 { jobId } (or 409 when the cluster is busy)
 // Alert on the outcome of an etcd job (backup failures, restore/recovery results)
-function alertEtcdJob(cluster, kind, ok, detail) {
+export function alertEtcdJob(cluster, kind, ok, detail) {
     const base = { clusterId: cluster.id, clusterName: cluster.clusterName, link: `/cluster/${cluster.id}?tab=backups` }
     if (kind === 'backup') {
         if (!ok) notifier.emit(cluster.orgId, { ...base, type: 'backup_failed', severity: 'critical', title: 'etcd backup failed', text: detail })

@@ -389,6 +389,11 @@ const PLAYBOOKS = {
             })
         }
     },
+    ClusterUnreachable: {
+        async diagnose(engine, cluster, node, incident) {
+            return `Cannot connect to ${incident.target} over SSH (${incident.message}). Check the machine, the network and — if used — the Gateway Agent.`
+        }
+    },
     EtcdUnhealthy: {
         async diagnose(engine, cluster, node, incident, evidence) {
             return onMaster(engine, cluster, async (ssh) => {

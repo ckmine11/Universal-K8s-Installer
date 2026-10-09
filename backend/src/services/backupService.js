@@ -367,6 +367,10 @@ export class BackupService {
                 if (!canUseBackups(u?.subscription?.plan, u?.role)) { skipped++; return; }
                 const r = this.createBackup('auto', uid);
                 if (r.success) { count++; this.cleanupOldBackups(uid, 10); }
+                else import('./notifier.js').then(({ notifier }) => notifier.emit(u?.orgId, {
+                    type: 'backup_failed', severity: 'critical', title: 'Daily configuration backup failed',
+                    text: r.error || 'The automatic backup of your KubeEZ settings did not complete.', link: '/settings?tab=backups'
+                })).catch(() => { });
             });
             console.log(`[BackupService] Daily auto-backup complete for ${count} paid user(s), skipped ${skipped} free user(s)`);
         } catch (error) {
