@@ -85,8 +85,9 @@ function DeployTerminal() {
 }
 
 export default function Login() {
-    const { login, setup, register, forgotPassword, resetPassword, isSetupRequired } = useAuth();
-    const [authMode, setAuthMode] = useState('login'); // 'login', 'register', 'forgot', 'reset'
+    const { login, setup, register, forgotPassword, verifyResetCode, resetPassword, isSetupRequired } = useAuth();
+    const [authMode, setAuthMode] = useState('login'); // 'login', 'register', 'forgot' → 'verify' → 'reset'
+    const [ticket, setTicket] = useState('');   // from a verified code, for the new password
     const [formData, setFormData] = useState({ username: '', email: '', password: '', resetCode: '', identifier: '', confirm: '' });
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
@@ -127,10 +128,16 @@ export default function Login() {
                 await register(formData.username, formData.password, formData.email);
             } else if (authMode === 'forgot') {
                 await sendCode();
-                setAuthMode('reset');
+                setAuthMode('verify');
+            } else if (authMode === 'verify') {
+                const t = await verifyResetCode(formData.identifier.trim(), formData.resetCode.trim());
+                setTicket(t);
+                go('reset');
+                setSuccessMessage('Code verified ✓ — now choose your new password.');
             } else if (authMode === 'reset') {
                 if (formData.password !== formData.confirm) throw new Error('The two passwords are not the same.');
-                await resetPassword(formData.identifier.trim(), formData.resetCode.trim(), formData.password);
+                await resetPassword(formData.identifier.trim(), ticket, formData.password);
+                setTicket('');
                 go('login');
                 setSuccessMessage('Password changed — sign in with the new one. Other sessions were signed out.');
                 setFormData({ ...formData, username: formData.identifier.trim(), password: '', confirm: '', resetCode: '' });
@@ -139,6 +146,7 @@ export default function Login() {
             }
         } catch (err) {
             // fetch() itself failed (offline, blocked): say so instead of "Failed to fetch"
+            if (err.code === 'BAD_TICKET' || err.code === 'CODE_BURNED') { setTicket(''); setFormData(d => ({ ...d, resetCode: '' })); setAuthMode(err.code === 'BAD_TICKET' ? 'forgot' : 'verify'); }
             setError(err instanceof TypeError ? 'Could not reach the KubeEZ server — check your connection and try again.' : err.message);
         } finally {
             setLoading(false);
@@ -242,11 +250,11 @@ export default function Login() {
 
                         <div className="text-center mb-10 relative z-10">
                             <h2 className="text-3xl font-black tracking-tight text-white mb-4 drop-shadow-xl">
-                                {isSetupRequired ? 'Initialize System' : authMode === 'register' ? 'Sign Up' : authMode === 'forgot' ? 'Recover Access' : authMode === 'reset' ? 'New Password' : 'Welcome Back'}
+                                {isSetupRequired ? 'Initialize System' : authMode === 'register' ? 'Sign Up' : authMode === 'forgot' ? 'Recover Access' : authMode === 'verify' ? 'Check Your Email' : authMode === 'reset' ? 'New Password' : 'Welcome Back'}
                             </h2>
                             <div className="w-12 h-1.5 bg-gradient-to-r from-blue-500 to-purple-500 mx-auto rounded-full mb-4 opacity-80"></div>
                             <p className="text-slate-500 font-bold tracking-[0.2em] text-[10px] uppercase">
-                                {isSetupRequired ? 'Create Master Admin Profile' : authMode === 'register' ? 'Create Your Account' : authMode === 'forgot' ? 'Email address or username' : authMode === 'reset' ? 'Code from your email + new password' : 'Authenticate to Continue'}
+                                {isSetupRequired ? 'Create Master Admin Profile' : authMode === 'register' ? 'Create Your Account' : authMode === 'forgot' ? 'Step 1 of 3 · Email or username' : authMode === 'verify' ? 'Step 2 of 3 · Enter the 6-digit code' : authMode === 'reset' ? 'Step 3 of 3 · Choose a new password' : 'Authenticate to Continue'}
                             </p>
                         </div>
 
@@ -284,9 +292,9 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {authMode === 'reset' && (
+                            {authMode === 'verify' && (
                                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                                    Code sent for <b className="text-white">{formData.identifier}</b> — valid 15 minutes.{' '}
+                                    We emailed a 6-digit code for <b className="text-white">{formData.identifier}</b> (valid 15 minutes — check spam too).{' '}
                                     <button type="button" disabled={resendIn > 0 || loading} className="font-bold text-blue-400 hover:text-blue-300 disabled:text-slate-600"
                                         onClick={async () => { setError(''); setLoading(true); try { await sendCode() } catch (err) { setError(err.message) } finally { setLoading(false) } }}>
                                         {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
@@ -313,7 +321,7 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {authMode === 'reset' && (
+                            {authMode === 'verify' && (
                                 <div className="space-y-1">
                                     <div className="relative group">
                                         <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">
@@ -418,8 +426,8 @@ export default function Login() {
                                                 <span>
                                                     {isSetupRequired ? 'INITIALIZE SYSTEM' : 
                                                      authMode === 'register' ? 'CREATE ACCOUNT' : 
-                                                     authMode === 'forgot' ? 'SEND RESET CODE' : 
-                                                     authMode === 'reset' ? 'RESET PASSWORD' : 'LOGIN TO CONSOLE'}
+                                                     authMode === 'forgot' ? 'SEND CODE' : authMode === 'verify' ? 'VERIFY CODE' : 
+                                                     authMode === 'reset' ? 'SAVE NEW PASSWORD' : 'LOGIN TO CONSOLE'}
                                                 </span>
                                                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                             </>

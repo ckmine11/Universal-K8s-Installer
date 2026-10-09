@@ -209,17 +209,30 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     }
 });
 
+// Step 2: the emailed code → a one-time ticket for setting the new password
+app.post('/api/auth/verify-reset-code', authLimiter, (req, res) => {
+    try {
+        const identifier = String(req.body?.identifier || '').trim();
+        const code = String(req.body?.code || '').trim();
+        if (!identifier || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter the 6-digit code from the email' });
+        res.json({ ticket: authService.verifyResetCode(identifier, code) });
+    } catch (e) {
+        res.status(400).json({ error: e.message, code: e.code, attemptsLeft: e.attemptsLeft });
+    }
+});
+
+// Step 3: the new password (with the ticket; older clients send the code)
 app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     try {
-        const { token, newPassword } = req.body;
-        const email = String(req.body?.identifier || req.body?.email || '').trim();
-        if (!email || !token || !newPassword) return res.status(400).json({ error: 'Email or username, reset code and new password are required' });
+        const { ticket, token, newPassword } = req.body;
+        const identifier = String(req.body?.identifier || req.body?.email || '').trim();
+        if (!identifier || !(ticket || token) || !newPassword) return res.status(400).json({ error: 'Email or username, reset code and new password are required' });
         const pwError = validatePassword(newPassword);
         if (pwError) return res.status(400).json({ error: pwError });
-        await authService.resetPassword(email, token, newPassword);
-        res.json({ message: 'Password reset successfully. You can now login.' });
+        await authService.resetPassword(identifier, { ticket, code: token }, newPassword);
+        res.json({ message: 'Password changed. You can now sign in.' });
     } catch (e) {
-        res.status(400).json({ error: e.message });
+        res.status(400).json({ error: e.message, code: e.code });
     }
 });
 

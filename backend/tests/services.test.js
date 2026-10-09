@@ -29,13 +29,13 @@ test('password reset: hashed, email-bound, burns after 5 tries', async () => {
 
     issue()
     assert.ok(!fs.readFileSync(path.join(DATA, 'users.json'), 'utf8').includes('"123456"'), 'code is not stored in plain text')
-    await assert.rejects(authService.resetPassword('other@example.com', '123456', 'newpass1'), 'bound to the email')
+    await assert.rejects(authService.resetPassword('other@example.com', { code: '123456' }, 'newpass1'), 'bound to the email')
 
-    for (let i = 0; i < 5; i++) await authService.resetPassword('carol@example.com', '000000', 'newpass1').catch(() => {})
-    await assert.rejects(authService.resetPassword('carol@example.com', '123456', 'newpass1'), 'burned after 5 wrong attempts')
+    for (let i = 0; i < 5; i++) await authService.resetPassword('carol@example.com', { code: '000000' }, 'newpass1').catch(() => {})
+    await assert.rejects(authService.resetPassword('carol@example.com', { code: '123456' }, 'newpass1'), 'burned after 5 wrong attempts')
 
     issue()
-    await authService.resetPassword('carol@example.com', '123456', 'newpass1')
+    await authService.resetPassword('carol@example.com', { code: '123456' }, 'newpass1')
     assert.ok(await authService.login('carol', 'newpass1'))
 })
 

@@ -165,19 +165,32 @@ export const AuthProvider = ({ children }) => {
         if (!res.ok) throw new Error(data.error || 'Failed to send reset email');
     };
 
-    const resetPassword = async (identifier, token, newPassword) => {
+    // Step 2: the emailed code → a one-time ticket for step 3
+    const verifyResetCode = async (identifier, code) => {
+        const res = await fetch(`${API_URL}/api/auth/verify-reset-code`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identifier, code })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw Object.assign(new Error(data.error || 'Could not check the code'), { code: data.code });
+        return data.ticket;
+    };
+
+    const resetPassword = async (identifier, ticket, newPassword) => {
         const res = await fetch(`${API_URL}/api/auth/reset-password`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identifier, token, newPassword })
+            body: JSON.stringify({ identifier, ticket, newPassword })
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Password reset failed');
+        if (!res.ok) throw Object.assign(new Error(data.error || 'Password reset failed'), { code: data.code });
     };
 
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout, forgotPassword, resetPassword }}>
+        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout, forgotPassword, verifyResetCode, resetPassword }}>
             {children}
         </AuthContext.Provider>
     );

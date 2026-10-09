@@ -32,6 +32,7 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const RESET_RESEND_MS = 60 * 1000;   // one reset email per account per minute
+const RESET_TICKET_TTL_MS = 10 * 60 * 1000;   // to set the password after the code was verified
 
 class AuthService {
     constructor() {
@@ -381,31 +382,56 @@ class AuthService {
         return true;
     }
 
-    async resetPassword(identifier, token, newPassword) {
-        const invalid = new Error('Invalid or expired reset code');
-        const user = this.findByLogin(identifier);
-        if (!user || !user.resetToken || !(user.resetTokenExpiry > Date.now())) {
-            throw invalid;
-        }
-
-        const given = Buffer.from(hashResetCode(String(token).trim()), 'hex');
+    // Check a reset code; wrong guesses count, and after MAX_RESET_ATTEMPTS the
+    // code burns (a new one must be requested).
+    _checkResetCode(user, code) {
+        const invalid = Object.assign(new Error('Wrong or expired code — check the latest email, or send a new code.'), { code: 'BAD_CODE' });
+        if (!user || !user.resetToken || !(user.resetTokenExpiry > Date.now())) throw invalid;
+        const given = Buffer.from(hashResetCode(String(code ?? '').trim()), 'hex');
         const stored = Buffer.from(user.resetToken, 'hex');
         if (given.length !== stored.length || !crypto.timingSafeEqual(given, stored)) {
             user.resetAttempts = (user.resetAttempts || 0) + 1;
-            if (user.resetAttempts >= MAX_RESET_ATTEMPTS) {
-                // Burn the code — the user must request a new one
-                user.resetToken = undefined;
-                user.resetTokenExpiry = undefined;
-                user.resetAttempts = undefined;
+            const left = MAX_RESET_ATTEMPTS - user.resetAttempts;
+            if (left <= 0) {
+                user.resetToken = undefined; user.resetTokenExpiry = undefined; user.resetAttempts = undefined;
+                this.saveUsers();
+                throw Object.assign(new Error('Too many wrong codes — this code no longer works. Send a new code.'), { code: 'CODE_BURNED' });
             }
             this.saveUsers();
-            throw invalid;
+            throw Object.assign(invalid, { attemptsLeft: left });
+        }
+    }
+
+    /**
+     * Step 2 of forgot password: the emailed code is right. It is used up and
+     * swapped for a one-time ticket (10 min) that allows setting the password.
+     */
+    verifyResetCode(identifier, code) {
+        const user = this.findByLogin(identifier);
+        this._checkResetCode(user, code);
+        const ticket = crypto.randomBytes(32).toString('hex');
+        user.resetToken = undefined; user.resetTokenExpiry = undefined; user.resetAttempts = undefined;
+        user.resetTicket = hashResetCode(ticket);
+        user.resetTicketExpiry = Date.now() + RESET_TICKET_TTL_MS;
+        this.saveUsers();
+        return ticket;
+    }
+
+    /** Step 3: new password with the ticket from step 2 (or, older clients, the code itself). */
+    async resetPassword(identifier, { ticket, code } = {}, newPassword) {
+        const user = this.findByLogin(identifier);
+        if (ticket) {
+            const ok = user?.resetTicket && user.resetTicketExpiry > Date.now() && (() => {
+                const g = Buffer.from(hashResetCode(String(ticket)), 'hex'), st = Buffer.from(user.resetTicket, 'hex');
+                return g.length === st.length && crypto.timingSafeEqual(g, st);
+            })();
+            if (!ok) throw Object.assign(new Error('This reset session expired — start again with Forgot Password.'), { code: 'BAD_TICKET' });
+        } else {
+            this._checkResetCode(user, code);
         }
 
-        user.resetToken = undefined;
-        user.resetTokenExpiry = undefined;
-        user.resetAttempts = undefined;
-        user.resetRequestedAt = undefined;
+        user.resetToken = undefined; user.resetTokenExpiry = undefined; user.resetAttempts = undefined;
+        user.resetRequestedAt = undefined; user.resetTicket = undefined; user.resetTicketExpiry = undefined;
         await this.setPassword(user, newPassword);   // ends every older session
         this._failures.delete(user.username.toLowerCase());   // the lockout is over too
         // Tell the owner (best effort) — a reset they did not do is a warning sign

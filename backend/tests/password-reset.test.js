@@ -69,12 +69,26 @@ test('forgot → email code → reset → sign in; old sessions end', async () =
         await api('POST', '/api/auth/forgot-password', null, { identifier: 'root@example.com' })
         assert.equal(mails.length, 1)
 
-        r = await api('POST', '/api/auth/reset-password', null, { identifier: 'root@example.com', token: code === '000000' ? '111111' : '000000', newPassword: 'NewSecret#2026' })
+        // Step 2: verify the code — a wrong one counts down, the right one gives a ticket
+        const wrong = code === '000000' ? '111111' : '000000'
+        r = await api('POST', '/api/auth/verify-reset-code', null, { identifier: 'root@example.com', code: wrong })
         assert.equal(r.status, 400)
-        r = await api('POST', '/api/auth/reset-password', null, { identifier: 'root@example.com', token: code, newPassword: 'NewSecret#2026' })
+        assert.equal(r.data.attemptsLeft, 4)
+        r = await api('POST', '/api/auth/verify-reset-code', null, { identifier: 'root@example.com', code })
         assert.equal(r.status, 200, JSON.stringify(r.data))
-        r = await api('POST', '/api/auth/reset-password', null, { identifier: 'root', token: code, newPassword: 'Another#2026x' })
-        assert.equal(r.status, 400, 'a code works once')
+        const ticket = r.data.ticket
+        assert.match(ticket, /^[0-9a-f]{64}$/)
+        r = await api('POST', '/api/auth/verify-reset-code', null, { identifier: 'root', code })
+        assert.equal(r.status, 400, 'a code is used up once verified')
+
+        // Step 3: the new password with the ticket
+        r = await api('POST', '/api/auth/reset-password', null, { identifier: 'root', ticket: 'f'.repeat(64), newPassword: 'NewSecret#2026' })
+        assert.equal(r.status, 400)
+        assert.equal(r.data.code, 'BAD_TICKET')
+        r = await api('POST', '/api/auth/reset-password', null, { identifier: 'root@example.com', ticket, newPassword: 'NewSecret#2026' })
+        assert.equal(r.status, 200, JSON.stringify(r.data))
+        r = await api('POST', '/api/auth/reset-password', null, { identifier: 'root', ticket, newPassword: 'Another#2026x' })
+        assert.equal(r.status, 400, 'a ticket works once')
 
         const changed = () => mails.some(m => /was just changed/i.test(m.replace(/=\r?\n/g, '')))
         for (let i = 0; i < 30 && !changed(); i++) await new Promise(res => setTimeout(res, 100))
@@ -130,5 +144,22 @@ test('welcome email on sign-up; team invite email without the password', async (
         assert.ok(inv, 'invite email sent')
         assert.match(inv.replace(/=\r?\n/g, ''), /annw/)
         assert.ok(!/bobpass12345/.test(inv), 'the admin hands over the password, not the email')
+    } finally { await srv.stop() }
+})
+
+test('5 wrong codes burn the code', async () => {
+    const srv = await startServer({ SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtp.address().port), SMTP_SECURE: 'false', SMTP_USER: 'kubeez@example.com', SMTP_PASS: 'x' })
+    const api = client(srv)
+    try {
+        const before = mails.length
+        await api('POST', '/api/auth/forgot-password', null, { identifier: 'root' })
+        for (let i = 0; i < 40 && mails.length === before; i++) await new Promise(r => setTimeout(r, 100))
+        const code = codeIn(mails.at(-1))
+        const wrong = code === '000000' ? '111111' : '000000'
+        let r
+        for (let i = 0; i < 5; i++) r = await api('POST', '/api/auth/verify-reset-code', null, { identifier: 'root', code: wrong })
+        assert.equal(r.data.code, 'CODE_BURNED')
+        r = await api('POST', '/api/auth/verify-reset-code', null, { identifier: 'root', code })
+        assert.equal(r.status, 400, 'even the right code no longer works')
     } finally { await srv.stop() }
 })
