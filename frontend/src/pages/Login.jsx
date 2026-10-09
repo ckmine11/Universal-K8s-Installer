@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import AuroraBackground from '../components/shell/AuroraBackground';
+import { LogoMark, LogoWord } from '../components/shell/Logo';
+import Constellation from '../components/auth/Constellation';
+import FeatureTicker from '../components/auth/FeatureTicker';
 import { Eye, EyeOff,
     Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key, CheckCircle2,
     ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users, HardDrive, Compass
@@ -43,46 +47,6 @@ const STATS = [
     { value: '9', label: 'add-ons' },
     { value: 'AES-256', label: 'offsite backups' }
 ];
-
-// A cluster "deploying" line by line — what KubeEZ does, in ten seconds.
-const DEPLOY_LINES = [
-    { t: '$ kubeez deploy prod-cluster --nodes 3 --k8s 1.37', c: 'text-slate-300' },
-    { t: '✓ Pre-flight: 3 nodes reachable · OS, CPU, RAM, ports OK', c: 'text-emerald-400' },
-    { t: '✓ containerd 2.x installed on all nodes', c: 'text-emerald-400' },
-    { t: '✓ Control plane initialised (kubeadm v1.37)', c: 'text-emerald-400' },
-    { t: '✓ Network: flannel ready', c: 'text-emerald-400' },
-    { t: '✓ 2 workers joined', c: 'text-emerald-400' },
-    { t: '✓ Add-ons: ingress · monitoring · cert-manager', c: 'text-emerald-400' },
-    { t: '✓ etcd snapshot saved · offsite copy encrypted', c: 'text-cyan-400' },
-    { t: '🚀 Cluster ready — 3/3 nodes Ready', c: 'text-blue-300 font-bold' }
-];
-
-function DeployTerminal() {
-    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const [shown, setShown] = useState(reduced ? DEPLOY_LINES.length : 1);
-    useEffect(() => {
-        if (reduced) return;
-        // type a line every 0.9 s, hold the finished log for a moment, then replay
-        const t = setTimeout(() => setShown(n => (n >= DEPLOY_LINES.length + 3 ? 1 : n + 1)), shown >= DEPLOY_LINES.length ? 1400 : 900);
-        return () => clearTimeout(t);
-    }, [shown, reduced]);
-    return (
-        <div className="rounded-2xl border border-white/10 bg-black/60 shadow-2xl overflow-hidden" aria-label="Example deployment">
-            <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500/70" />
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/70" />
-                <span className="ml-3 text-[10px] font-bold tracking-widest text-slate-500 uppercase">live install log</span>
-            </div>
-            <div className="p-4 font-mono text-[12px] leading-6 min-h-[15.5rem]">
-                {DEPLOY_LINES.slice(0, Math.min(shown, DEPLOY_LINES.length)).map((l, i) => (
-                    <div key={i} className={`${l.c} animate-in`}>{l.t}</div>
-                ))}
-                {shown < DEPLOY_LINES.length && <span className="inline-block w-2 h-4 bg-slate-400 animate-pulse align-middle" />}
-            </div>
-        </div>
-    );
-}
 
 export default function Login() {
     const { login, setup, register, forgotPassword, verifyResetCode, resetPassword, isSetupRequired } = useAuth();
@@ -155,69 +119,36 @@ export default function Login() {
 
 
     return (
-        <div className="min-h-screen min-h-[100dvh] bg-[#030712] text-white relative overflow-x-clip font-sans flex items-start lg:items-center justify-center py-8 lg:py-0 selection:bg-blue-500/30">
-            {/* Ultra Premium Animated Background */}
-            <div className="absolute inset-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-                {/* Massive glowing orbs */}
-                <div className="absolute -top-[30%] -left-[10%] w-[70vw] h-[70vw] rounded-full bg-blue-900/10 blur-[120px] mix-blend-screen animate-pulse-slow"></div>
-                <div className="absolute -bottom-[20%] -right-[10%] w-[60vw] h-[60vw] rounded-full bg-purple-900/10 blur-[120px] mix-blend-screen animate-pulse-slow" style={{ animationDelay: '2s' }}></div>
-                
-                {/* Grid Pattern */}
-                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgc3Ryb2tlPSJyZ2JhKDI1NSwgMjU1LCAyNTUsIDAuMDIpIiBmaWxsPSJub25lIj48cGF0aCBkPSJNMCA0MGw0MCAwTTAgMGwwIDQwIiBzdHJva2Utd2lkdGg9IjEiLz48L2c+PC9zdmc+')] opacity-50"></div>
-                
-                {/* Radial Gradient overlay to blend edges */}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#030712] via-transparent to-[#030712]"></div>
-            </div>
+        <div className="min-h-screen min-h-[100dvh] text-white relative overflow-x-clip font-sans flex items-start lg:items-center justify-center py-8 lg:py-0 selection:bg-blue-500/30">
+            <AuroraBackground />
 
             <div className={`max-w-[1400px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12 relative z-10 px-4 sm:px-6 xl:px-10 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
                 
-                {/* Left Side: what KubeEZ is and everything it does */}
-                <div className="hidden lg:flex flex-col justify-center lg:col-span-7 pr-8 py-10">
-                    <div className="inline-flex self-start items-center space-x-3 px-5 py-2 bg-white/5 border border-white/10 rounded-full mb-6 backdrop-blur-md">
-                        <span className="flex h-2.5 w-2.5 relative">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-                        </span>
-                        <span className="text-[11px] font-black tracking-[0.25em] text-blue-400 uppercase">KubeEZ · Kubernetes made easy</span>
+                {/* Left: a living cluster + what KubeEZ does */}
+                <div className="hidden lg:flex flex-col justify-center lg:col-span-7 pr-6 py-10 min-h-screen">
+                    <div className="flex items-center gap-3">
+                        <LogoMark className="w-10 h-10 drop-shadow-[0_0_18px_rgba(44,203,238,.5)]" />
+                        <LogoWord className="text-2xl" />
+                        <span className="ml-2 kz-chip text-slate-300"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> all systems normal</span>
                     </div>
 
-                    <h1 className="text-5xl xl:text-6xl font-black tracking-tighter text-white mb-4 leading-[1.05]">
-                        Production Kubernetes, <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">
-                            without the ops work.
-                        </span>
+                    <h1 className="mt-10 font-display text-[44px] xl:text-[54px] font-bold tracking-tight text-white leading-[1.04]">
+                        Kubernetes on your servers,{" "}<br className="hidden 2xl:block" />
+                        <span className="aurora-text">calm as a cloud.</span>
                     </h1>
-                    <p className="text-lg text-slate-400 max-w-2xl leading-relaxed font-medium mb-8">
-                        Install, upgrade, back up and run clusters on your own servers — from one console, with a clear reason and a fix whenever something goes wrong.
+                    <p className="mt-5 text-lg text-slate-400 max-w-xl leading-relaxed">
+                        Install, upgrade, back up and heal production clusters from one console — with a clear reason and a fix whenever something goes wrong.
                     </p>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mb-8">
-                        <div className="xl:col-span-3"><DeployTerminal /></div>
-                        <div className="xl:col-span-2 grid grid-cols-2 gap-3 content-start">
-                            {STATS.map(st => (
-                                <div key={st.label} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-                                    <div className="text-lg xl:text-xl font-black text-white tracking-tight whitespace-nowrap">{st.value}</div>
-                                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mt-1">{st.label}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
+                    <div className="relative mt-6 -ml-4 max-w-[640px]"><Constellation /></div>
 
-                    <div className="space-y-5">
-                        {FEATURE_GROUPS.map(g => (
-                            <div key={g.group}>
-                                <div className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2">{g.group}</div>
-                                <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
-                                    {g.features.map(f => (
-                                        <div key={f.title} className="group rounded-2xl border border-white/5 bg-white/[0.015] hover:bg-white/[0.04] hover:border-white/10 p-4 transition-all duration-300">
-                                            <div className="flex items-center gap-2 mb-1.5">
-                                                <f.Icon className={`w-4 h-4 ${f.color} group-hover:scale-110 transition-transform`} />
-                                                <h3 className="text-sm font-black text-white">{f.title}</h3>
-                                            </div>
-                                            <p className="text-xs text-slate-500 group-hover:text-slate-400 leading-relaxed transition-colors">{f.desc}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                    <div className="mt-2 max-w-[720px]"><FeatureTicker groups={FEATURE_GROUPS} /></div>
+
+                    <div className="mt-8 flex gap-8">
+                        {STATS.map(st => (
+                            <div key={st.label}>
+                                <div className="font-display text-xl font-bold text-white">{st.value}</div>
+                                <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{st.label}</div>
                             </div>
                         ))}
                     </div>
@@ -228,33 +159,46 @@ export default function Login() {
                     {/* Glowing effect behind the card */}
                     <div className="absolute top-1/2 right-0 -translate-y-1/2 w-[120%] h-[120%] bg-gradient-to-br from-blue-600/10 to-purple-600/10 blur-[100px] rounded-full z-0 pointer-events-none"></div>
                     
-                    {/* Phones/tablets: the side panel is hidden — say what KubeEZ is first */}
+                    {/* Phones/tablets: brand + headline above the card */}
                     <div className="lg:hidden w-full max-w-[460px] mb-6 text-center relative z-10">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full mb-4">
-                            <span className="h-2 w-2 rounded-full bg-blue-500" />
-                            <span className="text-[10px] font-black tracking-[0.2em] text-blue-400 uppercase">KubeEZ · Kubernetes made easy</span>
+                        <div className="flex items-center justify-center gap-2.5">
+                            <LogoMark className="w-10 h-10 drop-shadow-[0_0_18px_rgba(44,203,238,.5)]" />
+                            <LogoWord className="text-2xl" />
                         </div>
-                        <h1 className="text-3xl font-black tracking-tight leading-tight">
-                            Production Kubernetes,{' '}
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">without the ops work.</span>
+                        <h1 className="mt-5 font-display text-3xl font-bold tracking-tight leading-tight">
+                            Kubernetes on your servers, <span className="aurora-text">calm as a cloud.</span>
                         </h1>
                         <p className="text-sm text-slate-400 mt-3 leading-relaxed">
-                            Install, upgrade, back up and run clusters on your own servers — from one console.
+                            Install, upgrade, back up and heal clusters — from one console.
                         </p>
                     </div>
 
-                    <div className="w-full max-w-[460px] p-6 sm:p-10 lg:p-12 rounded-[28px] sm:rounded-[40px] border border-white/[0.08] shadow-[0_0_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl relative z-10 bg-[#0B101A]/90 overflow-hidden">
+                    <div className="w-full max-w-[460px] relative z-10 rounded-[30px] p-px bg-gradient-to-br from-blue-400/60 via-white/10 to-violet-500/60 shadow-[0_40px_100px_-30px_rgba(44,203,238,.35)]">
+                    <div className="relative rounded-[29px] bg-[#0a0f1c]/90 backdrop-blur-2xl p-6 sm:p-9 overflow-hidden">
                         
-                        {/* Shimmer Effect */}
-                        <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.03] to-transparent shimmer-animation z-0 pointer-events-none"></div>
-
-                        <div className="text-center mb-10 relative z-10">
-                            <h2 className="text-3xl font-black tracking-tight text-white mb-4 drop-shadow-xl">
-                                {isSetupRequired ? 'Initialize System' : authMode === 'register' ? 'Sign Up' : authMode === 'forgot' ? 'Recover Access' : authMode === 'verify' ? 'Check Your Email' : authMode === 'reset' ? 'New Password' : 'Welcome Back'}
+                        
+                        <div className="relative z-10 mb-7">
+                            {!isSetupRequired && (authMode === 'login' || authMode === 'register') && (
+                                <div className="mb-7 grid grid-cols-2 rounded-2xl border border-white/10 bg-black/30 p-1" role="tablist">
+                                    {[['login', 'Sign in'], ['register', 'Create account']].map(([m, label]) => (
+                                        <button key={m} type="button" role="tab" aria-selected={authMode === m} onClick={() => go(m)}
+                                            className={`rounded-xl py-2.5 text-sm font-bold transition ${authMode === m ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/25 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.3)]' : 'text-slate-400 hover:text-white'}`}>{label}</button>
+                                    ))}
+                                </div>
+                            )}
+                            {['forgot', 'verify', 'reset'].includes(authMode) && !isSetupRequired && (
+                                <div className="mb-6 flex items-center gap-2" aria-label="Progress">
+                                    {['forgot', 'verify', 'reset'].map((m, k) => {
+                                        const at = ['forgot', 'verify', 'reset'].indexOf(authMode)
+                                        return <span key={m} className={`h-1.5 flex-1 rounded-full transition-all ${k <= at ? 'bg-gradient-to-r from-blue-400 to-violet-400' : 'bg-white/10'}`} />
+                                    })}
+                                </div>
+                            )}
+                            <h2 className="font-display text-[28px] font-bold tracking-tight text-white">
+                                {isSetupRequired ? 'Set up KubeEZ' : authMode === 'register' ? 'Create your workspace' : authMode === 'forgot' ? 'Forgot your password?' : authMode === 'verify' ? 'Check your email' : authMode === 'reset' ? 'Choose a new password' : 'Welcome back'}
                             </h2>
-                            <div className="w-12 h-1.5 bg-gradient-to-r from-blue-500 to-purple-500 mx-auto rounded-full mb-4 opacity-80"></div>
-                            <p className="text-slate-500 font-bold tracking-[0.2em] text-[10px] uppercase">
-                                {isSetupRequired ? 'Create Master Admin Profile' : authMode === 'register' ? 'Create Your Account' : authMode === 'forgot' ? 'Step 1 of 3 · Email or username' : authMode === 'verify' ? 'Step 2 of 3 · Enter the 6-digit code' : authMode === 'reset' ? 'Step 3 of 3 · Choose a new password' : 'Authenticate to Continue'}
+                            <p className="mt-1.5 text-sm text-slate-400">
+                                {isSetupRequired ? 'Create the first administrator account.' : authMode === 'register' ? 'Free to start — your own isolated workspace.' : authMode === 'forgot' ? 'Step 1 of 3 — we email you a 6-digit code.' : authMode === 'verify' ? 'Step 2 of 3 — enter the code from the email.' : authMode === 'reset' ? 'Step 3 of 3 — at least 8 characters.' : 'Sign in to your clusters.'}
                             </p>
                         </div>
 
@@ -286,7 +230,7 @@ export default function Login() {
                                     <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">
                                         <Mail className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                                     </div>
-                                    <input type="text" required autoComplete="username" autoCapitalize="none" className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                    <input type="text" required autoComplete="username" autoCapitalize="none" className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                         placeholder="Email address or username" value={formData.identifier}
                                         onChange={(e) => setFormData({ ...formData, identifier: e.target.value })} />
                                 </div>
@@ -312,7 +256,7 @@ export default function Login() {
                                         <input
                                             type="email"
                                             required
-                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder="Email Address"
                                             value={formData.email}
                                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -333,7 +277,7 @@ export default function Login() {
                                             inputMode="numeric"
                                             autoComplete="one-time-code"
                                             pattern="[0-9]{6}"
-                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner tracking-widest uppercase font-mono"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner tracking-widest uppercase font-mono"
                                             placeholder="6-digit code"
                                             value={formData.resetCode}
                                             onChange={(e) => setFormData({ ...formData, resetCode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
@@ -354,7 +298,7 @@ export default function Login() {
                                             required
                                             autoComplete="username"
                                             autoCapitalize="none"
-                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder={authMode === 'login' && !isSetupRequired ? 'Username or email' : 'Username'}
                                             value={formData.username}
                                             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -373,7 +317,7 @@ export default function Login() {
                                             type={showPw ? 'text' : 'password'}
                                             required
                                             autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-                                            className="w-full pl-14 pr-14 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-14 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder={authMode === 'reset' ? 'New password (min. 8 characters)' : 'Password'}
                                             value={formData.password}
                                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -392,7 +336,7 @@ export default function Login() {
                                         <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-purple-400 transition-colors" />
                                     </div>
                                     <input type={showPw ? 'text' : 'password'} required autoComplete="new-password"
-                                        className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                        className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                         placeholder="Repeat the new password" value={formData.confirm}
                                         onChange={(e) => setFormData({ ...formData, confirm: e.target.value })} />
                                     {formData.confirm && formData.confirm !== formData.password && <p className="mt-1.5 ml-2 text-[11px] text-red-400">The passwords are not the same yet</p>}
@@ -404,9 +348,9 @@ export default function Login() {
                                     <button 
                                         type="button" 
                                         onClick={() => { go('forgot'); setFormData(d => ({ ...d, identifier: d.identifier || d.username })); }}
-                                        className="text-[11px] font-bold text-slate-500 hover:text-blue-400 transition-colors uppercase tracking-widest"
+                                        className="text-xs font-semibold text-blue-300 hover:text-white transition-colors"
                                     >
-                                        Forgot Password?
+                                        Forgot password?
                                     </button>
                                 </div>
                             )}
@@ -418,16 +362,16 @@ export default function Login() {
                                     className="w-full relative group active:scale-[0.98] transition-all duration-300"
                                 >
                                     <div className="absolute inset-0 bg-blue-600 blur-xl opacity-30 group-hover:opacity-50 transition-opacity rounded-2xl"></div>
-                                    <div className="relative flex items-center justify-center space-x-3 w-full py-5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-black uppercase tracking-[0.15em] text-xs rounded-2xl shadow-xl shadow-blue-900/40 border border-white/10 group-hover:border-white/30">
+                                    <div className="relative flex items-center justify-center space-x-3 w-full py-5 bg-gradient-to-r from-[#0784ad] via-[#5b63f0] to-[#9333ea] hover:brightness-110 !text-white font-bold tracking-wide text-[15px] [text-shadow:0_1px_2px_rgba(0,0,0,.35)] rounded-2xl shadow-xl shadow-blue-900/40 border border-white/10 group-hover:border-white/30">
                                         {loading ? (
                                             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                         ) : (
                                             <>
                                                 <span>
-                                                    {isSetupRequired ? 'INITIALIZE SYSTEM' : 
-                                                     authMode === 'register' ? 'CREATE ACCOUNT' : 
-                                                     authMode === 'forgot' ? 'SEND CODE' : authMode === 'verify' ? 'VERIFY CODE' : 
-                                                     authMode === 'reset' ? 'SAVE NEW PASSWORD' : 'LOGIN TO CONSOLE'}
+                                                    {isSetupRequired ? 'Create admin account' : 
+                                                     authMode === 'register' ? 'Create account' : 
+                                                     authMode === 'forgot' ? 'Send code' : authMode === 'verify' ? 'Verify code' : 
+                                                     authMode === 'reset' ? 'Save new password' : 'Sign in'}
                                                 </span>
                                                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                             </>
@@ -452,52 +396,14 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {/* HIDDEN IN PRODUCTION - If you don't want any additional accounts to be created since this is single user.
-                            But we keep the hidden logic in case they want to sign up as the first user. */}
-                            {!isSetupRequired && authMode === 'login' && (
-                                <div className="text-center pt-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setAuthMode('register');
-                                            setError('');
-                                            setSuccessMessage('');
-                                        }}
-                                        className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 hover:text-white transition-colors pb-1"
-                                    >
-                                        Create a new account
-                                    </button>
-                                </div>
-                            )}
-                        </form>
+                            </form>
                     </div>
+                    </div>
+                    <p className="relative z-10 mt-6 text-center text-[11px] text-slate-500">Protected by per-account lockout · sessions end on password change</p>
 
-                    {/* Phones/tablets: the feature panel is hidden — show the essentials */}
-                    <div className="lg:hidden w-full max-w-[460px] mt-8 space-y-5 relative z-10">
-                        <div className="grid grid-cols-2 gap-2">
-                            {STATS.map(st => (
-                                <div key={st.label} className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
-                                    <div className="text-base font-black text-white">{st.value}</div>
-                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{st.label}</div>
-                                </div>
-                            ))}
-                        </div>
-                        {FEATURE_GROUPS.map(g => (
-                            <div key={g.group}>
-                                <div className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2">{g.group}</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {g.features.map(f => (
-                                        <div key={f.title} className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <f.Icon className={`w-4 h-4 shrink-0 ${f.color}`} />
-                                                <span className="text-sm font-black text-white">{f.title}</span>
-                                            </div>
-                                            <p className="text-xs text-slate-400 leading-relaxed">{f.desc}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
+                    {/* Phones/tablets: what KubeEZ does, under the card */}
+                    <div className="lg:hidden w-full max-w-[460px] mt-10 relative z-10">
+                        <FeatureTicker groups={FEATURE_GROUPS} compact />
                     </div>
                 </div>
 

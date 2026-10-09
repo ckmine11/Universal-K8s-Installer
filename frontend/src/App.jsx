@@ -5,7 +5,9 @@ import IncidentNotifier from './components/IncidentNotifier'
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
-import Header from './components/Header'
+import AppShell from './components/shell/AppShell'
+import AuroraBackground from './components/shell/AuroraBackground'
+import { LogoMark } from './components/shell/Logo'
 import Home from './pages/Home'
 import WizardFlow from './pages/WizardFlow'
 import InstallationDashboard from './pages/InstallationDashboard'
@@ -27,10 +29,11 @@ function AuthenticatedApp() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center text-white">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-xs uppercase tracking-widest text-slate-500">Loading Secure Enclave...</p>
+            <div className="min-h-screen flex items-center justify-center text-white">
+                <AuroraBackground />
+                <div className="flex flex-col items-center gap-5">
+                    <LogoMark className="w-14 h-14 animate-spin-slow drop-shadow-[0_0_24px_rgba(44,203,238,.5)]" />
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Loading KubeEZ…</p>
                 </div>
             </div>
         )
@@ -67,12 +70,11 @@ function AuthenticatedApp() {
     }
 
     return (
-        <div className="min-h-screen">
-            <Header />
+        <AppShell>
+            <AuroraBackground />
             <ActiveInstallationIndicator />
             <IncidentNotifier />
 
-            <main className="container mx-auto px-4 py-8">
                 <Routes>
                     <Route
                         path="/"
@@ -145,25 +147,13 @@ function AuthenticatedApp() {
                     />
                     <Route path="*" element={
                         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-                            <h1 className="text-6xl font-black text-white mb-4">404</h1>
-                            <p className="text-xl text-slate-400 mb-8">Page not found</p>
-                            <button
-                                onClick={() => window.location.href = '/'}
-                                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold"
-                            >
-                                Go Home
-                            </button>
+                            <h1 className="font-display text-8xl font-extrabold aurora-text mb-3">404</h1>
+                            <p className="text-lg text-slate-400 mb-8">This page drifted out of orbit.</p>
+                            <button onClick={() => navigate('/')} className="kz-btn-primary">Back to clusters</button>
                         </div>
                     } />
                 </Routes>
-            </main>
-
-            {/* Background decoration */}
-            <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-                <div className="absolute top-1/4 -left-48 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
-                <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
-            </div>
-        </div>
+        </AppShell>
     )
 }
 
@@ -198,7 +188,7 @@ function DashboardWrapper({ onGoHome, onScaleCluster }) {
 import { ToastProvider } from './components/ToastProvider'
 
 function App() {
-    console.log("KUBEEZ_UX_DIAG_LOADED_V2");
+
     return (
         <BrowserRouter>
             <ToastProvider>
