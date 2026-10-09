@@ -29,6 +29,14 @@ test('which clusters are watched', () => {
     assert.match(watchReason(mk('e', { status: 'failed', mode: 'install' })), /did not finish/)
     assert.match(watchReason(mk('f', { status: 'cancelled', mode: 'install' })), /cancelled/)
     assert.match(watchReason(mk('g', { status: 'healthy', masterNodes: [] })), /no control-plane/)
+    // statuses written by older versions are running clusters too
+    for (const st of ['running', 'completed', 'active', 'Ready', 'installing'])
+        assert.equal(watchReason(mk('h', { status: st, mode: 'upgrade' })), null, st)
+    assert.equal(watchReason(mk('i', { status: 'running' })), null)
+    // a job that restarts nodes pauses watching; an add-on job does not
+    assert.match(watchReason(mk('j', { status: 'healthy' }), { mode: 'upgrade' }), /an upgrade is running/)
+    assert.match(watchReason(mk('k', { status: 'healthy' }), { mode: 'scale' }), /adding nodes/)
+    assert.equal(watchReason(mk('l', { status: 'healthy' }), { mode: 'addon-only' }), null)
 })
 
 test('resync follows the saved clusters without a restart', async () => {

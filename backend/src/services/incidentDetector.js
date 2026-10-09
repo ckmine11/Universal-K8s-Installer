@@ -43,19 +43,27 @@ const CLOSED = new Set(['resolved', 'cleared'])
 const cname = (c) => c.clusterName || c.name || 'cluster'
 const RESYNC_MS = 60 * 1000
 
-// Which saved clusters are running Kubernetes and should be watched. A failed
-// or cancelled upgrade / add-on / scale job leaves a running cluster behind —
-// only a cluster that never finished installing has nothing to watch.
+// Which saved clusters should be watched. Decided by facts, not by the status
+// text (older records carry statuses like "running", "completed", "active"):
+//  - every cluster with a control-plane is watched — reachability then shows
+//    "connected" or "unreachable";
+//  - not a cluster whose INSTALLATION failed or was cancelled (no Kubernetes
+//    yet). A failed upgrade / scale / add-on job leaves a running cluster.
+//  - paused while an install / upgrade / scale job runs on it — nodes restart
+//    on purpose then, auto-healing must not interfere.
 const JOB_MODES = new Set(['upgrade', 'scale', 'addon-only', 'addon-uninstall', 'addon-reinstall'])
-export function watchReason(c) {
+const DISRUPTIVE_JOBS = new Set(['install', 'resume', 'upgrade', 'scale'])
+export function watchReason(c, runningJob = null) {
     if (!c?.masterNodes?.length) return 'no control-plane node is saved for it'
     if (c.simulationMode) return 'it is a simulation'
-    const st = c.status || 'healthy'
-    if (st === 'healthy') return null
-    if ((st === 'failed' || st === 'cancelled') && JOB_MODES.has(c.mode)) return null
-    if (st === 'failed') return 'its installation did not finish — resume it from the cluster page'
-    if (st === 'cancelled') return 'its installation was cancelled — resume it from the cluster page'
-    return 'it is still being installed'
+    if (runningJob && DISRUPTIVE_JOBS.has(runningJob.mode || 'install')) {
+        return `${runningJob.mode === 'upgrade' ? 'an upgrade' : runningJob.mode === 'scale' ? 'adding nodes' : 'the installation'} is running — watching resumes when it finishes`
+    }
+    const st = String(c.status || 'healthy').toLowerCase()
+    const installJob = !c.mode || c.mode === 'install' || c.mode === 'resume'
+    if (st === 'failed' && installJob) return 'its installation did not finish — resume it from the cluster page'
+    if (st === 'cancelled' && installJob) return 'its installation was cancelled — resume it from the cluster page'
+    return null
 }
 
 // ── Analysis (pure: kubectl JSON / command output → findings) ────────────────
@@ -344,8 +352,10 @@ class IncidentDetector {
             const clusters = await clusterStore.getClusters()
             const ids = new Set(clusters.map(c => c.id))
             const skipped = []
+            let jobs = null
+            try { jobs = (await import('./installationManager.js')).installationManager } catch { }
             for (const c of clusters) {
-                const reason = watchReason(c)
+                const reason = watchReason(c, jobs?.runningJobFor?.(c.id) || null)
                 if (reason) {
                     skipped.push({ cluster: c, reason })
                     if (this.watched.has(c.id)) this.stopWatching(c.id)
