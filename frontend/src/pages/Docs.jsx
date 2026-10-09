@@ -465,6 +465,7 @@ export default function Docs() {
                             ['Gateway Agent offline', 'An agent has been disconnected for 5 minutes (and when it is back).']
                         ]} />
                         <P>Each channel has a <b className="text-white">Test</b> button and shows its last delivery. Rules: turn single alert types off, <b className="text-white">quiet hours</b> in your time zone (critical alerts still go out) and a <b className="text-white">cooldown</b> so the same alert is not repeated. Tokens and webhook URLs are encrypted and never shown again after saving.</P>
+                        <Note><b>Free plan:</b> one channel (Telegram, email or webhook), critical alerts only (node or control plane down, failed backups / restores / upgrades, agent offline), fixed rules and 20 alert emails a day. <b>Pro:</b> every channel and alert type, quiet hours, per-event rules and the cooldown.</Note>
                         <Note>Set <C>KUBEEZ_PUBLIC_URL</C> on the server so alerts link straight to the cluster. Email needs <C>SMTP_HOST</C>, <C>SMTP_USER</C> and <C>SMTP_PASS</C>. In SaaS mode webhooks must use https and cannot reach private addresses.</Note>
                     </Section>
 

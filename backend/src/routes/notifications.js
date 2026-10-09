@@ -2,6 +2,7 @@ import express from 'express'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { notificationStore, CHANNEL_TYPES, EVENTS } from '../services/notificationStore.js'
 import { notifier, validateChannel, telegramChats } from '../services/notifier.js'
+import { alertPlanFor, lockedChannelIds } from '../config/alertPlans.js'
 
 // Alert channels + rules of the caller's workspace (admins only: channels
 // hold bot tokens and webhook URLs)
@@ -12,12 +13,20 @@ const org = (req) => {
     if (!req.user.orgId) throw Object.assign(new Error('Alerts belong to a workspace'), { status: 400 })
     return req.user.orgId
 }
-const fail = (res, e) => res.status(e.status || 400).json({ error: e.message })
+const fail = (res, e) => res.status(e.status || 400).json({ error: e.message, ...(e.upgrade ? { upgrade: true } : {}) })
+// 402 = "your plan does not include this" (the page offers the upgrade)
+const planError = (msg) => Object.assign(new Error(msg), { status: 402, upgrade: true })
+const LABEL = { telegram: 'Telegram', slack: 'Slack', teams: 'Microsoft Teams', whatsapp: 'WhatsApp', email: 'Email', webhook: 'Webhook' }
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     try {
+        const plan = await alertPlanFor(org(req))
+        const view = notificationStore.publicView(org(req), plan.history)
+        const locked = lockedChannelIds(notificationStore.channels(org(req)), plan)
         res.json({
-            ...notificationStore.publicView(org(req)),
+            ...view,
+            channels: view.channels.map(c => ({ ...c, locked: locked.has(c.id) })),
+            plan: { ...plan, emailsToday: notificationStore.emailsToday(org(req)) },
             types: Object.fromEntries(Object.entries(CHANNEL_TYPES).map(([k, v]) => [k, { label: v.label, fields: [...v.plain, ...v.secret], secret: v.secret }])),
             events: Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [k, v.label])),
             emailConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
@@ -26,9 +35,14 @@ router.get('/', (req, res) => {
     } catch (e) { fail(res, e) }
 })
 
-router.post('/channels', (req, res) => {
+router.post('/channels', async (req, res) => {
     try {
         const { type, name, config, enabled } = req.body || {}
+        const plan = await alertPlanFor(org(req))
+        if (!plan.channelTypes.includes(type)) throw planError(`${LABEL[type] || type} alerts are part of Pro. On Free you can use one Telegram, email or webhook channel.`)
+        if (plan.maxChannels != null && notificationStore.channels(org(req)).filter(c => plan.channelTypes.includes(c.type)).length >= plan.maxChannels) {
+            throw planError(`The Free plan includes ${plan.maxChannels} alert channel — remove the existing one first, or upgrade to Pro for more.`)
+        }
         validateChannel(type, config)
         const id = notificationStore.saveChannel(org(req), { type, name, config, enabled })
         res.json({ success: true, id })
@@ -64,8 +78,11 @@ router.post('/telegram/chats', async (req, res) => {
     } catch (e) { fail(res, e) }
 })
 
-router.put('/rules', (req, res) => {
-    try { res.json({ success: true, rules: notificationStore.saveRules(org(req), req.body || {}) }) } catch (e) { fail(res, e) }
+router.put('/rules', async (req, res) => {
+    try {
+        if (!(await alertPlanFor(org(req))).rules) throw planError('Choosing alert types, quiet hours and the cooldown is part of Pro. Free sends critical alerts with fixed settings.')
+        res.json({ success: true, rules: notificationStore.saveRules(org(req), req.body || {}) })
+    } catch (e) { fail(res, e) }
 })
 
 export default router

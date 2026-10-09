@@ -15,6 +15,9 @@ delete process.env.KUBEEZ_MODE
 
 const { notificationStore } = await import('../src/services/notificationStore.js')
 const { notifier, validateChannel, inQuietHours, postRequest } = await import('../src/services/notifier.js')
+// these workspaces are on Pro (Free limits are tested in alert-plans.test.js)
+const { authService } = await import('../src/services/authService.js')
+for (const org of ['org-s', 'org-a', 'org-f']) authService.users.push({ id: 'owner-' + org, username: 'owner-' + org, orgId: org, role: 'admin', subscription: { plan: 'PRO' } })
 
 const got = []
 let hook, hookUrl

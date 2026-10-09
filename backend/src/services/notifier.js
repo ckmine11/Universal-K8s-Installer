@@ -2,7 +2,8 @@ import https from 'https'
 import http from 'http'
 import dns from 'dns'
 import net from 'net'
-import { notificationStore, CHANNEL_TYPES } from './notificationStore.js'
+import { notificationStore, CHANNEL_TYPES, DEFAULT_RULES } from './notificationStore.js'
+import { alertPlanFor, lockedChannelIds } from '../config/alertPlans.js'
 import { isPrivateAddress } from '../utils/netGuard.js'
 import { getMailer, mailError, mailFrom } from '../utils/mailer.js'
 
@@ -314,6 +315,15 @@ async function deliver(ch, ev) {
     }
 }
 
+// Email shares the server's SMTP quota (password resets, welcome emails): a
+// daily allowance per workspace keeps one noisy cluster from using it up
+async function deliverWithin(plan, orgId, ch, ev) {
+    if (ch.type === 'email' && !notificationStore.takeEmail(orgId, plan.emailPerDay)) {
+        throw new Error(`Today's allowance of ${plan.emailPerDay} alert emails is used up${plan.paid ? '' : ' (Free plan)'} — the next ones go out tomorrow. Telegram or a webhook have no daily limit.`)
+    }
+    return deliver(ch, ev)
+}
+
 function inQuietHours(q, now = new Date()) {
     if (!q?.enabled) return false
     let hm
@@ -331,7 +341,11 @@ class Notifier {
     async notify(orgId, ev, { now = new Date() } = {}) {
         try {
             if (!orgId) return { sent: 0, reason: 'no workspace' }
-            const rules = notificationStore.rules(orgId)
+            const plan = await alertPlanFor(orgId)
+            // Free: critical alerts only (node or control plane down, failed backup / restore / upgrade, agent offline)
+            if (plan.criticalOnly && ev.severity !== 'critical') return { sent: 0, reason: 'plan' }
+            // Free: fixed default rules (events, quiet hours and cooldown are Pro)
+            const rules = plan.rules ? notificationStore.rules(orgId) : structuredClone(DEFAULT_RULES)
             if (rules.events[ev.type] === false) return { sent: 0, reason: 'event turned off' }
             if (ev.severity !== 'critical' && inQuietHours(rules.quietHours, now)) {
                 notificationStore.record(orgId, { ...pick(ev), outcome: 'quiet hours' })
@@ -340,13 +354,15 @@ class Notifier {
             const key = `${orgId}|${ev.key || `${ev.type}|${ev.clusterId || ''}|${ev.title}`}`
             const cool = (rules.cooldownMinutes || 0) * 60000
             if (cool && now - (lastSent.get(key) || 0) < cool) return { sent: 0, reason: 'cooldown' }
-            const channels = notificationStore.channels(orgId).filter(c => c.enabled !== false)
+            const all = notificationStore.channels(orgId)
+            const locked = lockedChannelIds(all, plan)
+            const channels = all.filter(c => c.enabled !== false && !locked.has(c.id))
             if (!channels.length) return { sent: 0, reason: 'no channels' }
             lastSent.set(key, +now)
             if (lastSent.size > 5000) for (const [k, t] of lastSent) if (+now - t > 86400000) lastSent.delete(k)
             const results = {}
             await Promise.all(channels.map(async ch => {
-                try { await deliver(ch, ev); results[ch.id] = { ok: true } } catch (e) { results[ch.id] = { ok: false, error: String(e.message).slice(0, 300) } }
+                try { await deliverWithin(plan, orgId, ch, ev); results[ch.id] = { ok: true } } catch (e) { results[ch.id] = { ok: false, error: String(e.message).slice(0, 300) } }
             }))
             const okCount = Object.values(results).filter(r => r.ok).length
             // nothing got through: don't hold the next attempt back
@@ -363,11 +379,14 @@ class Notifier {
     emit(orgId, ev) { this.notify(orgId, ev).catch(() => { }) }
 
     async test(orgId, channelId) {
-        const ch = notificationStore.channels(orgId).find(c => c.id === channelId)
+        const all = notificationStore.channels(orgId)
+        const ch = all.find(c => c.id === channelId)
         if (!ch) throw Object.assign(new Error('Channel not found'), { status: 404 })
-        const ev = { type: 'test', severity: 'info', title: 'Test alert from KubeEZ', text: `If you can read this, "${ch.name}" works.`, link: '/settings' }
+        const plan = await alertPlanFor(orgId)
+        if (lockedChannelIds(all, plan).has(ch.id)) return { ok: false, error: 'This channel is not part of the Free plan — upgrade to Pro to use it, or keep one Telegram, email or webhook channel.' }
+        const ev = { type: 'test', severity: 'info', title: 'Test alert from KubeEZ', text: `If you can read this, "${ch.name}" works.`, link: '/alerts' }
         try {
-            await deliver(ch, ev)
+            await deliverWithin(plan, orgId, ch, ev)
             notificationStore.record(orgId, { ...pick(ev), outcome: `test → ${ch.name}: delivered` }, { [ch.id]: { ok: true } })
             return { ok: true }
         } catch (e) {

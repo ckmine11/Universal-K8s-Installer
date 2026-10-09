@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch } from '../context/AuthContext'
 import {
     Bell, Send, MessageCircle, Mail, Webhook, Hash, Users, Plus, Trash2, Loader2, CheckCircle2,
-    XCircle, X, Moon, Clock, History, Pencil, AlertTriangle, Power
+    XCircle, X, Moon, Clock, History, Pencil, AlertTriangle, Power, Lock, Sparkles
 } from 'lucide-react'
 
 // Alert channels + rules for the workspace (the Alerts page)
@@ -112,18 +113,18 @@ export default function AlertsPanel() {
     }
     useEffect(() => { load() }, [])
     // a dialog shows only its own save errors, not an older message
-    useEffect(() => { setNotice(null) }, [form?.id, form?.type])
+    useEffect(() => { if (form) setNotice(null) }, [form?.id, form?.type])
 
     const call = async (key, method, path, body, ok) => {
         setBusy(key); setNotice(null)
         try {
             const r = await apiFetch(path, { method, body: body ? JSON.stringify(body) : undefined })
             const j = await r.json().catch(() => ({}))
-            if (!r.ok || j.ok === false) throw new Error(j.error || 'Request failed')
+            if (!r.ok || j.ok === false) throw Object.assign(new Error(j.error || 'Request failed'), { upgrade: !!j.upgrade })
             if (ok) setNotice({ ok: true, msg: ok })
             await load()
             return true
-        } catch (e) { setNotice({ ok: false, msg: e.message }); return false } finally { setBusy(null) }
+        } catch (e) { setNotice({ ok: false, msg: e.message, upgrade: e.upgrade }); return false } finally { setBusy(null) }
     }
 
     const saveForm = async () => {
@@ -137,8 +138,29 @@ export default function AlertsPanel() {
     if (error) return <div className="glass rounded-2xl border border-white/8 p-6 text-sm text-red-300">{error}</div>
     if (!data) return <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
 
+    const plan = data.plan || { paid: true, channelTypes: Object.keys(data.types), maxChannels: null, rules: true }
+    const usable = data.channels.filter(c => !c.locked).length
+    const full = plan.maxChannels != null && usable >= plan.maxChannels
+    const addChannel = (k, t) => {
+        if (!plan.channelTypes.includes(k)) return setNotice({ ok: false, upgrade: true, msg: `${t.label} alerts are part of Pro. On Free you can use one Telegram, email or webhook channel.` })
+        if (full) return setNotice({ ok: false, upgrade: true, msg: `The Free plan includes ${plan.maxChannels} alert channel — remove the existing one first, or upgrade to Pro for more.` })
+        setForm({ type: k, name: t.label, config: {}, enabled: true })
+    }
+
     return (
         <div className="space-y-6">
+            {!plan.paid && (
+                <div className="relative overflow-hidden rounded-2xl border border-blue-400/20 bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-violet-500/10 p-4 flex flex-wrap items-center gap-4">
+                    <Sparkles className="w-5 h-5 text-blue-300 shrink-0" />
+                    <div className="min-w-0 flex-1 text-sm">
+                        <p className="font-semibold text-white">Free plan alerts</p>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                            {plan.maxChannels} channel (Telegram, email or webhook) · critical alerts only (node or control plane down, failed backups / upgrades, agent offline) · {plan.emailsToday || 0}/{plan.emailPerDay} alert emails today
+                        </p>
+                    </div>
+                    <Link to="/pricing" className="kz-btn-primary !py-2">Upgrade for all alerts</Link>
+                </div>
+            )}
             <div className="glass rounded-2xl border border-white/8 p-6">
                 <div className="flex items-center justify-between gap-3 mb-4">
                     <div className="flex items-center gap-3">
@@ -152,9 +174,11 @@ export default function AlertsPanel() {
                         {Object.entries(data.types).map(([k, t]) => {
                             const M = TYPE_META[k]
                             return (
-                                <button key={k} onClick={() => setForm({ type: k, name: t.label, config: {}, enabled: true })}
-                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] font-bold text-slate-200">
-                                    <Plus className="w-3 h-3" /><M.Icon className={`w-3.5 h-3.5 ${M.color}`} /> {t.label}
+                                <button key={k} onClick={() => addChannel(k, t)}
+                                    title={!plan.channelTypes.includes(k) ? 'Pro' : full ? 'Free includes one channel' : ''}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-[11px] font-bold ${plan.channelTypes.includes(k) && !full ? 'text-slate-200' : 'text-slate-500'}`}>
+                                    {plan.channelTypes.includes(k) ? <Plus className="w-3 h-3" /> : <Lock className="w-3 h-3 text-amber-300" />}<M.Icon className={`w-3.5 h-3.5 ${M.color}`} /> {t.label}
+                                    {!plan.channelTypes.includes(k) && <span className="ml-0.5 rounded px-1 text-[9px] text-amber-300 bg-amber-500/10">PRO</span>}
                                 </button>
                             )
                         })}
@@ -163,7 +187,7 @@ export default function AlertsPanel() {
 
                 {notice && (
                     <div className={`mb-4 flex items-start gap-2 rounded-xl p-3 text-xs ${notice.ok ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border border-red-500/20 text-red-300'}`}>
-                        {notice.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}<span className="flex-1">{notice.msg}</span>
+                        {notice.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}<span className="flex-1">{notice.msg}{notice.upgrade && <> <Link to="/pricing" className="font-bold underline">See Pro</Link></>}</span>
                         <button onClick={() => setNotice(null)} aria-label="Dismiss"><X className="w-3.5 h-3.5" /></button>
                     </div>
                 )}
@@ -180,7 +204,8 @@ export default function AlertsPanel() {
                         {data.channels.map(c => {
                             const M = TYPE_META[c.type] || TYPE_META.webhook
                             return (
-                                <div key={c.id} className={`rounded-xl border p-3.5 ${c.enabled ? 'border-white/10 bg-white/[0.02]' : 'border-white/5 bg-white/[0.01] opacity-60'}`}>
+                                <div key={c.id} className={`rounded-xl border p-3.5 ${c.locked ? 'border-amber-400/20 bg-amber-500/[0.03]' : c.enabled ? 'border-white/10 bg-white/[0.02]' : 'border-white/5 bg-white/[0.01] opacity-60'}`}>
+                                    {c.locked && <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-amber-300"><Lock className="w-3 h-3" /> Not on the Free plan — paused. <Link to="/pricing" className="underline">Upgrade</Link> or delete it.</p>}
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="flex items-center gap-2.5 min-w-0">
                                             <div className="p-2 rounded-lg bg-black/30 border border-white/5"><M.Icon className={`w-4 h-4 ${M.color}`} /></div>
@@ -190,7 +215,7 @@ export default function AlertsPanel() {
                                             </div>
                                         </div>
                                         <div className="flex gap-1 shrink-0">
-                                            <button onClick={() => call(`test-${c.id}`, 'POST', `/api/notifications/channels/${c.id}/test`, null, `Test sent to ${c.name}.`)} disabled={busy === `test-${c.id}`}
+                                            <button onClick={() => call(`test-${c.id}`, 'POST', `/api/notifications/channels/${c.id}/test`, null, `Test sent to ${c.name}.`)} disabled={busy === `test-${c.id}` || c.locked}
                                                 className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold disabled:opacity-50">
                                                 {busy === `test-${c.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Test
                                             </button>
@@ -215,7 +240,14 @@ export default function AlertsPanel() {
             </div>
 
             {/* Rules */}
-            {rules && (
+            {rules && !plan.rules && (
+                <div className="glass rounded-2xl border border-white/8 p-6">
+                    <div className="flex items-center gap-2"><h3 className="text-lg font-black text-white">What to alert on</h3><span className="rounded px-1.5 py-0.5 text-[10px] font-bold text-amber-300 bg-amber-500/10">PRO</span></div>
+                    <p className="text-xs text-slate-400 mt-1">On Free: every <b className="text-slate-200">critical</b> alert, at any hour, the same alert at most every 15 minutes. With Pro you choose the alert types (warnings, recoveries, finished upgrades…), quiet hours and the cooldown.</p>
+                    <Link to="/pricing" className="inline-flex mt-3 kz-btn-ghost !py-2 !text-xs"><Lock className="w-3.5 h-3.5" /> Unlock with Pro</Link>
+                </div>
+            )}
+            {rules && plan.rules && (
                 <div className="glass rounded-2xl border border-white/8 p-6">
                     <h3 className="text-lg font-black text-white mb-1">What to alert on</h3>
                     <p className="text-xs text-slate-500 mb-4">Applies to every channel of the workspace.</p>

@@ -55,7 +55,7 @@ class NotificationStore {
     rules(orgId) { return this._org(this._read(), orgId).rules }
 
     /** Safe view for the UI: secrets replaced by a hint. */
-    publicView(orgId) {
+    publicView(orgId, historyMax = 50) {
         const all = this._read()
         const o = this._org(all, orgId)
         return {
@@ -67,7 +67,7 @@ class NotificationStore {
                 return { id: c.id, type: c.type, name: c.name, enabled: c.enabled !== false, config: cfg, createdAt: c.createdAt, lastResult: c.lastResult || null }
             }),
             rules: o.rules,
-            history: o.history.slice(0, 50)
+            history: o.history.slice(0, historyMax)
         }
     }
 
@@ -133,6 +133,23 @@ class NotificationStore {
         }
         this._write(all)
         return o.rules
+    }
+
+    /**
+     * Daily allowance of alert emails per workspace (UTC day). Returns true and
+     * counts one when there is room, false when today's allowance is used up.
+     */
+    takeEmail(orgId, limit) {
+        const all = this._read(); const o = this._org(all, orgId)
+        const day = new Date().toISOString().slice(0, 10)
+        if (o.emailDay?.day !== day) o.emailDay = { day, n: 0 }
+        if (o.emailDay.n >= limit) return false
+        o.emailDay.n++
+        this._write(all); return true
+    }
+    emailsToday(orgId) {
+        const o = this._read()[orgId]
+        return o?.emailDay?.day === new Date().toISOString().slice(0, 10) ? o.emailDay.n : 0
     }
 
     record(orgId, entry, channelResults = {}) {

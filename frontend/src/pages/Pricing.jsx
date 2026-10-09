@@ -100,6 +100,7 @@ export default function Pricing() {
                         <Feature text="1 Kubernetes Cluster" />
                         <Feature text="2 Nodes (1 Master + 1 Worker)" />
                         <Feature text="1 Admin User" />
+                        <Feature text="Critical alerts on 1 channel (Telegram, email or webhook)" />
                         <Feature text="Standard Installation Engine" />
                         <Feature text="Connect private nodes without firewall changes" />
                         <Feature text="Kubernetes Dashboard add-on" />
@@ -147,6 +148,7 @@ export default function Pricing() {
                         <Feature color="text-amber-400" text="Up to 50 Nodes" />
                         <Feature color="text-amber-400" text="5 Team Members & RBAC" />
                         <Feature color="text-amber-400" text="Node crashes fix themselves (Auto-Healing)" />
+                        <Feature color="text-amber-400" text="All alerts on every channel — Slack, Teams, WhatsApp — with quiet hours and rules" />
                         <Feature color="text-amber-400" text="Daily config backups — restore in 1 click" />
                         <Feature color="text-amber-400" text="All Add-ons (Ingress, Monitoring, ArgoCD, Longhorn, Cert-Manager)" />
                         <Feature color="text-amber-400" text="Support response within 24 hours" />
