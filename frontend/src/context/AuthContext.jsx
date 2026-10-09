@@ -94,7 +94,7 @@ export const AuthProvider = ({ children }) => {
             body: JSON.stringify({ username, password })
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Login failed');
 
         const userInfo = {
@@ -116,7 +116,7 @@ export const AuthProvider = ({ children }) => {
             body: JSON.stringify({ username, password, email })
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Registration failed');
 
         const userInfo = {
@@ -139,7 +139,7 @@ export const AuthProvider = ({ children }) => {
             body: JSON.stringify({ username, password, email })
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Setup failed');
 
         const userInfo = {
@@ -154,25 +154,25 @@ export const AuthProvider = ({ children }) => {
         setIsSetupRequired(false);
     };
 
-    const forgotPassword = async (email) => {
+    const forgotPassword = async (identifier) => {
         const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
+            body: JSON.stringify({ identifier })
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Failed to send reset email');
     };
 
-    const resetPassword = async (email, token, newPassword) => {
+    const resetPassword = async (identifier, token, newPassword) => {
         const res = await fetch(`${API_URL}/api/auth/reset-password`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, token, newPassword })
+            body: JSON.stringify({ identifier, token, newPassword })
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Password reset failed');
     };
 

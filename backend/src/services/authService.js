@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../utils/cryptoUtils.js';
 import { v4 as uuidv4 } from 'uuid';
-import nodemailer from 'nodemailer';
+import { getMailer, mailConfigured, mailFrom, mailError } from '../utils/mailer.js';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { DATA_DIR } from '../utils/paths.js';
@@ -30,15 +30,7 @@ if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT) || 465,
-    secure: true,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-    }
-});
+const RESET_RESEND_MS = 60 * 1000;   // one reset email per account per minute
 
 class AuthService {
     constructor() {
@@ -163,13 +155,27 @@ class AuthService {
         return this.registerUser(username, password, email);
     }
 
+    // An account by what people type on the login page: the username (any
+    // case) or the email address. Usernames and emails are unique ignoring case.
+    findByLogin(identifier) {
+        const id = String(identifier || '').trim();
+        if (!id) return null;
+        const lower = id.toLowerCase();
+        return this.users.find(u => u.username === id)
+            || this.users.find(u => u.username.toLowerCase() === lower)
+            || (id.includes('@') ? this.users.find(u => u.email && u.email.toLowerCase() === lower) : null)
+            || null;
+    }
+
     async login(username, password) {
-        const name = String(username || '')
-        const user = this.users.find(u => u.username === name);
+        const name = String(username || '').trim()
+        const user = this.findByLogin(name);
+        // one counter per account, whether the username or the email was typed
+        const lockKey = (user ? user.username : name).toLowerCase();
 
         // Per-account lockout: 10 wrong passwords → 15 minutes (on top of the
         // per-IP limit, which a distributed attack would get around)
-        const lock = this._failures.get(name.toLowerCase());
+        const lock = this._failures.get(lockKey);
         if (lock && lock.until > Date.now()) {
             throw new Error('Too many failed attempts for this account. Try again in 15 minutes.');
         }
@@ -178,13 +184,13 @@ class AuthService {
         // whether the username exists
         const isMatch = await bcrypt.compare(String(password || ''), user ? user.password : DUMMY_HASH);
         if (!user || !isMatch) {
-            const f = this._failures.get(name.toLowerCase()) || { count: 0, until: 0 };
+            const f = this._failures.get(lockKey) || { count: 0, until: 0 };
             f.count += 1;
             if (f.count >= 10) { f.until = Date.now() + 15 * 60 * 1000; f.count = 0; }
-            this._failures.set(name.toLowerCase(), f);
+            this._failures.set(lockKey, f);
             throw new Error('Invalid credentials');
         }
-        this._failures.delete(name.toLowerCase());
+        this._failures.delete(lockKey);
         if (user.isSuspended) throw new Error('This account is suspended. Contact your administrator.');
 
         return this.generateToken(user);
@@ -338,56 +344,66 @@ class AuthService {
         return this.toSafeUser(user);
     }
 
-    async forgotPassword(email) {
-        const user = this.users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
-        if (!user) {
-            // Return success even if not found to prevent email enumeration
-            return true;
+    /**
+     * Send a 6-digit reset code to the account's email. Who asked is never
+     * revealed (same answer for unknown accounts). Throws NO_SMTP when this
+     * server cannot send email, so the page can say what to do instead.
+     */
+    async forgotPassword(identifier) {
+        if (!mailConfigured()) {
+            throw Object.assign(new Error('Password reset by email is not set up on this server. Ask your workspace admin to reset your password (Team & Roles), or the server owner can run: node scripts/reset-password.js <username> <new-password>'), { code: 'NO_SMTP' });
         }
+        const user = this.findByLogin(identifier);
+        if (!user || !user.email || user.isSuspended) return true;
+        // Resend protection: a new code at most once a minute per account
+        if (user.resetRequestedAt && Date.now() - user.resetRequestedAt < RESET_RESEND_MS) return true;
 
-        // Generate a cryptographically random 6-digit code. Only its hash is
-        // stored; it's bound to this email and burns after MAX_RESET_ATTEMPTS.
+        // A cryptographically random 6-digit code. Only its hash is stored; it's
+        // bound to this account and burns after MAX_RESET_ATTEMPTS.
         const resetCode = crypto.randomInt(100000, 1000000).toString();
-
         user.resetToken = hashResetCode(resetCode);
         user.resetTokenExpiry = Date.now() + RESET_CODE_TTL_MS;
         user.resetAttempts = 0;
-
+        user.resetRequestedAt = Date.now();
         this.saveUsers();
 
         try {
-            await transporter.sendMail({
-                from: process.env.EMAIL_FROM || process.env.SMTP_USER,
-                to: email,
-                subject: 'KubeEZ - Password Reset Code',
-                text: `Your password reset code is: ${resetCode}\n\nThis code is valid for 15 minutes.`,
-                html: `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                        <h2 style="color: #3b82f6;">KubeEZ Platform</h2>
-                        <p>We received a request to reset your password.</p>
-                        <p>Your 6-digit reset code is:</p>
-                        <h1 style="background: #f4f4f5; padding: 10px 20px; text-align: center; letter-spacing: 5px; color: #18181b; border-radius: 5px;">${resetCode}</h1>
-                        <p style="color: #71717a; font-size: 12px; margin-top: 20px;">This code will expire in 15 minutes. If you did not request this, please ignore this email.</p>
-                    </div>
-                `
-            });
-            console.log(`Reset code sent to ${email}`);
-        } catch (error) {
-            console.error('Error sending reset email:', error);
-            throw new Error('Failed to send reset email. Please try again later.');
-        }
+            await getMailer().sendMail({
+                from: mailFrom(),
+                to: user.email,
+                subject: 'KubeEZ — your password reset code',
+                text: `Hi ${user.username},
 
+Your KubeEZ password reset code is: ${resetCode}
+
+It is valid for 15 minutes. If you did not ask for this, ignore this email — your password stays the same.`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #eee; border-radius: 12px;">
+                        <h2 style="color: #3b82f6; margin-top: 0;">KubeEZ</h2>
+                        <p>Hi <b>${user.username.replace(/[<>&]/g, '')}</b>, we received a request to reset your password.</p>
+                        <p>Your reset code:</p>
+                        <div style="background: #f4f4f5; padding: 12px 20px; text-align: center; letter-spacing: 8px; font-size: 28px; font-weight: bold; color: #18181b; border-radius: 8px;">${resetCode}</div>
+                        <p style="color: #71717a; font-size: 12px; margin-top: 20px;">Valid for 15 minutes. If you did not ask for this, ignore this email — your password stays the same.</p>
+                    </div>`
+            });
+        } catch (error) {
+            // Undo, so a later attempt is not blocked by the resend limit
+            user.resetToken = undefined; user.resetTokenExpiry = undefined; user.resetAttempts = undefined; user.resetRequestedAt = undefined;
+            this.saveUsers();
+            console.error('[auth] reset email failed:', mailError(error));
+            throw Object.assign(new Error('The reset email could not be sent right now. Please try again in a few minutes.'), { code: 'MAIL_FAILED' });
+        }
         return true;
     }
 
-    async resetPassword(email, token, newPassword) {
+    async resetPassword(identifier, token, newPassword) {
         const invalid = new Error('Invalid or expired reset code');
-        const user = this.users.find(u => u.email && u.email.toLowerCase() === String(email).toLowerCase());
+        const user = this.findByLogin(identifier);
         if (!user || !user.resetToken || !(user.resetTokenExpiry > Date.now())) {
             throw invalid;
         }
 
-        const given = Buffer.from(hashResetCode(String(token)), 'hex');
+        const given = Buffer.from(hashResetCode(String(token).trim()), 'hex');
         const stored = Buffer.from(user.resetToken, 'hex');
         if (given.length !== stored.length || !crypto.timingSafeEqual(given, stored)) {
             user.resetAttempts = (user.resetAttempts || 0) + 1;
@@ -404,7 +420,21 @@ class AuthService {
         user.resetToken = undefined;
         user.resetTokenExpiry = undefined;
         user.resetAttempts = undefined;
-        await this.setPassword(user, newPassword);
+        user.resetRequestedAt = undefined;
+        await this.setPassword(user, newPassword);   // ends every older session
+        this._failures.delete(user.username.toLowerCase());   // the lockout is over too
+        // Tell the owner (best effort) — a reset they did not do is a warning sign
+        if (mailConfigured() && user.email) {
+            getMailer().sendMail({
+                from: mailFrom(), to: user.email,
+                subject: 'KubeEZ — your password was changed',
+                text: `Hi ${user.username},
+
+The password of your KubeEZ account was just changed with a reset code, and all other sessions were signed out.
+
+If this was not you, reset your password again right away and tell your workspace admin.`
+            }).catch(e => console.error('[auth] password-changed email failed:', mailError(e)));
+        }
         return true;
     }
 }

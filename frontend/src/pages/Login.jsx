@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import {
+import { Eye, EyeOff,
     Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key, CheckCircle2,
     ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users, HardDrive, Compass
 } from 'lucide-react';
@@ -87,15 +87,31 @@ function DeployTerminal() {
 export default function Login() {
     const { login, setup, register, forgotPassword, resetPassword, isSetupRequired } = useAuth();
     const [authMode, setAuthMode] = useState('login'); // 'login', 'register', 'forgot', 'reset'
-    const [formData, setFormData] = useState({ username: '', email: '', password: '', resetCode: '' });
+    const [formData, setFormData] = useState({ username: '', email: '', password: '', resetCode: '', identifier: '', confirm: '' });
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [showPw, setShowPw] = useState(false);
+    const [emailReset, setEmailReset] = useState(true);   // can this server email a reset code?
+    const [resendIn, setResendIn] = useState(0);
 
     useEffect(() => {
         setMounted(true);
+        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) setEmailReset(!!o.emailReset) }).catch(() => { });
     }, []);
+    useEffect(() => {
+        if (resendIn <= 0) return;
+        const t = setTimeout(() => setResendIn(n => n - 1), 1000);
+        return () => clearTimeout(t);
+    }, [resendIn]);
+    const go = (mode) => { setAuthMode(mode); setError(''); setSuccessMessage(''); setShowPw(false); };
+
+    const sendCode = async () => {
+        await forgotPassword(formData.identifier.trim());
+        setSuccessMessage('If this account exists, a 6-digit code was sent to its email address. Check your inbox (and spam).');
+        setResendIn(60);
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -109,14 +125,14 @@ export default function Login() {
             } else if (authMode === 'register') {
                 await register(formData.username, formData.password, formData.email);
             } else if (authMode === 'forgot') {
-                await forgotPassword(formData.email);
-                setSuccessMessage('Reset code has been sent to your email.');
+                await sendCode();
                 setAuthMode('reset');
             } else if (authMode === 'reset') {
-                await resetPassword(formData.email, formData.resetCode, formData.password);
-                setSuccessMessage('Password reset successfully. You can now login.');
-                setAuthMode('login');
-                setFormData({ ...formData, password: '', resetCode: '' });
+                if (formData.password !== formData.confirm) throw new Error('The two passwords are not the same.');
+                await resetPassword(formData.identifier.trim(), formData.resetCode.trim(), formData.password);
+                go('login');
+                setSuccessMessage('Password changed — sign in with the new one. Other sessions were signed out.');
+                setFormData({ ...formData, username: formData.identifier.trim(), password: '', confirm: '', resetCode: '' });
             } else {
                 await login(formData.username, formData.password);
             }
@@ -229,7 +245,7 @@ export default function Login() {
                             </h2>
                             <div className="w-12 h-1.5 bg-gradient-to-r from-blue-500 to-purple-500 mx-auto rounded-full mb-4 opacity-80"></div>
                             <p className="text-slate-500 font-bold tracking-[0.2em] text-[10px] uppercase">
-                                {isSetupRequired ? 'Create Master Admin Profile' : authMode === 'register' ? 'Create Your Account' : authMode === 'forgot' ? 'Enter Email to recover' : authMode === 'reset' ? 'Enter Code and New Password' : 'Authenticate to Continue'}
+                                {isSetupRequired ? 'Create Master Admin Profile' : authMode === 'register' ? 'Create Your Account' : authMode === 'forgot' ? 'Email address or username' : authMode === 'reset' ? 'Code from your email + new password' : 'Authenticate to Continue'}
                             </p>
                         </div>
 
@@ -248,7 +264,37 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {(isSetupRequired || authMode === 'register' || authMode === 'forgot' || authMode === 'reset') && (
+                            {authMode === 'forgot' && !isSetupRequired && !emailReset && (
+                                <div className="p-4 rounded-2xl border border-amber-500/25 bg-amber-500/5 text-xs text-slate-300 leading-relaxed space-y-2">
+                                    <p className="font-bold text-amber-300">Password reset by email is not set up on this server.</p>
+                                    <p>Ask your <b className="text-white">workspace admin</b> to set a new password for you (user menu → Team &amp; Roles → Reset password).</p>
+                                    <p className="text-slate-500">Server owner: set SMTP_USER / SMTP_PASS to enable email reset, or run <span className="font-mono text-slate-300">node scripts/reset-password.js &lt;username&gt; &lt;new-password&gt;</span> in the backend container.</p>
+                                </div>
+                            )}
+
+                            {authMode === 'forgot' && !isSetupRequired && emailReset && (
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">
+                                        <Mail className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                                    </div>
+                                    <input type="text" required autoComplete="username" autoCapitalize="none" className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                        placeholder="Email address or username" value={formData.identifier}
+                                        onChange={(e) => setFormData({ ...formData, identifier: e.target.value })} />
+                                </div>
+                            )}
+
+                            {authMode === 'reset' && (
+                                <p className="text-[11px] text-slate-400 leading-relaxed">
+                                    Code sent for <b className="text-white">{formData.identifier}</b> — valid 15 minutes.{' '}
+                                    <button type="button" disabled={resendIn > 0 || loading} className="font-bold text-blue-400 hover:text-blue-300 disabled:text-slate-600"
+                                        onClick={async () => { setError(''); setLoading(true); try { await sendCode() } catch (err) { setError(err.message) } finally { setLoading(false) } }}>
+                                        {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                                    </button>
+                                    {' · '}<button type="button" className="font-bold text-slate-400 hover:text-white" onClick={() => go('forgot')}>Change</button>
+                                </p>
+                            )}
+
+                            {(isSetupRequired || authMode === 'register') && (
                                 <div className="space-y-1">
                                     <div className="relative group">
                                         <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">
@@ -275,10 +321,13 @@ export default function Login() {
                                         <input
                                             type="text"
                                             required
+                                            inputMode="numeric"
+                                            autoComplete="one-time-code"
+                                            pattern="[0-9]{6}"
                                             className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner tracking-widest uppercase font-mono"
-                                            placeholder="6-Digit Reset Code"
+                                            placeholder="6-digit code"
                                             value={formData.resetCode}
-                                            onChange={(e) => setFormData({ ...formData, resetCode: e.target.value })}
+                                            onChange={(e) => setFormData({ ...formData, resetCode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
                                             maxLength={6}
                                         />
                                     </div>
@@ -294,8 +343,10 @@ export default function Login() {
                                         <input
                                             type="text"
                                             required
+                                            autoComplete="username"
+                                            autoCapitalize="none"
                                             className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
-                                            placeholder="Username"
+                                            placeholder={authMode === 'login' && !isSetupRequired ? 'Username or email' : 'Username'}
                                             value={formData.username}
                                             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                                         />
@@ -310,14 +361,32 @@ export default function Login() {
                                             <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-purple-400 transition-colors" />
                                         </div>
                                         <input
-                                            type="password"
+                                            type={showPw ? 'text' : 'password'}
                                             required
-                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
-                                            placeholder={authMode === 'reset' ? "New Password" : "Password"}
+                                            autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                                            className="w-full pl-14 pr-14 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            placeholder={authMode === 'reset' ? 'New password (min. 8 characters)' : 'Password'}
                                             value={formData.password}
                                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                         />
+                                        <button type="button" onClick={() => setShowPw(v => !v)} aria-label={showPw ? 'Hide password' : 'Show password'}
+                                            className="absolute inset-y-0 right-0 pr-5 flex items-center text-slate-500 hover:text-white z-20">
+                                            {showPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                        </button>
                                     </div>
+                                </div>
+                            )}
+
+                            {authMode === 'reset' && (
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">
+                                        <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-purple-400 transition-colors" />
+                                    </div>
+                                    <input type={showPw ? 'text' : 'password'} required autoComplete="new-password"
+                                        className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/10 rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                        placeholder="Repeat the new password" value={formData.confirm}
+                                        onChange={(e) => setFormData({ ...formData, confirm: e.target.value })} />
+                                    {formData.confirm && formData.confirm !== formData.password && <p className="mt-1.5 ml-2 text-[11px] text-red-400">The passwords are not the same yet</p>}
                                 </div>
                             )}
 
@@ -325,7 +394,7 @@ export default function Login() {
                                 <div className="text-right">
                                     <button 
                                         type="button" 
-                                        onClick={() => { setAuthMode('forgot'); setError(''); setSuccessMessage(''); }}
+                                        onClick={() => { go('forgot'); setFormData(d => ({ ...d, identifier: d.identifier || d.username })); }}
                                         className="text-[11px] font-bold text-slate-500 hover:text-blue-400 transition-colors uppercase tracking-widest"
                                     >
                                         Forgot Password?
@@ -333,7 +402,7 @@ export default function Login() {
                                 </div>
                             )}
 
-                            <div className="pt-6">
+                            <div className={`pt-6 ${authMode === 'forgot' && !emailReset && !isSetupRequired ? 'hidden' : ''}`}>
                                 <button
                                     type="submit"
                                     disabled={loading}

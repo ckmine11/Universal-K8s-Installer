@@ -497,6 +497,7 @@ export default function Docs() {
                             ['Restore: “rolled the cluster back automatically”', 'The control plane did not start on the restored data; the cluster runs on its previous data. The failed attempt is kept in /var/lib/etcd-failed-restore-<time> for diagnosis.'],
                             ['Recovery: “does not have the IP …”', 'The replacement machine must use the lost control-plane’s IP so the workers can find it.'],
                             ['Volume Backups: storage unavailable', 'Velero cannot reach the bucket — check endpoint, bucket and keys, save, then Repair Velero in Add-ons.'],
+                            ['Forgot password: no email arrives', 'Email reset needs the server’s SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS — Gmail: an App Password). Without them the login page says so; a workspace admin can reset the password under Team & Roles, or the server owner runs: node scripts/reset-password.js <username> <new-password>.'],
                             ['Explorer: “Gateway Agent is too old”', 'Reinstall the agent from the Tunnels page (same command) — the new agent relays the Explorer.'],
                             ['Upgrade: “safety check found blockers”', 'Open the full report (link in the dialog), fix the listed resources, retry. Admins can upgrade anyway.'],
                             ['Add-on Failing / Starting for long', 'Add-ons → Manage & logs → Logs shows why (image pull, storage pending, crash). Fix, then Repair.'],

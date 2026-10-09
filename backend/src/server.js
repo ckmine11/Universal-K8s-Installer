@@ -53,6 +53,7 @@ const wss = new WebSocketServer({
 })
 
 import { authService } from './services/authService.js'
+import { mailConfigured } from './utils/mailer.js'
 import { requireAuth } from './middleware/authMiddleware.js'
 import { explorerHttp, explorerUpgrade, EXPLORER_PATH } from './services/explorerProxy.js'
 
@@ -191,21 +192,28 @@ app.post('/api/auth/register', async (req, res) => {
     }
 })
 
+// What the login page can offer (no secrets): reset by email only when this
+// server can actually send email
+app.get('/api/auth/options', (req, res) => {
+    res.json({ emailReset: mailConfigured() })
+})
+
 app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     try {
-        const { email } = req.body;
-        if (!email) return res.status(400).json({ error: 'Email is required' });
-        await authService.forgotPassword(email);
-        res.json({ message: 'If an account exists, a reset code has been sent.' });
+        const identifier = String(req.body?.identifier || req.body?.email || '').trim();
+        if (!identifier) return res.status(400).json({ error: 'Enter your email address or username' });
+        await authService.forgotPassword(identifier);
+        res.json({ message: 'If an account with this email or username exists, a 6-digit code was sent to its email address.' });
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.status(e.code === 'NO_SMTP' ? 503 : 500).json({ error: e.message, code: e.code });
     }
 });
 
 app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     try {
-        const { email, token, newPassword } = req.body;
-        if (!email || !token || !newPassword) return res.status(400).json({ error: 'Email, reset code and new password are required' });
+        const { token, newPassword } = req.body;
+        const email = String(req.body?.identifier || req.body?.email || '').trim();
+        if (!email || !token || !newPassword) return res.status(400).json({ error: 'Email or username, reset code and new password are required' });
         const pwError = validatePassword(newPassword);
         if (pwError) return res.status(400).json({ error: pwError });
         await authService.resetPassword(email, token, newPassword);

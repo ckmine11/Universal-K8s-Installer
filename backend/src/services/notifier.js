@@ -2,9 +2,9 @@ import https from 'https'
 import http from 'http'
 import dns from 'dns'
 import net from 'net'
-import nodemailer from 'nodemailer'
 import { notificationStore, CHANNEL_TYPES } from './notificationStore.js'
 import { isPrivateAddress } from '../utils/netGuard.js'
+import { getMailer, mailError, mailFrom } from '../utils/mailer.js'
 
 /**
  * Alerts: KubeEZ events → the workspace's channels (Telegram, Slack, Teams,
@@ -86,24 +86,6 @@ async function withRetry(fn) {
     }
 }
 
-let mailer = null, mailerKey = ''
-function getMailer() {
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) throw new Error('Email alerts need the server\'s SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS)')
-    const port = parseInt(process.env.SMTP_PORT, 10) || 465
-    const key = [process.env.SMTP_HOST, port, process.env.SMTP_USER, process.env.SMTP_PASS].join('|')
-    if (!mailer || key !== mailerKey) {
-        mailer = nodemailer.createTransport({
-            host: process.env.SMTP_HOST || 'smtp.gmail.com',
-            port,
-            secure: port === 465,
-            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-            // a wrong host must not hang the Test button for minutes
-            connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 20000
-        })
-        mailerKey = key
-    }
-    return mailer
-}
 
 /** Validate a channel's settings before saving — user-facing messages. */
 export function validateChannel(type, config = {}, isEdit = false) {
@@ -214,13 +196,6 @@ function twilioError(e) {
     return j?.message ? `Twilio: ${j.message}${j.code ? ` (error ${j.code})` : ''}` : String(e?.message || e)
 }
 
-function mailError(e) {
-    const m = String(e?.message || e)
-    if (e?.code === 'EAUTH' || /Invalid login|Username and Password not accepted|535/.test(m)) return 'The SMTP server refused the login — check SMTP_USER / SMTP_PASS (Gmail needs an App Password, not your normal password).'
-    if (e?.code === 'ETIMEDOUT' || e?.code === 'ECONNECTION' || /timeout|ECONNREFUSED|ENOTFOUND/i.test(m)) return `Cannot reach the SMTP server (${process.env.SMTP_HOST || 'smtp.gmail.com'}:${process.env.SMTP_PORT || 465}) — check SMTP_HOST / SMTP_PORT and that the server may connect out on that port.`
-    if (e?.code === 'EENVELOPE' || /recipient|550|553/i.test(m)) return `The mail server refused a recipient: ${m.slice(0, 160)}`
-    return m
-}
 
 /** Chats that recently wrote to the bot (or added it) — to pick the chat ID instead of guessing it. */
 export async function telegramChats(botToken) {
@@ -326,7 +301,7 @@ async function deliver(ch, ev) {
             return sendWhatsApp(c, m)
         case 'email':
             return getMailer().sendMail({
-                from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+                from: mailFrom(),
                 to: c.to,
                 subject: `[KubeEZ] ${String(ev.title || '').slice(0, 150)}${ev.clusterName ? ` — ${ev.clusterName}` : ''}`,
                 text: [m.title, '', ...m.lines, m.link ? `\n${m.link}` : ''].join('\n'),
