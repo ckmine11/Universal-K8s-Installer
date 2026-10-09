@@ -22,7 +22,9 @@ router.get('/', requireAuth, (req, res) => {
 router.get('/monitoring', requireAuth, (req, res) => {
     const clusters = incidentDetector.getMonitoring().filter(visibleTo(req.user))
         .map(({ orgId, ownerId, ...c }) => c)
-    res.json({ clusters, connected: clusters.filter(c => c.connected).length })
+    const skipped = incidentDetector.getSkipped().filter(visibleTo(req.user))
+        .map(({ orgId, ownerId, ...c }) => c)
+    res.json({ clusters, connected: clusters.filter(c => c.connected).length, skipped })
 })
 
 export default router

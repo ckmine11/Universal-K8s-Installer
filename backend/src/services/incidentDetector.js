@@ -35,6 +35,22 @@ const POD_REASONS  = new Set(['CrashLoopBackOff', 'ImagePullBackOff', 'OOMKilled
 const CLOSED = new Set(['resolved', 'cleared'])
 
 const cname = (c) => c.clusterName || c.name || 'cluster'
+const RESYNC_MS = 60 * 1000
+
+// Which saved clusters are running Kubernetes and should be watched. A failed
+// or cancelled upgrade / add-on / scale job leaves a running cluster behind —
+// only a cluster that never finished installing has nothing to watch.
+const JOB_MODES = new Set(['upgrade', 'scale', 'addon-only', 'addon-uninstall', 'addon-reinstall'])
+export function watchReason(c) {
+    if (!c?.masterNodes?.length) return 'no control-plane node is saved for it'
+    if (c.simulationMode) return 'it is a simulation'
+    const st = c.status || 'healthy'
+    if (st === 'healthy') return null
+    if ((st === 'failed' || st === 'cancelled') && JOB_MODES.has(c.mode)) return null
+    if (st === 'failed') return 'its installation did not finish — resume it from the cluster page'
+    if (st === 'cancelled') return 'its installation was cancelled — resume it from the cluster page'
+    return 'it is still being installed'
+}
 
 /**
  * Detects cluster anomalies via lightweight polling (events, nodes, pods) over
@@ -48,6 +64,7 @@ class IncidentDetector {
         this.streams   = new Map()   // clusterId -> { ssh, timers:[], failCount, cluster }
         this.reconnect = new Map()   // clusterId -> attempt count
         this.watched   = new Map()   // clusterId -> cluster (everything we try to monitor)
+        this.skipped   = []          // [{ cluster, reason }] saved clusters we do not watch
         this.incidents = this._load()
     }
 
@@ -62,6 +79,11 @@ class IncidentDetector {
             clusterId: c.id, clusterName: cname(c), orgId: c.orgId, ownerId: c.ownerId,
             connected: this.streams.has(c.id)
         }))
+    }
+
+    /** Saved clusters that are not watched, and why (shown on the Incidents page). */
+    getSkipped() {
+        return this.skipped.map(({ cluster: c, reason }) => ({ clusterId: c.id, clusterName: cname(c), orgId: c.orgId, ownerId: c.ownerId, reason }))
     }
 
     // ── Persistence: incidents survive a KubeEZ restart ─────────────────────
@@ -79,13 +101,37 @@ class IncidentDetector {
 
     async init() {
         console.log('[AutoHealing] Initializing Auto-Healing Engine...')
+        await this.resync()
+        // Every minute: watch clusters that became healthy (repaired, imported,
+        // a job finished), follow node changes, drop removed clusters
+        if (!this._resyncTimer) {
+            this._resyncTimer = setInterval(() => this.resync(), RESYNC_MS)
+            this._resyncTimer.unref?.()
+        }
+    }
+
+    async resync() {
         try {
             const clusters = await clusterStore.getClusters()
-            for (const cluster of clusters) {
-                if (cluster.status === 'healthy') this.startWatching(cluster)
+            const ids = new Set(clusters.map(c => c.id))
+            const skipped = []
+            for (const c of clusters) {
+                const reason = watchReason(c)
+                if (reason) {
+                    skipped.push({ cluster: c, reason })
+                    if (this.watched.has(c.id)) this.stopWatching(c.id)
+                    continue
+                }
+                const prev = this.watched.get(c.id)
+                const moved = prev && prev.masterNodes?.[0]?.ip !== c.masterNodes?.[0]?.ip
+                if (moved) this.stopWatching(c.id)
+                if (!this.watched.has(c.id)) this.startWatching(c)
+                else this.watched.set(c.id, c)   // latest record (credentials, nodes)
             }
+            for (const id of [...this.watched.keys()]) if (!ids.has(id)) this.stopWatching(id)
+            this.skipped = skipped
         } catch (e) {
-            console.error('[AutoHealing] init failed:', e.message)
+            console.error('[AutoHealing] resync failed:', e.message)
         }
     }
 
@@ -141,7 +187,11 @@ class IncidentDetector {
         this.reconnect.set(cluster.id, attempt + 1)
         const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS)
         console.log(`[AutoHealing] Reconnecting to ${cname(cluster)} in ${Math.round(delay / 1000)}s`)
-        setTimeout(() => this.startWatching(cluster), delay)
+        const t = setTimeout(() => {
+            const latest = this.watched.get(cluster.id)
+            if (latest) this.startWatching(latest)
+        }, delay)
+        t.unref?.()
     }
 
     _cleanup(clusterId) {

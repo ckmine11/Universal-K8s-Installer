@@ -110,8 +110,21 @@ export default function Incidents() {
                     <WifiOff className="w-4 h-4 mt-0.5 shrink-0" />
                     <span>
                         Can&apos;t reach {offline.map(c => c.clusterName).join(', ')} right now — problems there are not detected until the connection is back
-                        (it retries automatically). In SaaS mode, check that the Gateway Agent is online on the <Link to="/agents" className="underline">Tunnels</Link> page.
+                        (it retries automatically). In SaaS mode, check that the Gateway Agent is online on the <Link to="/agents" className="underline">Gateway Agents</Link> page.
                     </span>
+                </div>
+            )}
+
+            {monitor?.skipped?.length > 0 && (
+                <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm">
+                    <p className="font-semibold text-white flex items-center gap-2"><EyeOff className="w-4 h-4 text-slate-400" /> Not watched ({monitor.skipped.length})</p>
+                    <ul className="mt-2 space-y-1.5">
+                        {monitor.skipped.map(c => (
+                            <li key={c.clusterId} className="text-slate-400">
+                                <Link to={`/cluster/${c.clusterId}`} className="font-semibold text-blue-300 hover:text-white">{c.clusterName}</Link> — {c.reason}.
+                            </li>
+                        ))}
+                    </ul>
                 </div>
             )}
 
@@ -138,7 +151,7 @@ export default function Incidents() {
                                     <Activity className="w-8 h-8 text-slate-500" />
                                 </div>
                                 <h3 className="text-lg font-black text-white">Nothing to monitor yet</h3>
-                                <p className="text-slate-400 text-sm mt-1">Monitoring starts automatically for every cluster once it is installed and healthy.</p>
+                                <p className="text-slate-400 text-sm mt-1">{monitor?.skipped?.length ? 'Your clusters are listed above with the reason they are not watched.' : 'Monitoring starts within a minute for every cluster that is installed and running.'}</p>
                             </>
                         ) : (
                             <>
