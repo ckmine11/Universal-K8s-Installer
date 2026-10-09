@@ -164,16 +164,32 @@ export default function Incidents() {
                     {watched.map(c => {
                         const pc = stats?.perCluster?.find(p => p.clusterId === c.clusterId)
                         return (
-                            <div key={c.clusterId} className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3">
-                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.maintenance ? 'bg-slate-500' : c.connected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.6)]' : 'bg-amber-400 animate-pulse'}`} />
-                                <div className="min-w-0 flex-1">
-                                    <Link to={`/cluster/${c.clusterId}`} className="block text-sm font-semibold text-white truncate hover:text-blue-200">{c.clusterName}</Link>
-                                    <span className="block text-[11px] text-slate-400 truncate">
-                                        {c.maintenance ? `Maintenance until ${new Date(c.maintenance.until).toLocaleString()}` : c.connected ? `Checked ${ago(c.lastCheck) || 'just now'}` : 'Unreachable — retrying'}
-                                        {pc?.open ? ` · ${pc.open} open` : ''}
-                                    </span>
+                            <div key={c.clusterId} className={`rounded-2xl border p-3 ${c.maintenance ? 'border-slate-400/20 bg-slate-500/[0.04]' : 'border-white/[0.07] bg-white/[0.02]'}`}>
+                                <div className="flex items-center gap-3">
+                                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.maintenance ? 'bg-slate-500' : c.connected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.6)]' : 'bg-amber-400 animate-pulse'}`} />
+                                    <div className="min-w-0 flex-1">
+                                        <span className="flex items-center gap-2 min-w-0">
+                                            <Link to={`/cluster/${c.clusterId}`} className="text-sm font-semibold text-white truncate hover:text-blue-200">{c.clusterName}</Link>
+                                            {c.maintenance && <span className="shrink-0 rounded-full border border-slate-400/30 bg-slate-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-300">Maintenance</span>}
+                                        </span>
+                                        <span className="block text-[11px] text-slate-400 truncate" title={c.maintenance ? `until ${new Date(c.maintenance.until).toLocaleString()}` : ''}>
+                                            {c.maintenance ? `Paused until ${new Date(c.maintenance.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${c.maintenance.by ? ` · by ${c.maintenance.by}` : ''}` : c.connected ? `Checked ${ago(c.lastCheck) || 'just now'}` : 'Unreachable — retrying'}
+                                            {pc?.open ? ` · ${pc.open} open` : ''}
+                                        </span>
+                                    </div>
+                                    {canAct && <MaintenanceMenu c={c} onSet={(h) => act(`/api/incidents/maintenance/${c.clusterId}`, { hours: h }, h ? `Paused for ${h} h — no checks, fixes or alerts` : `Watching ${c.clusterName} again`)} />}
                                 </div>
-                                {canAct && <MaintenanceMenu c={c} onSet={(h) => act(`/api/incidents/maintenance/${c.clusterId}`, { hours: h }, h ? `Maintenance for ${h} h` : 'Maintenance ended')} />}
+                                {c.maintenance && (
+                                    <div className="mt-2.5 flex items-center gap-2 pl-5">
+                                        <span className="flex-1 text-[11px] text-slate-500">No checks, fixes or alerts while paused.</span>
+                                        {canAct && (
+                                            <button onClick={() => act(`/api/incidents/maintenance/${c.clusterId}`, { hours: 0 }, `Watching ${c.clusterName} again`)}
+                                                className="flex items-center gap-1.5 shrink-0 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20">
+                                                <Play className="w-3.5 h-3.5" /> Resume now
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )
                     })}
