@@ -441,7 +441,7 @@ export default function Docs() {
                     </Section>
 
                     <Section id="alerts" Icon={Bell} color="text-amber-400" title="Alerts"
-                        intro="Get told when something needs you — on Telegram, Slack, Microsoft Teams, WhatsApp, email or your own webhook. Settings → Alerts (workspace admins).">
+                        intro="Get told when something needs you — on Telegram, Slack, Microsoft Teams, WhatsApp, email or your own webhook. Alerts in the sidebar (workspace admins).">
                         <Table head={['Channel', 'What you need']} rows={[
                             ['Telegram', <>A bot from <b>@BotFather</b> (its token) and the chat ID — add the bot to the group first.</>],
                             ['Slack', <>An <b>Incoming Webhook</b> URL (<C>https://hooks.slack.com/…</C>).</>],

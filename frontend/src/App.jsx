@@ -20,6 +20,7 @@ import AdminConsole from './pages/AdminConsole'
 import Pricing from './pages/Pricing'
 import VendorPortal from './pages/VendorPortal'
 import Incidents from './pages/Incidents'
+import Alerts from './pages/Alerts'
 
 function AuthenticatedApp() {
     const navigate = useNavigate()
@@ -119,6 +120,7 @@ function AuthenticatedApp() {
                         path="/settings"
                         element={<Settings />}
                     />
+                    <Route path="/alerts" element={<Alerts />} />
                     <Route
                         path="/agents"
                         element={<AgentNodes />}

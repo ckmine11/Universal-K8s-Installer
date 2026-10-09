@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Navigate } from 'react-router-dom'
 import { PageTitle } from '../components/ui/PageHeader'
-import AlertsPanel from '../components/AlertsPanel'
 import { useToast } from '../components/ToastProvider'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import TenantManager from '../components/TenantManager'
@@ -45,7 +44,7 @@ export default function Settings() {
     const { user } = useAuth()
     const [searchParams, setSearchParams] = useSearchParams()
     const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'licensing')
-    useEffect(() => { const t = searchParams.get('tab'); if (t && t !== activeTab) setActiveTab(t) }, [searchParams])
+    useEffect(() => { const t = searchParams.get('tab'); if (t && t !== activeTab) setActiveTab(t); if (!t && user) setActiveTab(user.role === 'superadmin' ? 'tenants' : 'licensing') }, [searchParams])
     const selectTab = (t) => { setActiveTab(t); setSearchParams({ tab: t }, { replace: true }) }
     
     // Health state
@@ -324,6 +323,8 @@ export default function Settings() {
     const isPaidPlan = planCode === 'PRO' || planCode === 'ENTERPRISE';
     const canBackup = isSuperAdmin || isPaidPlan; // Daily backups = Pro feature
 
+    if (searchParams.get('tab') === 'alerts') return <Navigate to="/alerts" replace />
+
     return (
         <div className="max-w-7xl mx-auto relative">
             {/* Header */}
@@ -331,8 +332,8 @@ export default function Settings() {
                 <PageTitle icon={SlidersHorizontal} eyebrow="Workspace"
                     title={isSuperAdmin ? 'Platform settings' : 'Workspace settings'}
                     description={isSuperAdmin
-                        ? 'Tenants, config backups, alerts, plans and security of this KubeEZ server.'
-                        : 'Alerts, config backups, your plan and security for this workspace.'} />
+                        ? 'Tenants, config backups, plans and security of this KubeEZ server.'
+                        : 'Config backups, your plan and security for this workspace.'} />
             </div>
 
             {/* Navigation Tabs */}
@@ -365,19 +366,6 @@ export default function Settings() {
                         {!canBackup && <Lock className="w-3 h-3 text-amber-400" />}
                     </button>
                 )}
-                {isAdmin && (
-                    <button
-                        onClick={() => selectTab('alerts')}
-                        className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                            activeTab === 'alerts'
-                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
-                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                        }`}
-                    >
-                        <Bell className="w-4 h-4" />
-                        <span>Alerts</span>
-                    </button>
-                )}
                 <button
                     onClick={() => selectTab('licensing')}
                     className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
@@ -407,7 +395,6 @@ export default function Settings() {
                 {activeTab === 'tenants' && isSuperAdmin && (
                     <TenantManager />
                 )}
-                {activeTab === 'alerts' && isAdmin && <AlertsPanel />}
                 {activeTab === 'health' && (
                     <div className="space-y-6">
                         {healthLoading ? (

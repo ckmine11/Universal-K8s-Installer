@@ -43,7 +43,7 @@ export function welcomeEmail(user) {
             '1. Sign in' + (url ? ` at ${url}` : ''),
             '2. Servers in a private network? Start a Gateway Agent (Tunnels page) — no inbound ports needed.',
             '3. Deploy New Cluster: add your nodes, pick the Kubernetes version and add-ons.',
-            '4. Settings → Alerts: get told on Telegram, Slack, Teams, WhatsApp or email.', '',
+            '4. Alerts: get told on Telegram, Slack, Teams, WhatsApp or email.', '',
             `Your username: ${user.username}`, '',
             'If you did not create this account, ignore this email.'
         ].join('\n'),
@@ -54,7 +54,7 @@ export function welcomeEmail(user) {
             body: `<p style="margin:16px 0 0;font-weight:bold">Get started in a few minutes</p>` + li([
                 '<b>Servers in a private network?</b> Start a Gateway Agent on the Tunnels page — no inbound ports needed.',
                 '<b>Deploy New Cluster</b> — add your nodes, pick the Kubernetes version and add-ons; every step shows a live log.',
-                '<b>Settings → Alerts</b> — get told on Telegram, Slack, Teams, WhatsApp or email.'
+                '<b>Alerts</b> — get told on Telegram, Slack, Teams, WhatsApp or email.'
             ]) + `<p style="margin:16px 0 0;color:#374151">Your username: <b>${name}</b></p>`,
             button: url ? { url: `${url}/`, label: 'Open KubeEZ' } : null,
             footer: 'If you did not create this account, you can ignore this email.'

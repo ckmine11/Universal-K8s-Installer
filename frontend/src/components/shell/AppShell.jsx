@@ -39,8 +39,8 @@ export function navSections(user) {
         {
             title: 'Workspace', items: [
                 isAdmin && { to: '/users', label: 'Team & Roles', icon: Users },
-                isAdmin && { to: '/settings?tab=alerts', label: 'Alerts', icon: Bell, match: (l) => l.pathname === '/settings' && /tab=alerts/.test(l.search) },
-                isAdmin && { to: '/settings', label: 'Settings', icon: Settings, match: (l) => l.pathname === '/settings' && !/tab=alerts/.test(l.search) },
+                isAdmin && { to: '/alerts', label: 'Alerts', icon: Bell },
+                isAdmin && { to: '/settings', label: 'Settings', icon: Settings },
             ].filter(Boolean)
         },
         {
@@ -55,7 +55,7 @@ export function navSections(user) {
 
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
-    [/^\/cluster\//, 'Cluster'], [/^\/incidents/, 'Incidents'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'],
+    [/^\/cluster\//, 'Cluster'], [/^\/incidents/, 'Incidents'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'],
     [/^\/settings/, 'Settings'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 

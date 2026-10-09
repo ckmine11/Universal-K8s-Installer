@@ -5,7 +5,7 @@ import {
     XCircle, X, Moon, Clock, History, Pencil, AlertTriangle, Power
 } from 'lucide-react'
 
-// Alert channels + rules for the workspace (Workspace Settings → Alerts)
+// Alert channels + rules for the workspace (the Alerts page)
 
 const TYPE_META = {
     telegram: { Icon: Send, color: 'text-sky-300', help: '1) Create a bot with @BotFather and paste its token. 2) Send /start to the bot from your Telegram — or add it to your group/channel and post a message there. 3) Click "Find my chat ID" and pick the chat. The chat ID is you or your group, never the bot.' },

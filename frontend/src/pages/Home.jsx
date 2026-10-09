@@ -201,7 +201,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
                 <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {[
                         { to: '/agents', icon: Wifi, title: 'Gateway Agents', desc: 'Reach servers in private networks' },
-                        { to: '/settings?tab=alerts', icon: Bell, title: 'Alerts', desc: 'Telegram, Slack, Teams, WhatsApp, email' },
+                        { to: '/alerts', icon: Bell, title: 'Alerts', desc: 'Telegram, Slack, Teams, WhatsApp, email' },
                         { to: '/incidents', icon: Activity, title: 'Auto-healing', desc: 'What was detected and fixed' },
                         { to: '/docs', icon: BookOpen, title: 'Docs', desc: 'Guides and troubleshooting' }
                     ].map(s => (
@@ -331,7 +331,7 @@ function EmptyFleet({ canCreate, onStartNew }) {
             <div className="lg:col-span-2 grid gap-4">
                 {[
                     { icon: Wifi, t: 'Servers behind a firewall?', d: 'A Gateway Agent connects out to KubeEZ — nothing to open.', to: '/agents', cta: 'Set up an agent' },
-                    { icon: Bell, t: 'Know when something breaks', d: 'Alerts on Telegram, Slack, Teams, WhatsApp or email.', to: '/settings?tab=alerts', cta: 'Add a channel' },
+                    { icon: Bell, t: 'Know when something breaks', d: 'Alerts on Telegram, Slack, Teams, WhatsApp or email.', to: '/alerts', cta: 'Add a channel' },
                     { icon: BookOpen, t: 'New to Kubernetes?', d: 'Short guides for every screen and the common fixes.', to: '/docs', cta: 'Read the docs' }
                 ].map(x => (
                     <Link key={x.t} to={x.to} className="group kz-card kz-card-hover p-5">
