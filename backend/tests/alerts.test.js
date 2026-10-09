@@ -84,7 +84,7 @@ test('delivery, event rules, cooldown and quiet hours', async () => {
 
     assert.equal(inQuietHours({ enabled: true, start: '22:00', end: '07:00', timezone: 'Asia/Kolkata' }, new Date('2026-10-06T06:30:00Z')), false, '12:00 India is not quiet')
     const hist = notificationStore.publicView('org-a').history
-    assert.ok(hist.some(h => h.outcome === 'quiet hours') && hist.some(h => /1\/1 delivered/.test(h.outcome)))
+    assert.ok(hist.some(h => /^held — quiet hours/.test(h.outcome)) && hist.some(h => /1\/1 delivered/.test(h.outcome)))
 })
 
 test('a failing channel is reported, others still deliver', async () => {
@@ -135,4 +135,35 @@ test('routes: admins only, test endpoint, no secrets returned', async () => {
         r = await api('GET', '/api/notifications', ann.token)
         assert.equal(r.data.channels[0].lastResult.ok, false)
     } finally { await srv.stop() }
+})
+
+test('rules: wrong input is refused with the reason, never silently replaced', () => {
+    const ok = notificationStore.saveRules('org-a', { quietHours: { enabled: true, start: '23:00', end: '06:30', timezone: 'Europe/London' }, cooldownMinutes: '30', events: { upgrade_done: 'false' } })
+    assert.deepEqual(ok.quietHours, { enabled: true, start: '23:00', end: '06:30', timezone: 'Europe/London' })
+    assert.equal(ok.cooldownMinutes, 30)
+    assert.equal(ok.events.upgrade_done, false, '"false" is off, not a truthy string')
+    assert.throws(() => notificationStore.saveRules('org-a', { quietHours: { timezone: 'Asia/Kolkatta' } }), /Unknown time zone "Asia\/Kolkatta"/)
+    assert.throws(() => notificationStore.saveRules('org-a', { quietHours: { enabled: true, start: '22:00', end: '22:00' } }), /never apply/)
+    assert.throws(() => notificationStore.saveRules('org-a', { quietHours: { start: '25:00' } }), /times like/)
+    assert.throws(() => notificationStore.saveRules('org-a', { cooldownMinutes: -5 }), /0 to 1440/)
+    assert.throws(() => notificationStore.saveRules('org-a', { cooldownMinutes: '' }), /0 to 1440/)
+    assert.equal(notificationStore.rules('org-a').quietHours.timezone, 'Europe/London', 'a refused save changes nothing')
+})
+
+test('quiet hours: non-critical alerts are held and sent as one summary afterwards', async () => {
+    notificationStore.saveChannel('org-q', { type: 'webhook', name: 'Hook', config: { url: hookUrl } })
+    authService.users.push({ id: 'owner-org-q', username: 'owner-org-q', orgId: 'org-q', role: 'admin', subscription: { plan: 'PRO' } })
+    notificationStore.saveRules('org-q', { quietHours: { enabled: true, start: '22:00', end: '07:00', timezone: 'Asia/Kolkata' }, cooldownMinutes: 0 })
+    const night = new Date('2026-10-06T18:30:00Z'), morning = new Date('2026-10-07T03:00:00Z')   // 00:00 and 08:30 in India
+    const before = got.length
+    await notifier.notify('org-q', { type: 'incident', severity: 'warning', title: 'Disk pressure — w1', clusterName: 'prod' }, { now: night })
+    await notifier.notify('org-q', { type: 'incident_resolved', severity: 'success', title: 'Cleared: Disk pressure — w1', clusterName: 'prod' }, { now: night })
+    assert.equal(got.length, before, 'nothing sent at night')
+    assert.equal(await notifier.flushHeld({ now: night, only: 'org-q' }), 0, 'still quiet → still held')
+    assert.equal(await notifier.flushHeld({ now: morning, only: 'org-q' }), 1)
+    const summary = got.at(-1)
+    assert.equal(summary.type, 'digest')
+    assert.match(summary.title, /2 alerts held during quiet hours/)
+    assert.match(summary.text, /Disk pressure — w1 \(prod\)/)
+    assert.equal(await notifier.flushHeld({ now: morning, only: 'org-q' }), 0, 'sent once')
 })

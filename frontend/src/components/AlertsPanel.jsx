@@ -95,6 +95,14 @@ function TelegramChatFinder({ form, setForm }) {
 }
 
 
+// Every IANA time zone the browser knows (the saved one always included)
+const zones = (current) => {
+    let list = []
+    try { list = Intl.supportedValuesOf('timeZone') } catch { list = ['UTC', 'Asia/Kolkata', 'Europe/London', 'America/New_York'] }
+    return list.includes(current) ? list : [current, ...list]
+}
+const nowIn = (tz) => { try { return new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(new Date()) } catch { return '—' } }
+
 export default function AlertsPanel() {
     const [data, setData] = useState(null)
     const [error, setError] = useState(null)
@@ -102,16 +110,19 @@ export default function AlertsPanel() {
     const [busy, setBusy] = useState(null)
     const [notice, setNotice] = useState(null)
     const [rules, setRules] = useState(null)
+    const [rulesMsg, setRulesMsg] = useState(null)   // { ok, msg } next to "Save rules"
 
     const load = async () => {
         try {
             const r = await apiFetch('/api/notifications')
             const j = await r.json().catch(() => ({}))
             if (!r.ok) throw new Error(j.error || 'Could not load alerts')
-            setData(j); setRules(j.rules)
+            setData(j); setRules(r => (r && JSON.stringify(r) !== JSON.stringify(data?.rules)) ? r : j.rules)
         } catch (e) { setError(e.message) }
     }
     useEffect(() => { load() }, [])
+    // editing again after a save hides the old "Saved" note
+    useEffect(() => { if (data && rules && JSON.stringify(rules) !== JSON.stringify(data.rules)) setRulesMsg(m => m?.ok ? null : m) }, [JSON.stringify(rules)])
     // a dialog shows only its own save errors, not an older message
     useEffect(() => { if (form) setNotice(null) }, [form?.id, form?.type])
 
@@ -127,6 +138,17 @@ export default function AlertsPanel() {
         } catch (e) { setNotice({ ok: false, msg: e.message, upgrade: e.upgrade }); return false } finally { setBusy(null) }
     }
 
+    const saveRules = async () => {
+        setBusy('rules'); setRulesMsg(null)
+        try {
+            const r = await apiFetch('/api/notifications/rules', { method: 'PUT', body: JSON.stringify(rules) })
+            const j = await r.json().catch(() => ({}))
+            if (!r.ok) throw new Error(j.error || 'Could not save the rules')
+            setRules(j.rules); setData(d => ({ ...d, rules: j.rules }))
+            setRulesMsg({ ok: true, msg: 'Saved — applies to the next alert.' })
+        } catch (e) { setRulesMsg({ ok: false, msg: e.message }) } finally { setBusy(null) }
+    }
+
     const saveForm = async () => {
         const body = { type: form.type, name: form.name, config: form.config, enabled: form.enabled }
         const done = form.id
@@ -138,6 +160,7 @@ export default function AlertsPanel() {
     if (error) return <div className="glass rounded-2xl border border-white/8 p-6 text-sm text-red-300">{error}</div>
     if (!data) return <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
 
+    const rulesDirty = !!rules && JSON.stringify(rules) !== JSON.stringify(data.rules)
     const plan = data.plan || { paid: true, channelTypes: Object.keys(data.types), maxChannels: null, rules: true }
     const usable = data.channels.filter(c => !c.locked).length
     const full = plan.maxChannels != null && usable >= plan.maxChannels
@@ -264,24 +287,32 @@ export default function AlertsPanel() {
                                 <input type="checkbox" checked={rules.quietHours.enabled} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, enabled: e.target.checked } }))} />
                                 <Moon className="w-4 h-4 text-indigo-300" /> Quiet hours
                             </label>
-                            <p className="text-[11px] text-slate-500 mb-2">Only critical alerts (node down, failures) during these hours.</p>
+                            <p className="text-[11px] text-slate-500 mb-2">Only critical alerts (node or control plane down, failures) go out during these hours. The others are held and arrive as <b className="text-slate-300">one summary</b> when quiet hours end.</p>
                             <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <input type="time" aria-label="Quiet hours start" value={rules.quietHours.start} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, start: e.target.value } }))} className={`${input} !py-1.5 !w-28`} />
+                                <input type="time" aria-label="Quiet hours start" value={rules.quietHours.start} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, start: e.target.value } }))} className={`${input} !py-1.5 !w-36`} />
                                 to
-                                <input type="time" aria-label="Quiet hours end" value={rules.quietHours.end} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, end: e.target.value } }))} className={`${input} !py-1.5 !w-28`} />
-                                <input aria-label="Time zone" value={rules.quietHours.timezone} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, timezone: e.target.value } }))} className={`${input} !py-1.5`} />
+                                <input type="time" aria-label="Quiet hours end" value={rules.quietHours.end} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, end: e.target.value } }))} className={`${input} !py-1.5 !w-36`} />
                             </div>
+                            <select aria-label="Time zone" value={rules.quietHours.timezone} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, timezone: e.target.value } }))} className={`${input} !py-1.5 mt-2`}>
+                                {zones(rules.quietHours.timezone).map(z => <option key={z} value={z} className="bg-slate-950">{z.replace(/_/g, ' ')}</option>)}
+                            </select>
+                            {rules.quietHours.enabled && rules.quietHours.start === rules.quietHours.end && <p className="mt-1.5 text-[11px] text-red-300">Start and end are the same time — quiet hours would never apply.</p>}
+                            {rules.quietHours.enabled && <p className="mt-1.5 text-[11px] text-slate-500">Now in {rules.quietHours.timezone.replace(/_/g, ' ')}: {nowIn(rules.quietHours.timezone)}</p>}
                         </div>
                         <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
                             <p className="flex items-center gap-2 text-sm font-bold text-white mb-2"><Clock className="w-4 h-4 text-amber-300" /> Don't repeat the same alert for</p>
                             <div className="flex items-center gap-2 text-xs text-slate-300">
                                 <input type="number" min="0" max="1440" aria-label="Cooldown minutes" value={rules.cooldownMinutes} onChange={e => setRules(r => ({ ...r, cooldownMinutes: e.target.value }))} className={`${input} !py-1.5 !w-24`} /> minutes
                             </div>
+                            <p className="mt-2 text-[11px] text-slate-500">{Number(rules.cooldownMinutes) === 0 ? 'Every repeat is sent.' : 'The same alert for the same cluster is sent at most once in this time. Different problems are never held back.'}</p>
                         </div>
                     </div>
-                    <div className="flex justify-end mt-4">
-                        <button onClick={() => call('rules', 'PUT', '/api/notifications/rules', rules, 'Alert rules saved.')} disabled={busy === 'rules'}
-                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black disabled:opacity-50">
+                    <div className="flex flex-wrap items-center justify-end gap-3 mt-4">
+                        {rulesMsg && <span className={`text-xs ${rulesMsg.ok ? 'text-emerald-300' : 'text-red-300'}`}>{rulesMsg.ok ? '✓ ' : ''}{rulesMsg.msg}</span>}
+                        {!rulesMsg && rulesDirty && <span className="text-xs text-amber-300">Unsaved changes</span>}
+                        {rulesDirty && <button onClick={() => { setRules(data.rules); setRulesMsg(null) }} className="px-3 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/5">Discard</button>}
+                        <button onClick={saveRules} disabled={busy === 'rules' || !rulesDirty}
+                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black disabled:opacity-40">
                             {busy === 'rules' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Save rules
                         </button>
                     </div>

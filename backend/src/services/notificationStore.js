@@ -22,7 +22,7 @@ export const CHANNEL_TYPES = {
 
 // What can be alerted on, and the default for a new workspace
 export const EVENTS = {
-    incident: { label: 'New incident (node down, crash loop, pressure…)', default: true },
+    incident: { label: 'New incident (nodes, control plane, pods, workloads, storage, certificates)', default: true },
     incident_resolved: { label: 'Incident cleared', default: true },
     backup_failed: { label: 'etcd backup / offsite upload failed', default: true },
     restore_done: { label: 'etcd restore or recovery finished (success or failure)', default: true },
@@ -114,26 +114,43 @@ class NotificationStore {
         this._write(all)
     }
 
+    /** Save alert rules. Wrong input is refused with the reason (never silently replaced). */
     saveRules(orgId, rules) {
+        const bad = (msg) => Object.assign(new Error(msg), { status: 400 })
         const all = this._read()
         const o = this._org(all, orgId)
         const events = {}
-        for (const k of Object.keys(EVENTS)) events[k] = rules?.events?.[k] ?? o.rules.events[k]
-        const q = rules?.quietHours || o.rules.quietHours
-        const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/
-        o.rules = {
-            events,
-            quietHours: {
-                enabled: !!q.enabled,
-                start: hhmm.test(q.start) ? q.start : '22:00',
-                end: hhmm.test(q.end) ? q.end : '07:00',
-                timezone: (() => { try { new Intl.DateTimeFormat('en', { timeZone: q.timezone }); return q.timezone } catch { return 'Asia/Kolkata' } })()
-            },
-            cooldownMinutes: Math.max(0, Math.min(1440, parseInt(rules?.cooldownMinutes ?? o.rules.cooldownMinutes, 10) || 0))
+        for (const k of Object.keys(EVENTS)) {
+            const v = rules?.events?.[k]
+            events[k] = v === undefined ? o.rules.events[k] : v === true || v === 'true'
         }
+        const q = { ...o.rules.quietHours, ...(rules?.quietHours || {}) }
+        const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/
+        if (!hhmm.test(q.start) || !hhmm.test(q.end)) throw bad('Quiet hours: use times like 22:00 and 07:00')
+        let tz
+        try { tz = new Intl.DateTimeFormat('en', { timeZone: String(q.timezone || '') }).resolvedOptions().timeZone } catch { throw bad(`Unknown time zone "${q.timezone}" — pick one from the list`) }
+        if (q.enabled && q.start === q.end) throw bad('Quiet hours: start and end are the same time — they would never apply')
+        const raw = rules?.cooldownMinutes ?? o.rules.cooldownMinutes
+        const cd = Number(raw)
+        if (raw === '' || !Number.isFinite(cd) || cd < 0 || cd > 1440) throw bad('Cooldown: 0 to 1440 minutes')
+        o.rules = { events, quietHours: { enabled: !!q.enabled, start: q.start, end: q.end, timezone: tz }, cooldownMinutes: Math.round(cd) }
         this._write(all)
         return o.rules
     }
+
+    // Alerts held back during quiet hours, sent as one summary when they end
+    hold(orgId, entry) {
+        const all = this._read(); const o = this._org(all, orgId)
+        o.held = [...(o.held || []), { ...entry, at: new Date().toISOString() }].slice(-50)
+        this._write(all)
+    }
+    takeHeld(orgId) {
+        const all = this._read(); const o = all[orgId]
+        if (!o?.held?.length) return []
+        const held = o.held; o.held = []
+        this._write(all); return held
+    }
+    heldOrgs() { return Object.entries(this._read()).filter(([, o]) => o?.held?.length).map(([id]) => id) }
 
     /**
      * Daily allowance of alert emails per workspace (UTC day). Returns true and

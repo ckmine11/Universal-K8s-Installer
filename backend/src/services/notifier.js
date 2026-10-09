@@ -348,7 +348,10 @@ class Notifier {
             const rules = plan.rules ? notificationStore.rules(orgId) : structuredClone(DEFAULT_RULES)
             if (rules.events[ev.type] === false) return { sent: 0, reason: 'event turned off' }
             if (ev.severity !== 'critical' && inQuietHours(rules.quietHours, now)) {
-                notificationStore.record(orgId, { ...pick(ev), outcome: 'quiet hours' })
+                // held, not lost: one summary goes out when quiet hours end
+                notificationStore.hold(orgId, pick(ev))
+                notificationStore.record(orgId, { ...pick(ev), outcome: 'held — quiet hours (sent in the summary afterwards)' })
+                this._startDigest()
                 return { sent: 0, reason: 'quiet hours' }
             }
             const key = `${orgId}|${ev.key || `${ev.type}|${ev.clusterId || ''}|${ev.title}`}`
@@ -373,6 +376,38 @@ class Notifier {
             console.error('[Alerts] notify failed:', e.message)
             return { sent: 0, reason: e.message }
         }
+    }
+
+    // Every minute: workspaces whose quiet hours are over get their held alerts as one message
+    _startDigest() {
+        if (this._digestTimer) return
+        this._digestTimer = setInterval(() => this.flushHeld().catch(() => { }), 60000)
+        this._digestTimer.unref?.()
+    }
+
+    async flushHeld({ now = new Date(), only = null } = {}) {
+        let sent = 0
+        for (const orgId of notificationStore.heldOrgs().filter(o => !only || o === only)) {
+            const plan = await alertPlanFor(orgId)
+            const rules = plan.rules ? notificationStore.rules(orgId) : structuredClone(DEFAULT_RULES)
+            if (inQuietHours(rules.quietHours, now)) continue
+            const held = notificationStore.takeHeld(orgId)
+            if (!held.length) continue
+            const all = notificationStore.channels(orgId)
+            const locked = lockedChannelIds(all, plan)
+            const channels = all.filter(c => c.enabled !== false && !locked.has(c.id))
+            const lines = held.slice(-15).map(h => `• ${h.title}${h.clusterName ? ` (${h.clusterName})` : ''}`)
+            if (held.length > 15) lines.unshift(`… and ${held.length - 15} earlier`)
+            const ev = { type: 'digest', severity: 'info', title: `${held.length} alert${held.length > 1 ? 's' : ''} held during quiet hours`, text: lines.join('\n'), link: '/incidents' }
+            const results = {}
+            await Promise.all(channels.map(async ch => {
+                try { await deliverWithin(plan, orgId, ch, ev); results[ch.id] = { ok: true } } catch (e) { results[ch.id] = { ok: false, error: String(e.message).slice(0, 300) } }
+            }))
+            const ok = Object.values(results).filter(r => r.ok).length
+            notificationStore.record(orgId, { ...pick(ev), outcome: `quiet-hours summary: ${ok}/${channels.length} delivered` }, results)
+            sent += ok
+        }
+        return sent
     }
 
     /** Fire-and-forget form for event hooks */
