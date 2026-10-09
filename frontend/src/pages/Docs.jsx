@@ -55,7 +55,7 @@ function Table({ head, rows }) {
         <div className="overflow-x-auto rounded-2xl border border-white/5">
             <table className="w-full text-sm">
                 <thead className="bg-white/[0.03] text-left">
-                    <tr>{head.map(h => <th key={h} className="px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-slate-400">{h}</th>)}</tr>
+                    <tr>{head.map((h, k) => <th key={k} className="px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-slate-400">{h}</th>)}</tr>
                 </thead>
                 <tbody>
                     {rows.map((r, i) => (

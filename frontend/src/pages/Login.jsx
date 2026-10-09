@@ -409,25 +409,6 @@ export default function Login() {
 
             </div>
 
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                @keyframes shimmer {
-                    100% { transform: translateX(100%); }
-                }
-                .shimmer-animation {
-                    animation: shimmer 4s infinite linear;
-                }
-                .animate-pulse-slow {
-                    animation: pulse 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-                }
-                @keyframes fadeIn {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                .animate-in {
-                    animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-                }
-            `}} />
         </div>
     );
 }
