@@ -8,6 +8,7 @@ import { useAuth, apiFetch } from '../../context/AuthContext'
 import { useInstallationTracker } from '../../context/InstallationTrackerContext'
 import { LogoMark, LogoWord } from './Logo'
 import CommandPalette from './CommandPalette'
+import AuroraBackground from './AuroraBackground'
 
 const ROLE_META = {
     superadmin: { label: 'Super Admin', icon: Crown, tone: 'text-violet-300 bg-violet-500/10 border-violet-400/20' },
@@ -145,6 +146,7 @@ export default function AppShell({ children }) {
 
     return (
         <div className="min-h-screen flex">
+            <AuroraBackground />
             {/* Desktop sidebar */}
             <aside className="hidden lg:block sticky top-0 h-screen shrink-0 border-r border-white/[0.06] bg-[#070b16]/70 backdrop-blur-2xl z-40">
                 {sidebar(false)}

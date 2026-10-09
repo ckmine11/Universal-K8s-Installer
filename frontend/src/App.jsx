@@ -71,7 +71,6 @@ function AuthenticatedApp() {
 
     return (
         <AppShell>
-            <AuroraBackground />
             <ActiveInstallationIndicator />
             <IncidentNotifier />
 

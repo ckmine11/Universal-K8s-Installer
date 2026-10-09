@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
+import { PageTitle } from '../components/ui/PageHeader'
 import {
     Users, Shield, User, Trash2, Crown, RefreshCw, Loader2,
     ChevronRight, Lock, AlertTriangle, Check, Clock, Eye, Wrench,
@@ -9,7 +10,8 @@ import {
 
 // Role metadata — single source for labels/colors/descriptions on the client
 const ROLE_META = {
-    admin:    { label: 'Org Admin', icon: Crown,  color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',   desc: 'Full control: clusters, team, billing.' },
+    superadmin: { label: 'Super Admin', icon: Crown, color: 'text-violet-300 bg-violet-500/10 border-violet-500/20', desc: 'Runs the whole KubeEZ platform.' },
+    admin:   { label: 'Org Admin', icon: Crown,  color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',   desc: 'Full control: clusters, team, billing.' },
     operator: { label: 'Operator',  icon: Wrench, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20',      desc: 'Create & manage clusters/add-ons. No team or billing.' },
     viewer:   { label: 'Viewer',    icon: Eye,    color: 'text-slate-300 bg-white/5 border-white/10',            desc: 'Read-only access to clusters & health.' }
 }
@@ -401,16 +403,11 @@ export default function AdminUsers() {
     const viewerCount = users.filter(u => u.role === 'viewer').length
 
     return (
-        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto">
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <div className="flex items-center gap-3 mb-1">
-                        <Users className="w-6 h-6 text-amber-400" />
-                        <h1 className="text-2xl font-black text-white tracking-tight">Workspace Team</h1>
-                    </div>
-                    <p className="text-slate-400 text-sm mt-1">Manage team members, roles, and access in your workspace</p>
-                </div>
+            <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+                <PageTitle icon={Users} eyebrow="Workspace" title="Team & Roles"
+                    description={<>Manage team members, roles, and access in your workspace</>} />
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setShowMatrix(true)}

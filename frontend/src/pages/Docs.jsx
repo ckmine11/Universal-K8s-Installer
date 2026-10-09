@@ -183,9 +183,10 @@ export default function Docs() {
                     {/* ── Getting started ─────────────────────────────── */}
                     <section id="intro" className="space-y-6 scroll-mt-24">
                         <div className="flex items-center gap-4">
-                            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl"><BookOpen className="w-6 h-6 text-blue-400" /></div>
+                            <div className="w-12 h-12 flex items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/20 via-indigo-500/10 to-violet-500/20 shadow-glow"><BookOpen className="w-6 h-6 text-blue-200" /></div>
                             <div>
-                                <h1 className="text-2xl font-black text-white tracking-tight">KubeEZ Documentation</h1>
+                                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-blue-300/80">Help</div>
+                                <h1 className="font-display text-[28px] font-bold text-white tracking-tight">KubeEZ Documentation</h1>
                                 <p className="text-sm text-slate-400 mt-1">Production Kubernetes on your own servers — without the ops work</p>
                             </div>
                         </div>

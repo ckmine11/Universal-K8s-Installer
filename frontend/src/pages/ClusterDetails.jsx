@@ -220,12 +220,12 @@ export default function ClusterDetails({ onScaleCluster }) {
     }
 
     const tabClass = (active) => `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${active
-        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+        ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
         : 'text-slate-400 hover:text-white hover:bg-white/5'}`
     const actionBtn = 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95'
 
     return (
-        <div className="max-w-7xl mx-auto py-8 px-4">
+        <div className="max-w-7xl mx-auto">
             {/* Resume Modal — rendered at root so it overlays entire page */}
             {resumeModalOpen && (
                 <ResumeModal
@@ -238,13 +238,14 @@ export default function ClusterDetails({ onScaleCluster }) {
             <div className="flex flex-wrap items-center gap-4 mb-6">
                 <button
                     onClick={() => navigate('/')}
-                    className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                    className="p-2.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/10 transition-colors"
                     title="Back to clusters"
                 >
-                    <ArrowLeft className="w-6 h-6 text-slate-400" />
+                    <ArrowLeft className="w-5 h-5 text-slate-300" />
                 </button>
                 <div className="flex-1">
-                    <h1 className="text-3xl font-black text-white tracking-tight">{cluster.clusterName}</h1>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-blue-300/80">Cluster</div>
+                    <h1 className="font-display text-3xl font-bold text-white tracking-tight">{cluster.clusterName}</h1>
                     <div className="flex items-center space-x-3 text-slate-400 text-sm mt-1">
                         {(() => {
                             // Live health badge — derived from real node status, not the static field
@@ -328,7 +329,7 @@ export default function ClusterDetails({ onScaleCluster }) {
             )}
 
             {/* Tabs (the open tab is kept in the URL: ?tab=addons) */}
-            <div role="tablist" className="sticky top-0 z-20 -mx-4 px-4 py-3 mb-6 bg-slate-950/80 backdrop-blur-md border-b border-white/5 flex gap-2 overflow-x-auto">
+            <div role="tablist" className="sticky top-16 z-20 mb-6 p-1 rounded-2xl bg-[#070b16]/80 backdrop-blur-xl border border-white/10 flex gap-1 overflow-x-auto">
                 {TABS.map(t => (
                     <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={tabClass(tab === t.key)}>
                         <t.Icon className="w-4 h-4" /> {t.label}

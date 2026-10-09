@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { PageTitle } from '../components/ui/PageHeader'
 import AlertsPanel from '../components/AlertsPanel'
 import { useToast } from '../components/ToastProvider'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import TenantManager from '../components/TenantManager'
-import { Bell,
+import { Bell, SlidersHorizontal,
     Activity,
     Database,
     RefreshCw,
@@ -41,7 +43,10 @@ function DiffRow({ sym, color, name, detail }) {
 export default function Settings() {
     const { toast } = useToast()
     const { user } = useAuth()
-    const [activeTab, setActiveTab] = useState('licensing')
+    const [searchParams, setSearchParams] = useSearchParams()
+    const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'licensing')
+    useEffect(() => { const t = searchParams.get('tab'); if (t && t !== activeTab) setActiveTab(t) }, [searchParams])
+    const selectTab = (t) => { setActiveTab(t); setSearchParams({ tab: t }, { replace: true }) }
     
     // Health state
     const [healthData, setHealthData] = useState(null)
@@ -109,7 +114,7 @@ export default function Settings() {
 
     useEffect(() => {
         if (user) {
-            if (user.role === 'superadmin' && activeTab === 'licensing') {
+            if (user.role === 'superadmin' && activeTab === 'licensing' && !searchParams.get('tab')) {
                 setActiveTab('tenants'); // Default to Global Tenants for superadmin
             }
             if (activeTab === 'health' && user.role === 'superadmin') {
@@ -320,31 +325,26 @@ export default function Settings() {
     const canBackup = isSuperAdmin || isPaidPlan; // Daily backups = Pro feature
 
     return (
-        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 relative">
+        <div className="max-w-7xl mx-auto relative">
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-2xl font-black text-white tracking-tight">
-                        {isSuperAdmin ? 'System Administration' : 'Workspace Settings'}
-                    </h1>
-                    <p className="text-slate-400 text-sm mt-1">
-                        {isSuperAdmin
-                            ? 'Monitor platform metrics, manage database backups, and secure environment limits.'
-                            : 'Manage your workspace licensing, quotas, and security settings.'}
-                    </p>
-                </div>
+            <div className="mb-6">
+                <PageTitle icon={SlidersHorizontal} eyebrow="Workspace"
+                    title={isSuperAdmin ? 'Platform settings' : 'Workspace settings'}
+                    description={isSuperAdmin
+                        ? 'Tenants, config backups, alerts, plans and security of this KubeEZ server.'
+                        : 'Alerts, config backups, your plan and security for this workspace.'} />
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex flex-wrap gap-3 mb-8">
+            <div className="flex gap-1 p-1 mb-8 rounded-2xl border border-white/10 bg-black/25 w-fit max-w-full overflow-x-auto" role="tablist">
 
                 {isSuperAdmin && (
                     <button
-                        onClick={() => setActiveTab('tenants')}
-                        className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                        onClick={() => selectTab('tenants')}
+                        className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                             activeTab === 'tenants'
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                                : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5'
+                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
                         }`}
                     >
                         <Users className="w-4 h-4" />
@@ -353,11 +353,11 @@ export default function Settings() {
                 )}
                 {isAdmin && (
                     <button
-                        onClick={() => setActiveTab('backups')}
-                        className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                        onClick={() => selectTab('backups')}
+                        className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                             activeTab === 'backups'
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                                : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5'
+                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
                         }`}
                     >
                         <Database className="w-4 h-4" />
@@ -367,11 +367,11 @@ export default function Settings() {
                 )}
                 {isAdmin && (
                     <button
-                        onClick={() => setActiveTab('alerts')}
-                        className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                        onClick={() => selectTab('alerts')}
+                        className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                             activeTab === 'alerts'
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                                : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5'
+                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
                         }`}
                     >
                         <Bell className="w-4 h-4" />
@@ -379,22 +379,22 @@ export default function Settings() {
                     </button>
                 )}
                 <button
-                    onClick={() => setActiveTab('licensing')}
-                    className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                    onClick={() => selectTab('licensing')}
+                    className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'licensing'
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                            : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5'
+                            ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                            : 'text-slate-400 hover:bg-white/5 hover:text-white'
                     }`}
                 >
                     <Key className="w-4 h-4" />
                     <span>{configMode === 'saas' ? 'Plans & Quotas' : 'Licensing & Plans'}</span>
                 </button>
                 <button
-                    onClick={() => setActiveTab('security')}
-                    className={`flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                    onClick={() => selectTab('security')}
+                    className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'security'
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                            : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5'
+                            ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                            : 'text-slate-400 hover:bg-white/5 hover:text-white'
                     }`}
                 >
                     <Shield className="w-4 h-4" />

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import TenantManager from '../components/TenantManager'
+import { PageTitle } from '../components/ui/PageHeader'
 import {
     LayoutDashboard, Users, Server, ShieldAlert, Activity, DollarSign,
     Boxes, TrendingUp, Loader2, Crown, RefreshCw, Cpu, Database,
@@ -35,14 +36,9 @@ export default function AdminConsole() {
     return (
         <div className="max-w-7xl mx-auto animate-in fade-in duration-300">
             {/* Header */}
-            <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                    <Crown className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                    <h1 className="text-3xl font-black text-white tracking-tight">Super Admin Console</h1>
-                    <p className="text-sm text-slate-500">Manage the entire platform — tenants, clusters, revenue & system health.</p>
-                </div>
+            <div className="mb-8">
+                <PageTitle icon={Crown} eyebrow="Platform" title="Admin Console"
+                    description="The whole platform — tenants, clusters, revenue and system health." />
             </div>
 
             <div className="flex flex-col lg:flex-row gap-6">

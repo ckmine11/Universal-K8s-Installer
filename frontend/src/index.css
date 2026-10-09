@@ -207,13 +207,15 @@ code, pre, kbd, .font-mono { font-family: 'JetBrains Mono', ui-monospace, monosp
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-in { animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-in { animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
 @keyframes kzRise {
   from { opacity: 0; transform: translateY(10px) scale(.99); filter: blur(4px); }
   to { opacity: 1; transform: none; filter: none; }
 }
-.kz-rise { animation: kzRise .55s cubic-bezier(.16, 1, .3, 1) both; }
+/* backwards: nothing stays applied after the animation (a lingering transform
+   would trap position:fixed children such as dialogs) */
+.kz-rise { animation: kzRise .55s cubic-bezier(.16, 1, .3, 1) backwards; }
 
 /* Terminal */
 .terminal {
@@ -281,3 +283,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Section titles: the older pages set them in heavy capitals — in this theme
+   titles are sentence case (Sora), only small labels stay uppercase. */
+h1.uppercase, h2.uppercase, h3.uppercase { text-transform: none; letter-spacing: -0.015em; }
+h1.font-black, h2.font-black, h3.font-black, h4.font-black { font-weight: 700; }

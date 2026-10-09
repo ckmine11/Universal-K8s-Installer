@@ -3,6 +3,7 @@ import { useToast } from '../components/ToastProvider'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import { Lock, Key, Loader2, ShieldAlert } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { PageTitle } from '../components/ui/PageHeader'
 
 export default function VendorPortal() {
     const { toast } = useToast()
@@ -60,15 +61,10 @@ export default function VendorPortal() {
     }
 
     return (
-        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <div className="flex items-center gap-3 mb-1">
-                        <Lock className="w-6 h-6 text-purple-400" />
-                        <h1 className="text-2xl font-black text-white tracking-tight">Vendor Portal</h1>
-                    </div>
-                    <p className="text-slate-400 text-sm mt-1">Generate secure cryptographic JWT licenses bound to target System IDs</p>
-                </div>
+        <div className="max-w-7xl mx-auto">
+            <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+                <PageTitle icon={Lock} eyebrow="Platform" title="Vendor Portal"
+                    description={<>Generate secure cryptographic JWT licenses bound to target System IDs</>} />
                 <span className="px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-full text-[10px] font-black text-purple-400 uppercase tracking-widest">
                     Classified Secure Area
                 </span>

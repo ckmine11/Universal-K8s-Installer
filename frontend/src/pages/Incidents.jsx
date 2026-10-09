@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../context/AuthContext'
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, Activity, Eye, EyeOff, RotateCcw, WifiOff, Compass } from 'lucide-react'
 import { explorerResourceLink, explorerPages } from '../components/explorer/explorerLinks'
+import { PageTitle } from '../components/ui/PageHeader'
 
 // Friendly names (same as the toast notifications)
 const REASON_LABEL = {
@@ -85,17 +86,10 @@ export default function Incidents() {
     const offline = (monitor?.clusters || []).filter(c => !c.connected)
 
     return (
-        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
-            <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-                <div>
-                    <div className="flex items-center gap-3 mb-1">
-                        <Activity className="w-6 h-6 text-emerald-400" />
-                        <h1 className="text-2xl font-black text-white tracking-tight">Incidents & Auto-Healing</h1>
-                    </div>
-                    <p className="text-slate-400 text-sm mt-1">
-                        Nodes and pods of every healthy cluster are checked about every minute. Known problems are fixed automatically; the rest are explained here.
-                    </p>
-                </div>
+        <div className="max-w-7xl mx-auto">
+            <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+                <PageTitle icon={Activity} eyebrow="Overview" title="Incidents & Auto-Healing"
+                    description={<>Nodes and pods of every healthy cluster are checked about every minute. Known problems are fixed automatically; the rest are explained here.</>} />
                 {monitor && (watching > 0 ? (
                     <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border ${offline.length ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
                         <span className={`h-2.5 w-2.5 rounded-full ${offline.length ? 'bg-amber-400' : 'bg-emerald-500 animate-pulse'}`} />

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { useToast } from '../components/ToastProvider'
+import { PageTitle } from '../components/ui/PageHeader'
 import {
     Server, Plus, Wifi, WifiOff, Clock, Copy, Check,
     Trash2, Loader2, RefreshCw, Shield, AlertTriangle,
@@ -459,16 +460,11 @@ export default function AgentNodes() {
     const onlineCount = agents.filter(a => a.status === 'online').length
 
     return (
-        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto">
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <div className="flex items-center gap-3 mb-1">
-                        <Shield className="w-6 h-6 text-emerald-400" />
-                        <h1 className="text-2xl font-black text-white tracking-tight">Gateway Agents</h1>
-                    </div>
-                    <p className="text-slate-400 text-sm mt-1">Secure reverse-tunnel gateways for local cluster deployment</p>
-                </div>
+            <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+                <PageTitle icon={Shield} eyebrow="Build" title="Gateway Agents"
+                    description={<>Reach servers in private networks through an outbound tunnel — no inbound firewall ports.</>} />
                 <div className="flex items-center gap-3">
                     {onlineCount > 0 && (
                         <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
