@@ -1,16 +1,6 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle2, HeartPulse, ArrowUpCircle, DatabaseBackup, Wifi, Rocket } from 'lucide-react'
 
-// A living cluster: the control plane in the middle, nodes on orbits, traffic
-// travelling along the links, and what KubeEZ is doing right now popping up.
-const EVENTS = [
-    { icon: Rocket, text: 'prod-mumbai · 3/3 nodes Ready', tone: 'text-blue-300' },
-    { icon: HeartPulse, text: 'worker-2 healed · kubelet restarted', tone: 'text-emerald-300' },
-    { icon: DatabaseBackup, text: 'etcd snapshot verified · offsite copy', tone: 'text-violet-300' },
-    { icon: ArrowUpCircle, text: 'Upgrade 1.36 → 1.37 · no blockers', tone: 'text-cyan-300' },
-    { icon: Wifi, text: 'Gateway Agent online · no open ports', tone: 'text-indigo-300' },
-    { icon: CheckCircle2, text: 'Alert sent to Telegram & Slack', tone: 'text-amber-300' }
-]
+// A living cluster: the control plane in the middle, nodes on orbits and
+// traffic travelling along the links.
 
 const ORBITS = [
     { rx: 120, ry: 62, dur: 26, nodes: 3 },
@@ -21,13 +11,6 @@ const ellipse = (rx, ry) => `M ${300 - rx} 220 a ${rx} ${ry} 0 1 0 ${2 * rx} 0 a
 
 export default function Constellation() {
     const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    const [ev, setEv] = useState(0)
-    useEffect(() => {
-        if (reduced) return
-        const t = setInterval(() => setEv(e => (e + 1) % EVENTS.length), 2600)
-        return () => clearInterval(t)
-    }, [reduced])
-    const shown = [EVENTS[ev], EVENTS[(ev + 2) % EVENTS.length], EVENTS[(ev + 4) % EVENTS.length]]
 
     return (
         <div className="relative w-full aspect-[600/440] select-none" aria-hidden="true">
@@ -102,18 +85,6 @@ export default function Constellation() {
                 <text x="300" y="282" textAnchor="middle" fill="#8794ae" fontSize="10" fontFamily="JetBrains Mono, monospace" letterSpacing="2">CONTROL PLANE</text>
             </svg>
 
-            {/* live events */}
-            {shown.map((e, k) => {
-                const pos = ['left-[2%] top-[10%]', 'right-[0%] top-[42%]', 'left-[8%] bottom-[6%]'][k]
-                return (
-                    <div key={`${ev}-${k}`} className={`absolute ${pos} kz-rise`} style={{ animationDelay: `${k * 120}ms` }}>
-                        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-[#0b1120]/80 backdrop-blur-md px-3 py-1.5 shadow-glass">
-                            <e.icon className={`w-3.5 h-3.5 ${e.tone}`} />
-                            <span className="text-[11px] font-semibold text-slate-200 whitespace-nowrap">{e.text}</span>
-                        </div>
-                    </div>
-                )
-            })}
         </div>
     )
 }

@@ -41,12 +41,6 @@ const FEATURE_GROUPS = [
     }
 ];
 
-const STATS = [
-    { value: '8', label: 'Linux distros' },
-    { value: '1.27 → 1.37', label: 'Kubernetes' },
-    { value: '9', label: 'add-ons' },
-    { value: 'AES-256', label: 'offsite backups' }
-];
 
 export default function Login() {
     const { login, setup, register, forgotPassword, verifyResetCode, resetPassword, isSetupRequired } = useAuth();
@@ -129,7 +123,6 @@ export default function Login() {
                     <div className="flex items-center gap-3">
                         <LogoMark className="w-10 h-10 drop-shadow-[0_0_18px_rgba(44,203,238,.5)]" />
                         <LogoWord className="text-2xl" />
-                        <span className="ml-2 kz-chip text-slate-300"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> all systems normal</span>
                     </div>
 
                     <h1 className="mt-10 font-display text-[44px] xl:text-[54px] font-bold tracking-tight text-white leading-[1.04]">
@@ -143,15 +136,6 @@ export default function Login() {
                     <div className="relative mt-6 -ml-4 max-w-[640px]"><Constellation /></div>
 
                     <div className="mt-2 max-w-[720px]"><FeatureTicker groups={FEATURE_GROUPS} /></div>
-
-                    <div className="mt-8 flex gap-8">
-                        {STATS.map(st => (
-                            <div key={st.label}>
-                                <div className="font-display text-xl font-bold text-white">{st.value}</div>
-                                <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{st.label}</div>
-                            </div>
-                        ))}
-                    </div>
                 </div>
 
                 {/* Right Side: Ultra Premium Login Box */}
