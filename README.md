@@ -1,133 +1,142 @@
-# 🚀 KubeEZ: The Intelligent Kubernetes Platform
+# KubeEZ — Kubernetes made easy
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](CHANGELOG.md)
-[![Status](https://img.shields.io/badge/status-Production%20Ready-success.svg)](README.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+**Install, upgrade, back up and heal production Kubernetes clusters on your own servers — from one console.**
+Every step streams a live log, and when something fails you get the reason and the fix, not a stack trace.
 
-**KubeEZ** is a production-grade, "No-Ops" platform designed to provision, scale, and manage Kubernetes clusters with zero friction. Built with an integrated AI-driven recovery engine, KubeEZ goes beyond simple installation by diagnosing and auto-repairing infrastructure issues in real-time.
+> Repository: `Universal-K8s-Installer` · Product: **KubeEZ** · Hosted edition: [k8scluster.space](https://k8scluster.space)
 
 ---
 
-## 📑 Quick Navigation
+## What it does
 
-| Document | Description |
-| :--- | :--- |
-| [📂 **User Guide**](USER_GUIDE.md) | **Start Here!** Step-by-step instructions for installation and management. |
-| [🛠️ **Setup Guide**](SETUP.md) | Technical prerequisites and platform deployment instructions. |
-| [🛡️ **Security**](SECURITY.md) | Overview of security measures, SSH handling, and authentication. |
-| [🧪 **Real Installation**](REAL_INSTALLATION_GUIDE.md) | Guide for deploying on real physical or virtual machines. |
+| | |
+|---|---|
+| **Deploy** | Guided wizard with pre-flight checks (OS, CPU, memory, ports, connectivity). Kubernetes **1.27 → 1.37**, Flannel or Calico. **High availability** with 3 control-planes behind a floating virtual IP (**kube-vip**). Stopped installs **resume** — finished steps are skipped. |
+| **Upgrade** | One minor version at a time, with an **upgrade safety check** (removed APIs, version skew, blocking disruption budgets), an automatic etcd snapshot first, clear failure reasons and retry. |
+| **Add-ons** | Nginx Ingress, Prometheus + Grafana, Kubernetes Dashboard, cert-manager, Longhorn, ArgoCD, S3 storage (SeaweedFS), Velero, **KubeEZ Explorer** — install, repair, reinstall, uninstall and logs from the UI. |
+| **Backups** | Verified **etcd snapshots** with a preview of what a restore changes, automatic rollback and undo (HA clusters too) · **volume data** backups (Velero) · **encrypted offsite copies** (S3 / MinIO / any S3) · **disaster recovery** of a lost control-plane · daily config backups. |
+| **Auto-healing** | Nodes, control plane (API, scheduler, controller-manager, etcd), certificates, disk, pods, workloads, volume claims and jobs are checked every 1–2 minutes. Known problems are fixed automatically (with verification and retries), the rest are diagnosed with evidence. Root-cause grouping, a timeline per incident, policies (fix / alert only / off), maintenance mode, MTTR and fix-rate statistics. |
+| **Alerts** | Telegram, Slack, Microsoft Teams, WhatsApp (Twilio), email and webhooks — incidents, failed backups, restores, upgrades, finished jobs, Gateway Agent offline / back online. Quiet hours with a morning summary, cooldown, per-event rules. |
+| **Explorer** | A full Kubernetes UI inside KubeEZ (based on [Radar](https://github.com/skyhook-io/radar), Apache-2.0): every resource, logs, timeline, Helm, GitOps and a 31-check audit — with your KubeEZ login and role, no open ports. |
+| **Reach anything** | **Gateway Agent**: servers in private networks are managed through an outbound tunnel — no inbound firewall ports. |
+| **Teams** | Isolated workspaces with Admin / Operator / Viewer roles; viewers never see credentials. Sign in with username or email, forgot-password by email code, welcome and invite emails. |
 
----
-
-## 🔥 Why KubeEZ?
-
-### 🧠 Self-Healing Intelligence
-Most installers fail and leave you guessing. KubeEZ's **Integrated Recovery Engine** analyzes stderr in real-time:
-- **Auto-Fix DNS**: Patches networking on the fly.
-- **Lock Recovery**: Safely handles stuck `apt`/`dpkg` processes.
-- **Pre-flight Repair**: Disables swap and configures kernel modules automatically.
-
-### 🔭 Visual Orchestration
-- **3D Digital Twin**: Visualize your cluster topology and live node health (Ready / NotReady / Pending) in an interactive 3D map.
-- **Orbital Terminal**: Broadcast commands to all nodes simultaneously through a beautiful Glassmorphism UI.
-- **Live Telemetry**: Monitor core metrics (CPU, Memory, Pods) directly from your dashboard.
-
-### 🌍 Universal Compatibility
-Supports all major Linux distributions including Ubuntu, Debian, RHEL, CentOS Stream, AlmaLinux, Rocky Linux, and Oracle Linux.
+**Supported node OS:** Ubuntu 22.04 / 24.04, Debian 12, Rocky Linux 9, AlmaLinux 9, Fedora, Amazon Linux 2023 (all tested end-to-end), RHEL 8 / 9. Kubernetes 1.35+ needs cgroups v2 — CentOS 7 / RHEL 7 are supported up to Kubernetes 1.34.
 
 ---
 
-## ⚡ Quick Start (Local Deployment)
+## Quick start
 
-Get the KubeEZ platform running on your local machine in seconds using Docker:
+Requirements: **Docker** with Docker Compose. The nodes you want to turn into a cluster need SSH (self-hosted) or a Gateway Agent (SaaS).
 
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/ckmine11/Universal-K8s-Installer.git
-   cd Universal-K8s-Installer
-   ```
-
-2. **Launch via Compose**:
-   ```bash
-   docker-compose up -d --build
-   ```
-
-3. **Explore**:
-   Open [http://localhost:5173](http://localhost:5173) to start building your first cluster!
-
----
-
-## 🏗️ Architecture
-
-```mermaid
-graph TD
-    User[Admin User] -->|HTTPS| FE[React Frontend]
-    FE -->|REST/WS| BE[Node.js Backend]
-    
-    subgraph "KubeEZ Control Plane"
-        BE
-        Auto[Automation Engine]
-        Healer[Self-Healing Module]
-        Store[Persistent Data]
-    end
-    
-    BE -->|SSH| Master[Master Node]
-    BE -->|SSH| Worker[Worker Node]
-    
-    Healer -->|Fix Commands| Master
-    Healer -->|Fix Commands| Worker
+```bash
+git clone https://github.com/ckmine11/Universal-K8s-Installer.git
+cd Universal-K8s-Installer
+cp .env.example .env          # set APP_SECRET (openssl rand -hex 32) and, for email, the SMTP_* values
+docker compose up -d --build  # development: frontend :5173, backend :3000
 ```
 
-The Backend acts as an **Orchestrator**. It pushes verified idempotent Bash scripts to target nodes. If a script fails (exit code != 0), the **Self-Healing Module** intercepts the stderr, calculates a fix strategy, executes it, and auto-retries the step.
+Open **http://localhost:5173**. On a fresh self-hosted server the first screen creates the **first administrator** — there is no default password.
+
+### Production
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build   # nginx proxy on :80 (and :8090) → frontend + backend
+```
+
+Put it behind HTTPS (e.g. Cloudflare, see [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md)). In SaaS mode the platform owner account is created with:
+
+```bash
+docker exec -it kubeez-backend node scripts/make-superadmin.js <username> <password> <email>
+docker compose -f docker-compose.prod.yml restart backend
+```
+
+Update a running server:
+
+```bash
+git pull && docker compose -f docker-compose.prod.yml up -d --build backend frontend
+```
 
 ---
 
-## 🚀 Getting Started
+## Configuration (`.env`)
 
-### Prerequisites
-- **Docker** and **Docker Compose**.
-- Target Linux Servers (or use Simulation Mode).
+| Variable | Purpose |
+|---|---|
+| `APP_SECRET` | **Required.** Encrypts stored credentials and signs sessions — 64 random hex characters. Keep it; changing it makes stored secrets unreadable. |
+| `KUBEEZ_MODE` | `saas` (hosted, nodes through Gateway Agents) or `selfhosted` (direct SSH, license key). |
+| `KUBEEZ_PUBLIC_URL` | Public address (e.g. `https://k8scluster.space`) — used in alert and email links. |
+| `ALLOWED_ORIGINS` | Extra browser origins allowed to call the API (the site's own address always is). |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | Email: password reset codes, welcome / invite emails, email alerts. Port 465 = TLS, 587 = STARTTLS. Gmail needs an App Password; for inbox delivery use your own domain via Brevo / Resend / SES with SPF, DKIM and DMARC. |
+| `ALERT_EMAILS_PER_DAY_FREE`, `ALERT_EMAILS_PER_DAY_PAID` | Daily alert-email allowance per workspace (default 20 / 200). |
+| `STRIPE_*` | Billing (hosted edition). |
 
-### Quick Start
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/ckmine11/Universal-K8s-Installer.git
-   cd Universal-K8s-Installer
-   ```
-
-2. **Launch via Compose**:
-   ```bash
-   docker-compose up -d --build
-   ```
-
-3. **Access**:
-   Open [http://localhost:5173](http://localhost:5173).
-   - **Username**: `admin`
-   - **Password**: `admin`
-   - Start building your first cluster!
+See [.env.example](.env.example) for the full list.
 
 ---
 
-## 🔐 Security
+## How it works
 
-- **JWT Authentication**: All API endpoints (including Recovery actions and Downloads) are secured.
-- **SSH Key Handling**: Supports direct key content (no file dependency).
-- **Persistent Sessions**: Cluster state is saved to disk, surviving container restarts.
+```mermaid
+graph LR
+    Browser -->|HTTPS| Proxy[nginx]
+    Proxy --> FE[React console]
+    Proxy -->|REST + WebSocket| BE[Node.js backend]
+    BE -->|SSH| Nodes[Your servers]
+    BE <-->|outbound WebSocket tunnel| Agent[Gateway Agent]
+    Agent -->|SSH / TCP| Private[Servers in a private network]
+    BE --> Alerts[Telegram · Slack · Teams · WhatsApp · Email · Webhook]
+    BE --> S3[(S3 / MinIO — offsite backups)]
+```
+
+The backend pushes idempotent Bash scripts (`backend/src/automation/`) to the nodes over SSH or through a Gateway Agent and streams their output to the browser. Machine-readable result lines (`KUBEEZ_FAIL|code|reason|fix`, `KUBEEZ_PROGRESS|…`) turn failures into a reason and a fix on screen. Auto-healing keeps one SSH session per cluster and polls nodes, pods and cluster health; playbooks fix or diagnose, then verify.
 
 ---
 
-## 📂 Project Structure
+## Project layout
 
-- `frontend/`: React-based dashboard with Glassmorphism UI and 3D visualization.
-- `backend/src/automation/`: Production-ready Bash scripts for K8s lifecycle management.
-- `backend/src/services/`: The core engine handling SSH coordination and AI diagnostics.
-- `backend/data/`: Persistent storage for cluster configurations and backups.
+```
+frontend/                 React + Vite + Tailwind console ("Aurora Glass" theme)
+  src/pages/              Clusters, Incidents, Alerts, Gateway Agents, Settings, Docs …
+  src/components/shell/   Sidebar, top bar, Ctrl+K search
+backend/
+  src/routes/             REST API
+  src/services/           automation engine, auto-healing (incidentDetector, remediationEngine),
+                          alerts (notifier), backups, Explorer proxy, Gateway Agent service
+  src/automation/         Bash scripts: install, join, upgrade, etcd backup / restore, recovery, add-ons
+  scripts/                make-superadmin.js, reset-password.js, license tools
+  tests/                  node:test suites (npm test)
+tests/e2e/                end-to-end runs on real distros in Docker (install, upgrade, HA, restore, recovery, Velero, Explorer, agent)
+nginx/                    production reverse proxy
+```
 
 ---
 
-## 🤝 Contributing
+## Development & tests
 
-We love contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to get started.
+```bash
+cd backend && npm install && npm test        # API, auth, alerts, auto-healing, backups … (node:test)
+cd frontend && npm install && npm run dev    # console with hot reload on :5173 (API proxied to :3000)
+bash tests/e2e/e2e.sh install ubuntu2204      # real kubeadm install in a systemd container (needs Docker, cgroups v2)
+bash tests/e2e/e2e.sh ha-vip ubuntu2204       # 3 control-planes + kube-vip failover
+```
 
-Built with ❤️ by the **KubeEZ Team**.
+Node.js **20 or newer** (the Docker images use Node 22 LTS).
+
+---
+
+## Security
+
+- Node passwords, SSH keys, bot tokens and webhook URLs are **encrypted at rest** (`APP_SECRET`) and never sent back to the browser.
+- Sessions are httpOnly cookies; a password change or reset ends all other sessions; per-account login lockout; CSRF-safe same-site checks.
+- Workspaces are isolated; roles are enforced by the API, not only the UI.
+- In SaaS mode the server never opens direct SSH connections or webhook requests to private / internal addresses (SSRF) — private servers are reached only through their own Gateway Agent.
+- The KubeEZ Explorer is reachable only through KubeEZ's authenticated proxy — no ports are opened in the cluster.
+
+Found a vulnerability? Please report it privately to the maintainers instead of opening a public issue.
+
+---
+
+## More documentation
+
+The full user guide is built into the console (**Help → Docs**). In this repository: [DEPLOY.md](DEPLOY.md) · [TROUBLESHOOTING.md](TROUBLESHOOTING.md) · [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md) · [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) · [CHANGELOG.md](CHANGELOG.md) · [CONTRIBUTING.md](CONTRIBUTING.md)

@@ -1,5 +1,5 @@
 # Backend Dockerfile
-FROM node:18-alpine
+FROM node:22-alpine
 
 # NOTE: No `apk add` — avoids dependency on the Alpine package CDN, which may be
 # blocked by firewalls/proxies on some servers. Healthchecks use node/wget

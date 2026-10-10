@@ -90,6 +90,8 @@ const C = ({ children }) => <code className="text-blue-300 bg-blue-500/10 px-1.5
 const NAV = [
     { title: 'Getting Started', items: [
         { id: 'intro', label: 'What is KubeEZ' },
+        { id: 'console', label: 'The Console' },
+        { id: 'account', label: 'Sign-in & Password' },
         { id: 'modes', label: 'SaaS vs Self-Hosted' },
         { id: 'requirements', label: 'Node Requirements' },
         { id: 'agents', label: 'Gateway Agent' }
@@ -198,9 +200,10 @@ export default function Docs() {
                             {[
                                 [Server, 'Deploy', 'Guided install with pre-flight checks on 8 Linux distros.'],
                                 [ArrowUpCircle, 'Upgrade', '1.27 → 1.37, one version at a time, snapshot first.'],
-                                [Puzzle, 'Add-ons', '8 add-ons — install, repair, uninstall, logs from the UI.'],
+                                [Puzzle, 'Add-ons', '9 add-ons — install, repair, uninstall, logs from the UI.'],
                                 [DatabaseBackup, 'Back up', 'Verified snapshots, previewed restores with undo, volume data, offsite copies, disaster recovery.'],
-                                [HeartPulse, 'Heal', 'Detects node and pod problems and fixes what it safely can.'],
+                                [HeartPulse, 'Heal', 'Checks nodes, control plane, pods, workloads and storage every 1–2 min; fixes what it safely can, explains the rest.'],
+                                [Bell, 'Alert', 'Telegram, Slack, Teams, WhatsApp, email or a webhook — with quiet hours and rules.'],
                                 [Users, 'Teams', 'Admin / Operator / Viewer roles in isolated workspaces.']
                             ].map(([Icon, t, d]) => (
                                 <div key={t} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
@@ -210,6 +213,30 @@ export default function Docs() {
                             ))}
                         </div>
                     </section>
+
+                    <Section id="console" Icon={LayoutGrid} color="text-sky-400" title="The Console"
+                        intro="Everything is in the sidebar, grouped by what you want to do. On phones it opens from the ☰ button.">
+                        <Table head={['Sidebar', 'What is there']} rows={[
+                            ['Overview · Clusters', 'Your fleet: health, nodes, versions and add-ons of every cluster; open one for backups, upgrades and the Explorer.'],
+                            ['Overview · Incidents', 'What auto-healing found and did, statistics, watched clusters and maintenance mode. The bell in the top bar shows open incidents.'],
+                            ['Build · Deploy cluster / Gateway Agents', 'The install wizard, and the agents that reach servers in private networks.'],
+                            ['Workspace · Team & Roles / Alerts / Settings', 'Members and roles · alert channels and rules · config backups, plan and security (admins).'],
+                            ['Help · Docs / Plans', 'This guide, and what each plan includes.'],
+                            ['Platform · Admin Console', 'All workspaces, clusters and system health (platform owner only).']
+                        ]} />
+                        <P>Press <C>Ctrl</C> + <C>K</C> (⌘K on a Mac) anywhere to search: type part of a cluster or page name and press Enter. Your account menu (sign out) is at the bottom of the sidebar.</P>
+                    </Section>
+
+                    <Section id="account" Icon={Shield} color="text-emerald-400" title="Sign-in & Password"
+                        intro="Sign in with your username (any capital letters) or your email address.">
+                        <Steps items={[
+                            <><b>Forgot password?</b> on the sign-in page → enter your email or username → a 6-digit code arrives by email (valid 15 minutes).</>,
+                            <><b>Verify the code</b> — 5 wrong tries and the code stops working; “Resend code” is available after a minute.</>,
+                            <><b>Choose a new password</b> (at least 8 characters). Every other session is signed out and you get a “password changed” email.</>
+                        ]} />
+                        <P>New accounts get a welcome email; members added by an admin get an email with their username and role (never the password). After 10 wrong passwords an account is locked for 15 minutes.</P>
+                        <Note>Email needs the server&apos;s SMTP settings (<C>SMTP_HOST</C>, <C>SMTP_USER</C>, <C>SMTP_PASS</C>, <C>EMAIL_FROM</C>). Without them the sign-in page says that reset by email is not available: a workspace admin resets the password under Team &amp; Roles, or the server owner runs <C>node scripts/reset-password.js &lt;username&gt; &lt;new-password&gt;</C> in the backend container.</Note>
+                    </Section>
 
                     <Section id="modes" Icon={Cloud} color="text-purple-400" title="SaaS vs Self-Hosted"
                         intro={<>KubeEZ runs in one of two modes, set with the <C>KUBEEZ_MODE</C> environment variable.</>}>
@@ -236,7 +263,7 @@ export default function Docs() {
                     <Section id="agents" Icon={Activity} color="text-emerald-400" title="Gateway Agent"
                         intro="In SaaS mode KubeEZ cannot SSH into private servers. A lightweight agent on your network opens an outbound, encrypted WebSocket tunnel instead — no inbound firewall rules.">
                         <Steps items={[
-                            <>Open <b>Tunnels</b> in the header (Gateway Agents) and click <b>Generate Token</b>.</>,
+                            <>Open <b>Gateway Agents</b> in the sidebar and click <b>Generate Token</b>.</>,
                             'Paste the generated one-line installer into a terminal on a machine in your network (Linux, macOS or Windows). It downloads a portable runtime if needed.',
                             <>The agent appears as <b>Online</b>. Clusters in that workspace are now installed and managed through it.</>
                         ]} />
@@ -244,7 +271,8 @@ export default function Docs() {
                         <Table head={['Situation', 'What happens']} rows={[
                             ['Network drop / KubeEZ restart', 'The agent reconnects by itself (2 s, 4 s … up to 60 s between tries). A link that dies silently is detected within 60 s.'],
                             ['Agent crashes or the machine reboots', 'The installer sets it up as a service: systemd (Linux, root or sudo), launchd (macOS) or a Scheduled Task (Windows, starts at boot when run as Administrator). Without sudo on Linux it falls back to a user service or cron.'],
-                            ['Agent was removed from the machine', <>Tunnels → the agent → <b>Install / Reconnect</b> shows the same command again (same token). Running it twice is safe — it replaces the old copy.</>],
+                            ['Agent was removed from the machine', <>Gateway Agents → the agent → <b>Install / Reconnect</b> shows the same command again (same token). Running it twice is safe — it replaces the old copy.</>],
+                            ['Agent stays offline', 'An alert goes out after 2 minutes away (adjustable on Pro), and “back online” when it reconnects — also across a KubeEZ restart. Its clusters show as unreachable meanwhile.'],
                             ['Agent deleted in KubeEZ', 'Its token stops working and the agent stops itself instead of retrying forever.']
                         ]} />
                         <Code>{"sudo systemctl status kubeez-agent      # Linux service\njournalctl -u kubeez-agent -f            # live log"}</Code>
@@ -254,7 +282,7 @@ export default function Docs() {
                     {/* ── Clusters ────────────────────────────────────── */}
                     <Section id="deploy" Icon={Terminal} color="text-rose-400" title="Deploy a Cluster">
                         <Steps items={[
-                            <>Click <b>Deploy New Cluster</b> on the dashboard.</>,
+                            <>Click <b>Deploy cluster</b> in the sidebar (or <b>New cluster</b> in the top bar).</>,
                             'Add the control-plane and worker nodes (IP + SSH user/password or key; in SaaS mode the Gateway Agent must be online).',
                             'Pick the Kubernetes version (1.27 – 1.37; 1.35 / 1.36 / 1.37 receive upstream security fixes), the network plugin (Flannel or Calico) and any add-ons.',
                             <>High availability: with 2 or more control-planes, enter a <b>virtual IP</b> — a free address on their network. KubeEZ runs <b>kube-vip</b> on every control-plane; one holds the IP and another takes it over within seconds if that machine dies. kubectl, workers and KubeEZ use the virtual IP.</>,
@@ -344,7 +372,7 @@ export default function Docs() {
                             <><b>No second login.</b> KubeEZ passes your identity; Kubernetes RBAC decides: Viewer → view (read-only), Operator → edit, Admin → cluster-admin. Buttons you may not use don't work for you.</>,
                             <>KubeEZ also uses it for the <b>upgrade safety check</b>, the <b>cluster health score</b> on Overview, and <b>Investigate in Explorer</b> links on incidents and restore previews.</>
                         ]} />
-                        <Note>Clusters behind a Gateway Agent need an agent from this version or newer (it relays the Explorer's live connections) — reinstall it from the Tunnels page with the same command. About 200 MB of memory per cluster.</Note>
+                        <Note>Clusters behind a Gateway Agent need an agent from this version or newer (it relays the Explorer's live connections) — reinstall it from the Gateway Agents page with the same command. About 200 MB of memory per cluster.</Note>
                     </Section>
 
                     <Section id="s3" Icon={Cloud} color="text-cyan-400" title="S3 Object Storage (SeaweedFS)">
@@ -425,13 +453,14 @@ export default function Docs() {
                     </Section>
 
                     <Section id="config-backups" Icon={Shield} color="text-amber-400" title="Config Backups"
-                        intro="Workspace Settings → Config Backups saves KubeEZ's own records (clusters, node connections, settings) daily, encrypted, with one-click restore of your workspace's data.">
+                        intro="Settings → Config Backups saves KubeEZ's own records (clusters, node connections, settings) daily, encrypted, with one-click restore of your workspace's data.">
                     </Section>
 
                     {/* ── Operations ──────────────────────────────────── */}
                     <Section id="healing" Icon={HeartPulse} color="text-rose-400" title="Auto-Healing & Incidents"
                         intro="Every running cluster is checked every 1–2 minutes. Known problems are fixed automatically; the rest are diagnosed, with evidence and what to check.">
                         <Table head={['Detected', 'What KubeEZ does']} rows={[
+                            ['Cluster unreachable (no SSH / agent connection for 5 min)', 'Critical incident and alert; it clears by itself when the connection is back. Nothing on it is checked or healed meanwhile.'],
                             ['Node down (NotReady)', 'Saves the kubelet log, restarts containerd + kubelet, then checks the node is Ready again.'],
                             ['Disk / memory / process pressure', 'Frees space (old images, exited containers, journals; oversized logs are emptied, never deleted), drops caches, clears zombie processes.'],
                             ['Control plane down (API, scheduler, controller-manager, etcd)', 'Saves the component log and restarts kubelet on that control-plane, then checks the API answers.'],
@@ -443,7 +472,7 @@ export default function Docs() {
                             ['Workload below its replicas, volume claim pending, job failed (> 5 min)', 'Diagnoses: workload conditions, claim events and storage classes, job logs.']
                         ]} />
                         <P><b className="text-white">Root cause:</b> when a node is down, pod and workload problems on it are listed under it and not “fixed” separately. <b className="text-white">Each incident</b> has a timeline (detected → each fix attempt → result), the evidence collected and a suggestion. A fix is tried at most 3 times, then it needs a person; a closed incident that comes back opens a new one. History is kept 7 days, with fix success rate and mean time to recover.</P>
-                        <P><b className="text-white">Control:</b> admins choose per problem type <i>Fix automatically</i>, <i>Alert only</i> or <i>Off</i> (Policies). Operators can acknowledge, run a fix now, mute an incident for 24 h, or put a cluster in maintenance (no checks, fixes or alerts for 1–24 h).</P>
+                        <P><b className="text-white">Control:</b> admins choose per problem type <i>Fix automatically</i>, <i>Alert only</i> or <i>Off</i> (Policies). Operators can acknowledge, run a fix now, mute an incident for 24 h, or put a cluster in maintenance (no checks, fixes or alerts for 1–24 h — <b className="text-white">Resume now</b> ends it early). Watching pauses by itself while an install, upgrade or scale runs on the cluster.</P>
                     </Section>
 
                     <Section id="alerts" Icon={Bell} color="text-amber-400" title="Alerts"
@@ -457,23 +486,24 @@ export default function Docs() {
                             ['Webhook', 'Any URL: KubeEZ POSTs a JSON event (type, severity, cluster, title, text, link).']
                         ]} />
                         <Table head={['Alert', 'When']} rows={[
-                            ['Incident / resolved', 'Auto-healing finds a problem (node down is critical) and when it is gone.'],
-                            ['Backup failed', 'An etcd snapshot or its offsite copy failed.'],
+                            ['New incident / cleared', 'Auto-healing finds a problem (node, control plane or cluster down are critical) and when it is fixed or gone.'],
+                            ['Backup failed', 'An etcd snapshot, its offsite copy or the daily configuration backup failed.'],
                             ['Restore / recovery finished', 'An etcd restore or disaster recovery finished — or failed.'],
                             ['Upgrade finished / failed', 'A Kubernetes upgrade completed or stopped.'],
-                            ['Install failed', 'An install, scale or add-on job failed.'],
-                            ['Gateway Agent offline', 'An agent has been disconnected for 5 minutes (and when it is back).']
+                            ['Cluster ready, nodes added, add-on installed / removed', 'A job finished — with what was done.'],
+                            ['Install, scale or add-on job failed', 'With the reason.'],
+                            ['Gateway Agent offline / back online', 'After 2 minutes away (adjustable), and when it reconnects.']
                         ]} />
-                        <P>Each channel has a <b className="text-white">Test</b> button and shows its last delivery. Rules: turn single alert types off, <b className="text-white">quiet hours</b> in your time zone (critical alerts still go out) and a <b className="text-white">cooldown</b> so the same alert is not repeated. Tokens and webhook URLs are encrypted and never shown again after saving.</P>
-                        <Note><b>Free plan:</b> one channel (Telegram, email or webhook), critical alerts only (node or control plane down, failed backups / restores / upgrades, agent offline), fixed rules and 20 alert emails a day. <b>Pro:</b> every channel and alert type, quiet hours, per-event rules and the cooldown.</Note>
+                        <P>Each channel has a <b className="text-white">Test</b> button and shows its last delivery. Rules: turn single alert types off, <b className="text-white">quiet hours</b> in your time zone (critical alerts still go out; the others arrive as <b className="text-white">one summary</b> when quiet hours end), a <b className="text-white">cooldown</b> so the same alert is not repeated, and how long a Gateway Agent may be away before it is reported. <b className="text-white">Recent alerts</b> lists every alert — also the ones not sent, with the reason. Tokens and webhook URLs are encrypted and never shown again after saving.</P>
+                        <Note><b>Free plan:</b> one channel (Telegram, email or webhook), critical alerts and their recovery (node, control plane or cluster down, Gateway Agent offline / back online, failed backups / restores / upgrades / installs), fixed rules and 20 alert emails a day. <b>Pro:</b> every channel and alert type, quiet hours, per-event rules and the cooldown.</Note>
                         <Note>Set <C>KUBEEZ_PUBLIC_URL</C> on the server so alerts link straight to the cluster. Email needs <C>SMTP_HOST</C>, <C>SMTP_USER</C> and <C>SMTP_PASS</C>. In SaaS mode webhooks must use https and cannot reach private addresses.</Note>
                     </Section>
 
                     <Section id="roles" Icon={Users} color="text-blue-400" title="Teams & Roles"
-                        intro="Each workspace is isolated: members only see their workspace's clusters. Invite members from the user menu → Team & Roles.">
+                        intro="Each workspace is isolated: members only see their workspace's clusters. Invite members from Team & Roles in the sidebar.">
                         <Table head={['Role', 'Can do']} rows={[
                             ['Org Admin', 'Everything in the workspace: clusters, add-ons, backups, team, billing.'],
-                            ['Operator', 'Create, scale, upgrade and manage clusters, add-ons and backups — not team or billing.'],
+                            ['Operator', 'Create, scale, upgrade and manage clusters, add-ons and backups; act on incidents (fix now, mute, maintenance) — not team, billing, alert channels or healing policies.'],
                             ['Viewer', 'Read-only: clusters, health, incidents, which add-ons run and their URLs — never credentials or tokens, no changes.']
                         ]} />
                     </Section>
@@ -487,7 +517,10 @@ export default function Docs() {
                             ['Offsite backups & disaster recovery', '—', '✓'],
                             ['Volume backups (Velero)', '—', '✓'],
                             ['KubeEZ Explorer, upgrade safety check, health score', '—', '✓'],
-                            ['Daily config backups', '—', '✓']
+                            ['Daily config backups', '—', '✓'],
+                            ['Auto-healing & incidents', '✓', '✓'],
+                            ['Alerts', '1 channel · critical alerts', 'All channels and alert types, rules'],
+                            ['Alert emails per day', '20', '200']
                         ]} />
                         <P>Cluster and node limits depend on the plan — see <Link to="/pricing" className="text-blue-400 hover:underline">Pricing</Link>.</P>
                     </Section>
@@ -506,7 +539,7 @@ export default function Docs() {
                             ['Recovery: “does not have the IP …”', 'The replacement machine must use the lost control-plane’s IP so the workers can find it.'],
                             ['Volume Backups: storage unavailable', 'Velero cannot reach the bucket — check endpoint, bucket and keys, save, then Repair Velero in Add-ons.'],
                             ['Forgot password: no email arrives', 'Email reset needs the server’s SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS — Gmail: an App Password). Without them the login page says so; a workspace admin can reset the password under Team & Roles, or the server owner runs: node scripts/reset-password.js <username> <new-password>.'],
-                            ['Explorer: “Gateway Agent is too old”', 'Reinstall the agent from the Tunnels page (same command) — the new agent relays the Explorer.'],
+                            ['Explorer: “Gateway Agent is too old”', 'Reinstall the agent from the Gateway Agents page (same command) — the new agent relays the Explorer.'],
                             ['Upgrade: “safety check found blockers”', 'Open the full report (link in the dialog), fix the listed resources, retry. Admins can upgrade anyway.'],
                             ['Add-on Failing / Starting for long', 'Add-ons → Manage & logs → Logs shows why (image pull, storage pending, crash). Fix, then Repair.'],
                             ['Install stopped midway', 'Resume Installation — finished steps are skipped.']
