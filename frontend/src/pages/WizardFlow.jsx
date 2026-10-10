@@ -3,7 +3,7 @@ import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { useNavigate } from 'react-router-dom'
-import { ADDONS_LIST } from '../config/addons'
+import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
 import { K8S_VERSIONS } from '../config/versions'
 import {
     ChevronRight,
@@ -1027,7 +1027,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                 <p className="text-slate-400">Enhance your cluster with industrial-grade tools.</p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {ADDONS_LIST.map((addon) => {
+                                {WIZARD_ADDONS.map((addon) => {
                                     const iconMap = {
                                         Compass,
                                         Network,

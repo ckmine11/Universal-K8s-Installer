@@ -1,4 +1,6 @@
 import { automationEngine } from './automationEngine.js'
+import { HELM_ADDONS } from '../config/helmAddons.js'
+import { addonSettingsStore } from './addonSettings.js'
 
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 
@@ -13,7 +15,9 @@ export const ADDON_REGISTRY = {
     argocd:         { label: 'ArgoCD',                        ns: 'argocd',               detect: 'deploy/argocd-server' },
     seaweedfs:      { label: 'S3 Object Storage (SeaweedFS)', ns: 'seaweedfs',            detect: 'deploy/seaweedfs', keepsData: true },
     velero:         { label: 'Velero (Volume Backups)',       ns: 'velero',               detect: 'deploy/velero' },
-    explorer:       { label: 'KubeEZ Explorer',              ns: 'kubeez-explorer',      detect: 'deploy/kubeez-explorer deploy/radar' }
+    explorer:       { label: 'KubeEZ Explorer',              ns: 'kubeez-explorer',      detect: 'deploy/kubeez-explorer deploy/radar' },
+    // Helm add-ons with settings (config/helmAddons.js)
+    ...Object.fromEntries(Object.entries(HELM_ADDONS).map(([k, a]) => [k, { label: a.label, ns: a.ns, detect: a.detect, keepsData: !!a.keepsData, helm: true }]))
 }
 
 const BROKEN = /CrashLoopBackOff|ErrImagePull|ImagePullBackOff|InvalidImageName|CreateContainerConfigError|CreateContainerError|RunContainerError|OOMKilled|Error/
@@ -88,11 +92,19 @@ class AddonManager {
                     try { pods = (JSON.parse(json).items || []).map(summarizePod) } catch { /* no pods */ }
                 }
                 const def = ADDON_REGISTRY[key]
+                // Helm add-ons: which version runs, and whether a newer checked one exists
+                const applied = def.helm ? addonSettingsStore.get(cluster.id, key).applied : null
+                const helmInfo = def.helm ? {
+                    version: applied?.version || null, latestVersion: HELM_ADDONS[key].versions[0].id,
+                    updateAvailable: !!applied && applied.version !== HELM_ADDONS[key].versions[0].id,
+                    uninstallNote: HELM_ADDONS[key].uninstallNote
+                } : {}
                 const configured = !!(cluster.addons?.[key] || (key === 'cert-manager' && cluster.addons?.certManager))
                 return {
-                    key, label: def.label, namespace: def.ns, keepsData: !!def.keepsData,
+                    key, label: def.label, namespace: def.ns, keepsData: !!def.keepsData, helm: !!def.helm,
                     installed, configured, nsPhase: nsPhase || null,
                     health: addonHealth({ installed, nsPhase, pods }),
+                    ...helmInfo,
                     pods
                 }
             })

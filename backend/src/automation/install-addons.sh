@@ -243,6 +243,15 @@ EOF
 }
 EOF
 
+        # Loki (Logs add-on) already installed → Grafana gets it as a data source too
+        LOKI_DS=""
+        if kubectl -n logging get svc loki >/dev/null 2>&1; then
+            LOKI_DS="    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.logging.svc:3100"
+        fi
+
         # ConfigMap: Datasource & Dashboard Provider
         cat <<EOF | kapply -n monitoring -f -
 apiVersion: v1
@@ -259,7 +268,8 @@ data:
       access: proxy
       url: http://prometheus-operated.monitoring.svc:9090
       isDefault: true
-  
+${LOKI_DS}
+
   # 2. Dashboard Provider
   dashboard-provider.yaml: |-
     apiVersion: 1

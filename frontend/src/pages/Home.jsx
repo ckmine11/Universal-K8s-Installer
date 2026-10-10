@@ -6,7 +6,7 @@ import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
 import Popover from '../components/ui/Popover'
-import { ADDONS_LIST } from '../config/addons'
+import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
 import {
     Server, Zap, Plus, Cpu, Network, Trash2, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield,
     Database, GitBranch, Sparkles, Lock, Eye, HeartPulse, Compass, ArrowRight, Wifi, Bell, BookOpen, ShieldAlert,
@@ -374,7 +374,7 @@ function AddonDialog({ cluster, selection, setSelection, isFreePlan, busy, toast
                     <button onClick={onClose} className="ml-auto p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" aria-label="Close"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="p-6 overflow-y-auto grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {ADDONS_LIST.map(addon => {
+                    {WIZARD_ADDONS.map(addon => {
                         const Icon = ADDON_ICONS[addon.iconName] || Package
                         const locked = addon.tier === 'pro' && isFreePlan
                         const on = selection[addon.key] && !locked

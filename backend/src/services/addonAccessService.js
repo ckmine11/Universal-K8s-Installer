@@ -196,6 +196,69 @@ class AddonAccessService {
                 })
             }
 
+            // ── Metrics Server ───────────────────────────────────────────────
+            const ms = await run(ssh, `${KB} -n metrics-server get deploy metrics-server --no-headers 2>/dev/null`)
+            if (ms.ok && ms.out) {
+                const top = await run(ssh, `${KB} top nodes 2>&1 | head -12`)
+                addons.push({
+                    key: 'metrics-server', name: 'Metrics Server', icon: 'activity', installed: true, hasUI: false, url: null, auth: null,
+                    details: top.ok ? top.out : null,
+                    example: 'kubectl top pods -A --sort-by=memory',
+                    note: top.ok ? 'Live usage per node (kubectl top nodes). Autoscaling (HPA) can use CPU and memory now.' : 'Starting — "kubectl top" answers about a minute after the install.'
+                })
+            }
+
+            // ── MetalLB ──────────────────────────────────────────────────────
+            const lb = await run(ssh, `${KB} -n metallb-system get deploy metallb-controller --no-headers 2>/dev/null`)
+            if (lb.ok && lb.out) {
+                const pool = await run(ssh, `${KB} -n metallb-system get ipaddresspools.metallb.io kubeez-pool -o jsonpath='{.spec.addresses}' 2>/dev/null`)
+                const svcs = await run(ssh, `${KB} get svc -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}/{.metadata.name} {.status.loadBalancer.ingress[0].ip}{"\\n"}{end}' 2>/dev/null`)
+                addons.push({
+                    key: 'metallb', name: 'MetalLB', icon: 'globe', installed: true, hasUI: false, url: null, auth: null,
+                    details: `Address range: ${(pool.out || '—').replace(/[[\]"]/g, '')}\n${svcs.out ? `LoadBalancer Services:\n${svcs.out.split('\n').map(l => { const [n, ip] = l.split(' '); return `  ${n} → ${ip || '<pending>'}` }).join('\n')}` : 'No LoadBalancer Services yet.'}`,
+                    example: 'kubectl expose deploy web --type=LoadBalancer --port=80',
+                    note: 'Every Service of type LoadBalancer gets an IP from the range — reachable from your network.'
+                })
+            }
+
+            // ── Loki (logs) ──────────────────────────────────────────────────
+            const loki = await run(ssh, `${KB} -n logging get sts loki --no-headers 2>/dev/null`)
+            if (loki.ok && loki.out) {
+                const gPort = await getNodePort(ssh, 'monitoring', 'grafana')
+                addons.push({
+                    key: 'loki', name: 'Loki logs', icon: 'activity', installed: true, hasUI: !!gPort,
+                    url: gPort ? `http://${nodeIp}:${gPort}/explore` : null, auth: null,
+                    example: '{kubernetes_namespace_name="shop"} |= "error"',
+                    note: gPort ? 'Open Grafana → Explore → choose "Loki", then filter by kubernetes_namespace_name, kubernetes_pod_name or kubernetes_container_name.'
+                        : 'Install Prometheus + Grafana to search these logs — Loki is added to Grafana automatically. Inside the cluster: http://loki.logging.svc:3100'
+                })
+            }
+
+            // ── Sealed Secrets ───────────────────────────────────────────────
+            const ss = await run(ssh, `${KB} -n sealed-secrets get deploy sealed-secrets-controller --no-headers 2>/dev/null`)
+            if (ss.ok && ss.out) {
+                addons.push({
+                    key: 'sealed-secrets', name: 'Sealed Secrets', icon: 'shield', installed: true, hasUI: false, url: null, auth: null,
+                    example: 'kubeseal --controller-namespace sealed-secrets --controller-name sealed-secrets-controller --fetch-cert > cluster-cert.pem\nkubectl create secret generic db --from-literal=password=… --dry-run=client -o yaml | kubeseal --cert cluster-cert.pem -o yaml > db-sealed.yaml',
+                    note: 'Use "Seal a secret" in Manage Add-ons, or kubeseal on your laptop with the public certificate. Commit the sealed YAML to Git; only this cluster can open it.'
+                })
+            }
+
+            // ── Kyverno ──────────────────────────────────────────────────────
+            const ky = await run(ssh, `${KB} -n kyverno get deploy kyverno-admission-controller --no-headers 2>/dev/null`)
+            if (ky.ok && ky.out) {
+                const rep = await run(ssh, `${KB} get policyreports.wgpolicyk8s.io -A -o jsonpath='{range .items[*]}{.summary.pass} {.summary.fail}{"\\n"}{end}' 2>/dev/null`)
+                let pass = 0, fail = 0
+                for (const l of (rep.out || '').split('\n')) { const [p, f] = l.trim().split(/\s+/).map(Number); pass += p || 0; fail += f || 0 }
+                const pol = await run(ssh, `${KB} get validatingpolicies.policies.kyverno.io -l app.kubernetes.io/managed-by=kubeez -o jsonpath='{range .items[*]}{.metadata.name} {.spec.validationActions[0]}{"\\n"}{end}' 2>/dev/null`)
+                addons.push({
+                    key: 'kyverno', name: 'Kyverno policies', icon: 'shield', installed: true, hasUI: false, url: null, auth: null,
+                    details: `${pol.out ? pol.out.split('\n').map(l => { const [n, a] = l.split(' '); return `${n.replace(/^kubeez-/, '')} — ${a === 'Deny' ? 'blocks' : 'reports'}` }).join('\n') : 'No KubeEZ rules active'}\n\nChecked resources: ${pass} pass · ${fail} break a rule`,
+                    example: 'kubectl get policyreports -A',
+                    note: fail ? 'Some workloads break a rule — the policy reports list which and why. Fix them before switching to "Block".' : 'Rules are checked when pods are created and in the background.'
+                })
+            }
+
             return {
                 clusterId: cluster.id,
                 clusterName: cluster.clusterName,

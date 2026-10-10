@@ -19,6 +19,8 @@
 #   e2e.sh explorer [distro]                  KubeEZ Explorer (Radar) behind KubeEZ's proxy: RBAC, checks, uninstall
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
+#   e2e.sh helm-addons [distro]               Metrics Server, MetalLB, Loki, Sealed Secrets, Kyverno: install,
+#                                             change, rollback, uninstall (needs Node; ONLY=metallb,… for a subset)
 #   e2e.sh agent [distro]                     Gateway Agent install as a service, crash/reboot recovery
 #   e2e.sh agent-health [distro]              cluster topology through the agent (root/non-root, reconnect)
 #   e2e.sh clean                              remove all e2e containers
@@ -367,6 +369,19 @@ cmd_explorer() {
     return $rc
 }
 
+# Helm add-ons with settings on a real node, through KubeEZ's own path.
+# e2e.sh helm-addons [distro]   (ONLY=metallb,kyverno for a subset)
+cmd_helm_addons() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
+    image "$distro"; start_node "$node" "$distro"
+    docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local rc
+    NODE_CONTAINER="$node" node "$E2E/helm-addons-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
 cmd_clean() { docker ps -aq --filter "name=$PREFIX-" | xargs -r docker rm -f >/dev/null 2>&1; true; }
 
 case "${1:-}" in
@@ -383,6 +398,7 @@ case "${1:-}" in
     ha-vip)  shift; cmd_ha_vip "$@" ;;
     explorer) shift; cmd_explorer "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
+    helm-addons) shift; cmd_helm_addons "$@" ;;
     agent)   shift; cmd_agent "$@" ;;
     agent-health) shift; cmd_agent_health "$@" ;;
     clean)   cmd_clean ;;

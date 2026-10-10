@@ -556,6 +556,8 @@ class InstallationManager {
             // Stop auto-healing watchers so we don't keep polling a deleted cluster
             const { incidentDetector } = await import('./incidentDetector.js')
             incidentDetector.stopWatching(id)
+            const { addonSettingsStore } = await import('./addonSettings.js')
+            addonSettingsStore.dropCluster(id)
         } catch (err) {
             console.warn(`[Cleanup] Warning during session cleanup for ${id}:`, err.message)
         }

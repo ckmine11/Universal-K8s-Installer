@@ -4,6 +4,8 @@ import { assertDirectConnectAllowed } from '../utils/netGuard.js'
 import { readFileSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { volumeBackupStore } from './volumeBackupStore.js'
+import { HELM_ADDONS, isHelmAddon } from '../config/helmAddons.js'
+import { addonSettingsStore, buildPlan, planFiles, writePlanCommand } from './addonSettings.js'
 import { fileURLToPath } from 'url'
 import { agentService } from './agentService.js'
 
@@ -580,6 +582,7 @@ class AutomationEngine {
                     } finally {
                         ssh.dispose?.()
                     }
+                    if (isHelmAddon(key)) addonSettingsStore.removed(installation.originalClusterId || installation.id, key)
                     if (reinstall) {
                         onLog('success', `✓ Old "${key}" removed — installing it fresh`)
                         onProgress(55, `Installing ${key}...`)
@@ -1076,6 +1079,31 @@ class AutomationEngine {
         }
     }
 
+    /**
+     * A Helm add-on with its settings: the settings chosen for this job (Apply
+     * in the UI), else the ones that run now (Repair), else the last ones, else
+     * the defaults. Recorded as pending → applied / failed (history).
+     */
+    async installHelmAddon(ssh, installation, key, onLog, opts) {
+        const clusterId = installation.originalClusterId || installation.id
+        const saved = addonSettingsStore.get(clusterId, key)
+        const desired = installation.addonSettings?.[key] || saved.applied || saved.lastSettings || {}
+        // checked against the whole cluster (its other add-ons, nodes, VIP)
+        const plan = buildPlan(key, { ...installation, addons: { ...(installation.clusterAddons || {}), ...(installation.addons || {}) } }, desired)
+        if (plan.ignored.length) onLog('warning', `Advanced values ignored (KubeEZ needs them): ${plan.ignored.join(', ')}`)
+        onLog('info', `${plan.label} ${plan.version} — ${Object.entries(plan.settings).map(([k, v]) => `${k}=${v}`).join(', ')}${plan.advanced.trim() ? ' + advanced values' : ''}`)
+        addonSettingsStore.setPending(clusterId, key, { settings: plan.settings, advanced: plan.advanced, version: plan.version }, { by: installation.requestedBy || 'KubeEZ', jobId: installation.id })
+        try {
+            const w = await ssh.execCommand(writePlanCommand(key, planFiles(plan)))
+            if (w.code !== 0) throw new Error(`Could not hand the settings to the node: ${(w.stderr || w.stdout || '').trim()}`)
+            await this.executeScript(ssh, join(__dirname, '../automation/addons/helm-addon.sh'), [key], onLog, opts)
+            addonSettingsStore.finish(clusterId, key, installation.id, { ok: true })
+        } catch (e) {
+            addonSettingsStore.finish(clusterId, key, installation.id, { ok: false, error: e.message })
+            throw e
+        }
+    }
+
     async installAddons(installation, onLog) {
         const addons = installation.addons || {}
 
@@ -1118,12 +1146,14 @@ class AutomationEngine {
             if (addons.seaweedfs) addonsToInstall.push({ type: 'script', script: 'addons/seaweedfs.sh', label: 'S3 Object Storage (SeaweedFS)' })
             if (addons.velero) addonsToInstall.push({ type: 'script', script: 'addons/velero.sh', label: 'Velero (Volume Backups)', prepare: 'velero' })
             if (addons.explorer) addonsToInstall.push({ type: 'script', script: 'addons/explorer.sh', label: 'KubeEZ Explorer', prepare: 'explorer' })
+            // Helm add-ons with settings (Metrics Server, MetalLB, Loki, Sealed Secrets, Kyverno)
+            for (const key of Object.keys(HELM_ADDONS)) if (addons[key]) addonsToInstall.push({ type: 'helm', key, label: HELM_ADDONS[key].label })
 
             // Any other add-on: a script named automation/addons/<key>.sh is enough
             // (no code change needed to add one).
             const KNOWN = new Set(['ingress', 'monitoring', 'logging', 'dashboard', 'certManager', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs', 'velero', 'explorer'])
             for (const [key, on] of Object.entries(addons)) {
-                if (!on || KNOWN.has(key) || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(key)) continue
+                if (!on || KNOWN.has(key) || isHelmAddon(key) || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(key)) continue
                 if (existsSync(join(__dirname, '../automation/addons', `${key}.sh`))) {
                     addonsToInstall.push({ type: 'script', script: `addons/${key}.sh`, label: key })
                 }
@@ -1158,6 +1188,8 @@ class AutomationEngine {
                 try {
                     if (item.type === 'legacy') {
                         await this.executeScript(ssh, legacyScriptPath, [item.name], onLog, addonOpts)
+                    } else if (item.type === 'helm') {
+                        await this.installHelmAddon(ssh, installation, item.key, onLog, addonOpts)
                     } else {
                         const scriptPath = join(__dirname, '../automation', item.script)
                         if (item.prepare === 'explorer') await this.writeExplorerSettings(ssh, installation.originalClusterId || installation.id)

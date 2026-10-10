@@ -2,7 +2,8 @@
 # KubeEZ — uninstall an add-on cleanly (run on the primary control-plane).
 #
 # Usage: addon-uninstall.sh <addon> [kubeconfig] [namespace]
-#   addon: ingress | monitoring | dashboard | cert-manager | longhorn | argocd | seaweedfs | velero | explorer
+#   addon: ingress | monitoring | dashboard | cert-manager | longhorn | argocd | seaweedfs | velero | explorer |
+#          metrics-server | metallb | loki | sealed-secrets | kyverno
 #   (any other add-on: pass its namespace as the 3rd argument → generic removal)
 #
 # Removes exactly what the KubeEZ installer created: the namespace AND the
@@ -51,6 +52,17 @@ delete_ns() {
     done
     fail NAMESPACE_STUCK "Namespace $ns is still terminating after 5 minutes." \
          "Run 'kubectl get ns $ns -o yaml' and 'kubectl api-resources --verbs=list --namespaced -o name | xargs -n1 kubectl get -n $ns --ignore-not-found' on the master to see what is left, then try again."
+}
+
+# Helm add-ons: uninstall every release in the namespace first — Helm removes
+# the cluster-wide pieces it created (RBAC, webhooks, API registrations)
+helm_remove() {
+    local ns="$1" rel
+    command -v helm >/dev/null 2>&1 || return 0
+    for rel in $(helm -n "$ns" list -aq 2>/dev/null); do
+        log "Removing Helm release $rel..."
+        helm -n "$ns" uninstall "$rel" --wait --timeout 5m 2>&1 | tail -2 | sed 's/^/  /' || true
+    done
 }
 
 echo "========================================="
@@ -183,6 +195,55 @@ velero)
     del clusterrolebinding velero
     del crd -l component=velero
     log "Backups already in the storage bucket are kept."
+    ;;
+
+metrics-server)
+    helm_remove metrics-server
+    # A leftover metrics API pointing at a deleted Service breaks API discovery
+    # (namespace deletion, kubectl api-resources) — remove it if it is ours
+    if [ "$(kubectl get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.spec.service.namespace}' 2>/dev/null)" = "metrics-server" ]; then
+        del apiservice v1beta1.metrics.k8s.io
+    fi
+    delete_ns metrics-server
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=metrics-server
+    ;;
+
+metallb)
+    helm_remove metallb-system
+    delete_ns metallb-system
+    del validatingwebhookconfiguration metallb-webhook-configuration
+    del crd bfdprofiles.metallb.io bgpadvertisements.metallb.io bgppeers.metallb.io communities.metallb.io configurationstates.metallb.io ipaddresspools.metallb.io l2advertisements.metallb.io servicebgpstatuses.metallb.io servicel2statuses.metallb.io
+    log "LoadBalancer Services go back to <pending>; Nginx Ingress keeps its node ports."
+    ;;
+
+loki)
+    helm_remove logging
+    delete_ns logging
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=loki
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=fluent-bit
+    rm -f /var/log/kubeez-fluent-bit.db* 2>/dev/null || true
+    ;;
+
+sealed-secrets)
+    helm_remove sealed-secrets
+    delete_ns sealed-secrets
+    del crd sealedsecrets.bitnami.com
+    ;;
+
+kyverno)
+    # Policies first, then Kyverno; its webhooks must never outlive it
+    del validatingpolicies.policies.kyverno.io -l app.kubernetes.io/managed-by=kubeez
+    helm_remove kyverno
+    # Kyverno pods still shutting down re-create their webhooks — remove them
+    # once the namespace (and every Kyverno pod) is gone, and check they stay gone
+    delete_ns kyverno
+    for _ in 1 2 3; do
+        del validatingwebhookconfiguration,mutatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno
+        for w in $(kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration -o name 2>/dev/null | grep '/kyverno-'); do del "$w"; done
+        sleep 3
+        kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration -o name 2>/dev/null | grep -q kyverno || break
+    done
+    kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration -o name 2>/dev/null | grep -q kyverno         && fail WEBHOOK_LEFT "A Kyverno admission webhook is still registered." "Delete it: kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration | grep kyverno"
     ;;
 
 *)

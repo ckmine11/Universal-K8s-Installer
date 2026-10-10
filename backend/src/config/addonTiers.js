@@ -1,6 +1,6 @@
 // Addon plan-gating — keep in sync with frontend src/config/addons.js
 // Free plan may only install these basic add-ons.
-export const FREE_ADDONS = ['dashboard']
+export const FREE_ADDONS = ['dashboard', 'metrics-server']
 
 // Normalize the various keys the frontend may send for the same addon
 const KEY_ALIASES = {
@@ -28,7 +28,7 @@ export function checkAddonPlan(addons, plan) {
         return {
             allowed: false,
             blocked,
-            error: `Your Free plan includes only the Kubernetes Dashboard add-on. ` +
+            error: `Your Free plan includes the Kubernetes Dashboard and Metrics Server add-ons. ` +
                    `Upgrade to Pro to install: ${[...new Set(blocked)].join(', ')}.`
         }
     }

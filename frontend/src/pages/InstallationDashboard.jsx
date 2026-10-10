@@ -5,7 +5,7 @@ import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { useInstallationTracker } from '../context/InstallationTrackerContext'
 import { HealthSkeleton } from '../components/Skeleton'
-import { ADDONS_LIST } from '../config/addons'
+import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
 import { K8S_VERSIONS } from '../config/versions'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import {
@@ -565,7 +565,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         <p className="text-gray-400 mb-6">Select additional components to install on your cluster.</p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 my-8 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                            {ADDONS_LIST.map(addon => {
+                            {WIZARD_ADDONS.map(addon => {
                                 // Map icon name to component
                                 const iconMap = {
                                         Compass,

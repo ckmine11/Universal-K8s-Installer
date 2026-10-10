@@ -4,11 +4,13 @@ import { createPortal } from 'react-dom'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from './ToastProvider'
 import { ADDONS_LIST } from '../config/addons'
+import AddonSettingsDialog from './AddonSettingsDialog'
+import SealSecretDialog from './SealSecretDialog'
 import {
     Network, LayoutDashboard, BarChart3, Shield, Database, GitBranch, Package,
     RefreshCw, Loader2, ScrollText, Wrench, Trash2, Download, X, ChevronDown, RotateCcw,
     AlertTriangle, CheckCircle2, CircleDashed, XCircle, Settings2, ExternalLink
-, Compass } from 'lucide-react'
+, Compass, SlidersHorizontal, Lock, Sparkles } from 'lucide-react'
 
 const ICONS = { Network, LayoutDashboard, BarChart3, Shield, Database, GitBranch, Compass }
 
@@ -147,7 +149,7 @@ function UninstallModal({ addon, action, onCancel, onConfirm, busy }) {
                         ? <>Completely removes the add-on (the <span className="font-mono">{addon.namespace}</span> namespace and everything it created), then installs it fresh with new settings and credentials. Use <b>Repair</b> instead to fix it while keeping data.</>
                         : <>Removes the <span className="font-mono">{addon.namespace}</span> namespace and everything the add-on created in the cluster.</>}
                 </p>
-                <p className="text-slate-400 text-sm mb-4">{UNINSTALL_NOTES[addon.key]}</p>
+                <p className="text-slate-400 text-sm mb-4">{UNINSTALL_NOTES[addon.key] || addon.uninstallNote}</p>
                 {addon.keepsData && (
                     <div className="mb-4">
                         <label className="text-xs text-red-300 block mb-1.5">
@@ -180,6 +182,8 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
     const [logsFor, setLogsFor] = useState(null)    // addon
     const [uninstallFor, setUninstallFor] = useState(null) // { addon, action: 'uninstall' | 'reinstall' }
     const [starting, setStarting] = useState(null)  // key of the action being started
+    const [settingsFor, setSettingsFor] = useState(null)   // { key, installed } — Helm add-on settings
+    const [sealOpen, setSealOpen] = useState(false)
 
     const load = async () => {
         setLoading(true)
@@ -293,6 +297,8 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-black text-white text-sm">{a.label}</span>
+                                            {a.helm && a.version && <span className="text-[10px] font-mono text-slate-500">{a.version}</span>}
+                                            {a.updateAvailable && <button onClick={() => canManage && setSettingsFor({ key: a.key, installed: true })} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-sky-400/30 bg-sky-500/10 text-[9px] font-black uppercase tracking-wider text-sky-300" title={`Version ${a.latestVersion} is available`}><Sparkles className="w-2.5 h-2.5" /> Update</button>}
                                             <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${h.cls}`}>
                                                 <h.Icon className={`w-3 h-3 ${h.spin ? 'animate-spin' : ''}`} /> {h.label}
                                             </span>
@@ -310,6 +316,18 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                                         <div className="flex items-center gap-1.5">
                                             {present ? (
                                                 <>
+                                                    {a.helm && (
+                                                        <button className={`${btn} text-sky-200 bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20`} disabled={disabled}
+                                                            title="Change settings, version or Helm values — rolled back automatically if it fails"
+                                                            onClick={() => setSettingsFor({ key: a.key, installed: true })}>
+                                                            <SlidersHorizontal className="w-3.5 h-3.5" /> Settings
+                                                        </button>
+                                                    )}
+                                                    {a.key === 'sealed-secrets' && a.health === 'healthy' && (
+                                                        <button className={`${btn} text-fuchsia-200 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border-fuchsia-500/20`} onClick={() => setSealOpen(true)}>
+                                                            <Lock className="w-3.5 h-3.5" /> Seal a secret
+                                                        </button>
+                                                    )}
                                                     <button className={`${btn} text-slate-200 bg-white/5 hover:bg-white/10 border-white/10`} onClick={() => setLogsFor(a)}>
                                                         <ScrollText className="w-3.5 h-3.5" /> Logs
                                                     </button>
@@ -336,7 +354,7 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                                                 </button>
                                             ) : (
                                                 <button className={`${btn} text-blue-200 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20`} disabled={disabled}
-                                                    onClick={() => install(a, false)}>
+                                                    onClick={() => a.helm ? setSettingsFor({ key: a.key, installed: false }) : install(a, false)}>
                                                     {starting === a.key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Install
                                                 </button>
                                             )}
@@ -378,6 +396,9 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                 </div>
             )}
 
+            {settingsFor && <AddonSettingsDialog clusterId={clusterId} addonKey={settingsFor.key} installed={settingsFor.installed} onClose={() => setSettingsFor(null)}
+                onStarted={(jobId) => { setSettingsFor(null); navigate(`/dashboard/${jobId}`) }} />}
+            {sealOpen && <SealSecretDialog clusterId={clusterId} onClose={() => setSealOpen(false)} />}
             {logsFor && <LogsModal clusterId={clusterId} addon={logsFor} onClose={() => setLogsFor(null)} />}
             {uninstallFor && <UninstallModal addon={uninstallFor.addon} action={uninstallFor.action} busy={starting === uninstallFor.addon.key} onCancel={() => setUninstallFor(null)} onConfirm={uninstall} />}
         </div>

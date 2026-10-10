@@ -16,6 +16,8 @@ import { notifier } from '../services/notifier.js'
 import { disasterRecovery } from '../services/disasterRecovery.js'
 import { upgradeReadiness, clusterHealth } from '../services/explorerInsights.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
+import { HELM_ADDONS, isHelmAddon, addonSchema } from '../config/helmAddons.js'
+import { addonSettingsStore, buildPlan, valuesYaml, lineDiff } from '../services/addonSettings.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
 import { isPaidPlan } from '../config/planFeatures.js'
@@ -513,6 +515,8 @@ router.post('/:id/addons/:key/:action(uninstall|reinstall)', requireAuth, requir
             originalClusterId: existingCluster.id,
             mode: action === 'reinstall' ? 'addon-reinstall' : 'addon-uninstall',
             uninstallAddon: key,
+            clusterAddons: existingCluster.addons || {},
+            requestedBy: req.user.username,
             uninstallNamespace: ADDON_REGISTRY[key].ns,   // used by the generic removal path
             status: 'pending',
             logs: [],
@@ -524,6 +528,117 @@ router.post('/:id/addons/:key/:action(uninstall|reinstall)', requireAuth, requir
         console.error(`Add-on ${req.params.action} error:`, error)
         res.status(500).json({ error: `Failed to start the add-on ${req.params.action}` })
     }
+})
+
+// ─── Add-on settings (Helm add-ons) ─────────────────────────────────────────
+// The form, what runs now, the history; a preview of the values; apply =
+// an add-on job with live logs (Helm rolls back by itself when it fails).
+const helmKey = (req, res) => {
+    if (isHelmAddon(req.params.key)) return req.params.key
+    res.status(404).json({ error: 'This add-on has no settings' }); return null
+}
+const advancedAllowed = (req) => isPaidPlan(authService.getOrgPlan(req.user.orgId)) || req.user.role === 'superadmin'
+
+router.get('/:id/addons/:key/settings', requireAuth, requirePermission('addon:install'), async (req, res) => {
+    try {
+        const key = helmKey(req, res); if (!key) return
+        const cluster = await loadOwnedCluster(req, res); if (!cluster) return
+        const saved = addonSettingsStore.get(cluster.id, key)
+        const schema = addonSchema(key)
+        res.json({
+            schema, applied: saved.applied, pending: saved.pending, history: saved.history || [], lastSettings: saved.lastSettings || null,
+            advancedAllowed: advancedAllowed(req),
+            updateAvailable: !!saved.applied && saved.applied.version !== schema.versions[0].id,
+            clusterAddons: Object.keys(cluster.addons || {}).filter(k => cluster.addons[k])
+        })
+    } catch (e) { sendFailure(res, e) }
+})
+
+function planFromBody(req, cluster, key) {
+    const { settings, advanced, version } = req.body || {}
+    if (advanced && String(advanced).trim() && !advancedAllowed(req)) {
+        throw Object.assign(new Error('Advanced values (Helm YAML) are part of Pro. On Free, use the settings form.'), { status: 402, upgrade: true })
+    }
+    return buildPlan(key, cluster, { settings, advanced, version })
+}
+
+router.post('/:id/addons/:key/preview', requireAuth, requirePermission('addon:install'), async (req, res) => {
+    try {
+        const key = helmKey(req, res); if (!key) return
+        const cluster = await loadOwnedCluster(req, res); if (!cluster) return
+        const plan = planFromBody(req, cluster, key)
+        const after = valuesYaml(plan)
+        let before = ''
+        const applied = addonSettingsStore.get(cluster.id, key).applied
+        if (applied) { try { before = valuesYaml(buildPlan(key, cluster, applied)) } catch { /* the cluster changed since */ } }
+        const diff = lineDiff(before, after)
+        res.json({ settings: plan.settings, version: plan.version, ignored: plan.ignored, values: after, diff, changed: diff.some(d => d.t !== ' ') })
+    } catch (e) { res.status(e.status || 500).json({ error: e.message, ...(e.upgrade ? { upgrade: true } : {}) }) }
+})
+
+router.post('/:id/addons/:key/settings', requireAuth, requirePermission('addon:install'), async (req, res) => {
+    try {
+        const key = helmKey(req, res); if (!key) return
+        const cluster = await loadOwnedCluster(req, res); if (!cluster) return
+        const tier = checkAddonPlan({ [key]: true }, authService.getOrgPlan(req.user.orgId))
+        if (!tier.allowed) return res.status(402).json({ error: tier.error, limitExceeded: true, blockedAddons: tier.blocked })
+        let plan
+        try { plan = planFromBody(req, cluster, key) } catch (e) { return res.status(e.status || 400).json({ error: e.message, ...(e.upgrade ? { upgrade: true } : {}) }) }
+        const busy = clusterBusy(cluster.id)
+        if (busy) return res.status(409).json({ error: busy.message, runningJobId: busy.jobId })
+
+        const newInstallationId = uuidv4()
+        installationManager.startInstallation({
+            ...cluster,
+            id: newInstallationId,
+            ownerId: cluster.ownerId || req.user.id,
+            orgId: cluster.orgId || req.user.orgId,
+            originalClusterId: cluster.id,
+            addons: { [key]: true },
+            addonSettings: { [key]: { settings: plan.settings, advanced: plan.advanced, version: plan.version } },
+            clusterAddons: cluster.addons || {},
+            requestedBy: req.user.username,
+            mode: 'addon-only',
+            status: 'pending',
+            logs: [],
+            progress: 0,
+            createdAt: new Date().toISOString()
+        })
+        res.json({ success: true, newInstallationId, message: `Applying ${HELM_ADDONS[key].label} settings` })
+    } catch (e) { sendFailure(res, e) }
+})
+
+// Sealed Secrets: encrypt a Secret with this cluster's key (kubeseal runs on
+// the control-plane) — the result is safe to commit to Git
+const DNS1123 = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/
+router.post('/:id/addons/sealed-secrets/seal', requireAuth, requirePermission('addon:install'), async (req, res) => {
+    try {
+        const cluster = await loadOwnedCluster(req, res); if (!cluster) return
+        const { name, namespace = 'default', scope = 'strict', data } = req.body || {}
+        if (!DNS1123.test(String(name || ''))) return res.status(400).json({ error: 'Name: lowercase letters, numbers and "-" (like a Kubernetes name)' })
+        if (!DNS1123.test(String(namespace))) return res.status(400).json({ error: 'Namespace: lowercase letters, numbers and "-"' })
+        if (!['strict', 'namespace-wide', 'cluster-wide'].includes(scope)) return res.status(400).json({ error: 'Scope: strict, namespace-wide or cluster-wide' })
+        const entries = Object.entries(data && typeof data === 'object' ? data : {})
+        if (!entries.length || entries.length > 50) return res.status(400).json({ error: 'Add 1 to 50 keys with their values' })
+        for (const [k, v] of entries) {
+            if (!/^[-._a-zA-Z0-9]{1,253}$/.test(k)) return res.status(400).json({ error: `Key "${String(k).slice(0, 40)}": letters, numbers, "-", "_" and "." only` })
+            if (typeof v !== 'string') return res.status(400).json({ error: `Value of "${k}" must be text` })
+        }
+        const secret = { apiVersion: 'v1', kind: 'Secret', metadata: { name, namespace }, type: 'Opaque',
+            data: Object.fromEntries(entries.map(([k, v]) => [k, Buffer.from(v, 'utf8').toString('base64')])) }
+        const payload = Buffer.from(JSON.stringify(secret), 'utf8').toString('base64')
+        if (payload.length > 256 * 1024) return res.status(400).json({ error: 'At most 192 KB of secret data' })
+        const ssh = await automationEngine.connectSSH(cluster.masterNodes[0])
+        try {
+            const r = await ssh.execCommand(`echo ${payload} | base64 -d | sudo /usr/local/bin/kubeseal --kubeconfig /etc/kubernetes/admin.conf --controller-namespace sealed-secrets --controller-name sealed-secrets-controller --scope ${scope} --format yaml 2>&1`)
+            if (r.code !== 0 || !/kind: SealedSecret/.test(r.stdout || '')) {
+                const out = (r.stdout || r.stderr || '').trim()
+                const hint = /No such file|not found/.test(out) ? 'kubeseal is missing on the control-plane — Repair the Sealed Secrets add-on.' : out.slice(0, 300)
+                return res.status(502).json({ error: `Could not seal: ${hint}` })
+            }
+            res.json({ yaml: r.stdout, name, namespace, scope })
+        } finally { ssh.dispose?.() }
+    } catch (e) { sendFailure(res, e) }
 })
 
 // ─── etcd backups (Pro/Enterprise feature) ─────────────────────────────────────
@@ -860,9 +975,20 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
             return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
         }
 
+        // Helm add-ons install with their saved settings (or the defaults) — a
+        // setting that is required (MetalLB's addresses) must be chosen first
+        for (const key of Object.keys(addons || {}).filter(k => addons[k] && isHelmAddon(k))) {
+            const saved = addonSettingsStore.get(existingCluster.id, key)
+            try { buildPlan(key, existingCluster, saved.applied || saved.lastSettings || {}) } catch (e) {
+                return res.status(400).json({ error: `${HELM_ADDONS[key].label}: ${e.message} — open its Settings to choose them.`, needsSettings: key })
+            }
+        }
+
         const newInstallationId = uuidv4()
         const addonInstallation = {
             ...existingCluster, // Copy credentials and nodes
+            clusterAddons: existingCluster.addons || {},
+            requestedBy: req.user.username,
             id: newInstallationId,
             ownerId: existingCluster.ownerId || req.user.id, // Keep the original owner
             orgId: existingCluster.orgId || req.user.orgId,

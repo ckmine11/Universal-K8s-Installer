@@ -105,6 +105,7 @@ const NAV = [
     ] },
     { title: 'Add-ons', items: [
         { id: 'addons', label: 'Add-on Catalogue' },
+        { id: 'addon-settings', label: 'Add-on Settings' },
         { id: 'addon-manage', label: 'Manage, Logs & Uninstall' },
         { id: 's3', label: 'S3 Object Storage' },
         { id: 'explorer', label: 'KubeEZ Explorer' }
@@ -341,9 +342,27 @@ export default function Docs() {
                             ['ArgoCD', 'GitOps delivery', 'https :30443'],
                             ['S3 Object Storage (SeaweedFS)', 'S3-compatible storage with a ready "backups" bucket + web admin UI', 'S3 :30833 · Web UI :30834'],
                             ['KubeEZ Explorer', 'Full Kubernetes UI, audit, upgrade safety check', 'Explorer tab — no port, through KubeEZ'],
-                            ['Velero', 'Volume data backups (set up under Backups)', 'Backups → Volume data']
+                            ['Velero', 'Volume data backups (set up under Backups)', 'Backups → Volume data'],
+                            ['Metrics Server (Free)', 'CPU / memory per pod and node — "kubectl top" and pod autoscaling (HPA)', 'Live usage in Access & logins'],
+                            ['MetalLB', 'Real IPs for LoadBalancer Services from a free range of your network (Layer 2 or BGP); optionally gives Nginx Ingress one', 'The IPs, shown in Access & logins'],
+                            ['Loki logs', 'Logs of every pod (Fluent Bit on every node), kept N days, searchable in Grafana', 'Grafana → Explore → Loki'],
+                            ['Sealed Secrets', 'Encrypt Secrets so they can live in Git — only this cluster opens them', '"Seal a secret" in Manage & logs'],
+                            ['Kyverno policies', 'No "latest" images, requests / limits required, no privileged pods, no host namespaces — report or block', 'Results in Access & logins']
                         ]} />
                         <P>Logins and tokens are shown under <b className="text-white">Access & logins</b> — no server login needed. Viewers see the URLs but never the credentials.</P>
+                    </Section>
+
+                    <Section id="addon-settings" Icon={Puzzle} color="text-fuchsia-400" title="Add-on Settings"
+                        intro="Metrics Server, MetalLB, Loki, Sealed Secrets and Kyverno are installed with Helm and can be configured — before installing and at any time after.">
+                        <Table head={['', 'What you can do']} rows={[
+                            ['Settings form', 'The few settings that matter, with safe defaults: e.g. MetalLB\'s IP range, how long Loki keeps logs, Kyverno\'s rules and Report-only / Block. Wrong values are refused with the reason (an IP range containing a node or the VIP, addresses that already answer on the network).'],
+                            ['Change later', <><b>Settings</b> in Manage & logs → change → <b>Preview</b> (exactly what changes) → <b>Apply</b>. Runs as a job with a live log. If the add-on does not come up healthy, Helm puts back the version that worked and KubeEZ keeps the old settings.</>],
+                            ['History', 'Every change: who, when, which version and settings, and whether it worked.'],
+                            ['Version', 'The recommended version KubeEZ has checked, or the previous one. An Update badge appears when a newer checked version exists.'],
+                            ['Advanced (Pro)', 'Any Helm value of the chart as YAML, merged over the form. The few keys KubeEZ needs to find, check and repair the add-on stay fixed — the preview says when one of yours was ignored.']
+                        ]} />
+                        <Note>Kyverno is installed so that it can never block the cluster: if Kyverno itself is down, requests are let through, and system namespaces (kube-system, the add-ons) are never checked. Start with <b>Report only</b>, fix what the results show, then switch to <b>Block</b>.</Note>
+                        <Note>Sealed Secrets keys live in the cluster and are part of the etcd backups — restoring a backup keeps old sealed secrets readable. Uninstalling the add-on deletes the keys.</Note>
                     </Section>
 
                     <Section id="addon-manage" Icon={Puzzle} color="text-fuchsia-400" title="Manage, Logs & Uninstall"

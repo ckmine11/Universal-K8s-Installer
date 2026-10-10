@@ -252,6 +252,20 @@ export default function AddonAccessPanel({ clusterId }) {
                                     </div>
                                 )}
 
+                                {/* Live details (IPs, usage, policy results) and a ready command */}
+                                {addon.details && (
+                                    <pre className="mb-3 whitespace-pre-wrap break-all font-mono text-[11px] text-slate-300 bg-black/40 rounded-lg px-3 py-2 border border-white/5 max-h-48 overflow-auto">{addon.details}</pre>
+                                )}
+                                {addon.example && !addon.apiEndpoint && (
+                                    <div className="mb-3">
+                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Try it</label>
+                                        <div className="flex items-start gap-2">
+                                            <code className="flex-1 min-w-0 whitespace-pre-wrap font-mono text-[11px] text-slate-300 bg-black/40 rounded-lg px-3 py-1.5 border border-white/5 break-all">{addon.example}</code>
+                                            <CopyBtn text={addon.example} />
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Note */}
                                 {addon.note && (
                                     <p className="text-[11px] text-slate-500 leading-relaxed border-t border-white/5 pt-3">{addon.note}</p>

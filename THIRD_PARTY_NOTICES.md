@@ -15,6 +15,12 @@ releases (container images / Helm charts) and talks to them over their APIs.
 | **ingress-nginx** | Nginx Ingress add-on | Apache-2.0 | https://github.com/kubernetes/ingress-nginx |
 | **Prometheus**, **Grafana** | Monitoring add-on | Apache-2.0 / AGPL-3.0 | https://github.com/prometheus/prometheus · https://github.com/grafana/grafana |
 | **Kubernetes Dashboard** | Dashboard add-on | Apache-2.0 | https://github.com/kubernetes/dashboard |
+| **Metrics Server** | Metrics Server add-on | Apache-2.0 | https://github.com/kubernetes-sigs/metrics-server |
+| **MetalLB** | MetalLB add-on | Apache-2.0 | https://github.com/metallb/metallb |
+| **Loki**, **Fluent Bit** | Loki logs add-on | AGPL-3.0 / Apache-2.0 | https://github.com/grafana/loki · https://github.com/fluent/fluent-bit |
+| **Sealed Secrets** (controller, kubeseal) | Sealed Secrets add-on | Apache-2.0 | https://github.com/bitnami/sealed-secrets |
+| **Kyverno** | Kyverno policies add-on | Apache-2.0 | https://github.com/kyverno/kyverno |
+| **Helm** | Installs the add-ons above on the control-plane | Apache-2.0 | https://github.com/helm/helm |
 | **etcd** (etcdctl / etcdutl) | etcd snapshots, restore, recovery | Apache-2.0 | https://github.com/etcd-io/etcd |
 
 "Radar" and "Skyhook" are names of their respective owners; KubeEZ calls the
