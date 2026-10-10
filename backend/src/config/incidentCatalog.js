@@ -30,6 +30,19 @@ export const CATALOG = {
         fix: 'Drop the page cache and restart the container runtime + kubelet.',
         suggestion: 'Set memory requests/limits on workloads, or add memory / another node.'
     },
+    NodeDiskFilling: {
+        label: 'Disk filling up', category: 'node', severity: 'warning', fixable: true, policy: 'auto',
+        fix: 'Before it is full: remove unused images and exited containers, trim journals, empty oversized logs, clear old /tmp files.',
+        suggestion: 'Forecast from the last hours of disk growth. If it keeps growing after the cleanup, something is writing a lot (logs, a volume on the root disk) — grow the disk or move /var/lib/containerd to a bigger volume.'
+    },
+    NodeMemoryHigh: {
+        label: 'Memory high', category: 'node', severity: 'warning', fixable: false, policy: 'notify',
+        suggestion: 'Memory above 90% for 15 minutes — the pods using most are listed. Set memory limits, scale the workload out, or add memory / a node before the kernel starts killing processes.'
+    },
+    NodeCPUHigh: {
+        label: 'CPU high', category: 'node', severity: 'warning', fixable: false, policy: 'notify',
+        suggestion: 'CPU above 90% for 15 minutes — the pods using most are listed. Set CPU limits, scale out, or add a node.'
+    },
     PIDPressure: {
         label: 'Process pressure', category: 'node', severity: 'warning', fixable: true, policy: 'auto',
         fix: 'Clear zombie processes and restart kubelet.',

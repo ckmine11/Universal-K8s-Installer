@@ -96,7 +96,7 @@ class RemediationEngine {
         const enrich = (n) => n ? { ...n, ownerId: cluster.ownerId, orgId: cluster.orgId } : n
         const c = { ...cluster, masterNodes: (cluster.masterNodes || []).map(enrich), workerNodes: (cluster.workerNodes || []).map(enrich) }
         const all = [...c.masterNodes, ...c.workerNodes]
-        const names = [incident.nodeName, event.involvedObject?.name, String(event.involvedObject?.name || '').split('@')[1]].filter(Boolean).map(String)
+        const names = [incident.nodeName, incident.nodeIp, event.involvedObject?.name, String(event.involvedObject?.name || '').split('@')[1]].filter(Boolean).map(String)
         const matches = (n) => names.some(x => [n.ip, n.hostname, n.name].filter(Boolean).map(v => String(v).toLowerCase()).includes(x.toLowerCase()))
         let node = all.find(matches)
         if (!node && ['ControlPlaneDown', 'ControlPlaneDiskFull', 'CertExpiring', 'EtcdUnhealthy'].includes(incident.reason)) node = c.masterNodes[0]
@@ -165,6 +165,7 @@ async function freeDisk(ssh) {
     // frees nothing and loses the application's log
     await ssh.execCommand('sudo find /var/log -name "*.log" -size +50M -exec truncate -s 0 {} + 2>/dev/null || true')
 }
+const diskBefore = new Map()   // incident id → disk % before the cleanup
 const diskPct = async (ssh) => parseInt((await ssh.execCommand("df -P / | tail -1 | awk '{print $5}' | tr -d '%'")).stdout.trim(), 10)
 
 const PLAYBOOKS = {
@@ -328,7 +329,41 @@ const PLAYBOOKS = {
         async verify() { return true }   // the controller recreates it; a new crash loop opens a new incident
     },
 
+    // ── Disk will be full soon (forecast): clean up before it is ──────────────
+    // "Fixed" = the cleanup freed real space (≥ 2% of the disk); the forecast
+    // then starts over and warns again only if the disk keeps filling.
+    NodeDiskFilling: {
+        label: 'Free disk space before the disk is full',
+        async fix(engine, cluster, node, incident, updateStatus, evidence) {
+            await onNode(engine, node, async (ssh) => {
+                await updateStatus(incident, 'remediating', `Freeing disk space on ${node.ip}`)
+                await evidence(incident, 'Biggest folders', out(await ssh.execCommand('sudo du -xh --max-depth=2 /var 2>/dev/null | sort -rh | head -10')))
+                const before = await diskPct(ssh)
+                await freeDisk(ssh)
+                const after = await diskPct(ssh)
+                diskBefore.set(incident.id, before)
+                await evidence(incident, 'Disk usage', `Before: ${before}% · after: ${after}%`)
+            })
+        },
+        async verify(engine, cluster, node, incident) {
+            const before = diskBefore.get(incident.id)
+            return onNode(engine, node, async (ssh) => { const p = await diskPct(ssh); return !isNaN(p) && before != null && before - p >= 2 })
+        }
+    },
+
     // ── Diagnose only: a person decides ──────────────────────────────────────
+    NodeMemoryHigh: {
+        async diagnose(engine, cluster, node, incident, evidence) {
+            if (node) await onNode(engine, node, async (ssh) => evidence(incident, 'Top processes by memory', out(await ssh.execCommand('ps -eo pid,comm,%mem,rss --sort=-%mem | head -10; echo; free -m'))))
+            return `${incident.message}. Set memory limits on these workloads, scale them out, or add memory / a node.`
+        }
+    },
+    NodeCPUHigh: {
+        async diagnose(engine, cluster, node, incident, evidence) {
+            if (node) await onNode(engine, node, async (ssh) => evidence(incident, 'Top processes by CPU', out(await ssh.execCommand('ps -eo pid,comm,%cpu --sort=-%cpu | head -10; echo; uptime'))))
+            return `${incident.message}. Set CPU limits, scale the workload out, or add a node.`
+        }
+    },
     OOMKilled: {
         async diagnose(engine, cluster, node, incident, evidence) {
             return onMaster(engine, cluster, async (ssh) => {

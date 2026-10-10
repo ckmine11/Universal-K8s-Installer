@@ -465,6 +465,8 @@ export default function Docs() {
                             ['Disk / memory / process pressure', 'Frees space (old images, exited containers, journals; oversized logs are emptied, never deleted), drops caches, clears zombie processes.'],
                             ['Control plane down (API, scheduler, controller-manager, etcd)', 'Saves the component log and restarts kubelet on that control-plane, then checks the API answers.'],
                             ['Control-plane disk filling up (90 % / 95 %)', 'Same cleanup on the control-plane — etcd stops when the disk is full.'],
+                            ['Disk will be full soon (forecast)', 'From the disk growth of the last hours: a warning when a node’s disk is full within 24 h, critical within 3 h — and the cleanup runs before it is full.'],
+                            ['Memory or CPU above 90 % for 15 minutes', 'Alerts with the pods using most and the top processes on the node (critical above 95 %).'],
                             ['Certificates expiring (< 30 days)', 'Alerts. One click (“Run fix now”) renews them on every control-plane and restarts the components.'],
                             ['etcd unhealthy', 'Alerts with the etcd log and disk usage.'],
                             ['Pod crash loop', 'Saves the last log lines, then deletes the pod so its controller starts a fresh one (a pod without a controller is left alone).'],
@@ -473,6 +475,7 @@ export default function Docs() {
                         ]} />
                         <P><b className="text-white">Root cause:</b> when a node is down, pod and workload problems on it are listed under it and not “fixed” separately. <b className="text-white">Each incident</b> has a timeline (detected → each fix attempt → result), the evidence collected and a suggestion. A fix is tried at most 3 times, then it needs a person; a closed incident that comes back opens a new one. History is kept 7 days, with fix success rate and mean time to recover.</P>
                         <P><b className="text-white">Control:</b> admins choose per problem type <i>Fix automatically</i>, <i>Alert only</i> or <i>Off</i> (Policies). Operators can acknowledge, run a fix now, mute an incident for 24 h, or put a cluster in maintenance (no checks, fixes or alerts for 1–24 h — <b className="text-white">Resume now</b> ends it early). Watching pauses by itself while an install, upgrade or scale runs on the cluster.</P>
+                        <P><b className="text-white">Node usage:</b> each watched cluster shows CPU, memory and disk of every node (from the kubelet, every 2 minutes) and “disk full in ~X h” when a disk is filling up.</P>
                     </Section>
 
                     <Section id="alerts" Icon={Bell} color="text-amber-400" title="Alerts"
@@ -483,7 +486,7 @@ export default function Docs() {
                             ['Microsoft Teams', <>A <b>Workflows</b> webhook: in the channel, ⋯ → Workflows → &quot;Post to a channel when a webhook request is received&quot;.</>],
                             ['WhatsApp', 'A Twilio account: Account SID, Auth Token, the WhatsApp sender and the number to alert.'],
                             ['Email', 'One or more addresses — sent with the server’s SMTP settings.'],
-                            ['Webhook', 'Any URL: KubeEZ POSTs a JSON event (type, severity, cluster, title, text, link).']
+                            ['Webhook', 'Any URL: KubeEZ POSTs a JSON event (type, severity, cluster, title, text, link; for incidents also incidentId and action links).']
                         ]} />
                         <Table head={['Alert', 'When']} rows={[
                             ['New incident / cleared', 'Auto-healing finds a problem (node, control plane or cluster down are critical) and when it is fixed or gone.'],
@@ -495,7 +498,9 @@ export default function Docs() {
                             ['Gateway Agent offline / back online', 'After 2 minutes away (adjustable), and when it reconnects.']
                         ]} />
                         <P>Each channel has a <b className="text-white">Test</b> button and shows its last delivery. Rules: turn single alert types off, <b className="text-white">quiet hours</b> in your time zone (critical alerts still go out; the others arrive as <b className="text-white">one summary</b> when quiet hours end), a <b className="text-white">cooldown</b> so the same alert is not repeated, and how long a Gateway Agent may be away before it is reported. <b className="text-white">Recent alerts</b> lists every alert — also the ones not sent, with the reason. Tokens and webhook URLs are encrypted and never shown again after saving.</P>
-                        <Note><b>Free plan:</b> one channel (Telegram, email or webhook), critical alerts and their recovery (node, control plane or cluster down, Gateway Agent offline / back online, failed backups / restores / upgrades / installs), fixed rules and 20 alert emails a day. <b>Pro:</b> every channel and alert type, quiet hours, per-event rules and the cooldown.</Note>
+                        <P><b className="text-white">Act from the alert:</b> incident alerts on Telegram have buttons — <i>Acknowledge</i>, <i>Mute 1 h</i> and, when KubeEZ can fix it, <i>Fix now</i> (only from the chat the channel posts to). Slack, Teams, email, WhatsApp and webhooks get the same as links; a link opens a short confirmation page (link previews never act) and works for 24 hours.</P>
+                        <P><b className="text-white">Routing:</b> each channel can receive only some clusters and from a minimum severity — e.g. production criticals to on-call, everything else to a team chat. Alerts without a cluster (Gateway Agent, config backups) go to every channel. <b className="text-white">Escalation:</b> a critical incident or offline Gateway Agent nobody acknowledges, mutes or fixes within 5–240 minutes is sent once more, marked ESCALATED, to the channels you choose.</P>
+                        <Note><b>Free plan:</b> one channel (Telegram, email or webhook), critical alerts and their recovery (node, control plane or cluster down, Gateway Agent offline / back online, failed backups / restores / upgrades / installs), fixed rules and 20 alert emails a day. <b>Pro:</b> every channel and alert type, quiet hours, per-event rules, the cooldown, routing and escalation.</Note>
                         <Note>Set <C>KUBEEZ_PUBLIC_URL</C> on the server so alerts link straight to the cluster. Email needs <C>SMTP_HOST</C>, <C>SMTP_USER</C> and <C>SMTP_PASS</C>. In SaaS mode webhooks must use https and cannot reach private addresses.</Note>
                     </Section>
 

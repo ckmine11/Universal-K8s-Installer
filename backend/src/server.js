@@ -28,6 +28,9 @@ import { agentService } from './services/agentService.js'
 import superadminRoutes from './routes/superadmin.js'
 import offsiteRoutes from './routes/offsite.js'
 import notificationsRoutes from './routes/notifications.js'
+import alertActionsRoutes from './routes/alertActions.js'
+import { notifier } from './services/notifier.js'
+import { telegramPoller } from './services/alertActions.js'
 import { canAccessResource } from './utils/access.js'
 import { clusterStore } from './services/clusterStore.js'
 import { can } from './config/permissions.js'
@@ -271,6 +274,7 @@ app.use('/api/incidents', incidentsRoutes)
 app.use('/api/superadmin', superadminRoutes)
 app.use('/api/offsite', offsiteRoutes)
 app.use('/api/notifications', requireAuth, notificationsRoutes)
+app.use('/api/alert-actions', alertActionsRoutes)   // signed links in alerts — public, see the route
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 
@@ -452,6 +456,8 @@ server.listen(PORT, () => {
     BackupService.startDailyScheduler(24)  // Daily config backups for all users
     incidentDetector.init().catch(err => console.error('[IncidentDetector] Failed to init:', err))
     agentService.watchAfterBoot().catch(() => { })   // agents that do not reconnect after a restart get an offline alert
+    notifier.start()          // escalations + quiet-hours summaries
+    telegramPoller.start()    // Acknowledge / Mute / Fix buttons in Telegram alerts
 
     console.log(`
 ╔═══════════════════════════════════════════════════════╗

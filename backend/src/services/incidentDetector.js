@@ -8,12 +8,14 @@ import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomic } from '../utils/atomicWrite.js'
 import { notifier } from './notifier.js'
 import { CATALOG, label } from '../config/incidentCatalog.js'
+import { RESOURCE_REASONS, HISTORY_MAX, parseResources, analyzeResources, resourceView } from './resourceForecast.js'
 
 const alertTarget = (inc) => inc.namespace ? `${inc.namespace}/${inc.target}` : inc.target
 
 const NODE_POLL_INTERVAL   = 60 * 1000        // node conditions
 const POD_POLL_INTERVAL    = 90 * 1000        // pod states
 const HEALTH_POLL_INTERVAL = 2 * 60 * 1000    // control plane, etcd, certs, disk, workloads, PVCs, jobs
+const RESOURCE_POLL_INTERVAL = 2 * 60 * 1000  // CPU / memory / disk per node (forecasts)
 const RECONNECT_BASE_MS    = 10 * 1000
 const RECONNECT_MAX_MS     = 5 * 60 * 1000
 const INCIDENT_TTL_MS      = 7 * 24 * 60 * 60 * 1000   // a week of history (stats, MTTR)
@@ -235,6 +237,13 @@ export function analyzeHealth(sections, { now = Date.now(), since = () => now } 
 }
 
 // One SSH round trip for every cluster-wide check
+// Node capacity, then the kubelet's stats summary of each node (max 50)
+const RESOURCE_SCRIPT = [
+    `echo '==CAP'; ${KUBECTL} get nodes --request-timeout=20s -o jsonpath='{range .items[*]}{.metadata.name} {.status.capacity.cpu} {.status.capacity.memory} {.status.addresses[?(@.type=="InternalIP")].address}{"\\n"}{end}' 2>/dev/null`,
+    `for n in $(${KUBECTL} get nodes --request-timeout=20s -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\\n' | head -50); do echo "==NODE $n"; ${KUBECTL} get --raw "/api/v1/nodes/$n/proxy/stats/summary" --request-timeout=15s 2>/dev/null; echo; done`,
+    `echo '==END'`
+].join('\n')
+
 const HEALTH_SCRIPT = [
     `echo '==CP=='; ${KUBECTL} -n kube-system get pods -l tier=control-plane -o json --request-timeout=15s 2>&1`,
     `echo '==WL=='; ${KUBECTL} get deploy,sts,ds -A -o json --request-timeout=20s 2>/dev/null`,
@@ -270,6 +279,7 @@ class IncidentDetector {
         this.firstSeen = new Map()   // condition key -> first time seen (for "unhealthy > 5 min")
         this.lastCheck = new Map()   // clusterId -> last successful health check
         this.unreachableSince = new Map()   // clusterId -> first failed connection
+        this.resources = new Map()   // clusterId -> { nodeName: { ip, samples[] } } (memory only)
         this.incidents = this._load()
     }
 
@@ -284,7 +294,8 @@ class IncidentDetector {
             clusterId: c.id, clusterName: cname(c), orgId: c.orgId, ownerId: c.ownerId,
             connected: this.streams.has(c.id),
             lastCheck: this.lastCheck.get(c.id) || null,
-            maintenance: healingPolicyStore.view(c.orgId).maintenance[c.id] || null
+            maintenance: healingPolicyStore.view(c.orgId).maintenance[c.id] || null,
+            nodes: resourceView(this.resources.get(c.id))
         }))
     }
 
@@ -417,6 +428,8 @@ class IncidentDetector {
         stream.timers.push(setInterval(() => this._pollNodes(cluster.id), NODE_POLL_INTERVAL))
         stream.timers.push(setInterval(() => this._pollPods(cluster.id), POD_POLL_INTERVAL))
         stream.timers.push(setInterval(() => this._pollHealth(cluster.id), HEALTH_POLL_INTERVAL))
+        stream.timers.push(setInterval(() => this._pollResources(cluster.id), RESOURCE_POLL_INTERVAL))
+        setTimeout(() => this._pollResources(cluster.id), 30000).unref?.()
         this._pollNodes(cluster.id)
         this._pollPods(cluster.id)
         setTimeout(() => this._pollHealth(cluster.id), 15000).unref?.()
@@ -517,6 +530,27 @@ class IncidentDetector {
         this._apply(this.watched.get(clusterId), findings, checked)
     }
 
+    // CPU / memory / disk of every node from the kubelet: warns before a disk is
+    // full or a node runs out of memory (history kept in memory, ~6 h)
+    async _pollResources(clusterId) {
+        const r = await this._run(clusterId, ssh => ssh.execCommand(RESOURCE_SCRIPT))
+        if (!r?.stdout || !/==END/.test(r.stdout)) return
+        const now = Date.now()
+        const fresh = parseResources(r.stdout, now)
+        if (!Object.keys(fresh).length) return
+        const hist = this.resources.get(clusterId) || {}
+        for (const k of Object.keys(hist)) if (!fresh[k]) delete hist[k]   // node removed
+        for (const [node, { ip, sample }] of Object.entries(fresh)) {
+            const h = hist[node] ||= { ip, samples: [] }
+            h.ip = ip || h.ip
+            h.samples.push(sample)
+            if (h.samples.length > HISTORY_MAX) h.samples.splice(0, h.samples.length - HISTORY_MAX)
+        }
+        this.resources.set(clusterId, hist)
+        const isOpen = (reason, node) => this.incidents.some(i => i.clusterId === clusterId && i.reason === reason && i.target === node && !CLOSED.has(i.status))
+        this._apply(this.watched.get(clusterId), analyzeResources(hist, { now, isOpen }), RESOURCE_REASONS)
+    }
+
     // An open incident whose problem is no longer reported has gone away
     _clearGone(cluster, reasons, seenKeys) {
         let changed = false
@@ -610,6 +644,7 @@ class IncidentDetector {
             target: target || 'cluster-wide',
             namespace: namespace || null,
             nodeName: f.nodeName || null,
+            nodeIp: f.nodeIp || null,
             owner: f.ownerHint || (f.workload ? `${f.workload.kind}/${f.workload.name}` : null),
             causedBy: cause?.id || null,
             muted: mute?.until || null,
@@ -626,7 +661,9 @@ class IncidentDetector {
             notifier.emit(cluster.orgId, {
                 type: 'incident', severity: severity === 'info' ? 'info' : severity, key: `incident|${key}`,
                 title: `${label(reason)} — ${alertTarget(incident)}`,
-                text: incident.message, clusterId: cluster.id, clusterName: cname(cluster), link: '/incidents'
+                text: incident.message, clusterId: cluster.id, clusterName: cname(cluster), link: '/incidents',
+                // buttons / links in the alert, and escalation if nobody reacts
+                incidentId: incident.id, fixable: !!CATALOG[reason]?.fixable, escalate: { kind: 'incident', id: incident.id }
             })
         }
 

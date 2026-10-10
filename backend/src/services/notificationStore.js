@@ -36,7 +36,21 @@ export const DEFAULT_RULES = {
     events: Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [k, v.default])),
     quietHours: { enabled: false, start: '22:00', end: '07:00', timezone: 'Asia/Kolkata' },
     cooldownMinutes: 15,
-    agentOfflineMinutes: 2      // a Gateway Agent away this long is reported (shorter blips stay quiet)
+    agentOfflineMinutes: 2,     // a Gateway Agent away this long is reported (shorter blips stay quiet)
+    // a critical problem nobody acknowledged after this long goes to these channels too
+    escalation: { enabled: false, afterMinutes: 15, channelIds: [] }
+}
+
+// Which alerts a channel receives: some clusters only, and from which severity
+export const SEVERITY_LEVELS = ['info', 'warning', 'critical']
+export const defaultRouting = () => ({ clusters: [], minSeverity: 'info' })
+function cleanRouting(r = {}) {
+    const bad = (msg) => Object.assign(new Error(msg), { status: 400 })
+    const clusters = Array.isArray(r.clusters) ? [...new Set(r.clusters.map(String))].slice(0, 200) : []
+    if (clusters.some(c => !/^[A-Za-z0-9-]{1,64}$/.test(c))) throw bad('Invalid cluster in the routing')
+    const minSeverity = r.minSeverity || 'info'
+    if (!SEVERITY_LEVELS.includes(minSeverity)) throw bad('Severity must be info, warning or critical')
+    return { clusters, minSeverity }
 }
 
 class NotificationStore {
@@ -66,7 +80,7 @@ class NotificationStore {
                 const cfg = {}
                 for (const k of t.plain) cfg[k] = c.config?.[k] ?? ''
                 for (const k of t.secret) cfg[k] = c.config?.[k] ? '••••••' + this._tail(c.type, k, c.config[k]) : ''
-                return { id: c.id, type: c.type, name: c.name, enabled: c.enabled !== false, config: cfg, createdAt: c.createdAt, lastResult: c.lastResult || null }
+                return { id: c.id, type: c.type, name: c.name, enabled: c.enabled !== false, config: cfg, createdAt: c.createdAt, lastResult: c.lastResult || null, routing: c.routing || defaultRouting() }
             }),
             rules: o.rules,
             history: o.history.slice(0, historyMax)
@@ -90,7 +104,7 @@ class NotificationStore {
         return out
     }
 
-    saveChannel(orgId, { id, type, name, enabled = true, config }) {
+    saveChannel(orgId, { id, type, name, enabled = true, config, routing }) {
         const all = this._read()
         const o = this._org(all, orgId)
         const prev = id ? o.channels.find(c => c.id === id) : null
@@ -102,7 +116,8 @@ class NotificationStore {
             enabled: !!enabled,
             config: this._encryptConfig(prev?.type || type, config || {}, prev?.config),
             createdAt: prev?.createdAt || new Date().toISOString(),
-            lastResult: prev?.lastResult || null
+            lastResult: prev?.lastResult || null,
+            routing: routing === undefined ? (prev?.routing || defaultRouting()) : cleanRouting(routing)
         }
         o.channels = prev ? o.channels.map(c => c.id === ch.id ? ch : c) : [...o.channels, ch]
         this._write(all)
@@ -113,6 +128,7 @@ class NotificationStore {
         const all = this._read()
         const o = this._org(all, orgId)
         o.channels = o.channels.filter(c => c.id !== id)
+        if (o.rules?.escalation?.channelIds) o.rules.escalation.channelIds = o.rules.escalation.channelIds.filter(c => c !== id)
         this._write(all)
     }
 
@@ -138,9 +154,32 @@ class NotificationStore {
         const rawAg = rules?.agentOfflineMinutes ?? o.rules.agentOfflineMinutes ?? DEFAULT_RULES.agentOfflineMinutes
         const ag = Number(rawAg)
         if (rawAg === '' || !Number.isFinite(ag) || ag < 1 || ag > 60) throw bad('Gateway Agent offline alert: after 1 to 60 minutes')
-        o.rules = { events, quietHours: { enabled: !!q.enabled, start: q.start, end: q.end, timezone: tz }, cooldownMinutes: Math.round(cd), agentOfflineMinutes: Math.round(ag) }
+        const esc = { ...DEFAULT_RULES.escalation, ...(o.rules.escalation || {}), ...(rules?.escalation || {}) }
+        const after = Number(esc.afterMinutes)
+        if (!Number.isFinite(after) || after < 5 || after > 240) throw bad('Escalation: after 5 to 240 minutes')
+        const known = new Set(o.channels.map(c => c.id))
+        const escChannels = (Array.isArray(esc.channelIds) ? esc.channelIds : []).map(String).filter(id => known.has(id))
+        if (esc.enabled && !escChannels.length) throw bad('Escalation: choose at least one channel to escalate to')
+        o.rules = { events, quietHours: { enabled: !!q.enabled, start: q.start, end: q.end, timezone: tz }, cooldownMinutes: Math.round(cd), agentOfflineMinutes: Math.round(ag),
+            escalation: { enabled: !!esc.enabled, afterMinutes: Math.round(after), channelIds: escChannels } }
         this._write(all)
         return o.rules
+    }
+
+    // Critical alerts waiting to be escalated (survive a restart)
+    addEscalation(orgId, item) {
+        const all = this._read(); const o = this._org(all, orgId)
+        o.escalations = (o.escalations || []).filter(e => e.key !== item.key)
+        o.escalations.push(item)
+        o.escalations = o.escalations.slice(-200)
+        this._write(all)
+    }
+    escalations() { return Object.entries(this._read()).flatMap(([orgId, o]) => (o?.escalations || []).map(e => ({ ...e, orgId }))) }
+    dropEscalation(orgId, key) {
+        const all = this._read(); const o = all[orgId]
+        if (!o?.escalations) return
+        o.escalations = o.escalations.filter(e => e.key !== key)
+        this._write(all)
     }
 
     // Alerts held back during quiet hours, sent as one summary when they end

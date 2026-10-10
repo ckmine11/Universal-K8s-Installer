@@ -3,6 +3,7 @@ import { requirePermission } from '../middleware/authMiddleware.js'
 import { notificationStore, CHANNEL_TYPES, EVENTS } from '../services/notificationStore.js'
 import { notifier, validateChannel, telegramChats } from '../services/notifier.js'
 import { alertPlanFor, lockedChannelIds } from '../config/alertPlans.js'
+import { clusterStore } from '../services/clusterStore.js'
 
 // Alert channels + rules of the caller's workspace (admins only: channels
 // hold bot tokens and webhook URLs)
@@ -16,6 +17,8 @@ const org = (req) => {
 const fail = (res, e) => res.status(e.status || 400).json({ error: e.message, ...(e.upgrade ? { upgrade: true } : {}) })
 // 402 = "your plan does not include this" (the page offers the upgrade)
 const planError = (msg) => Object.assign(new Error(msg), { status: 402, upgrade: true })
+const routingPro = 'Sending some clusters or severities to a channel is part of Pro. On Free the channel receives every critical alert.'
+const isDefaultRouting = (r) => !(r.clusters?.length) && (!r.minSeverity || r.minSeverity === 'info')
 const LABEL = { telegram: 'Telegram', slack: 'Slack', teams: 'Microsoft Teams', whatsapp: 'WhatsApp', email: 'Email', webhook: 'Webhook' }
 
 router.get('/', async (req, res) => {
@@ -30,32 +33,39 @@ router.get('/', async (req, res) => {
             types: Object.fromEntries(Object.entries(CHANNEL_TYPES).map(([k, v]) => [k, { label: v.label, fields: [...v.plain, ...v.secret], secret: v.secret }])),
             events: Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [k, v.label])),
             emailConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
-            linksConfigured: /^https?:\/\/[^/]/.test(process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || '')
+            linksConfigured: /^https?:\/\/[^/]/.test(process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || ''),
+            // for routing: which clusters a channel receives
+            clusters: (await clusterStore.getClusters())
+                .filter(c => (c.orgId && c.orgId === req.user.orgId) || (!c.orgId && c.ownerId === req.user.id))
+                .map(c => ({ id: c.id, name: c.clusterName || c.name || c.id }))
         })
     } catch (e) { fail(res, e) }
 })
 
 router.post('/channels', async (req, res) => {
     try {
-        const { type, name, config, enabled } = req.body || {}
+        const { type, name, config, enabled, routing } = req.body || {}
         const plan = await alertPlanFor(org(req))
+        if (routing && !plan.rules && !isDefaultRouting(routing)) throw planError(routingPro)
         if (!plan.channelTypes.includes(type)) throw planError(`${LABEL[type] || type} alerts are part of Pro. On Free you can use one Telegram, email or webhook channel.`)
         if (plan.maxChannels != null && notificationStore.channels(org(req)).filter(c => plan.channelTypes.includes(c.type)).length >= plan.maxChannels) {
             throw planError(`The Free plan includes ${plan.maxChannels} alert channel — remove the existing one first, or upgrade to Pro for more.`)
         }
         validateChannel(type, config)
-        const id = notificationStore.saveChannel(org(req), { type, name, config, enabled })
+        const id = notificationStore.saveChannel(org(req), { type, name, config, enabled, routing: plan.rules ? routing : undefined })
         res.json({ success: true, id })
     } catch (e) { fail(res, e) }
 })
 
-router.put('/channels/:id', (req, res) => {
+router.put('/channels/:id', async (req, res) => {
     try {
         const existing = notificationStore.channels(org(req)).find(c => c.id === req.params.id)
         if (!existing) return res.status(404).json({ error: 'Channel not found' })
-        const { name, config = {}, enabled } = req.body || {}
+        const { name, config = {}, enabled, routing } = req.body || {}
+        const plan = await alertPlanFor(org(req))
+        if (routing && !plan.rules && !isDefaultRouting(routing)) throw planError(routingPro)
         validateChannel(existing.type, config, true)
-        notificationStore.saveChannel(org(req), { id: existing.id, name: name ?? existing.name, config, enabled: enabled ?? existing.enabled })
+        notificationStore.saveChannel(org(req), { id: existing.id, name: name ?? existing.name, config, enabled: enabled ?? existing.enabled, routing: plan.rules ? routing : undefined })
         res.json({ success: true })
     } catch (e) { fail(res, e) }
 })
@@ -80,7 +90,7 @@ router.post('/telegram/chats', async (req, res) => {
 
 router.put('/rules', async (req, res) => {
     try {
-        if (!(await alertPlanFor(org(req))).rules) throw planError('Choosing alert types, quiet hours and the cooldown is part of Pro. Free sends critical alerts with fixed settings.')
+        if (!(await alertPlanFor(org(req))).rules) throw planError('Choosing alert types, quiet hours, the cooldown and escalation is part of Pro. Free sends critical alerts with fixed settings.')
         res.json({ success: true, rules: notificationStore.saveRules(org(req), req.body || {}) })
     } catch (e) { fail(res, e) }
 })

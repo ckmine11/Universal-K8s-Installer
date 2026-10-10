@@ -4,6 +4,7 @@ import dns from 'dns'
 import net from 'net'
 import { notificationStore, CHANNEL_TYPES, DEFAULT_RULES } from './notificationStore.js'
 import { alertPlanFor, lockedChannelIds } from '../config/alertPlans.js'
+import { actionLinks, telegramSeenChats, telegramPoller } from './alertActions.js'
 import { isPrivateAddress } from '../utils/netGuard.js'
 import { getMailer, mailError, mailFrom } from '../utils/mailer.js'
 
@@ -205,10 +206,13 @@ export async function telegramChats(botToken) {
     try {
         // getMe: checks the token and gives the bot's @username for the t.me link
         me = jsonOf((await postRequest(`https://api.telegram.org/bot${botToken}/getMe`, {})).text)?.result || {}
-        r = await postRequest(`https://api.telegram.org/bot${botToken}/getUpdates`, { limit: 100, allowed_updates: ['message', 'channel_post', 'my_chat_member'] })
+        // a bot KubeEZ already polls (for the alert buttons) cannot be asked twice —
+        // Telegram would end the other request; its chats are known already
+        r = telegramPoller.polling(botToken) ? { text: '{}' } : await postRequest(`https://api.telegram.org/bot${botToken}/getUpdates`, { limit: 100, allowed_updates: ['message', 'channel_post', 'my_chat_member'] })
     } catch (e) { throw new Error(telegramError(e)) }
     const bot = { username: me.username || null, name: me.first_name || null }
     const chats = new Map()
+    for (const c of telegramSeenChats(botToken)) chats.set(c.id, c)
     for (const u of jsonOf(r.text)?.result || []) {
         const c = (u.message || u.channel_post || u.my_chat_member || u.edited_message)?.chat
         if (!c || chats.has(String(c.id))) continue
@@ -228,7 +232,19 @@ function render(ev) {
     let text = String(ev.text || '')
     if (text.length > TEXT_MAX) text = text.slice(0, TEXT_MAX - 1) + '…'
     const lines = [ev.clusterName ? `Cluster: ${ev.clusterName}` : '', text].filter(Boolean)
-    return { icon, link, title: `${icon} ${String(ev.title || '').slice(0, 200)}`, lines }
+    return { icon, link, title: `${icon} ${String(ev.title || '').slice(0, 200)}`, lines, actions: actionLinks(ev), ev }
+}
+
+// Which channels get an alert: some clusters only (alerts without a cluster —
+// Gateway Agent, config backup — go everywhere) and from which severity. The
+// "back online / fixed" of a critical alert counts as critical.
+const LEVEL = { info: 0, success: 0, warning: 1, critical: 2 }
+export function routes(ch, ev) {
+    const r = ch.routing
+    if (!r) return true
+    if (r.clusters?.length && ev.clusterId && !r.clusters.includes(ev.clusterId)) return false
+    const level = ev.recovery ? 2 : (LEVEL[ev.severity] ?? 0)
+    return level >= (LEVEL[r.minSeverity] ?? 0)
 }
 
 const slackEsc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -240,7 +256,7 @@ async function sendWhatsApp(c, m) {
         // An approved template reaches the phone at any time (outside the 24 h window)
         ? { From: `whatsapp:${c.from}`, To: `whatsapp:${c.to}`, ContentSid: c.contentSid,
             ContentVariables: JSON.stringify({ 1: m.title, 2: m.lines.join(' · ') || '-', 3: m.link || publicUrl() || '-' }) }
-        : { From: `whatsapp:${c.from}`, To: `whatsapp:${c.to}`, Body: [m.title, ...m.lines, m.link].filter(Boolean).join('\n') }
+        : { From: `whatsapp:${c.from}`, To: `whatsapp:${c.to}`, Body: [m.title, ...m.lines, m.link, ...m.actions.map(a => `${a.label}: ${a.url}`)].filter(Boolean).join('\n') }
     let created
     try { created = jsonOf((await withRetry(() => postRequest(`${api}/Messages.json`, msg, { form: true, auth }))).text) }
     catch (e) { throw new Error(twilioError(e)) }
@@ -259,10 +275,18 @@ async function sendWhatsApp(c, m) {
 }
 
 async function sendTelegram(c, m) {
-    const url = `https://api.telegram.org/bot${c.botToken}/sendMessage`
+    const url = `${process.env.KUBEEZ_TELEGRAM_API || 'https://api.telegram.org'}/bot${c.botToken}/sendMessage`
     const html = [`<b>${esc(m.title)}</b>`, ...m.lines.map(esc), m.link ? `<a href="${esc(m.link)}">Open in KubeEZ</a>` : ''].filter(Boolean).join('\n')
+    // buttons answered by this bot (KubeEZ polls it) — no public address needed
+    const id = m.ev?.incidentId
+    const reply_markup = id && !m.ev.recovery ? { inline_keyboard: [[
+        { text: '✅ Acknowledge', callback_data: `ack:${id}` },
+        { text: '🔕 Mute 1 h', callback_data: `mute:${id}` },
+        ...(m.ev.fixable ? [{ text: '🛠 Fix now', callback_data: `fix:${id}` }] : [])
+    ]] } : undefined
+    if (reply_markup) telegramPoller.start()
     try {
-        return await withRetry(() => postRequest(url, { chat_id: c.chatId, parse_mode: 'HTML', disable_web_page_preview: true, text: html }))
+        return await withRetry(() => postRequest(url, { chat_id: c.chatId, parse_mode: 'HTML', disable_web_page_preview: true, text: html, ...(reply_markup ? { reply_markup } : {}) }))
     } catch (e) {
         // Formatting or a link Telegram dislikes: send it as plain text instead
         if (e.status === 400 && /can't parse entities|wrong http url|unsupported url|wrong url/i.test(String(e.body))) {
@@ -282,7 +306,8 @@ async function deliver(ch, ev) {
             return sendTelegram(c, m)
         case 'slack': {
             if (!SLACK_HOSTS.test(new URL(c.webhookUrl).hostname)) throw new Error('Not a Slack webhook URL')
-            const text = [`*${slackEsc(m.title)}*`, ...m.lines.map(slackEsc), m.link ? `<${m.link}|Open in KubeEZ>` : ''].filter(Boolean).join('\n')
+            const acts = m.actions.map(a => `<${a.url}|${a.label}>`).join(' · ')
+            const text = [`*${slackEsc(m.title)}*`, ...m.lines.map(slackEsc), [m.link ? `<${m.link}|Open in KubeEZ>` : '', acts].filter(Boolean).join(' · ')].filter(Boolean).join('\n')
             return withRetry(() => postRequest(c.webhookUrl, { text })).catch(e => { throw new Error(slackError(e)) })
         }
         case 'teams': {
@@ -294,7 +319,7 @@ async function deliver(ch, ev) {
                 type: 'message',
                 attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', contentUrl: null, content: {
                     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body,
-                    ...(m.link ? { actions: [{ type: 'Action.OpenUrl', title: 'Open in KubeEZ', url: m.link }] } : {})
+                    ...(m.link || m.actions.length ? { actions: [...(m.link ? [{ type: 'Action.OpenUrl', title: 'Open in KubeEZ', url: m.link }] : []), ...m.actions.map(a => ({ type: 'Action.OpenUrl', title: a.label, url: a.url }))] } : {})
                 } }]
             })).catch(e => { throw new Error(teamsError(e)) })
         }
@@ -305,11 +330,11 @@ async function deliver(ch, ev) {
                 from: mailFrom(),
                 to: c.to,
                 subject: `[KubeEZ] ${String(ev.title || '').slice(0, 150)}${ev.clusterName ? ` — ${ev.clusterName}` : ''}`,
-                text: [m.title, '', ...m.lines, m.link ? `\n${m.link}` : ''].join('\n'),
-                html: `<h3 style="margin:0 0 8px">${esc(m.title)}</h3>${m.lines.map(l => `<p style="margin:4px 0">${esc(l)}</p>`).join('')}${m.link ? `<p><a href="${esc(m.link)}">Open in KubeEZ</a></p>` : ''}`
+                text: [m.title, '', ...m.lines, m.link ? `\n${m.link}` : '', ...m.actions.map(a => `${a.label}: ${a.url}`)].join('\n'),
+                html: `<h3 style="margin:0 0 8px">${esc(m.title)}</h3>${m.lines.map(l => `<p style="margin:4px 0">${esc(l)}</p>`).join('')}${m.link ? `<p><a href="${esc(m.link)}">Open in KubeEZ</a></p>` : ''}${m.actions.length ? `<p>${m.actions.map(a => `<a href="${esc(a.url)}" style="display:inline-block;margin:4px 8px 0 0;padding:8px 14px;border-radius:8px;background:#0784ad;color:#fff;text-decoration:none;font-weight:bold">${esc(a.label)}</a>`).join('')}</p>` : ''}`
             }).catch(e => { throw new Error(mailError(e)) })
         case 'webhook':
-            return withRetry(() => postRequest(c.url, { source: 'kubeez', type: ev.type, severity: ev.severity, title: ev.title, text: ev.text || '', cluster: ev.clusterName || null, clusterId: ev.clusterId || null, link: m.link || null, at: new Date().toISOString() }))
+            return withRetry(() => postRequest(c.url, { source: 'kubeez', type: ev.type, severity: ev.severity, title: ev.title, text: ev.text || '', cluster: ev.clusterName || null, clusterId: ev.clusterId || null, link: m.link || null, incidentId: ev.incidentId || null, actions: Object.fromEntries(m.actions.map(a => [a.action, a.url])), at: new Date().toISOString() }))
         default:
             throw new Error('Unknown channel type')
     }
@@ -341,6 +366,7 @@ class Notifier {
     async notify(orgId, ev, { now = new Date() } = {}) {
         try {
             if (!orgId) return { sent: 0, reason: 'no workspace' }
+            ev = { ...ev, orgId }
             const plan = await alertPlanFor(orgId)
             // Free: critical alerts only — and the "it's fixed / back" message of a critical one
             if (plan.criticalOnly && ev.severity !== 'critical' && !ev.recovery) {
@@ -368,7 +394,13 @@ class Notifier {
             }
             const all = notificationStore.channels(orgId)
             const locked = lockedChannelIds(all, plan)
-            const channels = all.filter(c => c.enabled !== false && !locked.has(c.id))
+            const usable = all.filter(c => c.enabled !== false && !locked.has(c.id))
+            // routing is a Pro rule; on Free the one channel gets everything the plan sends
+            const channels = plan.rules ? usable.filter(c => routes(c, ev)) : usable
+            if (usable.length && !channels.length) {
+                notificationStore.record(orgId, { ...pick(ev), outcome: 'not sent — no channel is set to receive this cluster / severity' })
+                return { sent: 0, reason: 'routing' }
+            }
             if (!channels.length) {
                 notificationStore.record(orgId, { ...pick(ev), outcome: all.length ? 'not sent — every channel is paused or not on this plan' : 'not sent — no alert channel yet' })
                 return { sent: 0, reason: 'no channels' }
@@ -382,6 +414,12 @@ class Notifier {
             const okCount = Object.values(results).filter(r => r.ok).length
             // nothing got through: don't hold the next attempt back
             if (!okCount) lastSent.delete(key)
+            // a critical problem nobody acknowledges is escalated later
+            const esc = rules.escalation
+            if (plan.rules && esc?.enabled && esc.channelIds?.length && ev.severity === 'critical' && ev.escalate) {
+                notificationStore.addEscalation(orgId, { key: `${ev.escalate.kind}:${ev.escalate.id}`, dueAt: +now + esc.afterMinutes * 60000, afterMinutes: esc.afterMinutes, escalate: ev.escalate, ev: { ...pick(ev), text: ev.text || '', link: ev.link || null, clusterId: ev.clusterId || null, incidentId: ev.incidentId || null, fixable: !!ev.fixable, orgId } })
+                this._startDigest()
+            }
             notificationStore.record(orgId, { ...pick(ev), outcome: `${okCount}/${channels.length} delivered`, failures: Object.entries(results).filter(([, r]) => !r.ok).map(([id, r]) => ({ id, error: r.error })) }, results)
             return { sent: okCount, results }
         } catch (e) {
@@ -393,8 +431,52 @@ class Notifier {
     // Every minute: workspaces whose quiet hours are over get their held alerts as one message
     _startDigest() {
         if (this._digestTimer) return
-        this._digestTimer = setInterval(() => this.flushHeld().catch(() => { }), 60000)
+        this._digestTimer = setInterval(() => { this.flushHeld().catch(() => { }); this.flushEscalations().catch(() => { }) }, 60000)
         this._digestTimer.unref?.()
+    }
+
+    /** Started with the server: escalations and quiet-hours summaries survive restarts. */
+    start() {
+        this._startDigest()
+        if (notificationStore.escalations().length) this.flushEscalations().catch(() => { })
+    }
+
+    // Is a waiting escalation still needed? (acknowledged, muted, closed or back → no)
+    async _stillOpen(e) {
+        if (e.escalate.kind === 'incident') {
+            const { incidentDetector } = await import('./incidentDetector.js')
+            const inc = incidentDetector.find(e.escalate.id)
+            return !!inc && !['resolved', 'cleared'].includes(inc.status) && !inc.ackBy && !(inc.muted && new Date(inc.muted) > new Date())
+        }
+        if (e.escalate.kind === 'agent') {
+            const { agentService } = await import('./agentService.js')
+            return !agentService.agentSockets.has(e.escalate.id)
+        }
+        return false
+    }
+
+    async flushEscalations({ now = new Date() } = {}) {
+        let sent = 0
+        for (const e of notificationStore.escalations()) {
+            if (+now < e.dueAt) continue
+            notificationStore.dropEscalation(e.orgId, e.key)
+            if (!(await this._stillOpen(e))) continue
+            const plan = await alertPlanFor(e.orgId)
+            const rules = notificationStore.rules(e.orgId)
+            const all = notificationStore.channels(e.orgId)
+            const locked = lockedChannelIds(all, plan)
+            const targets = all.filter(c => rules.escalation?.channelIds?.includes(c.id) && c.enabled !== false && !locked.has(c.id))
+            if (!targets.length) continue
+            const ev = { ...e.ev, type: 'escalation', severity: 'critical', title: `ESCALATED — ${e.ev.title}`, text: `Not acknowledged for ${e.afterMinutes} minutes.${e.ev.text ? `\n${e.ev.text}` : ''}` }
+            const results = {}
+            await Promise.all(targets.map(async ch => {
+                try { await deliverWithin(plan, e.orgId, ch, ev); results[ch.id] = { ok: true } } catch (err) { results[ch.id] = { ok: false, error: String(err.message).slice(0, 300) } }
+            }))
+            const ok = Object.values(results).filter(r => r.ok).length
+            notificationStore.record(e.orgId, { ...pick(ev), outcome: `escalated: ${ok}/${targets.length} delivered` }, results)
+            sent += ok
+        }
+        return sent
     }
 
     async flushHeld({ now = new Date(), only = null } = {}) {

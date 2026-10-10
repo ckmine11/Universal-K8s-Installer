@@ -191,13 +191,14 @@ export default function Incidents() {
                                         )}
                                     </div>
                                 )}
+                                {!c.maintenance && c.nodes?.length > 0 && <NodeUsage nodes={c.nodes} />}
                             </div>
                         )
                     })}
                 </div>
                 {offline.length > 0 && (
                     <p className="mt-3 flex items-start gap-2 text-xs text-amber-200"><WifiOff className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                        Can’t reach {offline.map(c => c.clusterName).join(', ')} — problems there are detected once the connection is back. Servers in a private network need their <Link to="/agents" className="underline">Gateway Agent</Link> online.</p>
+                        <span>Can’t reach {offline.map(c => c.clusterName).join(', ')} — problems there are detected once the connection is back. Servers in a private network need their <Link to="/agents" className="underline">Gateway Agent</Link> online.</span></p>
                 )}
                 {monitor?.skipped?.length > 0 && (
                     <div className="mt-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-xs">
@@ -354,6 +355,39 @@ function IncidentRow({ inc, kids, cat, labelOf, onOpen }) {
                     )}
                 </div>
             )}
+        </div>
+    )
+}
+
+// CPU / memory / disk per node (kubelet, every 2 min) + "disk full in …"
+const tone = (p) => p == null ? 'bg-slate-600' : p >= 90 ? 'bg-red-400' : p >= 75 ? 'bg-amber-400' : 'bg-emerald-400'
+function Bar({ label, pct }) {
+    return (
+        <div className="flex items-center gap-1.5 min-w-0" title={`${label} ${pct == null ? 'unknown' : `${Math.round(pct)}%`}`}>
+            <span className="w-7 shrink-0 text-[9px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
+            <span className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden"><span className={`block h-full rounded-full ${tone(pct)}`} style={{ width: `${Math.min(100, Math.max(2, pct || 0))}%` }} /></span>
+            <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-slate-400">{pct == null ? '—' : `${Math.round(pct)}%`}</span>
+        </div>
+    )
+}
+function NodeUsage({ nodes }) {
+    const [open, setOpen] = useState(false)
+    const shown = open ? nodes : nodes.slice(0, 3)
+    const fmtH = (h) => h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} days`
+    return (
+        <div className="mt-3 space-y-2 border-t border-white/[0.06] pt-2.5">
+            {shown.map(n => (
+                <div key={n.node} className={n.stale ? 'opacity-50' : ''}>
+                    <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="truncate font-mono text-slate-300">{n.node}</span>
+                        {n.diskFullInHours != null && n.diskFullInHours <= 72 && <span className={`shrink-0 text-[10px] font-semibold ${n.diskFullInHours <= 24 ? 'text-red-300' : 'text-amber-300'}`}>disk full in ~{fmtH(n.diskFullInHours)}</span>}
+                    </div>
+                    <div className="mt-1 grid grid-cols-3 gap-2">
+                        <Bar label="CPU" pct={n.cpuPct} /><Bar label="Mem" pct={n.memPct} /><Bar label="Disk" pct={n.diskPct} />
+                    </div>
+                </div>
+            ))}
+            {nodes.length > 3 && <button onClick={() => setOpen(o => !o)} className="text-[11px] text-blue-300 hover:text-blue-200">{open ? 'Show less' : `+${nodes.length - 3} more nodes`}</button>}
         </div>
     )
 }

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../context/AuthContext'
 import {
     Bell, Send, MessageCircle, Mail, Webhook, Hash, Users, Plus, Trash2, Loader2, CheckCircle2,
-    XCircle, X, Moon, Clock, History, Pencil, AlertTriangle, Power, Lock, Sparkles
+    XCircle, X, Moon, Clock, History, Pencil, AlertTriangle, Power, Lock, Sparkles, Siren
 } from 'lucide-react'
 
 // Alert channels + rules for the workspace (the Alerts page)
@@ -150,7 +150,7 @@ export default function AlertsPanel() {
     }
 
     const saveForm = async () => {
-        const body = { type: form.type, name: form.name, config: form.config, enabled: form.enabled }
+        const body = { type: form.type, name: form.name, config: form.config, enabled: form.enabled, ...(data.plan?.rules !== false ? { routing: form.routing } : {}) }
         const done = form.id
             ? await call('save', 'PUT', `/api/notifications/channels/${form.id}`, body, 'Channel saved.')
             : await call('save', 'POST', '/api/notifications/channels', body, 'Channel added — send a test to check it.')
@@ -164,10 +164,14 @@ export default function AlertsPanel() {
     const plan = data.plan || { paid: true, channelTypes: Object.keys(data.types), maxChannels: null, rules: true }
     const usable = data.channels.filter(c => !c.locked).length
     const full = plan.maxChannels != null && usable >= plan.maxChannels
+    const clusterName = (id) => data.clusters?.find(c => c.id === id)?.name || 'removed cluster'
+    const esc = rules?.escalation || { enabled: false, afterMinutes: 15, channelIds: [] }
+    const setEsc = (p) => setRules(r => ({ ...r, escalation: { ...esc, ...p } }))
+    const chip = (on, tone = 'sky') => `px-2.5 py-1 rounded-lg border text-[11px] font-bold ${on ? (tone === 'red' ? 'border-red-400/50 bg-red-500/10 text-white' : 'border-sky-500/50 bg-sky-500/10 text-white') : 'border-white/10 text-slate-400 hover:bg-white/5'}`
     const addChannel = (k, t) => {
         if (!plan.channelTypes.includes(k)) return setNotice({ ok: false, upgrade: true, msg: `${t.label} alerts are part of Pro. On Free you can use one Telegram, email or webhook channel.` })
         if (full) return setNotice({ ok: false, upgrade: true, msg: `The Free plan includes ${plan.maxChannels} alert channel — remove the existing one first, or upgrade to Pro for more.` })
-        setForm({ type: k, name: t.label, config: {}, enabled: true })
+        setForm({ type: k, name: t.label, config: {}, enabled: true, routing: { clusters: [], minSeverity: 'info' } })
     }
 
     return (
@@ -242,7 +246,7 @@ export default function AlertsPanel() {
                                                 className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold disabled:opacity-50">
                                                 {busy === `test-${c.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Test
                                             </button>
-                                            <button onClick={() => setForm({ id: c.id, type: c.type, name: c.name, config: Object.fromEntries(Object.entries(c.config).map(([k, v]) => [k, data.types[c.type].secret.includes(k) ? '' : v])), enabled: c.enabled })}
+                                            <button onClick={() => setForm({ id: c.id, type: c.type, name: c.name, config: Object.fromEntries(Object.entries(c.config).map(([k, v]) => [k, data.types[c.type].secret.includes(k) ? '' : v])), enabled: c.enabled, routing: c.routing || { clusters: [], minSeverity: 'info' } })}
                                                 aria-label="Edit" className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5"><Pencil className="w-3 h-3" /></button>
                                             <button onClick={() => call(`tog-${c.id}`, 'PUT', `/api/notifications/channels/${c.id}`, { enabled: !c.enabled })}
                                                 aria-label={c.enabled ? 'Pause' : 'Resume'} className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5"><Power className="w-3 h-3" /></button>
@@ -250,6 +254,12 @@ export default function AlertsPanel() {
                                                 aria-label="Delete" className="p-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-red-300 hover:bg-red-500/10"><Trash2 className="w-3 h-3" /></button>
                                         </div>
                                     </div>
+                                    {plan.rules && c.routing && (c.routing.clusters.length > 0 || c.routing.minSeverity !== 'info') && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                            {c.routing.clusters.length > 0 && <span className="kz-chip !text-[10px]">{c.routing.clusters.map(clusterName).join(', ')}</span>}
+                                            {c.routing.minSeverity !== 'info' && <span className="kz-chip !text-[10px]">{c.routing.minSeverity === 'critical' ? 'critical only' : 'warning and up'}</span>}
+                                        </div>
+                                    )}
                                     {c.lastResult && (
                                         <p className={`mt-2 text-[10px] ${c.lastResult.ok ? 'text-emerald-300' : 'text-red-300'}`}>
                                             {c.lastResult.ok ? '✓ Last delivery worked' : `✗ Last delivery failed: ${c.lastResult.error}`} · {fmt(c.lastResult.at)}
@@ -266,7 +276,7 @@ export default function AlertsPanel() {
             {rules && !plan.rules && (
                 <div className="glass rounded-2xl border border-white/8 p-6">
                     <div className="flex items-center gap-2"><h3 className="text-lg font-black text-white">What to alert on</h3><span className="rounded px-1.5 py-0.5 text-[10px] font-bold text-amber-300 bg-amber-500/10">PRO</span></div>
-                    <p className="text-xs text-slate-400 mt-1">On Free: every <b className="text-slate-200">critical</b> alert and its recovery, at any hour, the same alert at most every 15 minutes, a Gateway Agent reported after 2 minutes away. With Pro you choose the alert types (warnings, recoveries, finished upgrades…), quiet hours and the cooldown.</p>
+                    <p className="text-xs text-slate-400 mt-1">On Free: every <b className="text-slate-200">critical</b> alert and its recovery, at any hour, the same alert at most every 15 minutes, a Gateway Agent reported after 2 minutes away. With Pro you choose the alert types (warnings, recoveries, finished upgrades…), quiet hours, the cooldown, which channel gets which cluster, and escalation when nobody reacts.</p>
                     <Link to="/pricing" className="inline-flex mt-3 kz-btn-ghost !py-2 !text-xs"><Lock className="w-3.5 h-3.5" /> Unlock with Pro</Link>
                 </div>
             )}
@@ -311,6 +321,24 @@ export default function AlertsPanel() {
                             </div>
                             <p className="mt-2 text-[11px] text-slate-500">Shorter drops (restarts, network blips) stay quiet. “Back online” follows when it reconnects.</p>
                         </div>
+                    </div>
+                    <div className="mt-4 rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
+                        <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
+                            <input type="checkbox" checked={esc.enabled} onChange={e => setEsc({ enabled: e.target.checked })} />
+                            <Siren className="w-4 h-4 text-red-300" /> Escalate critical alerts nobody acknowledges
+                        </label>
+                        <p className="mt-1 text-[11px] text-slate-500">A critical incident or offline Gateway Agent that is not acknowledged, muted or fixed in time is sent again, marked <b className="text-slate-300">ESCALATED</b>, to the channels chosen here (e.g. the team lead), once. Quiet hours and routing do not apply to it.</p>
+                        {esc.enabled && (<>
+                            <div className="mt-2.5 flex items-center gap-2 text-xs text-slate-300">
+                                after <input type="number" min="5" max="240" aria-label="Escalate after minutes" value={esc.afterMinutes} onChange={e => setEsc({ afterMinutes: e.target.value })} className={`${input} !py-1.5 !w-24`} /> minutes, to
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {data.channels.length ? data.channels.map(c => {
+                                    const on = esc.channelIds.includes(c.id)
+                                    return <button key={c.id} type="button" onClick={() => setEsc({ channelIds: on ? esc.channelIds.filter(x => x !== c.id) : [...esc.channelIds, c.id] })} className={chip(on, 'red')}>{on && '✓ '}{c.name}</button>
+                                }) : <span className="text-[11px] text-slate-500">Add a channel first.</span>}
+                            </div>
+                        </>)}
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-3 mt-4">
                         {rulesMsg && <span className={`text-xs ${rulesMsg.ok ? 'text-emerald-300' : 'text-red-300'}`}>{rulesMsg.ok ? '✓ ' : ''}{rulesMsg.msg}</span>}
@@ -361,6 +389,28 @@ export default function AlertsPanel() {
                                 </div>
                             )
                         })}
+                        <div className="mb-3 rounded-xl border border-white/8 bg-white/[0.02] p-3">
+                            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Receives {!plan.rules && <span className="rounded px-1 text-[9px] text-amber-300 bg-amber-500/10">PRO</span>}</p>
+                            {!plan.rules ? <p className="mt-1 text-[11px] text-slate-500">Every critical alert of every cluster. With Pro you can send only some clusters or severities here, e.g. production criticals to on-call and the rest to a team chat.</p> : (() => {
+                                const r = form.routing || { clusters: [], minSeverity: 'info' }
+                                const setR = (p) => setForm(f => ({ ...f, routing: { ...r, ...p } }))
+                                return (<>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {[['info', 'Everything'], ['warning', 'Warnings and critical'], ['critical', 'Critical only']].map(([v, l]) => (
+                                            <button key={v} type="button" onClick={() => setR({ minSeverity: v })} className={chip(r.minSeverity === v)}>{l}</button>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                        <button type="button" onClick={() => setR({ clusters: [] })} className={chip(!r.clusters.length)}>All clusters</button>
+                                        {(data.clusters || []).map(c => {
+                                            const on = r.clusters.includes(c.id)
+                                            return <button key={c.id} type="button" onClick={() => setR({ clusters: on ? r.clusters.filter(x => x !== c.id) : [...r.clusters, c.id] })} className={chip(on)}>{on && '✓ '}{c.name}</button>
+                                        })}
+                                    </div>
+                                    <p className="mt-2 text-[11px] text-slate-500">Alerts that belong to no cluster (Gateway Agent, config backups) always arrive. “Fixed / back online” counts as critical.</p>
+                                </>)
+                            })()}
+                        </div>
                         {notice && !notice.ok && <p className="mb-3 text-xs text-red-300 flex items-start gap-1.5"><XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />{notice.msg}</p>}
                         <div className="flex justify-end gap-2 mt-2">
                             <button onClick={() => setForm(null)} className="px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold">Cancel</button>

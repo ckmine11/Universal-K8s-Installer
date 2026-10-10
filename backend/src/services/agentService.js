@@ -348,7 +348,7 @@ class AgentService {
             if (!orgId) return console.warn(`[AgentService] Agent ${agentId} belongs to no workspace — offline alert not sent`)
             // remembered on disk: "back online" is sent even after a KubeEZ restart
             await this._mutate(list => { const a = list.find(x => x.agentId === agentId); if (a) a.offlineAlertedAt = new Date().toISOString() }).catch(() => { })
-            notifier.emit(orgId, { type: 'agent_offline', severity: 'critical', key: `agent|${agentId}`, title: `Gateway Agent "${agent.label || agentId.slice(0, 8)}" is offline`, text: 'Clusters reached through it cannot be managed, monitored or healed until it reconnects. Check the machine it runs on.', link: '/agents' })
+            notifier.emit(orgId, { type: 'agent_offline', severity: 'critical', key: `agent|${agentId}`, title: `Gateway Agent "${agent.label || agentId.slice(0, 8)}" is offline`, text: 'Clusters reached through it cannot be managed, monitored or healed until it reconnects. Check the machine it runs on.', link: '/agents', escalate: { kind: 'agent', id: agentId } })
         }, delay)
         timer.unref?.()
         this.offlineAlerts.set(agentId, { timer, alerted: false })
