@@ -51,7 +51,11 @@ async function install(key, settings, { advanced = '', version, addons = {} } = 
         await automationEngine.installHelmAddon(ssh, inst, key, quietLog(lines), { timeoutMs: 45 * 60e3 })
         installed[key] = true
         return { ok: true, lines, s: Math.round((Date.now() - t) / 1000) }
-    } catch (e) { return { ok: false, error: e.message, lines, s: Math.round((Date.now() - t) / 1000) } }
+    } catch (e) {
+        // the job's last lines (pods, events) — the reason is gone once the test cleans up
+        console.log(lines.slice(-15).map(l => `   | ${String(l).slice(0, 220)}`).join('\n'))
+        return { ok: false, error: e.message, lines, s: Math.round((Date.now() - t) / 1000) }
+    }
 }
 async function uninstall(key) {
     const lines = []
@@ -70,7 +74,7 @@ const older = (key) => HELM_ADDONS[key].versions[1].id
 const newest = (key) => HELM_ADDONS[key].versions[0].id
 
 // ── NFS storage (stays for the add-ons below that keep data) ──
-const useNfs = want('nfs-provisioner') || want('vault') || want('jenkins')
+const useNfs = want('nfs-provisioner') || want('vault') || want('jenkins') || want('elasticsearch')
 if (useNfs) {
     console.log('== NFS storage')
     let r = await install('nfs-provisioner', { server: '192.0.2.250', path: '/' })
@@ -148,7 +152,7 @@ if (want('vault')) {
 // ── Elasticsearch + Fluentd + Fluent Bit ──
 if (want('elasticsearch')) {
     console.log('== Elasticsearch + Kibana')
-    let r = await install('elasticsearch', { nodes: '1', memory: '2', storage: 'node', kibana: true }, { version: older('elasticsearch') })
+    let r = await install('elasticsearch', { nodes: '1', memory: '2', storage: 'nfs', sizeGi: 2, kibana: true }, { version: older('elasticsearch') })
     ok(r.ok, `installed ${older('elasticsearch')} (${r.s}s) ${r.error || ''}`)
     const pw = secret('elastic-system', 'kubeez-es-elastic-user', 'elastic')
     const es = (q) => dx(`curl -s -m 20 -u elastic:${pw} "http://$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n elastic-system get svc kubeez-es-http -o jsonpath='{.spec.clusterIP}'):9200${q}"`).stdout
@@ -156,7 +160,7 @@ if (want('elasticsearch')) {
     const kb = await until(() => /available/.test(dx(`curl -s -m 10 http://${nodeIp}:30561/api/status`).stdout), 300e3, 10000)
     ok(!!kb, 'Kibana answers on node port 30561')
 
-    if (want('fluentd') || !ONLY.length) {
+    if (want('fluentd')) {
         console.log('== Fluentd (aggregator) ← Fluent Bit')
         r = await install('fluentd', { role: 'aggregator', output: 'elasticsearch' })
         ok(r.ok, `Fluentd installed, sending to Elasticsearch (${r.s}s) ${r.error || ''}`)
@@ -177,7 +181,7 @@ if (want('elasticsearch')) {
     }
     // the update the user picks: 8.19 → 9.5 (rolling, data kept)
     dx(`curl -s -m 20 -u elastic:${pw} -XPUT -H 'content-type: application/json' "http://$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n elastic-system get svc kubeez-es-http -o jsonpath='{.spec.clusterIP}'):9200/kubeez-e2e/_doc/1?refresh=true" -d '{"kept":true}'`)
-    r = await install('elasticsearch', { nodes: '1', memory: '2', storage: 'node', kibana: true }, { version: newest('elasticsearch') })
+    r = await install('elasticsearch', { nodes: '1', memory: '2', storage: 'nfs', sizeGi: 2, kibana: true }, { version: newest('elasticsearch') })
     ok(r.ok, `updated to ${newest('elasticsearch')} (${r.s}s) ${r.error || ''}`)
     ok(/"number" *: *"9\.5/.test(es('/')), 'Elasticsearch 9.5 answers')
     ok(/"kept" *: *true/.test(es('/kubeez-e2e/_doc/1')), 'the indexed document survived the update')
@@ -196,7 +200,7 @@ if (want('harbor')) {
     ok(/certs\.d/.test(dx("grep config_path /etc/containerd/config.toml").stdout) && dx(`test -f /etc/containerd/certs.d/${reg}/ca.crt`).code === 0, 'containerd on the node trusts Harbor')
     // push an image with containerd's own client, then run it as a pod
     const pushed = dx([
-        'ctr -n k8s.io images pull docker.io/library/busybox:1.37 >/dev/null',
+        'ctr -n k8s.io images pull --all-platforms docker.io/library/busybox:1.37 >/dev/null',   // push needs every platform of the image
         `ctr -n k8s.io images tag --force docker.io/library/busybox:1.37 ${reg}/library/busybox:e2e >/dev/null`,
         `ctr -n k8s.io images push --hosts-dir /etc/containerd/certs.d --user admin:${pw} ${reg}/library/busybox:e2e`
     ].join(' && '))

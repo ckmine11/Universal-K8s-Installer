@@ -513,7 +513,7 @@ export const PLATFORM_ADDONS = {
         validate: (s, ctx) => ({
             nodes: Number(oneOf(String(s.nodes ?? '1'), ['1', '3'], 'Elasticsearch nodes')),
             memory: Number(oneOf(String(s.memory ?? '2'), ['2', '4', '8', '16'], 'Memory per node')),
-            storage: resolveStorage(s.storage, ctx),
+            storage: resolveStorage(s.storage, ctx, { needsVolume: true, what: 'Elasticsearch' }),   // a wiped single node can never form its cluster again
             sizeGi: int(s.sizeGi ?? 20, { min: 1, max: 4000, label: 'Disk per node (GiB)' }),
             kibana: boolOr(s.kibana, true),
             kibanaPort: port(s.kibanaPort ?? 30561, 'Kibana node port'),
@@ -548,7 +548,6 @@ export const PLATFORM_ADDONS = {
                         podTemplate: {
                             spec: {
                                 containers: [{ name: 'elasticsearch', resources: { requests: { cpu: '250m', memory: mem }, limits: { memory: mem } } }],
-                                ...(persist ? {} : { volumes: [{ name: 'elasticsearch-data', emptyDir: {} }] })
                             }
                         },
                         ...(persist ? {
@@ -738,7 +737,7 @@ export const PLATFORM_ADDONS = {
             ]
             const outputs = s.output === 'elasticsearch' ? esOut(ES.host, ES.port, false, true)
                 : s.output === 'external' ? esOut(s.host, s.port, s.tls, !!s.secret)
-                    : s.output === 'fluentd' ? ['[OUTPUT]', '    Name forward', '    Match *', '    Host fluentd.fluentd.svc', '    Port 24224', '    Retry_Limit 5', '']
+                    : s.output === 'fluentd' ? ['[OUTPUT]', '    Name forward', '    Match *', '    Host fluentd.fluentd.svc', '    Port 24224', '    Retain_Metadata_In_Forward_Mode false', '    Retry_Limit 5', '']   // Fluentd 1.x refuses events with metadata
                         : ['[OUTPUT]', '    Name stdout', '    Match *', '    Format json_lines', '']
             return [{
                 name: 'kubeez-fluent-bit', repo: REPOS.fluent, chart: 'fluent-bit', version: v.charts['fluent-bit'],
@@ -752,7 +751,8 @@ export const PLATFORM_ADDONS = {
                             '[INPUT]',
                             '    Name tail',
                             '    Path /var/log/containers/*.log',
-                            '    Exclude_Path /var/log/containers/kubeez-fluent-bit-*.log,/var/log/containers/fluent-bit-*.log',
+                            // never its own logs or Fluentd's (a loop: every warning about a log line is a new log line)
+                            '    Exclude_Path /var/log/containers/kubeez-fluent-bit-*.log,/var/log/containers/fluent-bit-*.log,/var/log/containers/*_fluentd_*.log',
                             '    multiline.parser docker, cri',
                             '    Tag kube.*',
                             '    DB /var/log/kubeez-fluent-bit-ship.db',

@@ -89,11 +89,14 @@ test('Elasticsearch: the stack version is the add-on version; Kibana and storage
     assert.equal(es.spec.http.service.spec.ports[0].nodePort, 30920)
     assert.equal(kb.kind, 'Kibana')
     assert.equal(kb.spec.http.service.spec.ports[0].nodePort, 30561)
-    const off = plan('elasticsearch', { kibana: false })
+    const off = plan('elasticsearch', { kibana: false, storage: 'default' })
     assert.equal(off.post.manifests.length, 1)
     assert.match(off.post.script, /delete kibana/)
-    assert.ok(off.post.manifests[0].spec.nodeSets[0].podTemplate.spec.volumes, 'node-only storage: emptyDir')
-    assert.equal(plan('elasticsearch', {}, {}, {}).releases[0].values.telemetry.disabled, true)
+    assert.equal(off.post.manifests[0].spec.nodeSets[0].volumeClaimTemplates[0].spec.storageClassName, undefined, 'default StorageClass')
+    // a node-only data folder is wiped when the pod is recreated — a single node can then never form its cluster again
+    assert.throws(() => plan('elasticsearch', { storage: 'node' }), /cannot keep its data on the node/)
+    assert.throws(() => plan('elasticsearch', {}), /Elasticsearch keeps its data on a volume/)
+    assert.equal(plan('elasticsearch', { storage: 'default' }).releases[0].values.telemetry.disabled, true)
 })
 
 test('Elasticsearch: new stack versions come from Elastic\'s version list, the operator chart follows its newest', () => {
@@ -113,7 +116,9 @@ test('Fluentd and Fluent Bit: logs go where chosen; Elasticsearch login from a S
     assert.match(values(p).config.outputs, /Name es[\s\S]*Host kubeez-es-http\.elastic-system\.svc[\s\S]*HTTP_Passwd \$\{ES_PASSWORD\}/)
     assert.deepEqual(values(p).env.map(e => e.valueFrom.secretKeyRef.name), ['kubeez-es-credentials', 'kubeez-es-credentials'])
     assert.match(p.pre, /kubeez-es-elastic-user/)
-    assert.match(values(plan('fluent-bit', {}, { fluentd: true })).config.outputs, /Name forward[\s\S]*fluentd\.fluentd\.svc/)
+    const fwd = values(plan('fluent-bit', {}, { fluentd: true }))
+    assert.match(fwd.config.outputs, /Name forward[\s\S]*fluentd\.fluentd\.svc[\s\S]*Retain_Metadata_In_Forward_Mode false/, 'Fluentd 1.x refuses events with metadata')
+    assert.match(fwd.config.inputs, /Exclude_Path .*\*_fluentd_\*\.log/, 'never Fluentd\'s own logs (a feedback loop)')
     assert.match(values(plan('fluent-bit', {})).config.outputs, /Name stdout/)
     p = plan('fluent-bit', { output: 'external', host: 'es.corp', port: 9243, secret: 'es-login' })
     assert.match(values(p).config.outputs, /Host es\.corp[\s\S]*Port 9243[\s\S]*tls On/)
