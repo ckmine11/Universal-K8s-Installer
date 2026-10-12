@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-    LayoutDashboard, Rocket, Wifi, ShieldAlert, Users, Settings, Bell, BookOpen, Zap, Crown,
+    LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
     LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
@@ -29,6 +29,7 @@ export function navSections(user) {
             title: 'Overview', items: [
                 { to: '/', label: 'Clusters', icon: LayoutDashboard, end: true },
                 { to: '/incidents', label: 'Incidents', icon: ShieldAlert },
+                { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
             ]
         },
         {
@@ -56,7 +57,7 @@ export function navSections(user) {
 
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
-    [/^\/cluster\//, 'Cluster'], [/^\/incidents/, 'Incidents'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'],
+    [/^\/cluster\//, 'Cluster'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'],
     [/^\/settings/, 'Settings'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 

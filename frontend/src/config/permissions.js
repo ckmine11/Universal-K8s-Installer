@@ -29,6 +29,9 @@ export const PERMISSIONS = {
     'alerts:manage':       ['admin'],
     'incident:act':        ['admin', 'operator'],
     'healing:manage':      ['admin'],
+    'compliance:view':     ['admin', 'operator', 'viewer'],
+    'compliance:manage':   ['admin'],
+    'audit:view':          ['admin'],
 }
 
 /** Does a role have a given permission? superadmin always true. */

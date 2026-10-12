@@ -196,6 +196,8 @@ class AuthService {
         this._failures.delete(lockKey);
         if (user.isSuspended) throw new Error('This account is suspended. Contact your administrator.');
 
+        user.lastLoginAt = new Date().toISOString();   // inactive accounts show up in the compliance report
+        this.saveUsers();
         return this.generateToken(user);
     }
 

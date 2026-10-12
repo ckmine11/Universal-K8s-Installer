@@ -32,6 +32,7 @@
         "jsonwebtoken": "^9.0.2",
         "node-ssh": "^13.1.0",
         "nodemailer": "^10.0.16",
+        "pdfkit": "^0.17.2",
         "stripe": "^15.11.0",
         "ws": "^8.14.2",
         "yaml": "^2.9.1"

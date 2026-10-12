@@ -400,6 +400,20 @@ cmd_platform_addons() {
     return $rc
 }
 
+# Compliance scan on a real cluster: evidence, kube-bench, report + PDF, and
+# the fixes from the report (audit policy, NIC / NPL time servers).
+# e2e.sh compliance [distro]
+cmd_compliance() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
+    image "$distro"; start_node "$node" "$distro"
+    docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local rc
+    NODE_CONTAINER="$node" node "$E2E/compliance-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
 # Add-ons installed the old way (scripts) taken over by Helm in place, data
 # kept; then step upgrades, customizing, rollback, uninstall.
 # e2e.sh takeover [distro]   (ONLY=ingress,argocd for a subset)
@@ -432,6 +446,7 @@ case "${1:-}" in
     addons)  shift; cmd_addons "$@" ;;
     helm-addons) shift; cmd_helm_addons "$@" ;;
     platform-addons) shift; cmd_platform_addons "$@" ;;
+    compliance) shift; cmd_compliance "$@" ;;
     takeover) shift; cmd_takeover "$@" ;;
     agent)   shift; cmd_agent "$@" ;;
     agent-health) shift; cmd_agent_health "$@" ;;

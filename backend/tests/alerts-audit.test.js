@@ -162,6 +162,13 @@ test('new add-on version available: announced once per version', async () => {
     assert.equal(await announceUpdates(), 0, 'not announced twice')
 })
 
+test('compliance: a control that got worse since the last scan is announced', async () => {
+    const { announceRegressions } = await import('../src/services/complianceService.js')
+    const row = (status) => ({ id: 'TIME-1', title: 'Node clocks synchronised with NIC / NPL time servers', status })
+    await announceRegressions(cluster, { score: 80, results: [row('pass')] }, { id: 'r2', score: 70, results: [row('fail')] })
+    assert.ok(await arrived('compliance_regression', /TIME-1 .*pass → fail.*80 → 70/))
+})
+
 test('every alert type in the list was delivered at least once', () => {
     const seen = new Set(got.map(m => m.type))
     for (const type of Object.keys(EVENTS)) assert.ok(seen.has(type), `${type} (${EVENTS[type].label}) never arrived`)

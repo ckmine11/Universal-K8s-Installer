@@ -70,7 +70,10 @@ export const PERMISSIONS = {
     'backup:manage':     ['admin'],
     'alerts:manage':     ['admin'],
     'incident:act':      ['admin', 'operator'],   // acknowledge, run a fix now, mute, maintenance
-    'healing:manage':    ['admin']                // auto-healing policies
+    'healing:manage':    ['admin'],               // auto-healing policies
+    'compliance:view':   ['admin', 'operator', 'viewer'],   // compliance scores and reports
+    'compliance:manage': ['admin'],               // run scans, attestations, fixes, monthly reports
+    'audit:view':        ['admin']                // the audit trail (who did what)
 }
 
 // Human-readable grouping for the transparency matrix shown in the UI
@@ -101,6 +104,11 @@ export const PERMISSION_GROUPS = [
         { key: 'alerts:manage',  label: 'Manage alert channels' },
         { key: 'incident:act',   label: 'Act on incidents (fix now, mute, maintenance)' },
         { key: 'healing:manage', label: 'Change auto-healing policies' }
+    ]},
+    { group: 'Compliance', items: [
+        { key: 'compliance:view',   label: 'View compliance scores & reports' },
+        { key: 'compliance:manage', label: 'Run scans, confirm attestations, apply fixes' },
+        { key: 'audit:view',        label: 'View the audit trail' }
     ]}
 ]
 

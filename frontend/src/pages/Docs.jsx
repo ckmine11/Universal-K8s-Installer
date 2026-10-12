@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Bell,
     BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
     Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse,
-    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass
+    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass, ShieldCheck
 } from 'lucide-react'
 
 // ── Small building blocks ────────────────────────────────────────────────────
@@ -120,6 +120,7 @@ const NAV = [
     { title: 'Operations', items: [
         { id: 'healing', label: 'Auto-Healing & Incidents' },
         { id: 'alerts', label: 'Alerts' },
+        { id: 'compliance', label: 'Compliance & Audit' },
         { id: 'roles', label: 'Teams & Roles' },
         { id: 'plans', label: 'Plans' },
         { id: 'troubleshooting', label: 'Troubleshooting' }
@@ -512,6 +513,21 @@ export default function Docs() {
                         <P><b className="text-white">Root cause:</b> when a node is down, pod and workload problems on it are listed under it and not “fixed” separately. <b className="text-white">Each incident</b> has a timeline (detected → each fix attempt → result), the evidence collected and a suggestion. A fix is tried at most 3 times, then it needs a person; a closed incident that comes back opens a new one. History is kept 7 days, with fix success rate and mean time to recover.</P>
                         <P><b className="text-white">Control:</b> admins choose per problem type <i>Fix automatically</i>, <i>Alert only</i> or <i>Off</i> (Policies). Operators can acknowledge, run a fix now, mute an incident for 24 h, or put a cluster in maintenance (no checks, fixes or alerts for 1–24 h — <b className="text-white">Resume now</b> ends it early). Watching pauses by itself while an install, upgrade or scale runs on the cluster.</P>
                         <P><b className="text-white">Node usage:</b> each watched cluster shows CPU, memory and disk of every node (from the kubelet, every 2 minutes) and “disk full in ~X h” when a disk is filling up.</P>
+                    </Section>
+
+                    <Section id="compliance" Icon={ShieldCheck} color="text-emerald-400" title="Compliance & Audit"
+                        intro="Compliance in the sidebar: a live scan of a cluster mapped to CERT-In Directions 2022, the DPDP Act 2023 & Rules 2025, ISO/IEC 27001:2022 Annex A and the CIS Kubernetes Benchmark. A scan only reads (SSH to every node); it takes 1–5 minutes.">
+                        <Table head={['', 'What it does']} rows={[
+                            ['What is checked', '29 controls: time sync with NIC / NPL, API audit log and 180-day / 1-year log retention, central pod logs, the KubeEZ audit trail, alert channels, incidents within 6 hours, runtime threat detection, etcd snapshots, encrypted offsite copies, restore tests, volume backups, Secret encryption at rest, HTTPS, certificate expiry, accounts, cluster-admins, SSH hardening, image vulnerabilities, OS security updates, supported version, the CIS benchmark (kube-bench), admission policies, privileged pods, network policies, secrets management.'],
+                            ['Score', 'Every control is Pass, Partial, Fail, To confirm or N/A, weighted by severity (high 3, medium 2, low 1). One score overall and one per framework, with the history of every scan.'],
+                            ['Attestations', 'What a scan cannot see is confirmed by an admin: CERT-In point of contact, logs and backups kept in India, incident response plan, DPDP contact, access review. Valid one year.'],
+                            ['Fixes', <>Each finding says how to fix it. <b>Fix: set NIC / NPL time servers</b> configures chrony / timesyncd on every node (Pro). The PDF contains a ready audit policy and Secret encryption config.</>],
+                            ['Report (Pro)', 'A PDF for auditors and client questionnaires: cover with scores, executive summary, framework scorecards, every control with evidence, references and fix, node evidence, CIS failures, attestations, ready-made fixes. Sealed with SHA-256 + a KubeEZ signature — "Verify seal" shows whether it was changed. The evidence is also available as JSON.'],
+                            ['Monthly (Pro)', 'Every 30 days each cluster is scanned, the PDF is emailed to the admins, and an alert ("a control got worse") goes to your channels when something regressed.'],
+                            ['CERT-In report (Pro)', 'From an incident: a pre-filled CERT-In incident report (type from Annexure I, times in IST, affected systems, evidence, actions taken) with the 6-hour deadline shown.'],
+                            ['Audit trail', 'Every change made through KubeEZ (who, role, IP, cluster, result), sign-ins and failed sign-ins, restores and verifications — kept 400 days, chained with SHA-256 so a changed or deleted line is detected. Filter and export as CSV (admins).']
+                        ]} />
+                        <Note>The mapping to CERT-In, DPDP and ISO 27001 is an aid for audits — it is not legal advice or a certification.</Note>
                     </Section>
 
                     <Section id="alerts" Icon={Bell} color="text-amber-400" title="Alerts"

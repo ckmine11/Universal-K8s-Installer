@@ -74,6 +74,9 @@ server.on('upgrade', (req, socket, head) => {
 })
 
 import { requestLogger, errorLogger } from './middleware/logger.js'
+import { auditLog, auditTrail } from './services/auditLog.js'
+import complianceRoutes from './routes/compliance.js'
+import { startComplianceSchedule } from './services/complianceService.js'
 
 // Middleware
 app.use(helmet({
@@ -112,6 +115,7 @@ app.use('/api/stripe', stripeRoutes)
 
 app.use(express.json())
 app.use(requestLogger) // Structured logging
+app.use(auditTrail)    // who changed what (services/auditLog.js)
 
 // Rate Limiting (DDoS Protection)
 app.use('/api/', apiLimiter) // Apply to all API routes
@@ -246,6 +250,7 @@ app.post('/api/auth/login', async (req, res) => {
         const { username, password } = req.body
         const token = await authService.login(username, password)
         const decoded = authService.verifyToken(token)
+        auditLog.record({ orgId: decoded?.orgId || null, actor: decoded, ip: req.ip, action: 'auth.login' })
         res.cookie('token', token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -254,11 +259,16 @@ app.post('/api/auth/login', async (req, res) => {
         })
         res.json({ token, user: { id: decoded?.id, username: decoded?.username, email: decoded?.email, role: decoded?.role, orgId: decoded?.orgId } })
     } catch (e) {
+        // failed sign-ins of a known account land in its workspace's trail
+        const known = authService.findByLogin(req.body?.username)
+        auditLog.record({ orgId: known?.orgId || null, actor: known ? { id: known.id, username: known.username, role: known.role } : { username: String(req.body?.username || '').slice(0, 80) }, ip: req.ip, action: 'auth.login_failed', ok: false, detail: e.message })
         res.status(401).json({ error: e.message })
     }
 })
 
 app.post('/api/auth/logout', (req, res) => {
+    const who = authService.verifyToken(req.cookies?.token || '')
+    if (who) auditLog.record({ orgId: who.orgId || null, actor: who, ip: req.ip, action: 'auth.logout' })
     res.clearCookie('token', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' })
     res.json({ message: 'Logged out' })
 })
@@ -278,6 +288,7 @@ app.use('/api/offsite', offsiteRoutes)
 app.use('/api/notifications', requireAuth, notificationsRoutes)
 app.use('/api/addon-catalog', requireAuth, addonCatalogRoutes)   // add-on forms before a cluster exists (wizard)
 app.use('/api/alert-actions', alertActionsRoutes)   // signed links in alerts — public, see the route
+app.use('/api/compliance', requireAuth, complianceRoutes)   // Compliance Center + audit trail
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 
@@ -462,6 +473,8 @@ server.listen(PORT, () => {
     notifier.start()          // escalations + quiet-hours summaries
     telegramPoller.start()    // Acknowledge / Mute / Fix buttons in Telegram alerts
     addonVersionService.start()   // new add-on versions from their Helm repositories (every 12 h)
+    auditLog.start()              // audit trail retention (daily)
+    startComplianceSchedule()     // monthly compliance reports (Pro)
 
     console.log(`
 ╔═══════════════════════════════════════════════════════╗

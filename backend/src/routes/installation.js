@@ -1,4 +1,5 @@
 import express from 'express'
+import { auditLog } from '../services/auditLog.js'
 import net from 'net'
 import { randomUUID as uuidv4 } from 'crypto'
 import { installationManager } from '../services/installationManager.js'
@@ -723,12 +724,16 @@ function startEtcdJob(res, cluster, kind, fn, meta) {
     const busy = clusterBusy(cluster.id)
     if (busy) return res.status(409).json({ error: busy.message, jobId: busy.jobId })
     const watched = async (ctx) => {
+        // the outcome stays in the audit trail (jobs themselves are kept 2 hours)
+        const trail = (ok, detail) => auditLog.record({ orgId: cluster.orgId || null, action: `etcd.${kind}`, target: { clusterId: cluster.id, clusterName: cluster.clusterName }, ok, detail: [meta?.filename, detail].filter(Boolean).join(' — ') || null })
         try {
             const result = await fn(ctx)
+            trail(true, kind === 'backup' ? result?.filename : null)
             alertEtcdJob(cluster, kind, true, kind === 'backup' ? (result?.offsite && !result.offsite.uploaded ? result.offsite.error : null)
                 : (result?.warnings?.length ? result.warnings.join(' ') : 'The cluster runs on the restored state.'))
             return result
         } catch (e) {
+            trail(false, e.message)
             alertEtcdJob(cluster, kind, false, e.message)
             throw e
         }
@@ -818,7 +823,10 @@ router.post('/:id/etcd/verify', requireAuth, async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
-        res.json(await etcdBackupService.verifyBackup(cluster, req.body?.filename))
+        const v = await etcdBackupService.verifyBackup(cluster, req.body?.filename)
+        // a verified snapshot is backup evidence (compliance report)
+        auditLog.record({ orgId: cluster.orgId || null, actor: req.user, ip: req.ip, action: 'etcd.verify', target: { clusterId: cluster.id, clusterName: cluster.clusterName }, ok: !!v?.ok, detail: [req.body?.filename, v?.ok ? `revision ${v.revision}, ${v.keys} keys` : v?.error].filter(Boolean).join(' — ') })
+        res.json(v)
     } catch (error) {
         res.status(error.status || 500).json({ error: error.message })
     }

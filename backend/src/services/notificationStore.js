@@ -30,7 +30,8 @@ export const EVENTS = {
     job_done: { label: 'Cluster ready, nodes added, add-on installed / removed', default: true },
     install_failed: { label: 'Cluster install, scale or add-on job failed', default: true },
     agent_offline: { label: 'Gateway Agent offline / back online', default: true },
-    addon_update: { label: 'New add-on version available (once per version)', default: true }
+    addon_update: { label: 'New add-on version available (once per version)', default: true },
+    compliance_regression: { label: 'Compliance: a control got worse (after a scan)', default: true }
 }
 
 export const DEFAULT_RULES = {
