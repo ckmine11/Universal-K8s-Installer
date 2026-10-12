@@ -12,6 +12,7 @@ const { addonAccessService } = await import('../../backend/src/services/addonAcc
 const { normaliseConfig } = await import('../../backend/src/services/offsiteService.js')
 const { volumeBackupStore } = await import('../../backend/src/services/volumeBackupStore.js')
 const { volumeBackupService } = await import('../../backend/src/services/volumeBackupService.js')
+const { installAddon } = await import('./install-addon.mjs')
 
 const NODE = process.env.NODE_CONTAINER
 const env = { ...process.env, MSYS_NO_PATHCONV: '1' }
@@ -28,15 +29,17 @@ async function until(what, fn, secs = 300) {
     for (let i = 0; i < secs / 5; i++) { const v = await fn(); if (v) return v; await sleep(5) }
     return null
 }
-const runVelero = () => {
-    const r = dx('bash /k/velero.sh 2>&1')
-    if (r.code !== 0) console.log(r.stdout.split('\n').slice(-15).join('\n'))
-    return r
+// as KubeEZ does it: plan → helm-addon.sh (keys handed over right before)
+const runVelero = async () => {
+    const r = await installAddon(NODE, 'velero', undefined, { clusterId: cluster.id, quiet: true })
+    automationEngine.connectSSH = async () => ssh
+    if (!r.ok) console.log(r.lines.slice(-15).join('\n'))
+    return { code: r.ok ? 0 : 1, stdout: r.lines.join('\n') + '\n' + (r.error || '') }
 }
 
 // ── Not configured → clear message ──
-let r = runVelero()
-ok(r.code !== 0 && /KUBEEZ_FAIL\|NOT_CONFIGURED/.test(r.stdout), 'install without settings explains what to do')
+let r = await runVelero()
+ok(r.code !== 0 && /Backups → Volume Backups/.test(r.stdout), 'install without settings explains what to do')
 
 // ── Install with the S3 add-on as target ──
 const sw = (await addonAccessService.getAccessInfo(cluster)).addons.find(a => a.key === 'seaweedfs')
@@ -45,7 +48,7 @@ volumeBackupStore.save(cluster.id, { ...cfg, source: 'custom' })
 await automationEngine.writeVeleroSettings(ssh, cluster.id)
 ok(dx('stat -c %a /etc/kubeez/velero.env').stdout === '600', 'settings handed to the node root-only')
 console.log('== installing Velero')
-r = runVelero()
+r = await runVelero()
 ok(r.code === 0 && /Backup storage available/.test(r.stdout), 'Velero installed and its storage is available')
 ok(dx('test -e /etc/kubeez/velero.env || test -e /etc/kubeez/velero-credentials').code !== 0, 'no key file left on the node')
 ok(!dx(`grep -rl '${sw.auth.password}' /etc/kubeez /tmp /root 2>/dev/null`).stdout, 'the secret key is only in the cluster Secret')

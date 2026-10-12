@@ -19,6 +19,7 @@
 #   e2e.sh explorer [distro]                  KubeEZ Explorer (Radar) behind KubeEZ's proxy: RBAC, checks, uninstall
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
+#   e2e.sh takeover [distro]                  add-ons installed the old way taken over by Helm (data kept)
 #   e2e.sh helm-addons [distro]               Metrics Server, MetalLB, Loki, Sealed Secrets, Kyverno: install,
 #                                             change, rollback, uninstall (needs Node; ONLY=metallb,… for a subset)
 #   e2e.sh agent [distro]                     Gateway Agent install as a service, crash/reboot recovery
@@ -130,12 +131,10 @@ cmd_upgrade() {
 cmd_offsite() {
     local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
     image "$distro"; start_node "$node" "$distro"
-    docker cp "$AUTOMATION/addons/seaweedfs.sh" "$node:/k/" >/dev/null
     docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
 
     echo "== installing the S3 Object Storage add-on"
-    docker exec "$node" bash /k/seaweedfs.sh > /tmp/kz-seaweedfs.log 2>&1 \
-        || { tail -30 /tmp/kz-seaweedfs.log; return 1; }
+    NODE_CONTAINER="$node" node "$E2E/install-addon.mjs" "$node" seaweedfs || return 1
 
     local rc
     NODE_CONTAINER="$node" node "$E2E/offsite-check.mjs"
@@ -204,7 +203,6 @@ cmd_agent() {
 cmd_agent_health() {
     local distro="${1:-ubuntu2204}"
     cmd_cluster "$distro" || return 1
-    docker cp "$AUTOMATION/addons/explorer.sh" "$PREFIX-$distro-cp:/k/" >/dev/null
     local rc
     NODE_CONTAINER="$PREFIX-$distro-cp" node "$E2E/health-check.mjs"
     rc=$?
@@ -344,11 +342,9 @@ cmd_recover() {
 cmd_velero() {
     local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
     image "$distro"; start_node "$node" "$distro"
-    docker cp "$AUTOMATION/addons/seaweedfs.sh" "$node:/k/" >/dev/null
-    docker cp "$AUTOMATION/addons/velero.sh" "$node:/k/" >/dev/null
     docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
     echo "== installing the S3 Object Storage add-on (backup target)"
-    docker exec "$node" bash /k/seaweedfs.sh > /tmp/kz-seaweedfs.log 2>&1 || { tail -30 /tmp/kz-seaweedfs.log; return 1; }
+    NODE_CONTAINER="$node" node "$E2E/install-addon.mjs" "$node" seaweedfs || return 1
     local rc
     NODE_CONTAINER="$node" node "$E2E/velero-check.mjs"
     rc=$?
@@ -360,7 +356,6 @@ cmd_velero() {
 cmd_explorer() {
     local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
     image "$distro"; start_node "$node" "$distro"
-    docker cp "$AUTOMATION/addons/explorer.sh" "$node:/k/" >/dev/null
     docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
     local rc
     NODE_CONTAINER="$node" node "$E2E/explorer-check.mjs"
@@ -377,6 +372,20 @@ cmd_helm_addons() {
     docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
     local rc
     NODE_CONTAINER="$node" node "$E2E/helm-addons-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
+# Add-ons installed the old way (scripts) taken over by Helm in place, data
+# kept; then step upgrades, customizing, rollback, uninstall.
+# e2e.sh takeover [distro]   (ONLY=ingress,argocd for a subset)
+cmd_takeover() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
+    image "$distro"; start_node "$node" "$distro"
+    docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local rc
+    NODE_CONTAINER="$node" node "$E2E/takeover-check.mjs"
     rc=$?
     [ -z "${KEEP:-}" ] && cmd_clean
     return $rc
@@ -399,6 +408,7 @@ case "${1:-}" in
     explorer) shift; cmd_explorer "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
     helm-addons) shift; cmd_helm_addons "$@" ;;
+    takeover) shift; cmd_takeover "$@" ;;
     agent)   shift; cmd_agent "$@" ;;
     agent-health) shift; cmd_agent_health "$@" ;;
     clean)   cmd_clean ;;

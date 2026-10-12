@@ -36,7 +36,8 @@ function Field({ f, value, onChange }) {
     )
 }
 
-export default function AddonSettingsDialog({ clusterId, addonKey, installed, onClose, onStarted }) {
+// draft: { schema, advancedAllowed, cluster, initial } — the new-cluster wizard (no cluster yet; onSave gets the settings)
+export default function AddonSettingsDialog({ clusterId, addonKey, installed, runningApp, takeover, draft, onClose, onStarted, onSave }) {
     const [data, setData] = useState(null)
     const [error, setError] = useState(null)
     const [tab, setTab] = useState('settings')
@@ -50,14 +51,22 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, on
     useEffect(() => {
         (async () => {
             try {
-                const r = await apiFetch(`/api/clusters/${clusterId}/addons/${addonKey}/settings`)
-                const j = await r.json()
-                if (!r.ok) throw new Error(j.error || 'Could not load the settings')
+                let j
+                if (draft) {
+                    // new-cluster wizard: the catalogue's form, nothing installed yet
+                    const rec = draft.schema.versions.find(v => v.recommended) || draft.schema.versions[0]
+                    j = { schema: draft.schema, applied: null, pending: null, history: [], advancedAllowed: draft.advancedAllowed, suggestedVersion: rec.id, lastSettings: draft.initial || null }
+                } else {
+                    const q = runningApp ? `?running=${encodeURIComponent(runningApp)}` : ''
+                    const r = await apiFetch(`/api/clusters/${clusterId}/addons/${addonKey}/settings${q}`)
+                    j = await r.json()
+                    if (!r.ok) throw new Error(j.error || 'Could not load the settings')
+                }
                 setData(j)
                 const cur = j.applied || j.lastSettings
                 setSettings({ ...j.schema.defaults, ...(cur?.settings || {}) })
                 setAdvanced(cur?.advanced || '')
-                setVersion(cur?.version || j.schema.versions[0].id)
+                setVersion(cur?.version || j.suggestedVersion || j.schema.versions[0].id)
             } catch (e) { setError(e.message) }
         })()
     }, [clusterId, addonKey])
@@ -65,19 +74,27 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, on
     // editing makes an old preview stale
     useEffect(() => { setPreview(null) }, [JSON.stringify(settings), advanced, version])
 
-    const body = () => ({ settings, advanced, version })
+    const body = () => ({ settings, advanced, version, ...(draft ? { cluster: draft.cluster } : {}) })
+    const previewUrl = draft ? `/api/addon-catalog/${addonKey}/preview` : `/api/clusters/${clusterId}/addons/${addonKey}/preview`
+    const runPreview = async () => {
+        const r = await apiFetch(previewUrl, { method: 'POST', body: JSON.stringify(body()) })
+        const j = await r.json()
+        if (!r.ok) throw Object.assign(new Error(j.error || 'Not valid'), { upgrade: j.upgrade })
+        return j
+    }
     const doPreview = async () => {
         setBusy('preview'); setMsg(null)
-        try {
-            const r = await apiFetch(`/api/clusters/${clusterId}/addons/${addonKey}/preview`, { method: 'POST', body: JSON.stringify(body()) })
-            const j = await r.json()
-            if (!r.ok) throw Object.assign(new Error(j.error || 'Not valid'), { upgrade: j.upgrade })
-            setPreview(j)
-        } catch (e) { setMsg({ ok: false, text: e.message, upgrade: e.upgrade }) } finally { setBusy(null) }
+        try { setPreview(await runPreview()) } catch (e) { setMsg({ ok: false, text: e.message, upgrade: e.upgrade }) } finally { setBusy(null) }
     }
     const apply = async () => {
         setBusy('apply'); setMsg(null)
         try {
+            if (draft) {
+                // checked now, used when the cluster is created
+                const p = await runPreview()
+                onSave({ settings: p.settings, advanced, version: p.version })
+                return
+            }
             const r = await apiFetch(`/api/clusters/${clusterId}/addons/${addonKey}/settings`, { method: 'POST', body: JSON.stringify(body()) })
             const j = await r.json()
             if (!r.ok) throw Object.assign(new Error(j.error || 'Could not start'), { upgrade: j.upgrade || j.limitExceeded })
@@ -101,7 +118,7 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, on
                 <div className="flex items-start gap-3 p-5 border-b border-white/5">
                     <Settings2 className="w-5 h-5 text-sky-400 mt-0.5" />
                     <div className="min-w-0 flex-1">
-                        <h3 className="text-white font-black">{s ? `${installed ? '' : 'Install '}${s.label}` : 'Add-on'}{installed ? ' — settings' : ''}</h3>
+                        <h3 className="text-white font-black">{s ? `${installed || draft ? '' : 'Install '}${s.label}` : 'Add-on'}{installed ? ' — settings' : draft ? ' — customize' : ''}</h3>
                         {s && <p className="text-xs text-slate-400 mt-0.5">{s.summary}</p>}
                     </div>
                     <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><X className="w-4 h-4" /></button>
@@ -114,16 +131,27 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, on
                     <div className="flex flex-wrap items-center gap-1 px-5 pt-3">
                         {tabBtn('settings', 'Settings', Settings2)}
                         {tabBtn('advanced', 'Advanced (YAML)', FileCode2, !data.advancedAllowed)}
-                        {tabBtn('history', `History${data.history.length ? ` (${data.history.length})` : ''}`, History)}
+                        {!draft && tabBtn('history', `History${data.history.length ? ` (${data.history.length})` : ''}`, History)}
                         <div className="ml-auto flex items-center gap-2 text-xs text-slate-400">
                             Version
-                            <select aria-label="Version" value={version} onChange={e => setVersion(e.target.value)} className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200">
-                                {s.versions.map(v => <option key={v.id} value={v.id} className="bg-slate-950">{v.id} (app {v.app}){v.recommended ? ' — recommended' : ''}</option>)}
+                            <select aria-label="Version" value={version} onChange={e => setVersion(e.target.value)} className="max-w-[16rem] bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200">
+                                {s.versions.map(v => (
+                                    <option key={v.id} value={v.id} disabled={v.fits === false} className="bg-slate-950">
+                                        {v.id} (app {v.app}){v.recommended ? ' — recommended' : ''}{v.fits === false ? ` — needs Kubernetes 1.${v.kube?.[0]}+` : ''}{runningApp && !data.applied && v.app.replace(/^v/, '').split('.').slice(0, 2).join('.') === runningApp.split('.').slice(0, 2).join('.') ? ' — runs now' : ''}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                     </div>
-                    {data.updateAvailable && version !== s.versions[0].id && (
-                        <p className="mx-5 mt-2 flex items-center gap-1.5 text-[11px] text-sky-300"><Sparkles className="w-3.5 h-3.5" /> Version {s.versions[0].id} is available — choose it above and Apply to update (rolled back automatically if it fails).</p>
+                    {/* installed before KubeEZ managed add-ons with Helm */}
+                    {installed && !data.applied && takeover && s.takeoverNote && (
+                        <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-amber-400/25 bg-amber-500/[0.06] p-3 text-[11px] text-amber-100/90">
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-300" /><span><b className="text-amber-200">Taking over.</b> {s.takeoverNote}</span>
+                        </div>
+                    )}
+                    {s.stepUpgrade && <p className="mx-5 mt-2 text-[11px] text-slate-500">{s.label} moves one release line per Apply (for example 1.7 → 1.8 → 1.9), as the project requires — KubeEZ checks the running version before changing anything.</p>}
+                    {data.updateAvailable && version === data.applied?.version && (
+                        <p className="mx-5 mt-2 flex items-center gap-1.5 text-[11px] text-sky-300"><Sparkles className="w-3.5 h-3.5" /> A newer version is available — choose it above and Apply to update (rolled back automatically if it fails).</p>
                     )}
 
                     <div className="flex-1 overflow-y-auto p-5 space-y-3">
@@ -175,7 +203,7 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, on
                                 </div>
                                 {preview.ignored?.length > 0 && <p className="px-3 pt-2 text-[11px] text-amber-300 flex items-start gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Kept by KubeEZ (your value ignored): {preview.ignored.join(', ')}</p>}
                                 <pre className="max-h-64 overflow-auto p-3 text-[11px] font-mono leading-relaxed">
-                                    {(installed ? preview.diff : preview.diff.map(d => ({ ...d, t: ' ' }))).map((d, i) => (
+                                    {(installed && preview.diff ? preview.diff : (preview.diff || String(preview.values || '').split('\n').map(l => ({ l }))).map(d => ({ ...d, t: ' ' }))).map((d, i) => (
                                         <div key={i} className={d.t === '+' ? 'text-emerald-300 bg-emerald-500/10' : d.t === '-' ? 'text-red-300 bg-red-500/10 line-through decoration-red-400/40' : 'text-slate-500'}>{d.t === ' ' ? '  ' : d.t + ' '}{d.l}</div>
                                     ))}
                                 </pre>
@@ -186,12 +214,12 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, on
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-2 p-4 border-t border-white/5">
-                        <p className="mr-auto text-[11px] text-slate-500 max-w-xs">{installed ? 'Runs as a job with live logs. If the add-on does not come up healthy, Helm puts back the version that worked.' : 'Installs as a job with live logs.'}</p>
+                        <p className="mr-auto text-[11px] text-slate-500 max-w-xs">{draft ? 'Checked now, used when the cluster is created.' : installed ? (takeover && !data.applied ? 'Runs as a job with live logs. Helm takes over what runs now; nothing is removed if it fails.' : 'Runs as a job with live logs. If the add-on does not come up healthy, Helm puts back the version that worked.') : 'Installs as a job with live logs.'}</p>
                         <button onClick={doPreview} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-slate-200 text-xs font-bold hover:bg-white/5 disabled:opacity-50">
                             {busy === 'preview' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Preview
                         </button>
                         <button onClick={apply} disabled={!!busy || !!data.pending} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-black disabled:opacity-50">
-                            {busy === 'apply' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} {installed ? 'Apply' : 'Install'}
+                            {busy === 'apply' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} {draft ? 'Use these settings' : installed ? 'Apply' : 'Install'}
                         </button>
                     </div>
                 </>)}

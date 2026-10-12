@@ -1,6 +1,6 @@
 import { automationEngine } from './automationEngine.js'
 
-// Volume backups = Velero (installed by addons/velero.sh). KubeEZ drives it
+// Volume backups = Velero (a Helm add-on, config/addons/core.js). KubeEZ drives it
 // with the Velero CLI on the primary control-plane.
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 const VEL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf velero'

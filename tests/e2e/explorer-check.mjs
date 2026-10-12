@@ -54,13 +54,13 @@ authService.verifyToken = (t) => USERS[t] || null
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++ }
 const K = (cmd) => dx(`KUBECONFIG=/etc/kubernetes/admin.conf kubectl ${cmd}`)
 
-// ── Install through KubeEZ's own path (settings hand-over + script) ──
-const ssh = await automationEngine.connectSSH()
-await automationEngine.writeExplorerSettings(ssh, 'c-exp')
+// ── Install through KubeEZ's own path (plan → helm-addon.sh) ──
+const { installAddon } = await import('./install-addon.mjs')
 console.log('== installing the KubeEZ Explorer (Radar via Helm)')
-let r = dx('bash /k/explorer.sh 2>&1')
-ok(r.code === 0 && /KubeEZ Explorer installed/.test(r.stdout), 'installed: ' + r.stdout.split('\n').filter(l => /✓|FAIL/.test(l)).join(' | '))
-if (r.code !== 0) console.log(r.stdout.split('\n').slice(-25).join('\n'))
+let inst = await installAddon(NODE, 'explorer', undefined, { clusterId: 'c-exp' })
+let r = { code: inst.ok ? 0 : 1, stdout: inst.lines.join('\n') }
+ok(inst.ok && /Explorer answers/.test(r.stdout), 'installed ' + (inst.error || ''))
+if (!inst.ok) console.log(r.stdout.split('\n').slice(-25).join('\n'))
 ok(K('-n kubeez-explorer get svc kubeez-explorer -o jsonpath={.spec.type}').stdout === 'ClusterIP', 'The Explorer is reachable only inside the cluster (ClusterIP)')
 ok(K('get clusterrolebinding kubeez-explorer-viewers -o jsonpath={.roleRef.name}').stdout === 'view', 'viewers → view')
 ok(K('get clusterrolebinding kubeez-explorer-operators -o jsonpath={.roleRef.name}').stdout === 'edit', 'operators → edit')
@@ -115,11 +115,10 @@ server.close()
 
 // ── Migration: an install from before the rename (release/resources "radar") ──
 dx("helm -n kubeez-explorer uninstall kubeez-explorer --wait >/dev/null 2>&1")
-r = dx("helm upgrade --install radar skyhook/radar --version 1.15.0 -n kubeez-explorer --set fullnameOverride=radar --set auth.mode=proxy --set basePath=/api/clusters/c-exp/explorer --wait --timeout 8m >/dev/null 2>&1; echo rc=$?")
+r = dx("helm upgrade --install radar kubeez-skyhook/radar --version 1.15.0 -n kubeez-explorer --set fullnameOverride=radar --set auth.mode=proxy --set basePath=/api/clusters/c-exp/explorer --wait --timeout 8m >/dev/null 2>&1; echo rc=$?")
 ok(/rc=0/.test(r.stdout) && K('-n kubeez-explorer get svc radar -o name').code === 0, 'old-style install in place (release radar)')
-await automationEngine.writeExplorerSettings(ssh, 'c-exp')   // as KubeEZ does before every Repair
-r = dx('bash /k/explorer.sh 2>&1')
-ok(r.code === 0 && dx('helm -n kubeez-explorer list -q').stdout === 'kubeez-explorer', 'Repair migrates it to kubeez-explorer: ' + dx('helm -n kubeez-explorer list -q').stdout.split('\n').join(','))
+inst = await installAddon(NODE, 'explorer', undefined, { clusterId: 'c-exp' })   // Repair
+ok(inst.ok && dx('helm -n kubeez-explorer list -q').stdout === 'kubeez-explorer', 'Repair migrates it to kubeez-explorer: ' + dx('helm -n kubeez-explorer list -q').stdout.split('\n').join(','))
 ok(K('-n kubeez-explorer get svc radar -o name').code !== 0 && K('-n kubeez-explorer get deploy kubeez-explorer -o name').code === 0, 'old resources gone, new ones running')
 
 // ── Uninstall ──

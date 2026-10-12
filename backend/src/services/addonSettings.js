@@ -3,7 +3,12 @@ import path from 'path'
 import YAML from 'yaml'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomicSync } from '../utils/atomicWrite.js'
-import { HELM_ADDONS, isHelmAddon, defaultSettings } from '../config/helmAddons.js'
+import { fileURLToPath } from 'url'
+import { HELM_ADDONS, isHelmAddon, defaultSettings, versionFits, versionForRunning } from '../config/helmAddons.js'
+import { minorOf } from '../config/addons/common.js'
+import { volumeBackupStore } from './volumeBackupStore.js'
+
+const CHARTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '../automation/charts')
 
 // Settings of the Helm add-ons, per cluster:
 //   applied   what runs in the cluster now (after a successful install / change)
@@ -99,12 +104,37 @@ export function parseAdvanced(key, text, releaseNames) {
 /** Facts about the cluster that settings are checked against */
 export function clusterContext(cluster) {
     const nodes = [...(cluster.masterNodes || []), ...(cluster.workerNodes || [])]
+    const clusterId = cluster.originalClusterId || cluster.id || null
+    // where Velero stores backups (Backups → Volume Backups) — no keys here
+    let velero = null
+    try {
+        const c = clusterId ? volumeBackupStore.effective(clusterId, cluster.orgId) : null
+        if (c?.bucket) velero = { provider: c.provider, endpoint: c.endpoint, region: c.region, bucket: c.bucket, prefix: c.prefix, insecureTls: !!c.insecureTls }
+    } catch { /* not configured */ }
     return {
+        clusterId, orgId: cluster.orgId || null,
+        k8sMinor: Number(String(cluster.k8sVersion || '').split('.')[1]) || null,
         nodeIps: nodes.map(n => n.ip).filter(Boolean),
+        nodeCount: nodes.length,
         vip: cluster.controlPlaneVip || null,
         workerCount: (cluster.workerNodes || []).length,
-        addons: { ...(cluster.addons || {}) }
+        addons: Object.fromEntries(Object.entries(cluster.addons || {}).map(([k, v]) => [k === 'certManager' ? 'cert-manager' : k, v])),
+        velero
     }
+}
+
+/** Upgrade one release line at a time: the node checks what runs before anything changes */
+function stepCheck(a, v) {
+    const i = a.versions.indexOf(v)
+    const allowed = [minorOf(v.app), minorOf(a.versions[i + 1]?.app)].filter(Boolean)
+    const ref = a.probe.replace(/[^a-z0-9/.-]/g, '')
+    return [
+        `CUR=$(kubectl -n ${a.ns} get ${ref} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | head -1)`,
+        'if [ -n "$CUR" ]; then',
+        '    CURMM=$(echo "$CUR" | cut -d. -f1,2)',
+        `    case "$CURMM" in ${allowed.join('|')}) ;; *) fail VERSION_STEP "${a.label} $CUR runs now; ${v.app} is not the next step from it — ${a.label} is upgraded one release line at a time." "Choose the version of the line right after $CURMM (or the one that runs now), apply, then continue." ;; esac`,
+        'fi'
+    ].join('\n')
 }
 
 /**
@@ -112,12 +142,14 @@ export function clusterContext(cluster) {
  * with their final values (form → advanced YAML → locked), and the shell pieces.
  * Throws a 400 with the reason when something is not acceptable.
  */
-export function buildPlan(key, cluster, { settings, advanced, version } = {}) {
+export function buildPlan(key, cluster, { settings, advanced, version } = {}, { runningApp } = {}) {
     if (!isHelmAddon(key)) throw bad('Unknown add-on')
     const a = HELM_ADDONS[key]
-    const v = version ? a.versions.find(x => x.id === version) : a.versions[0]
-    if (!v) throw bad(`Version ${version} is not offered for ${a.label} — choose one of ${a.versions.map(x => x.id).join(', ')}`)
     const ctx = clusterContext(cluster)
+    // the chosen version; else the line that runs now (takeover / repair); else the newest that fits
+    const v = version ? a.versions.find(x => x.id === version) : (versionForRunning(key, runningApp) || a.versions.find(x => versionFits(x, ctx.k8sMinor)) || a.versions[0])
+    if (!v) throw bad(`Version ${version} is not offered for ${a.label} — choose one of ${a.versions.map(x => x.id).join(', ')}`)
+    if (!versionFits(v, ctx.k8sMinor)) throw bad(`${a.label} ${v.id} needs Kubernetes 1.${v.kube[0]} or newer — this cluster runs 1.${ctx.k8sMinor}. Choose an older version.`)
     const clean = a.validate({ ...defaultSettings(key), ...(settings || {}) }, ctx)
     const releases = a.releases(clean, ctx, v)
     const adv = parseAdvanced(key, advanced, releases.map(r => r.name))
@@ -135,10 +167,12 @@ export function buildPlan(key, cluster, { settings, advanced, version } = {}) {
         }
     }
     const post = a.post ? a.post(clean, ctx, v) : { manifests: [], script: '' }
+    const pre = [a.stepUpgrade && a.probe ? stepCheck(a, v) : '', a.pre ? a.pre(clean, ctx, v) : ''].filter(Boolean).join('\n')
     return {
         key, label: a.label, ns: a.ns, version: v.id, app: v.app,
         settings: clean, advanced: String(advanced || ''), ignored,
-        releases, pre: a.pre ? a.pre(clean, ctx, v) : '', post
+        releases, pre, post,
+        takeover: a.takeover ? { detect: a.takeover.detect, migrate: a.takeover.migrate ? a.takeover.migrate(clean, ctx, v) : '' } : null
     }
 }
 
@@ -170,15 +204,39 @@ export function lineDiff(before, after) {
  * /etc/kubeez/addons/<key>/. Values are JSON (valid YAML for Helm).
  */
 export function planFiles(plan) {
+    const line = (r) => {
+        const flags = [r.local ? 'local' : '', r.crds ? 'crds' : '', r.rollback === false ? 'norollback' : ''].filter(Boolean).join(',') || '-'
+        return r.local ? [r.name, 'local', '-', r.local, r.version, flags].join('|') : [r.name, r.repo.name, r.repo.url, r.chart, r.version, flags].join('|')
+    }
     const files = {
-        releases: plan.releases.map(r => [r.name, r.repo.name, r.repo.url, r.chart, r.version].join('|')).join('\n') + '\n',
+        releases: plan.releases.map(line).join('\n') + '\n',
         namespace: `${plan.ns}\n`
     }
-    for (const r of plan.releases) files[`${r.name}.values.yaml`] = JSON.stringify(r.values, null, 2) + '\n'
+    for (const r of plan.releases) {
+        files[`${r.name}.values.yaml`] = JSON.stringify(r.values, null, 2) + '\n'
+        // a chart KubeEZ ships (no upstream chart for it)
+        if (r.local) for (const [rel, content] of chartFiles(r.local)) files[`charts/${r.local}/${rel}`] = content
+    }
     if (plan.pre) files['pre.sh'] = plan.pre + '\n'
-    if (plan.post?.manifests?.length) files['post.yaml'] = plan.post.manifests.map(m => JSON.stringify(m)).join('\n---\n') + '\n'
+    if (plan.post?.manifests?.length) files['post.yaml'] = plan.post.manifests.map(m => typeof m === 'string' ? m : JSON.stringify(m)).join('\n---\n') + '\n'
     if (plan.post?.script) files['post.sh'] = plan.post.script + '\n'
+    if (plan.takeover) {
+        files.takeover = plan.takeover.detect + '\n'
+        if (plan.takeover.migrate) files['migrate.sh'] = plan.takeover.migrate + '\n'
+    }
     return files
+}
+
+function chartFiles(name, sub = '') {
+    if (!/^[a-z0-9-]+$/.test(name)) throw new Error('bad chart name')
+    const dir = path.join(CHARTS_DIR, name, sub)
+    const out = []
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const rel = sub ? `${sub}/${e.name}` : e.name
+        if (e.isDirectory()) out.push(...chartFiles(name, rel))
+        else out.push([rel, fs.readFileSync(path.join(dir, e.name), 'utf8').replace(/\r\n/g, '\n')])
+    }
+    return out
 }
 
 /** One shell command that writes the plan files on the node (base64 — no quoting issues) */
@@ -186,8 +244,13 @@ export function writePlanCommand(key, files) {
     if (!/^[a-z0-9-]+$/.test(key)) throw new Error('bad key')
     const dir = `/etc/kubeez/addons/${key}`
     const parts = [`sudo rm -rf ${dir} && sudo mkdir -p ${dir}`]
+    const dirs = new Set()
+    for (const name of Object.keys(files)) {
+        if (!/^[a-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(name) || name.includes('..')) throw new Error('bad file name')
+        if (name.includes('/')) dirs.add(name.slice(0, name.lastIndexOf('/')))
+    }
+    if (dirs.size) parts.push(`sudo mkdir -p ${[...dirs].map(d => `${dir}/${d}`).join(' ')}`)
     for (const [name, content] of Object.entries(files)) {
-        if (!/^[a-z0-9.-]+$/.test(name)) throw new Error('bad file name')
         parts.push(`echo ${Buffer.from(content, 'utf8').toString('base64')} | base64 -d | sudo tee ${dir}/${name} >/dev/null`)
     }
     return parts.join(' && ')

@@ -35,6 +35,7 @@ import {
     Sparkles
 , Compass } from 'lucide-react'
 import NodeVerificationCard from '../components/NodeVerificationCard'
+import AddonSettingsDialog from '../components/AddonSettingsDialog'
 import DeploymentPlan from '../components/DeploymentPlan'
 
 export default function WizardFlow({ onStartInstallation, onCancel, mode = 'install', initialData = null }) {
@@ -45,6 +46,10 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
     const accessDenied = user && !can(user.role, requiredPerm)
 
     const [currentStep, setCurrentStep] = useState(mode === 'scale' ? 2 : 1)
+    // add-on settings chosen with "Customize" (checked by the server, used at install)
+    const [addonSettings, setAddonSettings] = useState({})
+    const [catalog, setCatalog] = useState(null)
+    const [customizeKey, setCustomizeKey] = useState(null)
     const [formData, setFormData] = useState({
         clusterName: mode === 'scale' ? 'Existing Cluster' : '',
         k8sVersion: '1.28.0',
@@ -265,6 +270,11 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
             hostname: node.hostname
         }))
     }
+    useEffect(() => {
+        if (currentStep !== 3 || mode === 'scale') return
+        apiFetch(`/api/addon-catalog?k8sVersion=${encodeURIComponent(formData.k8sVersion)}`).then(r => r.ok ? r.json() : null).then(j => j && setCatalog(j)).catch(() => {})
+    }, [currentStep, formData.k8sVersion])
+
     // Every add-on the wizard offers (not only the first four)
     const selectedAddons = Object.fromEntries(Object.entries(formData.addons || {}).map(([k, v]) => [k, !!v]))
 
@@ -278,6 +288,8 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                 k8sVersion: formData.k8sVersion,
                 networkPlugin: formData.networkPlugin,
                 addons: selectedAddons,
+                // only for the add-ons still selected
+                addonSettings: Object.fromEntries(Object.entries(addonSettings).filter(([k]) => selectedAddons[k])),
                 mode: mode,
                 // scaling: existing nodes are sent without passwords — the server uses the stored ones
                 clusterId: mode === 'scale' ? initialData?.id : undefined,
@@ -1098,12 +1110,31 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                 <p className={`text-sm leading-relaxed transition-colors ${isSelected ? 'text-blue-100/80' : 'text-slate-400 group-hover:text-slate-300'}`}>
                                                     {addon.desc}
                                                 </p>
+                                                {isSelected && catalog?.addons?.some(a => a.key === addon.key) && (
+                                                    <span role="button" tabIndex={0}
+                                                        onClick={(e) => { e.stopPropagation(); setCustomizeKey(addon.key) }}
+                                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setCustomizeKey(addon.key) } }}
+                                                        className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-black/30 text-xs font-bold text-blue-200 hover:bg-white/10">
+                                                        <Settings className="w-3.5 h-3.5" /> {addonSettings[addon.key] ? 'Customized — edit' : 'Customize'}
+                                                    </span>
+                                                )}
                                             </div>
                                         </button>
                                     );
                                 })}
                             </div>
                         </div>
+                    )}
+
+                    {customizeKey && catalog && (
+                        <AddonSettingsDialog addonKey={customizeKey}
+                            draft={{
+                                schema: catalog.addons.find(a => a.key === customizeKey), advancedAllowed: catalog.advancedAllowed, initial: addonSettings[customizeKey] || null,
+                                cluster: { k8sVersion: formData.k8sVersion, controlPlaneVip: formData.controlPlaneVip || undefined, addons: selectedAddons,
+                                    masterNodes: formData.masterNodes.map(n => ({ ip: n.ip })), workerNodes: (formData.workerNodes || []).map(n => ({ ip: n.ip })) }
+                            }}
+                            onClose={() => setCustomizeKey(null)}
+                            onSave={(d) => { setAddonSettings(x => ({ ...x, [customizeKey]: d })); setCustomizeKey(null); toast({ title: 'Settings saved', message: 'Used when the cluster is created', type: 'success' }) }} />
                     )}
 
                     {/* Step 4: Final Review (Synthesized Manifest) */}

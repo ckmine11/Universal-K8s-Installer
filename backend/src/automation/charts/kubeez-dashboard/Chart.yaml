@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kubeez-dashboard
+description: Kubernetes Dashboard v2.7 as installed by KubeEZ (upstream manifest, archived project) — values for the image, replicas, port, login accounts and extra arguments
+type: application
+version: 2.7.0
+appVersion: v2.7.0

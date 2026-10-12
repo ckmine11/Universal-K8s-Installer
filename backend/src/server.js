@@ -28,6 +28,7 @@ import { agentService } from './services/agentService.js'
 import superadminRoutes from './routes/superadmin.js'
 import offsiteRoutes from './routes/offsite.js'
 import notificationsRoutes from './routes/notifications.js'
+import addonCatalogRoutes from './routes/addonCatalog.js'
 import alertActionsRoutes from './routes/alertActions.js'
 import { notifier } from './services/notifier.js'
 import { telegramPoller } from './services/alertActions.js'
@@ -274,6 +275,7 @@ app.use('/api/incidents', incidentsRoutes)
 app.use('/api/superadmin', superadminRoutes)
 app.use('/api/offsite', offsiteRoutes)
 app.use('/api/notifications', requireAuth, notificationsRoutes)
+app.use('/api/addon-catalog', requireAuth, addonCatalogRoutes)   // add-on forms before a cluster exists (wizard)
 app.use('/api/alert-actions', alertActionsRoutes)   // signed links in alerts — public, see the route
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)

@@ -1,0 +1,27 @@
+# Kubernetes Dashboard (KubeEZ chart). Resource names are the same as the
+# upstream v2.7.0 manifest, so a Dashboard installed earlier is taken over in place.
+image:
+  repository: kubernetesui/dashboard
+  tag: v2.7.0
+  pullPolicy: Always        # as the upstream manifest (a takeover then restarts nothing)
+replicas: 1
+# Extra dashboard arguments, e.g. ["--token-ttl=43200", "--enable-skip-login=false"]
+extraArgs: []
+resources: {}
+service:
+  type: NodePort
+  nodePort: 30643
+metricsScraper:
+  enabled: true
+  image:
+    repository: kubernetesui/metrics-scraper
+    tag: v1.0.8
+  resources: {}
+# Login accounts KubeEZ shows tokens for
+adminAccount: true      # dashboard-admin → cluster-admin (full access)
+viewerAccount: true     # dashboard-viewer → view (read only)
+nodeSelector:
+  kubernetes.io/os: linux
+tolerations:
+  - key: node-role.kubernetes.io/master
+    effect: NoSchedule

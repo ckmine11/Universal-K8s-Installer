@@ -16,7 +16,7 @@ import { notifier } from '../services/notifier.js'
 import { disasterRecovery } from '../services/disasterRecovery.js'
 import { upgradeReadiness, clusterHealth } from '../services/explorerInsights.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
-import { HELM_ADDONS, isHelmAddon, addonSchema } from '../config/helmAddons.js'
+import { HELM_ADDONS, isHelmAddon, addonSchema, normAddonKey, versionForRunning } from '../config/helmAddons.js'
 import { addonSettingsStore, buildPlan, valuesYaml, lineDiff } from '../services/addonSettings.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
@@ -209,11 +209,35 @@ router.post('/install', requirePermission('cluster:create'), async (req, res) =>
             return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
         }
 
+        // Add-on settings chosen in the wizard (Customize): checked now, against
+        // the cluster being created, so a wrong value never fails half-way
+        const addonSettings = {}
+        const wanted = Object.keys(addons || {}).filter(k => addons[k]).map(normAddonKey)
+        for (const [rawKey, desired] of Object.entries(req.body.addonSettings || {})) {
+            const key = normAddonKey(rawKey)
+            if (!isHelmAddon(key) || !wanted.includes(key) || !desired || typeof desired !== 'object') continue
+            if (desired.advanced && String(desired.advanced).trim() && !(isPaidPlan(authService.getOrgPlan(req.user.orgId)) || req.user.role === 'superadmin')) {
+                return res.status(402).json({ error: 'Advanced values (Helm YAML) are part of Pro. On Free, use the settings form.', upgrade: true })
+            }
+            try {
+                const plan = buildPlan(key, { id: 'new-cluster', k8sVersion, masterNodes, workerNodes, controlPlaneVip, addons }, desired)
+                addonSettings[key] = { settings: plan.settings, advanced: plan.advanced, version: plan.version }
+            } catch (e) { return res.status(400).json({ error: `${HELM_ADDONS[key].label}: ${e.message}`, addon: key }) }
+        }
+        // MetalLB / Velero need their settings first; the other add-ons have safe defaults
+        for (const key of wanted.filter(k => isHelmAddon(k) && !addonSettings[k])) {
+            try { buildPlan(key, { id: 'new-cluster', k8sVersion, masterNodes, workerNodes, controlPlaneVip, addons }, {}) } catch (e) {
+                return res.status(400).json({ error: `${HELM_ADDONS[key].label}: ${e.message} — use Customize to set it, or install it later from the cluster page.`, addon: key })
+            }
+        }
+
         // Generate installation ID
         const installationId = uuidv4()
 
         // Create installation job
         const installation = {
+            addonSettings,
+            requestedBy: req.user.username,
 
             id: installationId,
             ownerId: req.user.id, // Legacy compatibility
@@ -544,11 +568,16 @@ router.get('/:id/addons/:key/settings', requireAuth, requirePermission('addon:in
         const key = helmKey(req, res); if (!key) return
         const cluster = await loadOwnedCluster(req, res); if (!cluster) return
         const saved = addonSettingsStore.get(cluster.id, key)
-        const schema = addonSchema(key)
+        const schema = addonSchema(key, { k8sMinor: Number(String(cluster.k8sVersion || '').split('.')[1]) || null })
+        const recommended = schema.versions.find(v => v.recommended)
+        // ?running=<version that runs now> (from the status): the matching version is preselected,
+        // so taking over an older install changes nothing but who manages it
+        const running = String(req.query.running || '').slice(0, 40)
         res.json({
             schema, applied: saved.applied, pending: saved.pending, history: saved.history || [], lastSettings: saved.lastSettings || null,
             advancedAllowed: advancedAllowed(req),
-            updateAvailable: !!saved.applied && saved.applied.version !== schema.versions[0].id,
+            updateAvailable: !!saved.applied && saved.applied.version !== recommended.id,
+            suggestedVersion: saved.applied?.version || versionForRunning(key, running)?.id || recommended.id,
             clusterAddons: Object.keys(cluster.addons || {}).filter(k => cluster.addons[k])
         })
     } catch (e) { sendFailure(res, e) }

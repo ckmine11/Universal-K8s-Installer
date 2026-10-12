@@ -297,8 +297,9 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-black text-white text-sm">{a.label}</span>
-                                            {a.helm && a.version && <span className="text-[10px] font-mono text-slate-500">{a.version}</span>}
-                                            {a.updateAvailable && <button onClick={() => canManage && setSettingsFor({ key: a.key, installed: true })} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-sky-400/30 bg-sky-500/10 text-[9px] font-black uppercase tracking-wider text-sky-300" title={`Version ${a.latestVersion} is available`}><Sparkles className="w-2.5 h-2.5" /> Update</button>}
+                                            {a.helm && (a.version || a.runningApp) && <span className="text-[10px] font-mono text-slate-500">{a.version || a.runningApp}</span>}
+                                            {a.takeover && a.health !== 'not-installed' && <span className="px-1.5 py-0.5 rounded-full border border-amber-400/25 bg-amber-500/10 text-[9px] font-black uppercase tracking-wider text-amber-300" title="Installed before KubeEZ managed add-ons with Helm — open Settings and Apply once to take it over (same version, data kept)">Not Helm-managed yet</span>}
+                                            {a.updateAvailable && <button onClick={() => canManage && setSettingsFor({ key: a.key, installed: true, runningApp: a.runningApp, takeover: a.takeover })} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-sky-400/30 bg-sky-500/10 text-[9px] font-black uppercase tracking-wider text-sky-300" title={`Version ${a.latestVersion} is available`}><Sparkles className="w-2.5 h-2.5" /> Update</button>}
                                             <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${h.cls}`}>
                                                 <h.Icon className={`w-3 h-3 ${h.spin ? 'animate-spin' : ''}`} /> {h.label}
                                             </span>
@@ -319,7 +320,7 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                                                     {a.helm && (
                                                         <button className={`${btn} text-sky-200 bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20`} disabled={disabled}
                                                             title="Change settings, version or Helm values — rolled back automatically if it fails"
-                                                            onClick={() => setSettingsFor({ key: a.key, installed: true })}>
+                                                            onClick={() => setSettingsFor({ key: a.key, installed: true, runningApp: a.runningApp, takeover: a.takeover })}>
                                                             <SlidersHorizontal className="w-3.5 h-3.5" /> Settings
                                                         </button>
                                                     )}
@@ -396,7 +397,7 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                 </div>
             )}
 
-            {settingsFor && <AddonSettingsDialog clusterId={clusterId} addonKey={settingsFor.key} installed={settingsFor.installed} onClose={() => setSettingsFor(null)}
+            {settingsFor && <AddonSettingsDialog clusterId={clusterId} addonKey={settingsFor.key} installed={settingsFor.installed} runningApp={settingsFor.runningApp} takeover={settingsFor.takeover} onClose={() => setSettingsFor(null)}
                 onStarted={(jobId) => { setSettingsFor(null); navigate(`/dashboard/${jobId}`) }} />}
             {sealOpen && <SealSecretDialog clusterId={clusterId} onClose={() => setSealOpen(false)} />}
             {logsFor && <LogsModal clusterId={clusterId} addon={logsFor} onClose={() => setLogsFor(null)} />}

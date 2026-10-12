@@ -47,7 +47,11 @@ class AddonAccessService {
             if (ingress.ok && ingress.out) {
                 const httpPort  = await getNodePort(ssh, 'ingress-nginx', 'ingress-nginx-controller', "{.spec.ports[?(@.name=='http')].nodePort}")
                 const httpsPort = await getNodePort(ssh, 'ingress-nginx', 'ingress-nginx-controller', "{.spec.ports[?(@.name=='https')].nodePort}")
-                addons.push({
+                const lbIp = (await run(ssh, `${KB} -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null`)).out
+                if (lbIp) {
+                    addons.push({ key: 'ingress', name: 'Nginx Ingress', icon: 'globe', installed: true, hasUI: false, url: `http://${lbIp}`, urlHttps: `https://${lbIp}`, auth: null,
+                        note: `Traffic controller on its own IP ${lbIp} (from MetalLB) — point your DNS names there.${httpPort ? ` Node ports ${httpPort}/${httpsPort} keep working too.` : ''}` })
+                } else addons.push({
                     key: 'ingress',
                     name: 'Nginx Ingress',
                     icon: 'globe',
@@ -61,9 +65,11 @@ class AddonAccessService {
             }
 
             // ── Prometheus ───────────────────────────────────────────────────
-            const prom = await run(ssh, `${KB} get svc prometheus-nodeport -n monitoring --no-headers 2>/dev/null`)
+            let promSvc = 'kubeez-prometheus'
+            let prom = await run(ssh, `${KB} get svc kubeez-prometheus -n monitoring --no-headers 2>/dev/null`)
+            if (!(prom.ok && prom.out)) { promSvc = 'prometheus-nodeport'; prom = await run(ssh, `${KB} get svc prometheus-nodeport -n monitoring --no-headers 2>/dev/null`) }
             if (prom.ok && prom.out) {
-                const port = await getNodePort(ssh, 'monitoring', 'prometheus-nodeport') || '30090'
+                const port = await getNodePort(ssh, 'monitoring', promSvc) || '30090'
                 addons.push({
                     key: 'prometheus',
                     name: 'Prometheus',
@@ -80,6 +86,7 @@ class AddonAccessService {
             const grafana = await run(ssh, `${KB} get deploy grafana -n monitoring --no-headers 2>/dev/null`)
             if (grafana.ok && grafana.out) {
                 const port = await getNodePort(ssh, 'monitoring', 'grafana') || '30000'
+                const pw = (await run(ssh, `${KB} -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null`)).out
                 addons.push({
                     key: 'grafana',
                     name: 'Grafana',
@@ -87,8 +94,8 @@ class AddonAccessService {
                     installed: true,
                     hasUI: true,
                     url: `http://${nodeIp}:${port}`,
-                    auth: { username: 'admin', password: 'admin' },
-                    note: 'Change the default password on first login.'
+                    auth: { username: 'admin', password: pw || 'admin' },
+                    note: pw ? 'Dashboards for nodes, pods and Kubernetes are ready under Dashboards.' : 'Change the default password on first login (or apply the Prometheus + Grafana settings once to get a generated one).'
                 })
             }
 
@@ -102,7 +109,8 @@ class AddonAccessService {
                     port = '30643'
                 }
                 // Generate a short-lived admin token for login
-                const tokenR = await run(ssh, `${KB} -n kubernetes-dashboard create token dashboard-admin --duration=24h 2>/dev/null`)
+                let tokenR = await run(ssh, `${KB} -n kubernetes-dashboard create token dashboard-admin --duration=24h 2>/dev/null`)
+                if (!tokenR.out) tokenR = await run(ssh, `${KB} -n kubernetes-dashboard create token dashboard-viewer --duration=24h 2>/dev/null`)
                 addons.push({
                     key: 'dashboard',
                     name: 'Kubernetes Dashboard',

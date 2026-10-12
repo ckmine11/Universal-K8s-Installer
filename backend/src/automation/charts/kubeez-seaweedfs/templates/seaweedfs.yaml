@@ -1,0 +1,144 @@
+{{- if eq .Values.storage.mode "pvc" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seaweedfs-data
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    # the data outlives a failed install or a Helm uninstall
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- if .Values.storage.storageClass }}
+  storageClassName: {{ .Values.storage.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seaweedfs
+  namespace: {{ .Release.Namespace }}
+  labels: { app: seaweedfs }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: seaweedfs }
+  template:
+    metadata:
+      labels: { app: seaweedfs }
+    spec:
+      {{- if and (eq .Values.storage.mode "hostPath") .Values.storage.nodeName }}
+      nodeSelector:
+        kubernetes.io/hostname: {{ .Values.storage.nodeName | quote }}
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      {{- end }}
+      containers:
+      - name: seaweedfs
+        image: {{ .Values.image }}
+        command: ["weed"]
+        args:
+        - server
+        - -dir=/data
+        - -ip=$(POD_IP)
+        - -ip.bind=0.0.0.0
+        - -master.volumeSizeLimitMB={{ .Values.volumeSizeLimitMB }}
+        - -volume.max=0
+        - -filer
+        - -s3
+        - -s3.port=8333
+        - -s3.config=/etc/seaweedfs/s3.json
+        - -s3.autoCreateBucket={{ .Values.s3.autoCreateBucket }}
+        {{- range .Values.extraArgs }}
+        - {{ . | quote }}
+        {{- end }}
+        env:
+        - name: POD_IP
+          valueFrom: { fieldRef: { fieldPath: status.podIP } }
+        ports:
+        - { name: s3, containerPort: 8333 }
+        readinessProbe:
+          tcpSocket: { port: 8333 }
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket: { port: 9333 }
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources: {{ toJson .Values.resources }}
+        volumeMounts:
+        - { name: data, mountPath: /data }
+        - { name: s3config, mountPath: /etc/seaweedfs, readOnly: true }
+      {{- if .Values.admin.enabled }}
+      # Web admin UI — login always required (password from the Secret)
+      - name: admin
+        image: {{ .Values.image }}
+        command: ["weed"]
+        args:
+        - admin
+        - -port=23646
+        - -ip=0.0.0.0
+        - -master=localhost:9333
+        - -adminUser=$(ADMIN_USER)
+        - -adminPassword=$(ADMIN_PASSWORD)
+        - -dataDir=/data/.admin
+        env:
+        - name: ADMIN_USER
+          valueFrom: { secretKeyRef: { name: {{ .Values.credentialsSecret }}, key: adminUser } }
+        - name: ADMIN_PASSWORD
+          valueFrom: { secretKeyRef: { name: {{ .Values.credentialsSecret }}, key: adminPassword } }
+        ports:
+        - { name: admin, containerPort: 23646 }
+        readinessProbe:
+          tcpSocket: { port: 23646 }
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        resources: {{ toJson .Values.adminResources }}
+        volumeMounts:
+        - { name: data, mountPath: /data }
+      {{- end }}
+      volumes:
+      - name: data
+        {{- if eq .Values.storage.mode "pvc" }}
+        persistentVolumeClaim:
+          claimName: seaweedfs-data
+        {{- else }}
+        hostPath:
+          path: {{ .Values.storage.hostPath }}
+          type: DirectoryOrCreate
+        {{- end }}
+      - name: s3config
+        secret:
+          secretName: {{ .Values.credentialsSecret }}
+          items: [{ key: s3.json, path: s3.json }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs-s3
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: NodePort
+  selector: { app: seaweedfs }
+  ports:
+  - { name: s3, port: 8333, targetPort: 8333, nodePort: {{ .Values.s3.nodePort }} }
+{{- if .Values.admin.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs-admin
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: NodePort
+  selector: { app: seaweedfs }
+  ports:
+  - { name: admin, port: 23646, targetPort: 23646, nodePort: {{ .Values.admin.nodePort }} }
+{{- end }}

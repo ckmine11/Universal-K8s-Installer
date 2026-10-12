@@ -1,24 +1,14 @@
 import { automationEngine } from './automationEngine.js'
-import { HELM_ADDONS } from '../config/helmAddons.js'
+import { HELM_ADDONS, versionFits } from '../config/helmAddons.js'
 import { addonSettingsStore } from './addonSettings.js'
 
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 
-// Every add-on KubeEZ can install: where it lives and how to tell it is there.
+// Every add-on KubeEZ can install: where it lives and how to tell it is there
+// (all of them are Helm add-ons with settings — config/helmAddons.js).
 // `keepsData`: uninstalling deletes user data → the UI asks for a typed confirmation.
-export const ADDON_REGISTRY = {
-    ingress:        { label: 'Nginx Ingress',                 ns: 'ingress-nginx',        detect: 'deploy/ingress-nginx-controller' },
-    monitoring:     { label: 'Prometheus + Grafana',          ns: 'monitoring',           detect: 'deploy/grafana' },
-    dashboard:      { label: 'Kubernetes Dashboard',          ns: 'kubernetes-dashboard', detect: 'deploy/kubernetes-dashboard' },
-    'cert-manager': { label: 'cert-manager',                  ns: 'cert-manager',         detect: 'deploy/cert-manager' },
-    longhorn:       { label: 'Longhorn Storage',              ns: 'longhorn-system',      detect: 'ds/longhorn-manager', keepsData: true },
-    argocd:         { label: 'ArgoCD',                        ns: 'argocd',               detect: 'deploy/argocd-server' },
-    seaweedfs:      { label: 'S3 Object Storage (SeaweedFS)', ns: 'seaweedfs',            detect: 'deploy/seaweedfs', keepsData: true },
-    velero:         { label: 'Velero (Volume Backups)',       ns: 'velero',               detect: 'deploy/velero' },
-    explorer:       { label: 'KubeEZ Explorer',              ns: 'kubeez-explorer',      detect: 'deploy/kubeez-explorer deploy/radar' },
-    // Helm add-ons with settings (config/helmAddons.js)
-    ...Object.fromEntries(Object.entries(HELM_ADDONS).map(([k, a]) => [k, { label: a.label, ns: a.ns, detect: a.detect, keepsData: !!a.keepsData, helm: true }]))
-}
+export const ADDON_REGISTRY = Object.fromEntries(Object.entries(HELM_ADDONS).map(([k, a]) =>
+    [k, { label: a.label, ns: a.ns, detect: a.detect, probe: a.probe || null, keepsData: !!a.keepsData, helm: true }]))
 
 const BROKEN = /CrashLoopBackOff|ErrImagePull|ImagePullBackOff|InvalidImageName|CreateContainerConfigError|CreateContainerError|RunContainerError|OOMKilled|Error/
 
@@ -77,6 +67,7 @@ class AddonManager {
                 `echo "@@ADDON ${key}"; ` +
                 `echo "@@NS $(${KB} get ns ${a.ns} -o jsonpath='{.status.phase}' 2>/dev/null)"; ` +
                 `echo "@@DETECT $(${KB} -n ${a.ns} get ${a.detect} -o name 2>/dev/null)"; ` +
+                (a.probe ? `echo "@@IMAGE $(${KB} -n ${a.ns} get ${a.probe} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)"; ` : '') +
                 `${KB} -n ${a.ns} get pods -o json 2>/dev/null; echo`
             ).join('; ')
             const r = await run(ssh, script)
@@ -94,9 +85,16 @@ class AddonManager {
                 const def = ADDON_REGISTRY[key]
                 // Helm add-ons: which version runs, and whether a newer checked one exists
                 const applied = def.helm ? addonSettingsStore.get(cluster.id, key).applied : null
+                const k8sMinor = Number(String(cluster.k8sVersion || '').split('.')[1]) || null
+                const latest = HELM_ADDONS[key].versions.find(v => versionFits(v, k8sMinor)) || HELM_ADDONS[key].versions[0]
+                const image = (block.match(/@@IMAGE ([^\n]*)/)?.[1] || '').trim()
                 const helmInfo = def.helm ? {
-                    version: applied?.version || null, latestVersion: HELM_ADDONS[key].versions[0].id,
-                    updateAvailable: !!applied && applied.version !== HELM_ADDONS[key].versions[0].id,
+                    version: applied?.version || null, latestVersion: latest.id,
+                    runningApp: (image.match(/\d+\.\d+\.\d+/) || [])[0] || null,
+                    managed: !!applied,
+                    // installed before KubeEZ managed add-ons with Helm — the first Apply takes it over
+                    takeover: !applied && !!HELM_ADDONS[key].takeover,
+                    updateAvailable: !!applied && applied.version !== latest.id,
                     uninstallNote: HELM_ADDONS[key].uninstallNote
                 } : {}
                 const configured = !!(cluster.addons?.[key] || (key === 'cert-manager' && cluster.addons?.certManager))

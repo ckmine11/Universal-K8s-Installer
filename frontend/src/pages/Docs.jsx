@@ -334,9 +334,9 @@ export default function Docs() {
                     <Section id="addons" Icon={Puzzle} color="text-fuchsia-400" title="Add-on Catalogue"
                         intro="Install add-ons during deployment or later from Add-ons → Manage & logs → Install. Web UIs are exposed on these ports of any node IP.">
                         <Table head={['Add-on', 'What it does', 'Access']} rows={[
-                            ['Nginx Ingress', 'HTTP/HTTPS routing for Ingress resources', 'NodePorts shown in Access & logins'],
-                            ['Prometheus + Grafana', 'Metrics and dashboards (KubeEZ overview dashboard included)', 'Grafana :30000 · Prometheus :30090'],
-                            ['Kubernetes Dashboard', 'Official web UI (24-hour login token shown in KubeEZ)', 'https :30643'],
+                            ['Nginx Ingress', 'HTTP/HTTPS routing for Ingress resources (the ingress-nginx project was retired upstream in March 2026 — 1.15 is its last release)', 'NodePorts or a MetalLB IP, in Access & logins'],
+                            ['Prometheus + Grafana', 'kube-prometheus-stack: Prometheus, Grafana with ready dashboards (and the KubeEZ overview), node and Kubernetes metrics, optional Alertmanager', 'Grafana :30000 (own password) · Prometheus :30090'],
+                            ['Kubernetes Dashboard', 'Official web UI v2.7 (24-hour login token shown in KubeEZ). The upstream project is archived — the KubeEZ Explorer is the maintained alternative', 'https :30643'],
                             ['cert-manager', 'Automatic TLS certificates; a self-signed ClusterIssuer is ready', 'in-cluster'],
                             ['Longhorn', 'Replicated block storage; becomes the default StorageClass', 'UI :30080'],
                             ['ArgoCD', 'GitOps delivery', 'https :30443'],
@@ -353,12 +353,14 @@ export default function Docs() {
                     </Section>
 
                     <Section id="addon-settings" Icon={Puzzle} color="text-fuchsia-400" title="Add-on Settings"
-                        intro="Metrics Server, MetalLB, Loki, Sealed Secrets and Kyverno are installed with Helm and can be configured — before installing and at any time after.">
+                        intro="Every add-on is installed with Helm and can be customized — when you create the cluster (Customize on the add-on), when you install it later, and at any time after.">
                         <Table head={['', 'What you can do']} rows={[
-                            ['Settings form', 'The few settings that matter, with safe defaults: e.g. MetalLB\'s IP range, how long Loki keeps logs, Kyverno\'s rules and Report-only / Block. Wrong values are refused with the reason (an IP range containing a node or the VIP, addresses that already answer on the network).'],
+                            ['Settings form', 'The few settings that matter, with safe defaults: node ports, replicas, storage and size, retention, the Grafana / Alertmanager options, Let\'s Encrypt email, Longhorn copies per volume, MetalLB\'s IP range, Kyverno\'s rules… Wrong values are refused with the reason (a port outside 30000–32767, an IP range containing a node, a volume made smaller).'],
+                            ['Before the cluster exists', <>In the new-cluster wizard, select an add-on and press <b>Customize</b>: the same form, advanced YAML and preview. Checked when you start, used during the install.</>],
                             ['Change later', <><b>Settings</b> in Manage & logs → change → <b>Preview</b> (exactly what changes) → <b>Apply</b>. Runs as a job with a live log. If the add-on does not come up healthy, Helm puts back the version that worked and KubeEZ keeps the old settings.</>],
                             ['History', 'Every change: who, when, which version and settings, and whether it worked.'],
-                            ['Version', 'The recommended version KubeEZ has checked, or the previous one. An Update badge appears when a newer checked version exists.'],
+                            ['Version', 'The versions KubeEZ has checked, newest first; versions that need a newer Kubernetes are greyed out. Longhorn, cert-manager and ArgoCD move one release line at a time, as those projects require — KubeEZ checks the running version on the node before changing anything. An Update badge appears when a newer version is available.'],
+                            ['Installed before', <>Add-ons installed by an older KubeEZ show <b>Not Helm-managed yet</b>. The first Apply takes them over in place at the version that runs (preselected): same names, ports and data. ArgoCD and Velero restart their pods once; Prometheus + Grafana are replaced by kube-prometheus-stack on the same ports (collected metrics are not carried over). If a takeover fails, nothing is removed.</>],
                             ['Advanced (Pro)', 'Any Helm value of the chart as YAML, merged over the form. The few keys KubeEZ needs to find, check and repair the add-on stay fixed — the preview says when one of yours was ignored.']
                         ]} />
                         <Note>Kyverno is installed so that it can never block the cluster: if Kyverno itself is down, requests are let through, and system namespaces (kube-system, the add-ons) are never checked. Start with <b>Report only</b>, fix what the results show, then switch to <b>Block</b>.</Note>

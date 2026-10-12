@@ -1,10 +1,10 @@
 import { NodeSSH } from 'node-ssh'
 import { sshRefusedMessage } from '../utils/sshFixHint.js'
 import { assertDirectConnectAllowed } from '../utils/netGuard.js'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { volumeBackupStore } from './volumeBackupStore.js'
-import { HELM_ADDONS, isHelmAddon } from '../config/helmAddons.js'
+import { HELM_ADDONS, isHelmAddon, normAddonKey } from '../config/helmAddons.js'
 import { addonSettingsStore, buildPlan, planFiles, writePlanCommand } from './addonSettings.js'
 import { fileURLToPath } from 'url'
 import { agentService } from './agentService.js'
@@ -154,21 +154,15 @@ class AutomationEngine {
     }
 
     /**
-     * Velero needs its storage settings (incl. keys) on the node while it is
-     * installed: written root-only to /etc/kubeez/velero.env, which velero.sh
-     * moves into the cluster Secret and deletes. Keys travel base64 on stdin of
-     * the remote shell, never as arguments of a long-running process.
+     * Velero needs its storage keys on the node while it is installed: written
+     * root-only to /etc/kubeez/velero.env, which the add-on's pre-step
+     * (config/addons/core.js) moves into the cluster Secret and deletes. Keys
+     * travel base64 on stdin of the remote shell, never as arguments of a
+     * long-running process, and never into the Helm values.
      */
-    /** The Explorer is served under this cluster's KubeEZ path (Radar --base-path). */
-    async writeExplorerSettings(ssh, clusterId) {
-        if (!/^[A-Za-z0-9-]+$/.test(String(clusterId))) throw new Error('Invalid cluster id')
-        const r = await ssh.execCommand(`sudo mkdir -p /etc/kubeez && echo 'KZ_BASE_PATH=/api/clusters/${clusterId}/explorer' | sudo tee /etc/kubeez/explorer.env >/dev/null`)
-        if (r.code !== 0) throw new Error(`Could not prepare the Explorer settings on the node: ${(r.stderr || r.stdout || '').trim()}`)
-    }
-
     async writeVeleroSettings(ssh, clusterId, orgId) {
         const cfg = volumeBackupStore.effective(clusterId, orgId)
-        if (!cfg) return   // velero.sh explains what to do
+        if (!cfg) return   // the add-on refuses with "set up volume backups first"
         if (volumeBackupStore.isStale(clusterId, orgId)) volumeBackupStore.save(clusterId, cfg)   // follow the offsite connection
         const lines = Object.entries({
             VB_PROVIDER: cfg.provider, VB_ENDPOINT: cfg.endpoint, VB_REGION: cfg.region, VB_BUCKET: cfg.bucket,
@@ -1088,14 +1082,25 @@ class AutomationEngine {
         const clusterId = installation.originalClusterId || installation.id
         const saved = addonSettingsStore.get(clusterId, key)
         const desired = installation.addonSettings?.[key] || saved.applied || saved.lastSettings || {}
+        // No version chosen and none recorded: stay on the line that runs now
+        // (an add-on installed before KubeEZ managed it with Helm is taken over as it is)
+        let runningApp = null
+        const def = HELM_ADDONS[key]
+        if (!desired.version && def.probe) {
+            const ref = def.probe.replace(/[^a-z0-9/.-]/g, '')
+            const r = await ssh.execCommand(`sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n ${def.ns} get ${ref} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null`).catch(() => null)
+            runningApp = (String(r?.stdout || '').match(/\d+\.\d+\.\d+/) || [])[0] || null
+            if (runningApp) onLog('info', `${def.label} ${runningApp} runs now — keeping that release line`)
+        }
         // checked against the whole cluster (its other add-ons, nodes, VIP)
-        const plan = buildPlan(key, { ...installation, addons: { ...(installation.clusterAddons || {}), ...(installation.addons || {}) } }, desired)
+        const plan = buildPlan(key, { ...installation, addons: { ...(installation.clusterAddons || {}), ...(installation.addons || {}) } }, desired, { runningApp })
         if (plan.ignored.length) onLog('warning', `Advanced values ignored (KubeEZ needs them): ${plan.ignored.join(', ')}`)
         onLog('info', `${plan.label} ${plan.version} — ${Object.entries(plan.settings).map(([k, v]) => `${k}=${v}`).join(', ')}${plan.advanced.trim() ? ' + advanced values' : ''}`)
         addonSettingsStore.setPending(clusterId, key, { settings: plan.settings, advanced: plan.advanced, version: plan.version }, { by: installation.requestedBy || 'KubeEZ', jobId: installation.id })
         try {
             const w = await ssh.execCommand(writePlanCommand(key, planFiles(plan)))
             if (w.code !== 0) throw new Error(`Could not hand the settings to the node: ${(w.stderr || w.stdout || '').trim()}`)
+            if (def.prepare === 'velero') await this.writeVeleroSettings(ssh, clusterId, installation.orgId)
             await this.executeScript(ssh, join(__dirname, '../automation/addons/helm-addon.sh'), [key], onLog, opts)
             addonSettingsStore.finish(clusterId, key, installation.id, { ok: true })
         } catch (e) {
@@ -1127,37 +1132,14 @@ class AutomationEngine {
 
         const masterNode = installation.masterNodes[0]
         const ssh = await this.connectSSH(masterNode)
-        const scriptPath = join(__dirname, '../automation/install-addons.sh')
 
         try {
-            const addonsToInstall = []
-
-            // Legacy addons (handled by install-addons.sh)
-            if (addons.ingress) addonsToInstall.push({ type: 'legacy', name: 'ingress', label: 'Nginx Ingress' })
-            if (addons.monitoring) addonsToInstall.push({ type: 'legacy', name: 'monitoring', label: 'Prometheus Stack' })
-            if (addons.logging) addonsToInstall.push({ type: 'legacy', name: 'logging', label: 'EFK Stack' })
-            if (addons.dashboard) addonsToInstall.push({ type: 'legacy', name: 'dashboard', label: 'Kubernetes Dashboard' })
-
-            // New addons (dedicated scripts)
-            // Note: Frontend sends 'cert-manager', Backend previously checked 'certManager'
-            if (addons.certManager || addons['cert-manager']) addonsToInstall.push({ type: 'script', script: 'addons/cert-manager.sh', label: 'Cert Manager' })
-            if (addons.longhorn) addonsToInstall.push({ type: 'script', script: 'addons/longhorn.sh', label: 'Longhorn Storage' })
-            if (addons.argocd) addonsToInstall.push({ type: 'script', script: 'addons/argocd.sh', label: 'ArgoCD' })
-            if (addons.seaweedfs) addonsToInstall.push({ type: 'script', script: 'addons/seaweedfs.sh', label: 'S3 Object Storage (SeaweedFS)' })
-            if (addons.velero) addonsToInstall.push({ type: 'script', script: 'addons/velero.sh', label: 'Velero (Volume Backups)', prepare: 'velero' })
-            if (addons.explorer) addonsToInstall.push({ type: 'script', script: 'addons/explorer.sh', label: 'KubeEZ Explorer', prepare: 'explorer' })
-            // Helm add-ons with settings (Metrics Server, MetalLB, Loki, Sealed Secrets, Kyverno)
-            for (const key of Object.keys(HELM_ADDONS)) if (addons[key]) addonsToInstall.push({ type: 'helm', key, label: HELM_ADDONS[key].label })
-
-            // Any other add-on: a script named automation/addons/<key>.sh is enough
-            // (no code change needed to add one).
-            const KNOWN = new Set(['ingress', 'monitoring', 'logging', 'dashboard', 'certManager', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs', 'velero', 'explorer'])
-            for (const [key, on] of Object.entries(addons)) {
-                if (!on || KNOWN.has(key) || isHelmAddon(key) || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(key)) continue
-                if (existsSync(join(__dirname, '../automation/addons', `${key}.sh`))) {
-                    addonsToInstall.push({ type: 'script', script: `addons/${key}.sh`, label: key })
-                }
-            }
+            // Every add-on is installed with Helm and its settings (config/helmAddons.js),
+            // in the catalogue's order (storage before the add-ons that use it)
+            const wanted = new Set(Object.entries(addons).filter(([, on]) => on).map(([k]) => normAddonKey(k)))
+            const order = ['longhorn', 'cert-manager', 'metallb', 'ingress', ...Object.keys(HELM_ADDONS)]
+            const addonsToInstall = [...new Set(order)].filter(k => wanted.has(k)).map(key => ({ type: 'helm', key, label: HELM_ADDONS[key].label }))
+            for (const k of wanted) if (!isHelmAddon(k) && k !== 'logging') onLog('warning', `Unknown add-on "${k}" — skipped`)
 
             if (addonsToInstall.length === 0) {
                 onLog('info', 'No valid add-ons selected to install.')
@@ -1178,7 +1160,6 @@ class AutomationEngine {
                 }
             }
 
-            const legacyScriptPath = join(__dirname, '../automation/install-addons.sh')
 
             // Add-ons pull images and wait for rollouts — through a Gateway Agent the
             // default 10-min relay timeout cut them off. Scripts bound their own waits.
@@ -1186,24 +1167,10 @@ class AutomationEngine {
             for (const item of addonsToInstall) {
                 onLog('info', `Step: Installing ${item.label}...`)
                 try {
-                    if (item.type === 'legacy') {
-                        await this.executeScript(ssh, legacyScriptPath, [item.name], onLog, addonOpts)
-                    } else if (item.type === 'helm') {
-                        await this.installHelmAddon(ssh, installation, item.key, onLog, addonOpts)
-                    } else {
-                        const scriptPath = join(__dirname, '../automation', item.script)
-                        if (item.prepare === 'explorer') await this.writeExplorerSettings(ssh, installation.originalClusterId || installation.id)
-                        if (item.prepare === 'velero') await this.writeVeleroSettings(ssh, installation.originalClusterId || installation.id, installation.orgId)
-                        await this.executeScript(ssh, scriptPath, [], onLog, addonOpts)
-                    }
+                    await this.installHelmAddon(ssh, installation, item.key, onLog, addonOpts)
                     onLog('success', `✓ ${item.label} installed successfully`)
                 } catch (err) {
                     onLog('error', `❌ Failed to install ${item.label}: ${err.message}`)
-                    // Continue with other addons instead of failing entire process?
-                    // Usually better to throw so user knows, but for addons, partial success might be better.
-                    // For now, let's allow it to propagate if critical, or maybe log and verify?
-                    // automationEngine install method catches errors. So if we throw, it stops.
-                    // Given user wants "everything installable", stopping is safer to debug.
                     throw err
                 }
             }

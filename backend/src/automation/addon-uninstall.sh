@@ -72,6 +72,7 @@ progress 10 "Removing ${ADDON}"
 
 case "$ADDON" in
 ingress)
+    helm_remove ingress-nginx
     del validatingwebhookconfiguration ingress-nginx-admission
     progress 30 "Removing the controller"
     delete_ns ingress-nginx
@@ -81,6 +82,9 @@ ingress)
     ;;
 
 monitoring)
+    helm_remove monitoring
+    del validatingwebhookconfiguration,mutatingwebhookconfiguration kubeez-admission
+    del -n monitoring secret grafana-admin
     # Custom resources first, while the operator is still running to finalize them
     del -n monitoring prometheus.monitoring.coreos.com --all
     del -n monitoring servicemonitor.monitoring.coreos.com --all
@@ -93,12 +97,14 @@ monitoring)
     ;;
 
 dashboard)
+    helm_remove kubernetes-dashboard
     delete_ns kubernetes-dashboard
     del clusterrole kubernetes-dashboard
     del clusterrolebinding kubernetes-dashboard dashboard-admin dashboard-viewer
     ;;
 
 cert-manager)
+    helm_remove cert-manager
     # Webhooks first — a dangling cert-manager webhook makes the API reject
     # unrelated requests once the webhook pod is gone.
     del validatingwebhookconfiguration cert-manager-webhook
@@ -113,6 +119,7 @@ cert-manager)
     ;;
 
 argocd)
+    helm_remove argocd
     # Applications carry a finalizer that needs the (soon gone) controller
     for r in $(kubectl get applications.argoproj.io,applicationsets.argoproj.io,appprojects.argoproj.io -A -o jsonpath='{range .items[*]}{.kind}/{.metadata.name} -n {.metadata.namespace}{"\n"}{end}' 2>/dev/null | tr ' ' '#'); do
         kubectl patch $(echo "$r" | tr '#' ' ') --type=merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1 || true
@@ -162,6 +169,7 @@ longhorn)
     ;;
 
 seaweedfs)
+    helm_remove seaweedfs
     if kubectl -n seaweedfs get pvc seaweedfs-data >/dev/null 2>&1; then
         log "⚠ The SeaweedFS volume (PVC seaweedfs-data) and all stored objects are deleted."
     else
@@ -185,6 +193,7 @@ explorer)
     ;;
 
 velero)
+    helm_remove velero
     # Backups already in the bucket are NOT deleted — reinstalling with the
     # same settings lists them again.
     if command -v velero >/dev/null 2>&1 && kubectl get ns velero >/dev/null 2>&1; then
@@ -218,6 +227,7 @@ metallb)
 
 loki)
     helm_remove logging
+    del -n monitoring configmap kubeez-loki-datasource
     delete_ns logging
     del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=loki
     del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=fluent-bit

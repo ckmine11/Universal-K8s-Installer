@@ -14,7 +14,7 @@ import { canAccessResource } from '../utils/access.js'
  * the workspace owns the cluster, removes any identity headers the browser
  * sent, adds the real ones (user + role group) and carries the request through
  * the cluster tunnel (SSH / Gateway Agent). Radar then acts as that user, so
- * Kubernetes RBAC (explorer.sh maps the groups) decides what is allowed.
+ * Kubernetes RBAC (the Explorer add-on maps the groups, config/addons/core.js) decides what is allowed.
  */
 export const EXPLORER_NS = 'kubeez-explorer'
 // Service name; installs from before the KubeEZ rename still have "radar"
@@ -144,7 +144,7 @@ async function target(cluster, fresh = false) {
         targets.set(cluster.id, { ip, at: Date.now() })
         if (!gateChecked.has(cluster.id)) {
             // Explorers installed before the Helm gate existed get it here, so
-            // Helm installs work without a manual Repair (same YAML as explorer.sh)
+            // Helm installs work without a manual Repair (same YAML as the Explorer add-on)
             const b64 = Buffer.from(HELM_GATE_YAML).toString('base64')
             const g = await ssh.execCommand(`${KB} get clusterrolebinding kubeez-explorer-helm-gate >/dev/null 2>&1 || (echo ${b64} | base64 -d | ${KB} apply -f - >/dev/null)`)
             if (g.code === 0) gateChecked.add(cluster.id)
@@ -156,7 +156,7 @@ async function target(cluster, fresh = false) {
 }
 
 // Radar 1.15 opens Helm writes only when its service account may create
-// Secrets; installs then run as the signed-in user (see explorer.sh)
+// Secrets; installs then run as the signed-in user (see the Explorer add-on, config/addons/core.js)
 const gateChecked = new Set()
 const HELM_GATE_YAML = `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

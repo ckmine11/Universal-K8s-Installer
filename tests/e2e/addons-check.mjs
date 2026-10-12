@@ -9,6 +9,7 @@ process.env.KUBEEZ_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'kz-addons-'
 const { automationEngine } = await import('../../backend/src/services/automationEngine.js')
 const { addonManager } = await import('../../backend/src/services/addonManager.js')
 const { addonAccessService } = await import('../../backend/src/services/addonAccessService.js')
+const { installAddon } = await import('./install-addon.mjs')
 
 const NODE = process.env.NODE_CONTAINER
 const AUTOMATION = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../backend/src/automation')
@@ -21,6 +22,7 @@ const cluster = { id: 'c-addons', clusterName: 'addons', masterNodes: [{ ip: IP 
 const K = (cmd) => dx(`KUBECONFIG=/etc/kubernetes/admin.conf kubectl ${cmd}`)
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++ }
 const quiet = () => {}
+const install = async (key) => { const r = await installAddon(NODE, key, undefined, { clusterId: 'c-addons', quiet: true }); automationEngine.connectSSH = async () => ssh; return r.ok ? null : `${r.error} ${r.lines.slice(-5).join(' | ')}` }
 
 async function script(file, args = []) {
     try { await automationEngine.executeScript(ssh, path.join(AUTOMATION, file), args, quiet, { timeoutMs: 30 * 60 * 1000 }); return null }
@@ -43,7 +45,7 @@ const nothingLeft = (pattern) => {
 }
 
 // ── SeaweedFS: install, status, logs, web UI ─────────────────────────────────
-let err = await script('addons/seaweedfs.sh')
+let err = await install('seaweedfs')
 ok(!err, 'SeaweedFS installed ' + (err || ''))
 let sw = await waitHealthy('seaweedfs')
 ok(sw.health === 'healthy' && sw.pods[0]?.ready === '2/2', `status: SeaweedFS healthy, pod ${sw.pods[0]?.ready}`)
@@ -62,16 +64,16 @@ ok(typeof logs.events === 'string', 'logs: events included')
 // Repair an install that predates the web UI: password is added, S3 keys are kept
 const s3Before = K(`-n seaweedfs get secret seaweedfs-s3 -o jsonpath={.data.secretKey}`).stdout
 K(`-n seaweedfs patch secret seaweedfs-s3 --type=json -p '[{"op":"remove","path":"/data/adminPassword"}]'`)
-err = await script('addons/seaweedfs.sh')
+err = await install('seaweedfs')
 ok(!err, 'repair (installer re-run) succeeded ' + (err || ''))
 ok(!!K(`-n seaweedfs get secret seaweedfs-s3 -o jsonpath={.data.adminPassword}`).stdout, 'repair: web UI password generated')
 ok(K(`-n seaweedfs get secret seaweedfs-s3 -o jsonpath={.data.secretKey}`).stdout === s3Before, 'repair: S3 keys unchanged')
 
 // ── cert-manager, dashboard, ingress: install → uninstall → nothing left ─────
-const installs = { 'cert-manager': ['addons/cert-manager.sh', []], dashboard: ['install-addons.sh', ['dashboard']], ingress: ['install-addons.sh', ['ingress']] }
+const installs = ['cert-manager', 'dashboard', 'ingress']
 const leftovers = { 'cert-manager': /cert-manager/, dashboard: /kubernetes-dashboard|dashboard-admin|dashboard-viewer/, ingress: /ingress-nginx/ }
-for (const [key, [file, args]] of Object.entries(installs)) {
-    err = await script(file, args)
+for (const key of installs) {
+    err = await install(key)
     ok(!err, `${key} installed ` + (err || ''))
     const st = await waitHealthy(key)
     ok(st.installed && st.health === 'healthy', `${key}: status ${st.health}`)

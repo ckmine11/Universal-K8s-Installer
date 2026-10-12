@@ -1,0 +1,29 @@
+# S3 Object Storage — SeaweedFS in one pod ("weed server": master, volume,
+# filer and S3 gateway) plus its web admin UI. Same resource names as the
+# KubeEZ installer used before, so an existing install is taken over in place.
+image: chrislusf/seaweedfs:4.48
+# Secret with accessKey / secretKey / s3.json / adminUser / adminPassword —
+# KubeEZ creates it once and never replaces it (keys stay the same)
+credentialsSecret: seaweedfs-s3
+storage:
+  # pvc: a volume from a StorageClass · hostPath: a folder on one node
+  mode: pvc
+  size: 20Gi
+  storageClass: ""          # empty = the cluster's default StorageClass
+  hostPath: /var/lib/kubeez-seaweedfs
+  nodeName: ""              # hostPath only: the node that keeps the data
+s3:
+  nodePort: 30833
+  # a typo in a bucket name must fail, not silently create a new bucket
+  autoCreateBucket: false
+admin:
+  enabled: true
+  nodePort: 30834
+volumeSizeLimitMB: 1024
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { memory: 1Gi }
+adminResources:
+  requests: { cpu: 20m, memory: 64Mi }
+  limits: { memory: 256Mi }
+extraArgs: []

@@ -27,7 +27,8 @@ const nodeIp = dx('hostname -I').stdout.split(' ')[0]
 const { automationEngine } = await import('../../backend/src/services/automationEngine.js')
 const { addonSettingsStore } = await import('../../backend/src/services/addonSettings.js')
 const { HELM_ADDONS } = await import('../../backend/src/config/helmAddons.js')
-automationEngine.connectSSH = async () => ({ execCommand: async (cmd) => dx(cmd), dispose() {} })
+// like real SSH: the script's output lines also reach the job log
+automationEngine.connectSSH = async () => ({ execCommand: async (cmd, o) => { const r = dx(cmd); if (r.stdout) o?.onStdout?.(Buffer.from(r.stdout + '\n')); return r }, dispose() {} })
 const ssh = await automationEngine.connectSSH()
 const AUTOMATION = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../backend/src/automation')
 
@@ -184,6 +185,64 @@ if (want('kyverno')) {
     p = K('run after-latest --image=nginx:latest --restart=Never')
     ok(p.code === 0, 'after uninstall nothing blocks pods')
     K('delete pod after-latest --now')
+}
+
+// ── Fresh installs of the original add-ons (Helm, defaults = one click) ─────
+const { addonAccessService } = await import('../../backend/src/services/addonAccessService.js')
+const accessOf = async (key) => (await addonAccessService.getAccessInfo({ id: 'c-e2e', masterNodes: [{ ip: nodeIp }] })).addons.find(a => a.key === key)
+
+if (want('argocd')) {
+    console.log('== ArgoCD (fresh, defaults)')
+    const r = await install('argocd', {})
+    ok(r.ok, `installed (${r.s}s) ${r.error || ''}`)
+    ok(K(`-n argocd get svc argocd-server -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}'`).stdout === '30443', 'UI on :30443')
+    ok(!!(await until(() => /200|30\d/.test(dx(`curl -sk -o /dev/null -w '%{http_code}' https://${nodeIp}:30443/`).stdout), 120e3)), 'UI answers')
+    const a = await accessOf('argocd')
+    ok((a?.auth?.password || '').length >= 8 && !/not found/i.test(a.auth.password), 'admin password shown in Access & logins')
+    const u = await uninstall('argocd')
+    const gone = await until(() => K('get ns argocd').code !== 0 && !K('get crd -o name').stdout.includes('argoproj.io'), 90e3)
+    ok(u.ok && !!gone, `uninstalled, CRDs removed ${u.error || ''} ${gone ? '' : K('get crd -o name').stdout.split('\n').filter(l => /argoproj/.test(l)).join(' ')}`)
+}
+
+if (want('monitoring')) {
+    console.log('== Prometheus + Grafana (fresh, defaults)')
+    const r = await install('monitoring', {})
+    ok(r.ok, `installed (${r.s}s) ${r.error || ''}`)
+    const a = await accessOf('grafana')
+    const pw = a?.auth?.password
+    ok(pw && pw !== 'admin', 'Grafana has a generated password, shown in Access & logins')
+    ok(!!(await until(() => dx(`curl -s -m 5 -u admin:'${pw}' http://${nodeIp}:30000/api/health`).stdout.includes('ok'), 180e3)), 'Grafana answers on :30000 with it')
+    ok(!!(await until(() => /"status":"success"/.test(dx(`curl -s -m 5 'http://${nodeIp}:30090/api/v1/query?query=up'`).stdout), 180e3)), 'Prometheus answers on :30090')
+    ok(!!(await until(() => /kubeez-overview/.test(dx(`curl -s -m 5 -u admin:'${pw}' 'http://${nodeIp}:30000/api/search?query=KubeEZ'`).stdout), 120e3)), 'KubeEZ dashboard in Grafana')
+    const u = await uninstall('monitoring')
+    ok(u.ok && K('get ns monitoring').code !== 0, `uninstalled ${u.error || ''}`)
+}
+
+if (want('longhorn')) {
+    console.log('== Longhorn (fresh, defaults)')
+    const r = await install('longhorn', {})
+    ok(r.ok, `installed (${r.s}s) ${r.error || ''}`)
+    ok(K(`get storageclass longhorn -o jsonpath='{.metadata.annotations.storageclass\\.kubernetes\\.io/is-default-class}'`).stdout === 'true', 'longhorn is the default StorageClass')
+    dx(`cat <<'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: lh-test }
+spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 1Gi } } }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: lh-writer }
+spec:
+  containers: [{ name: w, image: busybox:1.36, command: [sh, -c, 'echo kubeez > /data/f && sleep 3600'], volumeMounts: [{ name: d, mountPath: /data }] }]
+  volumes: [{ name: d, persistentVolumeClaim: { claimName: lh-test } }]
+EOF`)
+    const wrote = await until(() => K('exec lh-writer -- cat /data/f').stdout === 'kubeez', 300e3, 10000)
+    ok(!!wrote, 'a pod writes to a Longhorn volume')
+    if (!wrote) console.log(K('describe pod lh-writer').stdout.split('\n').slice(-8).join('\n'))
+    K('delete pod lh-writer --now'); K('delete pvc lh-test --wait=true')
+    await until(() => !K(`get pv -o jsonpath='{.items[*].spec.csi.driver}'`).stdout.includes('longhorn'), 120e3)
+    const u = await uninstall('longhorn')
+    ok(u.ok && K('get ns longhorn-system').code !== 0, `uninstalled ${u.error || ''}`)
 }
 
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nAll Helm add-on checks passed')

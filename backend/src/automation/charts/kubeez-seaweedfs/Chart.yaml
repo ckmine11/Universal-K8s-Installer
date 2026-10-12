@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kubeez-seaweedfs
+description: S3 Object Storage (SeaweedFS, single pod) as installed by KubeEZ — values for the image, storage, ports, limits and resources
+type: application
+version: 1.0.0
+appVersion: "4.48"

@@ -74,11 +74,11 @@ try {
 
     // The KubeEZ Explorer through the agent's TCP relay (tcp-open/data/close):
     // the page, its API and a live WebSocket, with no SSH port forwarding
-    if (dx('test -f /k/explorer.sh').code === 0) {
-        dx("mkdir -p /etc/kubeez && echo 'KZ_BASE_PATH=/api/clusters/c-root/explorer' > /etc/kubeez/explorer.env")
+    if (process.env.SKIP_EXPLORER !== '1') {
         console.log('== installing the KubeEZ Explorer')
-        const inst = dx('bash /k/explorer.sh 2>&1')
-        ok(inst.code === 0, 'Explorer installed' + (inst.code ? ': ' + inst.out.split('\n').slice(-5).join(' | ') : ''))
+        const { installAddon } = await import('./install-addon.mjs')
+        const inst = await installAddon(NODE, 'explorer', undefined, { clusterId: 'c-root', quiet: true })
+        ok(inst.ok, 'Explorer installed' + (inst.ok ? '' : ': ' + inst.error + ' | ' + inst.lines.slice(-5).join(' | ')))
         const base = `${URL}/api/clusters/c-root/explorer`
         const cookie = { cookie: `token=${admin.token}` }
         let r = await fetch(base + '/', { headers: { ...cookie, accept: 'text/html' } })

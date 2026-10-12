@@ -27,7 +27,7 @@ const { buildPlan, planFiles, writePlanCommand, parseAdvanced, lineDiff, valuesY
 const { ADDON_REGISTRY } = await import('../src/services/addonManager.js')
 const { checkAddonPlan } = await import('../src/config/addonTiers.js')
 
-const cluster = { masterNodes: [{ ip: '10.0.0.4' }], workerNodes: [{ ip: '10.0.0.5' }], controlPlaneVip: '10.0.0.100', addons: {} }
+const cluster = { id: 'c-unit', k8sVersion: '1.35.0', masterNodes: [{ ip: '10.0.0.4' }], workerNodes: [{ ip: '10.0.0.5' }], controlPlaneVip: '10.0.0.100', addons: {} }
 const rel = (plan, name) => plan.releases.find(r => r.name === name)
 
 test('every Helm add-on: defaults build, versions offered, registered for status / uninstall', () => {
@@ -35,9 +35,10 @@ test('every Helm add-on: defaults build, versions offered, registered for status
         const s = addonSchema(key)
         assert.ok(s.fields.length && s.versions[0].recommended, key)
         assert.ok(ADDON_REGISTRY[key]?.helm && ADDON_REGISTRY[key].ns === HELM_ADDONS[key].ns, `${key} registered`)
-        const plan = buildPlan(key, { ...cluster, addons: { longhorn: true } }, key === 'metallb' ? { settings: { addresses: '10.0.0.240-10.0.0.250' } } : {})
+        if (key === 'velero') continue   // needs Backups → Volume Backups first (own test)
+        const plan = buildPlan(key, { ...cluster, addons: { longhorn: true, monitoring: true } }, key === 'metallb' ? { settings: { addresses: '10.0.0.240-10.0.0.250' } } : {})
         assert.equal(plan.version, s.versions[0].id)
-        for (const r of plan.releases) assert.match(r.version, /^\d+\.\d+\.\d+$/)
+        for (const r of plan.releases) assert.match(r.version, /^v?\d+\.\d+\.\d+$/)
     }
     assert.throws(() => buildPlan('metallb', cluster, {}), /enter at least one range/, 'MetalLB needs its addresses')
     assert.throws(() => buildPlan('kyverno', cluster, { version: '0.0.1' }), /not offered/)
@@ -146,7 +147,7 @@ test('the node gets the plan as files (base64 — no quoting tricks possible)', 
     const p = buildPlan('metallb', cluster, { settings: { addresses: '10.0.0.240-10.0.0.250' }, advanced: "controller:\n  podLabels:\n    note: \"it's $(whoami) `id`\"\n" })
     const files = planFiles(p)
     assert.deepEqual(Object.keys(files).sort(), ['metallb.values.yaml', 'namespace', 'post.sh', 'post.yaml', 'pre.sh', 'releases'])
-    assert.equal(files.releases, 'metallb|kubeez-metallb|https://metallb.github.io/metallb|metallb|0.16.1\n')
+    assert.equal(files.releases, 'metallb|kubeez-metallb|https://metallb.github.io/metallb|metallb|0.16.1|-\n')
     assert.equal(JSON.parse(files['metallb.values.yaml']).controller.podLabels.note, "it's $(whoami) `id`")
     const cmd = writePlanCommand('metallb', files)
     assert.ok(!cmd.includes('whoami'), 'user text only travels base64-encoded')
@@ -251,7 +252,7 @@ test('API: settings form, preview, apply as a job; viewers and other workspaces 
     assert.equal(r.data.advancedAllowed, true)
     assert.equal((await api('GET', '/c-h/addons/metallb/settings', 'tok-view')).status, 403)
     assert.equal((await api('GET', '/c-f/addons/metallb/settings', 'tok-pro')).status, 403)
-    assert.equal((await api('GET', '/c-h/addons/ingress/settings', 'tok-pro')).status, 404)
+    assert.equal((await api('GET', '/c-h/addons/nginx/settings', 'tok-pro')).status, 404)
 
     r = await api('POST', '/c-h/addons/metallb/preview', 'tok-pro', { settings: { addresses: '10.0.0.4-10.0.0.9' } })
     assert.equal(r.status, 400)
