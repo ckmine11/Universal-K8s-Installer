@@ -1,6 +1,6 @@
 import { automationEngine } from './automationEngine.js'
-import { HELM_ADDONS, versionFits } from '../config/helmAddons.js'
-import { addonSettingsStore } from './addonSettings.js'
+import { HELM_ADDONS } from '../config/helmAddons.js'
+import { addonSettingsStore, availableUpdates } from './addonSettings.js'
 
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 
@@ -73,6 +73,7 @@ class AddonManager {
             const r = await run(ssh, script)
             if (!r.out.includes('@@ADDON')) throw new Error(`Could not read add-on status from the cluster: ${(r.err || 'no output').trim().slice(0, 300)}`)
 
+            const updates = availableUpdates(cluster)
             const addons = r.out.split('@@ADDON ').slice(1).map(block => {
                 const key = block.slice(0, block.indexOf('\n')).trim()
                 const nsPhase = (block.match(/@@NS ([^\n]*)/)?.[1] || '').trim()
@@ -85,16 +86,16 @@ class AddonManager {
                 const def = ADDON_REGISTRY[key]
                 // Helm add-ons: which version runs, and whether a newer checked one exists
                 const applied = def.helm ? addonSettingsStore.get(cluster.id, key).applied : null
-                const k8sMinor = Number(String(cluster.k8sVersion || '').split('.')[1]) || null
-                const latest = HELM_ADDONS[key].versions.find(v => versionFits(v, k8sMinor)) || HELM_ADDONS[key].versions[0]
+                const upd = updates.find(u => u.key === key)
                 const image = (block.match(/@@IMAGE ([^\n]*)/)?.[1] || '').trim()
                 const helmInfo = def.helm ? {
-                    version: applied?.version || null, latestVersion: latest.id,
+                    version: applied?.version || null, latestVersion: upd?.latest.id || applied?.version || null,
+                    update: upd ? { latest: upd.latest, step: upd.step } : null,
                     runningApp: (image.match(/\d+\.\d+\.\d+/) || [])[0] || null,
                     managed: !!applied,
                     // installed before KubeEZ managed add-ons with Helm — the first Apply takes it over
                     takeover: !applied && !!HELM_ADDONS[key].takeover,
-                    updateAvailable: !!applied && applied.version !== latest.id,
+                    updateAvailable: !!upd,
                     uninstallNote: HELM_ADDONS[key].uninstallNote
                 } : {}
                 const configured = !!(cluster.addons?.[key] || (key === 'cert-manager' && cluster.addons?.certManager))

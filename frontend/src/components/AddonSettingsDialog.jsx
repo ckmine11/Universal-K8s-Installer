@@ -137,7 +137,7 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, ru
                             <select aria-label="Version" value={version} onChange={e => setVersion(e.target.value)} className="max-w-[16rem] bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200">
                                 {s.versions.map(v => (
                                     <option key={v.id} value={v.id} disabled={v.fits === false} className="bg-slate-950">
-                                        {v.id} (app {v.app}){v.recommended ? ' — recommended' : ''}{v.fits === false ? ` — needs Kubernetes 1.${v.kube?.[0]}+` : ''}{runningApp && !data.applied && v.app.replace(/^v/, '').split('.').slice(0, 2).join('.') === runningApp.split('.').slice(0, 2).join('.') ? ' — runs now' : ''}
+                                        {v.id} (app {v.app}){v.recommended ? ' — recommended' : ''}{v.tested === false ? ' — new, not yet tested by KubeEZ' : ''}{v.fits === false ? ` — needs Kubernetes 1.${v.kube?.[0]}+` : ''}{runningApp && !data.applied && v.app.replace(/^v/, '').split('.').slice(0, 2).join('.') === runningApp.split('.').slice(0, 2).join('.') ? ' — runs now' : ''}
                                     </option>
                                 ))}
                             </select>
@@ -150,8 +150,18 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, ru
                         </div>
                     )}
                     {s.stepUpgrade && <p className="mx-5 mt-2 text-[11px] text-slate-500">{s.label} moves one release line per Apply (for example 1.7 → 1.8 → 1.9), as the project requires — KubeEZ checks the running version before changing anything.</p>}
-                    {data.updateAvailable && version === data.applied?.version && (
-                        <p className="mx-5 mt-2 flex items-center gap-1.5 text-[11px] text-sky-300"><Sparkles className="w-3.5 h-3.5" /> A newer version is available — choose it above and Apply to update (rolled back automatically if it fails).</p>
+                    {data.updateAvailable && data.update && version === data.applied?.version && (() => {
+                        const next = data.update.step || data.update.latest
+                        return (
+                            <div className="mx-5 mt-2 flex flex-wrap items-center gap-2 text-[11px] text-sky-300">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>Version {data.update.latest.id} (app {data.update.latest.app}) is available{data.update.step && data.update.step.id !== data.update.latest.id ? ` — ${s.label} goes one release line at a time, next is ${data.update.step.id}` : ''}. Apply to update; if it does not come up healthy, Helm puts back the version that worked.</span>
+                                <button type="button" onClick={() => setVersion(next.id)} className="px-2 py-0.5 rounded-md border border-sky-400/30 bg-sky-500/10 font-bold hover:bg-sky-500/20">Select {next.id}</button>
+                            </div>
+                        )
+                    })()}
+                    {s.versions.find(v => v.id === version)?.tested === false && (
+                        <p className="mx-5 mt-2 flex items-start gap-1.5 text-[11px] text-amber-200/90"><AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-300" /> {version} is a new release found in the {s.label} chart repository and has not been tested by KubeEZ yet. Read its release notes first; take a backup if the add-on keeps data.</p>
                     )}
 
                     <div className="flex-1 overflow-y-auto p-5 space-y-3">

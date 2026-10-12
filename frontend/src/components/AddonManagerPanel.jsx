@@ -184,6 +184,7 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
     const [starting, setStarting] = useState(null)  // key of the action being started
     const [settingsFor, setSettingsFor] = useState(null)   // { key, installed } — Helm add-on settings
     const [sealOpen, setSealOpen] = useState(false)
+    const [checking, setChecking] = useState(false)
 
     const load = async () => {
         setLoading(true)
@@ -200,6 +201,23 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
         }
     }
     useEffect(() => { load() }, [clusterId])
+
+    // New add-on versions are looked up every 12 hours; this asks the chart repositories now
+    const checkUpdates = async () => {
+        setChecking(true)
+        try {
+            const res = await apiFetch('/api/addon-catalog/check-updates', { method: 'POST' })
+            const json = await res.json()
+            if (!res.ok) throw new Error(json.error || 'Could not check')
+            const found = Object.values(json.found || {}).reduce((n, l) => n + l.length, 0)
+            toast({ title: 'Checked for updates', message: found ? `${found} new version${found === 1 ? '' : 's'} found in the chart repositories` : 'Nothing newer in the chart repositories', type: 'success' })
+            await load()
+        } catch (e) {
+            toast({ title: 'Check failed', message: e.message, type: 'error' })
+        } finally {
+            setChecking(false)
+        }
+    }
 
     // Install / repair = run the add-on's (idempotent) installer as a job
     const install = async (addon, repair) => {
@@ -250,10 +268,18 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                         <p className="text-slate-500 text-xs mt-0.5">Live status, logs, install, repair and uninstall — no terminal needed</p>
                     </div>
                 </div>
-                <button onClick={load} disabled={loading}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-all active:scale-95 disabled:opacity-50">
-                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-                </button>
+                <div className="flex items-center gap-2">
+                    {canManage && (
+                        <button onClick={checkUpdates} disabled={checking} title="Look for new add-on versions in the chart repositories now (otherwise every 12 hours)"
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/20 text-sky-300 text-xs font-bold transition-all active:scale-95 disabled:opacity-50">
+                            {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Check for updates
+                        </button>
+                    )}
+                    <button onClick={load} disabled={loading}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-all active:scale-95 disabled:opacity-50">
+                        <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                    </button>
+                </div>
             </div>
 
             {job && (

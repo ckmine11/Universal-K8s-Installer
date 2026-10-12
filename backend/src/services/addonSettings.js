@@ -4,7 +4,7 @@ import YAML from 'yaml'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomicSync } from '../utils/atomicWrite.js'
 import { fileURLToPath } from 'url'
-import { HELM_ADDONS, isHelmAddon, defaultSettings, versionFits, versionForRunning } from '../config/helmAddons.js'
+import { HELM_ADDONS, isHelmAddon, defaultSettings, versionFits, versionForRunning, allVersions, findVersion } from '../config/helmAddons.js'
 import { minorOf } from '../config/addons/common.js'
 import { volumeBackupStore } from './volumeBackupStore.js'
 
@@ -125,8 +125,9 @@ export function clusterContext(cluster) {
 
 /** Upgrade one release line at a time: the node checks what runs before anything changes */
 function stepCheck(a, v) {
-    const i = a.versions.indexOf(v)
-    const allowed = [minorOf(v.app), minorOf(a.versions[i + 1]?.app)].filter(Boolean)
+    // the target's line and the line right below it (tested and newly found versions together)
+    const lines = [...new Set(allVersions(a.key).map(x => minorOf(x.app)))]
+    const allowed = [minorOf(v.app), lines[lines.indexOf(minorOf(v.app)) + 1]].filter(Boolean)
     const ref = a.probe.replace(/[^a-z0-9/.-]/g, '')
     return [
         `CUR=$(kubectl -n ${a.ns} get ${ref} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | head -1)`,
@@ -147,7 +148,7 @@ export function buildPlan(key, cluster, { settings, advanced, version } = {}, { 
     const a = HELM_ADDONS[key]
     const ctx = clusterContext(cluster)
     // the chosen version; else the line that runs now (takeover / repair); else the newest that fits
-    const v = version ? a.versions.find(x => x.id === version) : (versionForRunning(key, runningApp) || a.versions.find(x => versionFits(x, ctx.k8sMinor)) || a.versions[0])
+    const v = version ? findVersion(key, version) : (versionForRunning(key, runningApp) || a.versions.find(x => versionFits(x, ctx.k8sMinor)) || a.versions[0])
     if (!v) throw bad(`Version ${version} is not offered for ${a.label} — choose one of ${a.versions.map(x => x.id).join(', ')}`)
     if (!versionFits(v, ctx.k8sMinor)) throw bad(`${a.label} ${v.id} needs Kubernetes 1.${v.kube[0]} or newer — this cluster runs 1.${ctx.k8sMinor}. Choose an older version.`)
     const clean = a.validate({ ...defaultSettings(key), ...(settings || {}) }, ctx)
@@ -167,13 +168,50 @@ export function buildPlan(key, cluster, { settings, advanced, version } = {}, { 
         }
     }
     const post = a.post ? a.post(clean, ctx, v) : { manifests: [], script: '' }
-    const pre = [a.stepUpgrade && a.probe ? stepCheck(a, v) : '', a.pre ? a.pre(clean, ctx, v) : ''].filter(Boolean).join('\n')
+    const pre = [a.stepUpgrade && a.probe ? stepCheck({ ...a, key }, v) : '', a.pre ? a.pre(clean, ctx, v) : ''].filter(Boolean).join('\n')
     return {
         key, label: a.label, ns: a.ns, version: v.id, app: v.app,
         settings: clean, advanced: String(advanced || ''), ignored,
         releases, pre, post,
         takeover: a.takeover ? { detect: a.takeover.detect, migrate: a.takeover.migrate ? a.takeover.migrate(clean, ctx, v) : '' } : null
     }
+}
+
+/**
+ * Add-ons on this cluster with a newer version than the one KubeEZ applied
+ * (only add-ons KubeEZ manages with Helm — older installs show "Not Helm-managed yet").
+ * step: for one-line-at-a-time add-ons, the version of the next line (what Apply may go to now).
+ */
+export function availableUpdates(cluster) {
+    const k8sMinor = Number(String(cluster.k8sVersion || '').split('.')[1]) || null
+    const out = []
+    for (const key of Object.keys(HELM_ADDONS)) {
+        const applied = addonSettingsStore.get(cluster.id, key).applied
+        if (!applied?.version) continue
+        const versions = allVersions(key)
+        const cur = versions.find(v => v.id === applied.version)
+        if (!cur) continue
+        const fit = versions.filter(v => versionFits(v, k8sMinor))
+        const latest = fit[0]
+        if (!latest || cmpApp(latest.app, cur.app) <= 0) continue
+        let step = null
+        if (HELM_ADDONS[key].stepUpgrade) {
+            const curLine = minorOf(cur.app)
+            const lines = [...new Set(versions.map(v => minorOf(v.app)))]   // newest first
+            const sameLineNewer = fit.find(v => minorOf(v.app) === curLine && cmpApp(v.app, cur.app) > 0)
+            const next = lines[lines.indexOf(curLine) - 1]
+            step = sameLineNewer || fit.find(v => minorOf(v.app) === next) || null
+        }
+        out.push({ key, label: HELM_ADDONS[key].label, current: cur.id, currentApp: cur.app,
+            latest: { id: latest.id, app: latest.app, tested: !!latest.tested },
+            step: step ? { id: step.id, app: step.app, tested: !!step.tested } : null })
+    }
+    return out
+}
+const cmpApp = (a, b) => {
+    const x = String(a).replace(/^v/, '').split('.').map(Number), y = String(b).replace(/^v/, '').split('.').map(Number)
+    for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0)
+    return 0
 }
 
 /** The values as the user sees them (YAML, one document per release) */

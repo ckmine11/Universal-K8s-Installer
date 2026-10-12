@@ -8,6 +8,7 @@ import { useAuth, apiFetch } from '../../context/AuthContext'
 import { useInstallationTracker } from '../../context/InstallationTrackerContext'
 import { LogoMark, LogoWord } from './Logo'
 import CommandPalette from './CommandPalette'
+import UpdatesMenu from './UpdatesMenu'
 import AuroraBackground from './AuroraBackground'
 
 const ROLE_META = {
@@ -178,6 +179,7 @@ export default function AppShell({ children }) {
                     </button>
 
                     <div className="flex items-center gap-2 sm:ml-auto">
+                        <UpdatesMenu />
                         <Link to="/incidents" className="relative p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition" aria-label={`Incidents${openIncidents ? ` (${openIncidents} open)` : ''}`}>
                             <Bell className="w-5 h-5" />
                             {openIncidents > 0 && (

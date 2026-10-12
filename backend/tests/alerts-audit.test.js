@@ -149,6 +149,19 @@ test('an agent that does not reconnect after a KubeEZ restart is reported', asyn
     assert.ok(await arrived('agent_offline', /"after-restart" is offline/))
 })
 
+test('new add-on version available: announced once per version', async () => {
+    const { clusterStore } = await import('../src/services/clusterStore.js')
+    const { addonSettingsStore } = await import('../src/services/addonSettings.js')
+    const { addonVersionService, announceUpdates } = await import('../src/services/addonVersions.js')
+    await clusterStore.saveCluster({ ...cluster, id: 'c-upd', status: 'healthy' })
+    addonSettingsStore.setPending('c-upd', 'kyverno', { settings: {}, version: '3.8.2' }, { by: 'audit', jobId: 'j-upd' })
+    addonSettingsStore.finish('c-upd', 'kyverno', 'j-upd', { ok: true })
+    addonVersionService.discovered = () => []        // the tested 3.9.1 is newer than 3.8.2
+    assert.ok(await announceUpdates() >= 1)
+    assert.ok(await arrived('addon_update', /Kyverno policies v1\.19\.1/))
+    assert.equal(await announceUpdates(), 0, 'not announced twice')
+})
+
 test('every alert type in the list was delivered at least once', () => {
     const seen = new Set(got.map(m => m.type))
     for (const type of Object.keys(EVENTS)) assert.ok(seen.has(type), `${type} (${EVENTS[type].label}) never arrived`)

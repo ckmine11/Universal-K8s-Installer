@@ -5,6 +5,7 @@
 import { CORE_ADDONS } from './addons/core.js'
 import { EXTRA_ADDONS } from './addons/extras.js'
 import { minorOf, tagVersion } from './addons/common.js'
+import { addonVersionService, cmpVersion } from '../services/addonVersions.js'
 
 export { SYSTEM_NAMESPACES } from './addons/common.js'
 export { parseAddressPool, KYVERNO_POLICIES, GRAFANA_DATASOURCES_WITH_LOKI, LOKI_DATASOURCE_CM } from './addons/extras.js'
@@ -26,18 +27,32 @@ export function defaultSettings(key) {
 /** Can this version run on Kubernetes 1.<minor>? (unknown minor = yes) */
 export const versionFits = (v, k8sMinor) => !k8sMinor || !v.kube || (k8sMinor >= v.kube[0] && k8sMinor <= v.kube[1])
 
-/** The versions offered for a cluster, newest first; the first that fits is recommended */
+/**
+ * Every version KubeEZ can install, newest first: the ones it has tested
+ * (config/addons) and newer ones found in the add-on's Helm repository
+ * (services/addonVersions.js — "new, not yet tested by KubeEZ").
+ */
+export function allVersions(key) {
+    const a = HELM_ADDONS[key]
+    const tested = a.versions.map(v => ({ ...v, tested: true }))
+    const found = addonVersionService.discovered(key).filter(d => !tested.some(t => t.id === d.id))
+    return [...tested, ...found].sort((x, y) => cmpVersion(y.app, x.app) || cmpVersion(y.id, x.id))
+}
+export const findVersion = (key, id) => allVersions(key).find(v => v.id === id) || null
+
+/** The versions offered for a cluster, newest first; the newest TESTED one that fits is recommended */
 export function versionsFor(key, k8sMinor) {
-    const list = HELM_ADDONS[key].versions.map(v => ({ id: v.id, app: v.app, fits: versionFits(v, k8sMinor), kube: v.kube || null }))
-    const rec = list.find(v => v.fits) || list[0]
+    const list = allVersions(key).map(v => ({ id: v.id, app: v.app, fits: versionFits(v, k8sMinor), kube: v.kube || null, tested: v.tested, released: v.released || null }))
+    const rec = list.find(v => v.fits && v.tested) || list.find(v => v.fits) || list[0]
     return list.map(v => ({ ...v, recommended: v === rec }))
 }
 
-/** The version that matches what runs now (same release line), for a takeover / repair */
+/** The version that matches what runs now (same release line), for a takeover / repair — tested ones first */
 export function versionForRunning(key, runningApp) {
     // an image ("longhornio/longhorn-manager:v1.7.2@sha256:…") or a version
     const mm = minorOf(tagVersion(runningApp))
-    return mm ? HELM_ADDONS[key].versions.find(v => minorOf(v.app) === mm) || null : null
+    if (!mm) return null
+    return HELM_ADDONS[key].versions.find(v => minorOf(v.app) === mm) || allVersions(key).find(v => minorOf(v.app) === mm) || null
 }
 
 /** What the UI needs to draw the form */

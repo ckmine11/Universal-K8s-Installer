@@ -17,7 +17,7 @@ import { disasterRecovery } from '../services/disasterRecovery.js'
 import { upgradeReadiness, clusterHealth } from '../services/explorerInsights.js'
 import { checkAddonPlan } from '../config/addonTiers.js'
 import { HELM_ADDONS, isHelmAddon, addonSchema, normAddonKey, versionForRunning } from '../config/helmAddons.js'
-import { addonSettingsStore, buildPlan, valuesYaml, lineDiff } from '../services/addonSettings.js'
+import { addonSettingsStore, buildPlan, valuesYaml, lineDiff, availableUpdates } from '../services/addonSettings.js'
 import { authService } from '../services/authService.js'
 import { can } from '../config/permissions.js'
 import { isPaidPlan } from '../config/planFeatures.js'
@@ -576,7 +576,8 @@ router.get('/:id/addons/:key/settings', requireAuth, requirePermission('addon:in
         res.json({
             schema, applied: saved.applied, pending: saved.pending, history: saved.history || [], lastSettings: saved.lastSettings || null,
             advancedAllowed: advancedAllowed(req),
-            updateAvailable: !!saved.applied && saved.applied.version !== recommended.id,
+            updateAvailable: !!availableUpdates(cluster).find(u => u.key === key),
+            update: availableUpdates(cluster).find(u => u.key === key) || null,
             suggestedVersion: saved.applied?.version || versionForRunning(key, running)?.id || recommended.id,
             clusterAddons: Object.keys(cluster.addons || {}).filter(k => cluster.addons[k])
         })

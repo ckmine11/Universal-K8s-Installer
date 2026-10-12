@@ -32,6 +32,7 @@ import addonCatalogRoutes from './routes/addonCatalog.js'
 import alertActionsRoutes from './routes/alertActions.js'
 import { notifier } from './services/notifier.js'
 import { telegramPoller } from './services/alertActions.js'
+import { addonVersionService } from './services/addonVersions.js'
 import { canAccessResource } from './utils/access.js'
 import { clusterStore } from './services/clusterStore.js'
 import { can } from './config/permissions.js'
@@ -460,6 +461,7 @@ server.listen(PORT, () => {
     agentService.watchAfterBoot().catch(() => { })   // agents that do not reconnect after a restart get an offline alert
     notifier.start()          // escalations + quiet-hours summaries
     telegramPoller.start()    // Acknowledge / Mute / Fix buttons in Telegram alerts
+    addonVersionService.start()   // new add-on versions from their Helm repositories (every 12 h)
 
     console.log(`
 ╔═══════════════════════════════════════════════════════╗
