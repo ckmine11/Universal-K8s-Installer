@@ -243,7 +243,7 @@ export function lineDiff(before, after) {
  */
 export function planFiles(plan) {
     const line = (r) => {
-        const flags = [r.local ? 'local' : '', r.crds ? 'crds' : '', r.rollback === false ? 'norollback' : ''].filter(Boolean).join(',') || '-'
+        const flags = [r.local ? 'local' : '', r.crds ? 'crds' : '', r.rollback === false ? 'norollback' : '', r.slow ? 'slow' : '', r.clientSide ? 'csa' : ''].filter(Boolean).join(',') || '-'
         return r.local ? [r.name, 'local', '-', r.local, r.version, flags].join('|') : [r.name, r.repo.name, r.repo.url, r.chart, r.version, flags].join('|')
     }
     const files = {

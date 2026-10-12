@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomicSync } from '../utils/atomicWrite.js'
+import { SAMPLE_CTX, sampleSettings } from '../config/addons/common.js'
 
 // New add-on versions, found automatically: every 12 hours KubeEZ reads the
 // official Helm repositories of the add-ons (index.yaml), keeps the newest
@@ -74,11 +75,10 @@ export function latestPerLine(releases) {
 export function chartSources(def) {
     const v = def.versions[0]
     // charts map: release name → chart version; release objects tell repo + chart name
-    const sample = { clusterId: 'c', k8sMinor: 35, nodeCount: 3, workerCount: 2, addons: { longhorn: true, monitoring: true }, velero: { bucket: 'b' } }
     let releases
     try {
-        const s = def.validate({ ...Object.fromEntries(def.fields.map(f => [f.key, f.default])), ...(def.ns === 'metallb-system' ? { addresses: '192.0.2.10-192.0.2.20' } : {}) }, sample)
-        releases = def.releases(s, sample, v)
+        const s = def.validate(sampleSettings(def), SAMPLE_CTX)
+        releases = def.releases(s, SAMPLE_CTX, v)
     } catch { return [] }
     if (releases.some(r => r.local)) return []
     // the key each release reads its version from (release name or chart name)
@@ -94,10 +94,20 @@ export function discoverFor(def, indexes) {
     if (def.autoUpdate === false) return []
     const sources = chartSources(def)
     if (!sources.length) return []
-    const [primary, ...others] = sources
-    const text = indexes[primary.repo.url]
-    if (!text) return []
-    const lines = latestPerLine(chartReleases(text, primary.chart))
+    // the app's own version list (appSource) leads, or the first chart; the other charts follow their newest release
+    const primary = def.appSource ? null : sources[0]
+    const others = def.appSource ? sources : sources.slice(1)
+    let releases
+    if (def.appSource) {
+        const t = indexes[def.appSource.url]
+        if (!t) return []
+        try { releases = def.appSource.releases(t) } catch { return [] }
+    } else {
+        const text = indexes[primary.repo.url]
+        if (!text) return []
+        releases = chartReleases(text, primary.chart)
+    }
+    const lines = latestPerLine(releases)
     const known = def.versions
     const newestKnown = known.reduce((m, v) => cmpVersion(v.app, m) > 0 ? v.app : m, '0.0.0')
     const companions = {}
@@ -115,7 +125,7 @@ export function discoverFor(def, indexes) {
         if (!newer || known.some(k => k.id === r.version)) continue
         out.push({
             id: r.version, app: /^v/.test(known[0].app) && !/^v/.test(app) ? `v${app}` : app,
-            charts: { [primary.key]: r.version, ...companions },
+            charts: { ...(primary ? { [primary.key]: r.version } : {}), ...companions },
             kube: r.kubeVersion ? kubeRange(r.kubeVersion) : undefined,
             tested: false, released: r.created ? r.created.slice(0, 10) : null
         })
@@ -136,17 +146,22 @@ class AddonVersionService {
     async checkNow({ fetchText = defaultFetch } = {}) {
         const { HELM_ADDONS } = await import('../config/helmAddons.js')
         const urls = new Set()
-        for (const def of Object.values(HELM_ADDONS)) for (const s of chartSources(def)) urls.add(s.repo.url)
+        const raw = new Set()   // version lists that are not Helm repositories (appSource)
+        for (const def of Object.values(HELM_ADDONS)) {
+            for (const s of chartSources(def)) urls.add(s.repo.url)
+            if (def.appSource) raw.add(def.appSource.url)
+        }
         const indexes = {}, errors = []
-        await Promise.all([...urls].map(async (u) => {
-            try { indexes[u] = await fetchText(`${u.replace(/\/+$/, '')}/index.yaml`) } catch (e) { errors.push(`${u}: ${String(e.message).slice(0, 120)}`) }
+        const fetches = [...[...urls].map(u => [u, `${u.replace(/\/+$/, '')}/index.yaml`]), ...[...raw].map(u => [u, u])]
+        await Promise.all(fetches.map(async ([u, from]) => {
+            try { indexes[u] = await fetchText(from) } catch (e) { errors.push(`${u}: ${String(e.message).slice(0, 120)}`) }
         }))
         const d = this._read()
         d.addons ||= {}
         for (const [key, def] of Object.entries(HELM_ADDONS)) {
             const sources = chartSources(def)
             // keep what was found before when a repository was not reachable this time
-            if (sources.some(s => !indexes[s.repo.url])) continue
+            if (sources.some(s => !indexes[s.repo.url]) || (def.appSource && !indexes[def.appSource.url])) continue
             d.addons[key] = discoverFor(def, indexes)
         }
         d.fetchedAt = new Date().toISOString()

@@ -7,13 +7,13 @@ import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
 import Popover from '../components/ui/Popover'
 import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
+import { addonIcon } from '../config/addonIcons'
 import {
     Server, Zap, Plus, Cpu, Network, Trash2, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield,
     Database, GitBranch, Sparkles, Lock, Eye, HeartPulse, Compass, ArrowRight, Wifi, Bell, BookOpen, ShieldAlert,
     Layers, Activity, X, Scaling, MoreHorizontal, Rocket
 } from 'lucide-react'
 
-const ADDON_ICONS = { Compass, Network, BarChart3, LayoutDashboard, Shield, Database, GitBranch, Sparkles }
 
 // What a cluster's saved status means for the user
 const STATUS = {
@@ -375,7 +375,7 @@ function AddonDialog({ cluster, selection, setSelection, isFreePlan, busy, toast
                 </div>
                 <div className="p-6 overflow-y-auto grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {WIZARD_ADDONS.map(addon => {
-                        const Icon = ADDON_ICONS[addon.iconName] || Package
+                        const Icon = addonIcon(addon.iconName)
                         const locked = addon.tier === 'pro' && isFreePlan
                         const on = selection[addon.key] && !locked
                         return (

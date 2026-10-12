@@ -4,6 +4,7 @@ import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { useNavigate } from 'react-router-dom'
 import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
+import { addonIcon } from '../config/addonIcons'
 import { K8S_VERSIONS } from '../config/versions'
 import {
     ChevronRight,
@@ -1040,17 +1041,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {WIZARD_ADDONS.map((addon) => {
-                                    const iconMap = {
-                                        Compass,
-                                        Network,
-                                        BarChart3,
-                                        LayoutDashboard,
-                                        Shield,
-                                        Database,
-                                        GitBranch,
-                                        Sparkles
-                                    }
-                                    const Icon = iconMap[addon.iconName] || Package;
+                                    const Icon = addonIcon(addon.iconName);
                                     const locked = addon.tier === 'pro' && isFreePlan;
                                     const isSelected = formData.addons[addon.key] && !locked;
 

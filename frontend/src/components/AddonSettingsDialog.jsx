@@ -103,7 +103,7 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, ru
     }
 
     const s = data?.schema
-    const visible = (f) => !f.showIf || Object.entries(f.showIf).every(([k, v]) => settings[k] === v)
+    const visible = (f) => !f.showIf || Object.entries(f.showIf).every(([k, v]) => Array.isArray(v) ? v.includes(settings[k]) : settings[k] === v)
     const fields = s?.fields.filter(visible) || []
     const groups = [...new Set(fields.map(f => f.group || ''))]
     const tabBtn = (k, label, Icon, locked) => (

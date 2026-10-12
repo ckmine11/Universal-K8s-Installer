@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from './ToastProvider'
 import { ADDONS_LIST } from '../config/addons'
+import { addonIcon } from '../config/addonIcons'
 import AddonSettingsDialog from './AddonSettingsDialog'
 import SealSecretDialog from './SealSecretDialog'
 import {
@@ -12,7 +13,6 @@ import {
     AlertTriangle, CheckCircle2, CircleDashed, XCircle, Settings2, ExternalLink
 , Compass, SlidersHorizontal, Lock, Sparkles } from 'lucide-react'
 
-const ICONS = { Network, LayoutDashboard, BarChart3, Shield, Database, GitBranch, Compass }
 
 const HEALTH = {
     healthy:         { label: 'Healthy',       cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', Icon: CheckCircle2 },
@@ -309,7 +309,7 @@ export default function AddonManagerPanel({ clusterId, canManage = false }) {
                 <div className="divide-y divide-white/5">
                     {data.addons.map(a => {
                         const meta = ADDONS_LIST.find(x => x.key === a.key)
-                        const Icon = ICONS[meta?.iconName] || Package
+                        const Icon = addonIcon(meta?.iconName)
                         const h = HEALTH[a.health] || HEALTH['not-installed']
                         const live = a.pods.filter(p => p.phase !== 'Succeeded')
                         const ready = live.filter(p => p.phase === 'Running' && p.allReady).length

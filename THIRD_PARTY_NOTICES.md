@@ -20,6 +20,18 @@ releases (container images / Helm charts) and talks to them over their APIs.
 | **Loki**, **Fluent Bit** | Loki logs add-on | AGPL-3.0 / Apache-2.0 | https://github.com/grafana/loki · https://github.com/fluent/fluent-bit |
 | **Sealed Secrets** (controller, kubeseal) | Sealed Secrets add-on | Apache-2.0 | https://github.com/bitnami/sealed-secrets |
 | **Kyverno** | Kyverno policies add-on | Apache-2.0 | https://github.com/kyverno/kyverno |
+| **NFS Subdir External Provisioner** | NFS storage add-on | Apache-2.0 | https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner |
+| **external-snapshotter** (snapshot-controller; Piraeus chart) | Volume snapshots add-on | Apache-2.0 | https://github.com/kubernetes-csi/external-snapshotter · https://github.com/piraeusdatastore/helm-charts |
+| **Elasticsearch**, **Kibana**, **ECK operator** | Elasticsearch add-on (Basic features) | Elastic License 2.0 / AGPL-3.0 (Elasticsearch, Kibana); Elastic License 2.0 (ECK) | https://github.com/elastic/elasticsearch · https://github.com/elastic/cloud-on-k8s |
+| **Fluentd** | Fluentd add-on | Apache-2.0 | https://github.com/fluent/fluentd |
+| **Fluent Bit** | Fluent Bit add-on | Apache-2.0 | https://github.com/fluent/fluent-bit |
+| **Harbor** | Harbor registry add-on | Apache-2.0 | https://github.com/goharbor/harbor |
+| **Flux** | Flux CD add-on | Apache-2.0 | https://github.com/fluxcd/flux2 |
+| **Jenkins** | Jenkins add-on | MIT | https://github.com/jenkinsci/jenkins |
+| **HashiCorp Vault**, **vault-k8s** | Vault add-on — installed unmodified on the user's own cluster | BUSL-1.1 (Vault), MPL-2.0 (vault-k8s, chart) | https://github.com/hashicorp/vault · https://github.com/hashicorp/vault-helm |
+| **OPA Gatekeeper** | OPA Gatekeeper add-on | Apache-2.0 | https://github.com/open-policy-agent/gatekeeper |
+| **Falco**, **Falcosidekick** | Falco add-on | Apache-2.0 | https://github.com/falcosecurity/falco |
+| **Trivy Operator** | Trivy Operator add-on | Apache-2.0 | https://github.com/aquasecurity/trivy-operator |
 | **Helm** | Installs the add-ons above on the control-plane | Apache-2.0 | https://github.com/helm/helm |
 | **etcd** (etcdctl / etcdutl) | etcd snapshots, restore, recovery | Apache-2.0 | https://github.com/etcd-io/etcd |
 

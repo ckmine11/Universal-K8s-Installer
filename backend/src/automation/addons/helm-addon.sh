@@ -6,7 +6,9 @@
 #   releases            one line per Helm release: name|repo|repoUrl|chart|version|flags
 #                       (repo "local" = a chart KubeEZ ships, under charts/<chart>;
 #                        flags: local, crds = apply the chart's CRDs first,
-#                        norollback = never roll back automatically, e.g. Longhorn)
+#                        norollback = never roll back automatically, e.g. Longhorn,
+#                        slow = wait up to 20 minutes instead of 10,
+#                        csa = client-side apply on Helm 4 (controllers that patch their own webhooks))
 #   namespace           the add-on's namespace
 #   <release>.values.yaml   final values (form + advanced YAML + KubeEZ's locked keys)
 #   <release>.auto.yaml     (optional, written by pre.sh) values found on the cluster —
@@ -136,12 +138,21 @@ while IFS='|' read -r NAME REPO URL CHART VERSION FLAGS; do
     elif [[ ",$FLAGS," != *",norollback,"* ]]; then
         MODE=("$ROLLBACK")
     fi
+    # charts whose controllers keep their own webhook certificates up to date
+    # (Vault injector, Gatekeeper, ECK): Helm 4's server-side apply would
+    # conflict with that field on every upgrade — use the classic 3-way merge
+    if [[ ",$FLAGS," == *",csa,"* ]] && [[ ! "$HV" =~ ^v3\. ]] && [[ " ${MODE[*]} " != *"--server-side=false"* ]]; then
+        MODE+=(--server-side=false)
+    fi
     VALUES=()
     [ -f "$DIR/$NAME.auto.yaml" ] && VALUES+=(-f "$DIR/$NAME.auto.yaml")
     VALUES+=(-f "$DIR/$NAME.values.yaml")
+    # many images / plugins to download on the first start (Harbor, Jenkins)
+    WAIT=10m
+    [[ ",$FLAGS," == *",slow,"* ]] && WAIT=20m
     log "$WHAT $NAME (chart $CHART $VERSION)..."
     OUT=$($HELM upgrade --install "$NAME" "$REF" "${VERSION_ARG[@]}" --namespace "$NS" --create-namespace \
-        "${VALUES[@]}" "${MODE[@]}" --wait --timeout 10m 2>&1)
+        "${VALUES[@]}" "${MODE[@]}" --wait --timeout "$WAIT" 2>&1)
     RC=$?
     echo "$OUT" | grep -v '^\s*$' | tail -4 | sed 's/^/  /'
     if [ $RC -ne 0 ]; then

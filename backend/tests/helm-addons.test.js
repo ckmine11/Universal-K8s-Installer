@@ -36,7 +36,7 @@ test('every Helm add-on: defaults build, versions offered, registered for status
         assert.ok(s.fields.length && s.versions[0].recommended, key)
         assert.ok(ADDON_REGISTRY[key]?.helm && ADDON_REGISTRY[key].ns === HELM_ADDONS[key].ns, `${key} registered`)
         if (key === 'velero') continue   // needs Backups → Volume Backups first (own test)
-        const plan = buildPlan(key, { ...cluster, addons: { longhorn: true, monitoring: true } }, key === 'metallb' ? { settings: { addresses: '10.0.0.240-10.0.0.250' } } : {})
+        const plan = buildPlan(key, { ...cluster, addons: { longhorn: true, monitoring: true } }, { settings: HELM_ADDONS[key].example || {} })
         assert.equal(plan.version, s.versions[0].id)
         for (const r of plan.releases) assert.match(r.version, /^v?\d+\.\d+\.\d+$/)
     }

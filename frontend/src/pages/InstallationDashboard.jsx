@@ -6,6 +6,7 @@ import { can } from '../config/permissions'
 import { useInstallationTracker } from '../context/InstallationTrackerContext'
 import { HealthSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
+import { addonIcon } from '../config/addonIcons'
 import { K8S_VERSIONS } from '../config/versions'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import {
@@ -567,17 +568,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 my-8 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                             {WIZARD_ADDONS.map(addon => {
                                 // Map icon name to component
-                                const iconMap = {
-                                        Compass,
-                                    Network,
-                                    BarChart3,
-                                    LayoutDashboard,
-                                    Shield,
-                                    Database,
-                                    GitBranch,
-                                    Sparkles
-                                };
-                                const Icon = iconMap[addon.iconName] || Package;
+                                const Icon = addonIcon(addon.iconName);
                                 const locked = addon.tier === 'pro' && isFreePlan;
                                 const isSelected = addonSelection[addon.key] && !locked;
 

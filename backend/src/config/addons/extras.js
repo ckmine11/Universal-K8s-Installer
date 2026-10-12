@@ -126,6 +126,7 @@ export const EXTRA_ADDONS = {
 
     metallb: {
         label: 'MetalLB', ns: 'metallb-system', detect: 'deploy/metallb-controller', tier: 'pro', needsSettings: true,
+        example: { addresses: '192.0.2.10-192.0.2.20' },
         summary: 'Real IP addresses for LoadBalancer Services on your own servers (otherwise they stay <pending>).',
         versions: [
             { id: '0.16.1', app: 'v0.16.1', charts: { metallb: '0.16.1' } },

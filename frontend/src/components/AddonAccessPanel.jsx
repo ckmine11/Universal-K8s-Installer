@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../context/AuthContext'
 import {
     Globe, Activity, BarChart3, LayoutDashboard, Shield, Database, GitBranch,
-    ExternalLink, Copy, Check, Eye, EyeOff, RefreshCw, Loader2, KeyRound, Package, Lock
+    ExternalLink, Copy, Check, Eye, EyeOff, RefreshCw, Loader2, KeyRound, Package, Lock, Wrench
 } from 'lucide-react'
 
 const ICONS = {
@@ -12,7 +12,9 @@ const ICONS = {
     'layout-dashboard': LayoutDashboard,
     shield: Shield,
     database: Database,
-    'git-branch': GitBranch
+    'git-branch': GitBranch,
+    package: Package,
+    wrench: Wrench
 }
 
 function CopyBtn({ text }) {

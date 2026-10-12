@@ -1137,7 +1137,7 @@ class AutomationEngine {
             // Every add-on is installed with Helm and its settings (config/helmAddons.js),
             // in the catalogue's order (storage before the add-ons that use it)
             const wanted = new Set(Object.entries(addons).filter(([, on]) => on).map(([k]) => normAddonKey(k)))
-            const order = ['longhorn', 'cert-manager', 'metallb', 'ingress', ...Object.keys(HELM_ADDONS)]
+            const order = ['longhorn', 'nfs-provisioner', 'snapshot-controller', 'cert-manager', 'metallb', 'ingress', 'elasticsearch', 'fluentd', ...Object.keys(HELM_ADDONS)]
             const addonsToInstall = [...new Set(order)].filter(k => wanted.has(k)).map(key => ({ type: 'helm', key, label: HELM_ADDONS[key].label }))
             for (const k of wanted) if (!isHelmAddon(k) && k !== 'logging') onLog('warning', `Unknown add-on "${k}" — skipped`)
 

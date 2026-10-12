@@ -23,8 +23,9 @@ const { volumeBackupStore } = await import('../src/services/volumeBackupStore.js
 const cluster = (over = {}) => ({ id: 'c-t', k8sVersion: '1.35.0', masterNodes: [{ ip: '10.0.0.4' }], workerNodes: [{ ip: '10.0.0.5' }, { ip: '10.0.0.6' }], addons: {}, ...over })
 const rel = (plan, name) => plan.releases.find(r => r.name === name)
 
-test('all 14 add-ons are Helm add-ons with a form, versions and an uninstall note', () => {
-    const keys = ['ingress', 'monitoring', 'dashboard', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs', 'velero', 'explorer', 'metrics-server', 'metallb', 'loki', 'sealed-secrets', 'kyverno']
+test('all 26 add-ons are Helm add-ons with a form, versions and an uninstall note', () => {
+    const keys = ['ingress', 'monitoring', 'dashboard', 'cert-manager', 'longhorn', 'argocd', 'seaweedfs', 'velero', 'explorer', 'metrics-server', 'metallb', 'loki', 'sealed-secrets', 'kyverno',
+        'nfs-provisioner', 'snapshot-controller', 'elasticsearch', 'fluentd', 'fluent-bit', 'harbor', 'flux', 'jenkins', 'vault', 'gatekeeper', 'falco', 'trivy-operator']
     assert.deepEqual(Object.keys(HELM_ADDONS), keys)
     for (const k of keys) {
         const a = HELM_ADDONS[k]
@@ -196,7 +197,7 @@ const api = async (method, p, tok, body) => {
 test('wizard: forms for every add-on, versions for the chosen Kubernetes, preview before the cluster exists', async () => {
     let r = await api('GET', '?k8sVersion=1.30.4', 'tok-pro')
     assert.equal(r.status, 200)
-    assert.equal(r.data.addons.length, 14)
+    assert.equal(r.data.addons.length, 26)
     assert.equal(r.data.addons.find(a => a.key === 'longhorn').versions.find(v => v.recommended).id, '1.12.1')
     assert.equal(r.data.advancedAllowed, true)
     r = await api('POST', '/metallb/preview', 'tok-pro', { settings: { addresses: '10.0.0.5' }, cluster: { k8sVersion: '1.35.0', masterNodes: [{ ip: '10.0.0.4' }], workerNodes: [{ ip: '10.0.0.5' }] } })

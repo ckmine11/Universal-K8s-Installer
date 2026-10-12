@@ -22,6 +22,8 @@
 #   e2e.sh takeover [distro]                  add-ons installed the old way taken over by Helm (data kept)
 #   e2e.sh helm-addons [distro]               Metrics Server, MetalLB, Loki, Sealed Secrets, Kyverno: install,
 #                                             change, rollback, uninstall (needs Node; ONLY=metallb,… for a subset)
+#   e2e.sh platform-addons [distro]           Harbor, Fluent Bit, Fluentd, Elasticsearch, NFS, snapshots, Flux,
+#                                             Jenkins, Vault, Gatekeeper, Falco, Trivy (needs Node; ONLY=…)
 #   e2e.sh agent [distro]                     Gateway Agent install as a service, crash/reboot recovery
 #   e2e.sh agent-health [distro]              cluster topology through the agent (root/non-root, reconnect)
 #   e2e.sh clean                              remove all e2e containers
@@ -377,6 +379,27 @@ cmd_helm_addons() {
     return $rc
 }
 
+# Harbor, Fluent Bit, Fluentd, Elasticsearch, NFS, volume snapshots, Flux,
+# Jenkins, Vault, Gatekeeper, Falco, Trivy — each proven to work, updated from
+# an older version, uninstalled cleanly. A real NFS server runs next to the node.
+# e2e.sh platform-addons [distro]   (ONLY=vault,harbor for a subset)
+cmd_platform_addons() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro" nfs="$PREFIX-nfs"
+    # the kernel's NFS client and server (Docker Desktop loads them on demand)
+    docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -- sh -c 'modprobe nfs; modprobe nfsd' >/dev/null 2>&1
+    docker rm -f "$nfs" >/dev/null 2>&1; docker volume rm -f "$PREFIX-nfs-data" >/dev/null 2>&1
+    docker run -d --name "$nfs" --privileged -v "$PREFIX-nfs-data:/data" -e SHARED_DIRECTORY=/data itsthenetwork/nfs-server-alpine:12 >/dev/null \
+        || { echo "could not start the NFS server"; return 1; }
+    image "$distro"; start_node "$node" "$distro"
+    docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local rc ip
+    ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$nfs")
+    NODE_CONTAINER="$node" NFS_SERVER="$ip" NFS_CONTAINER="$nfs" node "$E2E/platform-addons-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && { cmd_clean; docker volume rm -f "$PREFIX-nfs-data" >/dev/null 2>&1; }
+    return $rc
+}
+
 # Add-ons installed the old way (scripts) taken over by Helm in place, data
 # kept; then step upgrades, customizing, rollback, uninstall.
 # e2e.sh takeover [distro]   (ONLY=ingress,argocd for a subset)
@@ -408,6 +431,7 @@ case "${1:-}" in
     explorer) shift; cmd_explorer "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
     helm-addons) shift; cmd_helm_addons "$@" ;;
+    platform-addons) shift; cmd_platform_addons "$@" ;;
     takeover) shift; cmd_takeover "$@" ;;
     agent)   shift; cmd_agent "$@" ;;
     agent-health) shift; cmd_agent_health "$@" ;;

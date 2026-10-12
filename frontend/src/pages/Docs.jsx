@@ -347,7 +347,19 @@ export default function Docs() {
                             ['MetalLB', 'Real IPs for LoadBalancer Services from a free range of your network (Layer 2 or BGP); optionally gives Nginx Ingress one', 'The IPs, shown in Access & logins'],
                             ['Loki logs', 'Logs of every pod (Fluent Bit on every node), kept N days, searchable in Grafana', 'Grafana → Explore → Loki'],
                             ['Sealed Secrets', 'Encrypt Secrets so they can live in Git — only this cluster opens them', '"Seal a secret" in Manage & logs'],
-                            ['Kyverno policies', 'No "latest" images, requests / limits required, no privileged pods, no host namespaces — report or block', 'Results in Access & logins']
+                            ['Kyverno policies', 'No "latest" images, requests / limits required, no privileged pods, no host namespaces — report or block', 'Results in Access & logins'],
+                            ['NFS storage', 'Volumes on your NFS server (StorageClass nfs-client, shared ReadWriteMany volumes). The server is checked with a real mount; the NFS client is installed on every node', 'Server, volumes in Access & logins'],
+                            ['Volume snapshots', 'VolumeSnapshot support (snapshot controller) and a Longhorn snapshot class; snapshot types installed earlier are taken over', 'kubectl get volumesnapshots'],
+                            ['Elasticsearch + Kibana', 'Elastic Stack through the official ECK operator: 1 or 3 nodes, storage, Kibana. The stack version is the add-on version', 'Kibana :30561 (user elastic)'],
+                            ['Fluentd', 'Log router: receives from Fluent Bit (aggregator) or reads every node (collector), sends to Elasticsearch', 'fluentd.fluentd.svc:24224'],
+                            ['Fluent Bit', 'Log collector on every node → Elasticsearch, Fluentd or another Elasticsearch / OpenSearch', 'Target shown in Access & logins'],
+                            ['Harbor registry', 'Your own registry with projects, users and Trivy scans. KubeEZ makes its certificate (10 years) and every node of the cluster trusts it, so pods use its images directly', 'https :30003 (user admin)'],
+                            ['Flux CD', 'GitOps; optionally syncs one repository (branch, folder, interval, prune). Removing the sync never deletes what was deployed', 'Sync status in Access & logins'],
+                            ['Jenkins', 'CI/CD; pipelines run as pods in the cluster (Kubernetes agents); extra plugins from the form', ':30808 (user admin)'],
+                            ['HashiCorp Vault', 'Secrets with the Vault Agent injector; KubeEZ initializes and unseals it (again after restarts), enables Kubernetes login and a key/value store', 'UI :30820/ui (root token)'],
+                            ['OPA Gatekeeper', 'The same four rules as Kyverno, written in Rego — report, warn or block; add your own ConstraintTemplates', 'Violations in Access & logins'],
+                            ['Falco', 'Runtime security on every node (Modern eBPF): shells in containers, sensitive files read…', 'UI :30282 (user admin)'],
+                            ['Trivy Operator', 'Continuous scans: image vulnerabilities, misconfigurations, RBAC, secrets in images', 'Counts in Access & logins']
                         ]} />
                         <P>Logins and tokens are shown under <b className="text-white">Access & logins</b> — no server login needed. Viewers see the URLs but never the credentials.</P>
                     </Section>
@@ -366,6 +378,8 @@ export default function Docs() {
                         ]} />
                         <Note>Kyverno is installed so that it can never block the cluster: if Kyverno itself is down, requests are let through, and system namespaces (kube-system, the add-ons) are never checked. Start with <b>Report only</b>, fix what the results show, then switch to <b>Block</b>.</Note>
                         <Note>Sealed Secrets keys live in the cluster and are part of the etcd backups — restoring a backup keeps old sealed secrets readable. Uninstalling the add-on deletes the keys.</Note>
+                        <Note>Storage for add-ons that keep data (Elasticsearch, Harbor, Jenkins, Vault): <b>auto</b> uses Longhorn if installed, else NFS storage, else the node itself (lost when the pod is recreated — the install log warns). Vault always needs a real volume. Install Longhorn or NFS storage first for production.</Note>
+                        <Note>Vault's unseal key is kept in the Secret vault/kubeez-vault-keys so KubeEZ can unseal it after a restart (shown to admins under Access). For production, configure a cloud KMS seal in the advanced YAML, or turn automatic unsealing off and keep the key yourself.</Note>
                     </Section>
 
                     <Section id="addon-manage" Icon={Puzzle} color="text-fuchsia-400" title="Manage, Logs & Uninstall"

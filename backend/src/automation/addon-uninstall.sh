@@ -3,7 +3,8 @@
 #
 # Usage: addon-uninstall.sh <addon> [kubeconfig] [namespace]
 #   addon: ingress | monitoring | dashboard | cert-manager | longhorn | argocd | seaweedfs | velero | explorer |
-#          metrics-server | metallb | loki | sealed-secrets | kyverno
+#          metrics-server | metallb | loki | sealed-secrets | kyverno | nfs-provisioner | snapshot-controller |
+#          elasticsearch | fluentd | fluent-bit | harbor | flux | jenkins | vault | gatekeeper | falco | trivy-operator
 #   (any other add-on: pass its namespace as the 3rd argument → generic removal)
 #
 # Removes exactly what the KubeEZ installer created: the namespace AND the
@@ -254,6 +255,127 @@ kyverno)
         kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration -o name 2>/dev/null | grep -q kyverno || break
     done
     kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration -o name 2>/dev/null | grep -q kyverno         && fail WEBHOOK_LEFT "A Kyverno admission webhook is still registered." "Delete it: kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration | grep kyverno"
+    ;;
+
+nfs-provisioner)
+    # Never pull storage out from under running workloads.
+    INUSE=$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.storageClassName}{" "}{.spec.claimRef.namespace}/{.spec.claimRef.name}{"\n"}{end}' 2>/dev/null \
+        | awk '$1=="nfs-client"{print $2}' | grep -v '^nfs-provisioner/' | tr '\n' ' ')
+    if [ -n "$INUSE" ]; then
+        fail NFS_IN_USE "Volumes on NFS are still in use: ${INUSE}— without the provisioner they could not be deleted cleanly." \
+             "Delete those PVCs (and the apps using them) first, then uninstall again. The data on the NFS server is never deleted."
+    fi
+    helm_remove nfs-provisioner
+    delete_ns nfs-provisioner
+    del storageclass nfs-client
+    del clusterrole,clusterrolebinding -l app=nfs-subdir-external-provisioner
+    log "The data on the NFS server is kept."
+    ;;
+
+snapshot-controller)
+    del volumesnapshotclass longhorn-snapshot
+    helm_remove snapshot-controller
+    delete_ns snapshot-controller
+    # the snapshot types stay while snapshots exist (they belong to the user)
+    if [ -z "$(kubectl get volumesnapshots.snapshot.storage.k8s.io -A -o name 2>/dev/null)" ] && [ -z "$(kubectl get volumesnapshotcontents.snapshot.storage.k8s.io -o name 2>/dev/null)" ]; then
+        for crd in volumesnapshotclasses.snapshot.storage.k8s.io volumesnapshotcontents.snapshot.storage.k8s.io volumesnapshots.snapshot.storage.k8s.io \
+                   volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io volumegroupsnapshotcontents.groupsnapshot.storage.k8s.io volumegroupsnapshots.groupsnapshot.storage.k8s.io; do
+            del crd "$crd"
+        done
+    else
+        log "Snapshots exist — the snapshot CRDs (and your snapshots) are kept."
+    fi
+    ;;
+
+elasticsearch)
+    # Elasticsearch / Kibana first, while the operator still runs to clean them up
+    del -n elastic-system kibana.kibana.k8s.elastic.co --all
+    del -n elastic-system elasticsearch.elasticsearch.k8s.elastic.co --all
+    for _ in $(seq 1 24); do
+        kubectl -n elastic-system get pods -l common.k8s.elastic.co/type -o name 2>/dev/null | grep -q . || break
+        sleep 5
+    done
+    helm_remove elastic-system
+    delete_ns elastic-system
+    del validatingwebhookconfiguration elastic-operator.elastic-system.k8s.elastic.co
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=elastic-operator
+    for crd in $(kubectl get crd -o name 2>/dev/null | grep '\.k8s\.elastic\.co$'); do del "$crd"; done
+    ;;
+
+fluentd)
+    helm_remove fluentd
+    delete_ns fluentd
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=fluentd
+    ;;
+
+fluent-bit)
+    helm_remove fluent-bit
+    delete_ns fluent-bit
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=kubeez-fluent-bit
+    ;;
+
+harbor)
+    helm_remove harbor
+    delete_ns harbor
+    log "Nodes keep Harbor's certificate in /etc/containerd/certs.d (harmless; delete the folder by hand if you like)."
+    ;;
+
+flux)
+    # never delete what Flux deployed: no pruning, then let the objects go without their finalizers
+    for k in kustomizations.kustomize.toolkit.fluxcd.io helmreleases.helm.toolkit.fluxcd.io; do
+        for r in $(kubectl get "$k" -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}' 2>/dev/null); do
+            kubectl -n "${r%%/*}" patch "$k" "${r#*/}" --type merge -p '{"spec":{"suspend":true,"prune":false}}' >/dev/null 2>&1 || true
+        done
+    done
+    for k in $(kubectl get crd -o name 2>/dev/null | grep 'toolkit\.fluxcd\.io$' | sed 's#.*/##'); do
+        for r in $(kubectl get "$k" -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}' 2>/dev/null); do
+            kubectl -n "${r%%/*}" patch "$k" "${r#*/}" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1 || true
+        done
+    done
+    helm_remove flux-system
+    delete_ns flux-system
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/part-of=flux
+    for crd in $(kubectl get crd -o name 2>/dev/null | grep 'toolkit\.fluxcd\.io$'); do del "$crd"; done
+    log "What Flux deployed from Git stays in the cluster."
+    ;;
+
+jenkins)
+    helm_remove jenkins
+    delete_ns jenkins
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=jenkins
+    ;;
+
+vault)
+    helm_remove vault
+    del mutatingwebhookconfiguration vault-agent-injector-cfg
+    delete_ns vault
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=vault
+    ;;
+
+gatekeeper)
+    # Policies first, then Gatekeeper; its webhooks must never outlive it
+    del constrainttemplates.templates.gatekeeper.sh -l app.kubernetes.io/managed-by=kubeez
+    helm_remove gatekeeper-system
+    del validatingwebhookconfiguration gatekeeper-validating-webhook-configuration
+    del mutatingwebhookconfiguration gatekeeper-mutating-webhook-configuration
+    delete_ns gatekeeper-system
+    for crd in $(kubectl get crd -o name 2>/dev/null | grep 'gatekeeper\.sh$'); do del "$crd"; done
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=gatekeeper
+    kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration -o name 2>/dev/null | grep -q gatekeeper \
+        && fail WEBHOOK_LEFT "A Gatekeeper admission webhook is still registered." "Delete it: kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration | grep gatekeeper"
+    ;;
+
+falco)
+    helm_remove falco
+    delete_ns falco
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=falco
+    ;;
+
+trivy-operator)
+    helm_remove trivy-system
+    delete_ns trivy-system
+    del clusterrole,clusterrolebinding -l app.kubernetes.io/instance=trivy-operator
+    for crd in $(kubectl get crd -o name 2>/dev/null | grep 'aquasecurity\.github\.io$'); do del "$crd"; done
     ;;
 
 *)
