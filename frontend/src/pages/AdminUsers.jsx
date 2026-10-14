@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import { PageTitle } from '../components/ui/PageHeader'
@@ -57,7 +58,8 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
         }
     }
 
-    return (
+    // a portal: the page's animated / blurred containers must not move or clip the dialog
+    return createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
             <div className="glass rounded-3xl border border-white/10 p-8 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3 mb-6">
@@ -72,7 +74,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
                 <div className="space-y-4">
                     <input
                         type="password"
-                        placeholder="New password (min 6 chars)"
+                        placeholder="New password (min 8 characters)"
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleReset()}
@@ -95,7 +97,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
                 </div>
             </div>
         </div>
-    )
+    , document.body)
 }
 
 // ─── Create User Modal ─────────────────────────────────────────────
@@ -145,7 +147,7 @@ function CreateUserModal({ onClose, onSuccess }) {
                 <div className="space-y-3">
                     <input type="text" placeholder="Username" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <input type="email" placeholder="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
-                    <input type="password" placeholder="Password (min 6 chars)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                    <input type="password" placeholder="Password (min 8 characters)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <div>
                         <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
                             {ASSIGNABLE_ROLES.map(r => (

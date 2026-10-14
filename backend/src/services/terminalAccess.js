@@ -47,15 +47,19 @@ class TerminalAccess {
         return this._read().grants.find(g => g.userId === userId && g.clusterId === clusterId && g.status === 'active' && Date.parse(g.expiresAt) > now) || null
     }
 
+    /** Does this user get access at once (admins; everyone when the workspace needs no approval)? */
+    immediate(user, orgId) { return isAdmin(user) || !this.settings(orgId).requireApproval }
+
     request(user, cluster, { reason, minutes }) {
-        const why = String(reason || '').trim()
-        if (why.length < 5) throw Object.assign(new Error('Say why you need the terminal (at least a few words) — it is recorded.'), { status: 400 })
-        const mins = Number(minutes)
+        const auto = this.immediate(user, cluster.orgId)
+        // a reason is needed when an admin has to decide; immediate access is recorded anyway
+        const why = String(reason || '').trim() || (auto ? (isAdmin(user) ? 'Admin session' : 'Terminal session') : '')
+        if (why.length < 5) throw Object.assign(new Error('Say why you need the terminal (at least a few words) — an admin approves it and it is recorded.'), { status: 400 })
+        const mins = minutes == null || minutes === '' ? (auto ? 60 : NaN) : Number(minutes)
         if (!GRANT_MINUTES.includes(mins)) throw Object.assign(new Error(`Choose ${GRANT_MINUTES.join(', ')} minutes`), { status: 400 })
         const d = this._tidy(this._read())
         if (d.grants.some(g => g.userId === user.id && g.clusterId === cluster.id && g.status === 'pending')) throw Object.assign(new Error('You already asked for access to this cluster — wait for an admin.'), { status: 409 })
         const now = new Date()
-        const auto = isAdmin(user) || !this.settings(cluster.orgId).requireApproval
         const g = {
             id: randomUUID(), orgId: cluster.orgId || null, clusterId: cluster.id, clusterName: cluster.clusterName || cluster.id,
             userId: user.id, username: user.username, role: user.role, reason: why.slice(0, 300), minutes: mins,

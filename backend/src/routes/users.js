@@ -65,7 +65,8 @@ router.post('/auth/change-password', requireAuth, async (req, res) => {
         // Verify current password
         const isMatch = await bcrypt.compare(currentPassword, users[userIdx].password)
         if (!isMatch) {
-            return res.status(401).json({ error: 'Current password is incorrect' })
+            // 400, not 401: a 401 makes the app log the person out instead of showing the message
+            return res.status(400).json({ error: 'Current password is incorrect' })
         }
 
         // Other sessions are logged out; this one gets a fresh token

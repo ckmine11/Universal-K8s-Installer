@@ -15,7 +15,7 @@ const sameOrg = (req) => (g) => req.user.role === 'superadmin' || g.orgId === re
 router.get('/grants/mine', requirePermission('terminal:access'), (req, res) => {
     const clusterId = String(req.query.clusterId || '')
     const mine = terminalAccess.list(g => g.userId === req.user.id && (!clusterId || g.clusterId === clusterId)).slice(0, 10)
-    res.json({ active: terminalAccess.activeGrant(req.user.id, clusterId), grants: mine, minutes: GRANT_MINUTES, requireApproval: terminalAccess.settings(req.user.orgId).requireApproval })
+    res.json({ active: terminalAccess.activeGrant(req.user.id, clusterId), grants: mine, minutes: GRANT_MINUTES, requireApproval: terminalAccess.settings(req.user.orgId).requireApproval, immediate: terminalAccess.immediate(req.user, req.user.orgId) })
 })
 
 router.post('/grants', requirePermission('terminal:access'), async (req, res) => {

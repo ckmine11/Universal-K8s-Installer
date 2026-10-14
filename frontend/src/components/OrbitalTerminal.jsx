@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -32,16 +33,25 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
     const active = access?.active && Date.parse(access.active.expiresAt) > now ? access.active : null;
     const pending = access?.grants?.find(g => g.status === 'pending');
     const left = active ? Math.max(0, Math.round((Date.parse(active.expiresAt) - now) / 1000)) : 0;
-    const askAccess = async (e) => {
-        e.preventDefault();
+    const askAccess = async (e, body = { clusterId, reason, minutes }) => {
+        e?.preventDefault();
         setAsking(true); setAskError('');
         try {
-            const r = await apiFetch('/api/terminal/grants', { method: 'POST', body: JSON.stringify({ clusterId, reason, minutes }) });
+            const r = await apiFetch('/api/terminal/grants', { method: 'POST', body: JSON.stringify(body) });
             const j = await r.json();
             if (!r.ok) setAskError(j.error || 'Not possible');
             await loadAccess();
         } finally { setAsking(false); }
     };
+    // Admins (and everyone when the workspace needs no approval) go straight in:
+    // the session opens by itself and is recorded — no form
+    const autoTried = useRef(0);
+    useEffect(() => {
+        if (!access || active || pending || asking || !access.immediate) return;
+        if (Date.now() - autoTried.current < 10000) return;   // once per 10 s, not a loop on errors
+        autoTried.current = Date.now();
+        askAccess(null, { clusterId });
+    }, [access, active, pending, asking]);
 
     useEffect(() => {
         // Initialize XTerm for global view
@@ -115,7 +125,8 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
         setTimeout(() => setIsBroadcasting(false), 2000); // UI throttle
     };
 
-    return (
+    // a portal: no animated / blurred parent can move or clip the full-screen window
+    return createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-8 bg-black/60 backdrop-blur-md animate-in fade-in zoom-in duration-300">
             <div className="relative w-full max-w-6xl h-[80vh] bg-slate-900/80 backdrop-blur-2xl border border-white/10 rounded-[32px] shadow-2xl overflow-hidden flex flex-col">
                 {/* Visual Glows */}
@@ -150,7 +161,10 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
 
                         {!active && (
                             <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4">
-                                {!access ? <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Checking access…</div>
+                                {!access || (access.immediate && !askError) ? <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Opening a recorded session…</div>
+                                    : access.immediate ? (
+                                        <div className="flex items-center gap-2 text-sm text-red-300">Could not open the session: {askError} <button onClick={() => { autoTried.current = 0; setAskError(''); }} className="ml-2 underline">Try again</button></div>
+                                    )
                                     : pending ? (
                                         <div className="flex items-center gap-2 text-sm text-amber-100"><Clock className="w-4 h-4" /> Waiting for an admin to approve {pending.minutes} minutes of access ("{pending.reason}"). This window opens by itself once approved.</div>
                                     ) : (
@@ -211,7 +225,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                 </div>
             </div>
         </div>
-    );
+    , document.body);
 };
 
 export default OrbitalTerminal;

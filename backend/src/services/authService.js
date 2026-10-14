@@ -203,7 +203,7 @@ class AuthService {
 
     generateToken(user) {
         return jwt.sign(
-            { id: user.id, username: user.username, email: user.email, role: user.role, orgId: user.orgId },
+            { id: user.id, username: user.username, email: user.email, role: user.role, orgId: user.orgId, pv: user.passwordVersion || 0 },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -214,6 +214,7 @@ class AuthService {
     async setPassword(user, plain) {
         user.password = await bcrypt.hash(plain, 10);
         user.passwordChangedAt = Math.floor(Date.now() / 1000);
+        user.passwordVersion = (user.passwordVersion || 0) + 1;   // every older session ends, even one from the same second
         this.saveUsers();
     }
 
@@ -224,7 +225,7 @@ class AuthService {
             if (!user || user.isSuspended) {
                 return null;
             }
-            if (user.passwordChangedAt && decoded.iat < user.passwordChangedAt) {
+            if ((decoded.pv || 0) !== (user.passwordVersion || 0) || (user.passwordChangedAt && decoded.iat < user.passwordChangedAt)) {
                 return null; // issued before the last password change
             }
             // Authorize with the CURRENT stored role/org — not the values baked
