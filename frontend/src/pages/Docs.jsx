@@ -296,7 +296,7 @@ export default function Docs() {
                     </Section>
 
                     <Section id="cluster-page" Icon={LayoutGrid} color="text-sky-400" title="The Cluster Page"
-                        intro="Open a cluster from the dashboard. Actions (Kubeconfig, Terminal, Scale, Upgrade) are in the header; the rest is grouped in three tabs.">
+                        intro="Open a cluster from the dashboard. Actions (Kubeconfig, Terminal, Scale, Upgrade) are in the header; the rest is grouped in tabs: Overview, Explorer, Add-ons, Backups.">
                         <Table head={['Tab', 'What you find there']} rows={[
                             ['Overview', 'Version, network plugin, nodes, API endpoint · 3D / list topology · live CPU, memory and disk.'],
                             ['Add-ons', <><b>Access & logins</b>: URLs, usernames, passwords, web UIs. <b>Manage & logs</b>: health, pods, logs, Install / Repair / Reinstall / Uninstall.</>],

@@ -41,9 +41,9 @@ import HealthScoreCard from '../components/explorer/HealthScoreCard'
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
+    { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
-    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database },
-    { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass }
+    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
 ]
 const ADDON_SECTIONS = [
     { key: 'access', label: 'Access & logins' },
