@@ -154,7 +154,7 @@ class TerminalRecorder {
             const head = rows[0]
             if (!head || head.type !== 'start' || (orgId != null && head.orgId !== orgId)) continue
             const end = rows.find(r => r.type === 'end')
-            out.push({ id: head.id, at: head.t, user: head.user?.username, role: head.user?.role, clusterId: head.clusterId, clusterName: head.clusterName, reason: head.reason, grantId: head.grantId, ip: head.ip, endedAt: end?.t || null, commands: rows.filter(r => r.type === 'cmd').length, live: this.open.has(head.id) })
+            out.push({ id: head.id, at: head.t, user: head.user?.username, role: head.user?.role, clusterId: head.clusterId, clusterName: head.clusterName, node: head.node || null, mode: head.mode || 'broadcast', reason: head.reason, grantId: head.grantId, ip: head.ip, endedAt: end?.t || null, commands: rows.filter(r => r.type === 'cmd').length, live: this.open.has(head.id) })
             if (out.length >= limit) break
         }
         return out.sort((a, b) => b.at.localeCompare(a.at))

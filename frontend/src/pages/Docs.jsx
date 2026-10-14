@@ -329,7 +329,7 @@ export default function Docs() {
                     </Section>
 
                     <Section id="scale" Icon={Plus} color="text-blue-400" title="Scale & Terminal">
-                        <P><b className="text-white">Scale</b> adds worker nodes to a running cluster with a fresh join token. <b className="text-white">Terminal</b> opens a browser shell on the cluster nodes (Operator / Admin) — <b className="text-white">just in time</b>: give a reason and a time limit (15 min – 2 h); admins get access at once, operators after an admin approves (Compliance → Access, plus an alert). Every session is <b className="text-white">recorded</b> (commands and output) and every command lands in the audit trail. <b className="text-white">Kubeconfig</b> downloads admin access for kubectl.</P>
+                        <P><b className="text-white">Scale</b> adds worker nodes to a running cluster with a fresh join token. <b className="text-white">Terminal</b> lists the nodes — <b className="text-white">Connect</b> opens that node's own interactive shell in a tab (several nodes side by side; <b className="text-white">Run on several nodes</b> sends one command to the ones you tick). Access is <b className="text-white">just in time</b>: admins get in at once (60 min), operators give a reason and a time limit (15 min – 2 h) and an admin approves (Compliance → Access, plus an alert). Every session is <b className="text-white">recorded</b> (commands and output) and every command lands in the audit trail. <b className="text-white">Kubeconfig</b> downloads admin access for kubectl.</P>
                     </Section>
 
                     {/* ── Add-ons ─────────────────────────────────────── */}

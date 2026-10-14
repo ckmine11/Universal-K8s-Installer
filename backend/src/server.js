@@ -78,6 +78,7 @@ import { auditLog, auditTrail } from './services/auditLog.js'
 import complianceRoutes from './routes/compliance.js'
 import terminalRoutes from './routes/terminal.js'
 import { terminalAccess, terminalRecorder } from './services/terminalAccess.js'
+import { openNodeShell } from './services/nodeShell.js'
 import { startComplianceSchedule } from './services/complianceService.js'
 
 // Middleware
@@ -397,6 +398,20 @@ wss.on('connection', (ws, req) => {
         })
 
         ws.send(JSON.stringify({ type: 'log', level: 'info', message: 'Connected to KubeEZ installation stream' }))
+    }
+    else if (pathname.startsWith('/ws/shell/')) {
+        // Interactive shell on one node: /ws/shell/<clusterId>?node=<ip>&cols=&rows=
+        if (!can(user.role, 'terminal:access')) return forbid()
+        const clusterId = decodeURIComponent(pathname.split('/')[3] || '')
+        installationManager.getSavedClusters().then(clusters => {
+            const cluster = clusters.find(c => c.id === clusterId)
+            if (!cluster || !canAccessResource(user, cluster)) return ws.close(4004, 'Cluster not found')
+            return openNodeShell({
+                ws, user, cluster: { ...cluster, masterNodes: (cluster.masterNodes || []).map(n => ({ ...n, ownerId: cluster.ownerId, orgId: cluster.orgId })) },
+                nodeIp: url.searchParams.get('node'), cols: Number(url.searchParams.get('cols')) || 120, rows: Number(url.searchParams.get('rows')) || 32,
+                ip: (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null
+            })
+        }).catch(err => { console.error('Shell failed:', err.message); try { ws.close(1011, 'Shell failed') } catch { } })
     }
     else if (pathname.startsWith('/ws/orbital')) {
         const id = pathname.split('/').pop()

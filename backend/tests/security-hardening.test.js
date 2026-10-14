@@ -231,3 +231,16 @@ test('add-on image scan: the setting reaches the node; Block refuses, Warn repor
     await automationEngine.installHelmAddon(ssh, { id: 'job2', originalClusterId: 'c1', orgId: 'o1', masterNodes: [{ ip: '10.0.0.4' }], workerNodes: [], addons: { 'metrics-server': true }, addonSettings: {} }, 'metrics-server', () => { })
     assert.ok(!cmds.some(c => c.includes('/metrics-server/scan')))
 })
+
+test('node shell: an unknown node or no current access never reaches SSH', async () => {
+    const { openNodeShell } = await import('../src/services/nodeShell.js')
+    const { EventEmitter } = await import('node:events')
+    const fakeWs = () => Object.assign(new EventEmitter(), { readyState: 1, sent: [], send(m) { this.sent.push(JSON.parse(m)) }, close(code) { this.code = code; this.readyState = 3 } })
+    const cl = { id: 'c-shell', clusterName: 'prod', orgId: 'o1', masterNodes: [{ ip: '10.0.0.4', username: 'root' }], workerNodes: [] }
+    let ws = fakeWs()
+    await openNodeShell({ ws, user: admin, cluster: cl, nodeIp: '10.9.9.9' })
+    assert.deepEqual([ws.code, ws.sent[0].type], [4004, 'error'], 'a node outside the cluster')
+    ws = fakeWs()
+    await openNodeShell({ ws, user: op, cluster: cl, nodeIp: '10.0.0.4' })
+    assert.deepEqual([ws.code, ws.sent[0].type], [4003, 'access-required'], 'no grant, no shell')
+})

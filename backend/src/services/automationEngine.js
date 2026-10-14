@@ -382,6 +382,7 @@ class AutomationEngine {
         const ssh = new NodeSSH()
         await ssh.connect({
             host: node.ip,
+            port: Number(node.port) || 22,
             username: node.username,
             password: node.password,
             privateKey: node.sshKey || undefined,
