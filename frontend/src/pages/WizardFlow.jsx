@@ -58,8 +58,10 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
         masterNodes: [{ ip: '', username: 'root', password: '', sshKey: '', verified: false, verificationResult: null }],
         workerNodes: [],
         controlPlaneVip: '',
+        // KubeEZ Explorer is on by default: every new cluster gets its UI (the Explorer tab)
         addons: {
             ingress: true,
+            explorer: true,
             monitoring: false,
             dashboard: false,
             'cert-manager': false,
@@ -277,7 +279,10 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
     }, [currentStep, formData.k8sVersion])
 
     // Every add-on the wizard offers (not only the first four)
-    const selectedAddons = Object.fromEntries(Object.entries(formData.addons || {}).map(([k, v]) => [k, !!v]))
+    // Pro add-ons on a Free plan are shown locked and never sent (defaults included),
+    // so a default-on Pro add-on can't block the install
+    const proKeys = new Set(ADDONS_LIST.filter(a => a.tier === 'pro').map(a => a.key))
+    const selectedAddons = Object.fromEntries(Object.entries(formData.addons || {}).map(([k, v]) => [k, !!v && !(isFreePlan && proKeys.has(k))]))
 
     const handleConfirmInstall = async () => {
         try {
@@ -1259,7 +1264,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                     <div>
                                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Add-on Ecosystem</p>
                                                         <div className="grid grid-cols-2 gap-3">
-                                                            {Object.entries(formData.addons).filter(([_, v]) => v).map(([k, _]) => (
+                                                            {Object.entries(selectedAddons).filter(([_, v]) => v).map(([k, _]) => (
                                                                 <div key={k} className="p-2 bg-white/5 border border-white/5 rounded-xl flex items-center space-x-2">
                                                                     <Package size={12} className="text-blue-400" />
                                                                     <span className="text-[10px] font-bold text-slate-200 capitalize truncate">{k.replace('-', ' ')}</span>
