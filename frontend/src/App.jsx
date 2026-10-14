@@ -22,6 +22,7 @@ import VendorPortal from './pages/VendorPortal'
 import Incidents from './pages/Incidents'
 import Alerts from './pages/Alerts'
 import Compliance from './pages/Compliance'
+import Explorer from './pages/Explorer'
 
 function AuthenticatedApp() {
     const navigate = useNavigate()
@@ -123,6 +124,7 @@ function AuthenticatedApp() {
                     />
                     <Route path="/alerts" element={<Alerts />} />
                     <Route path="/compliance" element={<Compliance />} />
+                    <Route path="/explorer" element={<Explorer />} />
                     <Route
                         path="/agents"
                         element={<AgentNodes />}

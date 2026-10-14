@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
-    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail
+    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { useInstallationTracker } from '../../context/InstallationTrackerContext'
@@ -28,6 +28,7 @@ export function navSections(user) {
         {
             title: 'Overview', items: [
                 { to: '/', label: 'Clusters', icon: LayoutDashboard, end: true },
+                { to: '/explorer', label: 'Explorer', icon: Compass },
                 { to: '/incidents', label: 'Incidents', icon: ShieldAlert },
                 { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
             ]
@@ -57,7 +58,7 @@ export function navSections(user) {
 
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
-    [/^\/cluster\//, 'Cluster'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'],
+    [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'],
     [/^\/settings/, 'Settings'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 
