@@ -169,6 +169,14 @@ test('compliance: a control that got worse since the last scan is announced', as
     assert.ok(await arrived('compliance_regression', /TIME-1 .*pass → fail.*80 → 70/))
 })
 
+test('terminal access: an operator waiting for approval is announced to the admins', async () => {
+    const { terminalAccess, announceRequest } = await import('../src/services/terminalAccess.js')
+    const g = terminalAccess.request({ id: 'u-op', username: 'ravi', role: 'operator', orgId: ORG }, cluster, { reason: 'check disk on node 2', minutes: 30 })
+    assert.equal(g.status, 'pending')
+    await announceRequest(g)
+    assert.ok(await arrived('access_request', /ravi .*30 minutes.*check disk on node 2/))
+})
+
 test('every alert type in the list was delivered at least once', () => {
     const seen = new Set(got.map(m => m.type))
     for (const type of Object.keys(EVENTS)) assert.ok(seen.has(type), `${type} (${EVENTS[type].label}) never arrived`)

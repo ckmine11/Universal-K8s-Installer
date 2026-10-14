@@ -81,6 +81,21 @@ ok(r.evidence.nodes[0].ntp.servers.some(s => /nplindia|nic\.in/.test(s)), `TIME-
 ok(st(r, 'CIS-1').status === 'partial' && /skipped/.test(st(r, 'CIS-1').evidence), 'CIS skipped when not asked for')
 ok(auditLog.query({ orgId: 'o-e2e' }).filter(e => e.action === 'compliance.scan').length === 2 && auditLog.query({ orgId: 'o-e2e', action: 'compliance.fix_ntp' }).length === 1 && auditLog.verify().ok, 'scans and the fix are in the audit trail (chain intact)')
 
+// ── 5. add-on images scanned before install (Trivy on the node) ──
+console.log('== Add-on image scan (Block)')
+const { complianceStore } = await import('../../backend/src/services/complianceService.js')
+complianceStore.setAddonScan('o-e2e', 'block')
+const lines = []
+const inst = { id: 'job-scan', originalClusterId: 'c-e2e', orgId: 'o-e2e', masterNodes: [{ ip: nodeIp }], workerNodes: [], addons: { 'metrics-server': true }, addonSettings: {}, requestedBy: 'e2e' }
+let installed = true
+try { await automationEngine.installHelmAddon({ execCommand: async (c, o) => { const r = dx(c); if (r.stdout) o?.onStdout?.(Buffer.from(r.stdout + '\n')); return r }, dispose() { } }, inst, 'metrics-server', (l, m) => { lines.push(m); if (/Trivy|✓ |✗ |\? |⚠|KUBEEZ_FAIL/.test(m)) console.log(`   ${String(m).slice(0, 200)}`) }, { timeoutMs: 30 * 60e3 }) }
+catch (e) { installed = false; lines.push(e.message) }
+const log = lines.join('\n')
+ok(/Trivy 0\.\d+/.test(log), 'Trivy installed on the control-plane')
+ok(/[✓✗] \S*metrics-server:v0\.\d+/.test(log), 'the Metrics Server image was scanned')
+ok(installed ? /No fixable critical vulnerabilities/.test(log) : /critical vulnerabilities with a fix available/.test(log), installed ? 'clean image → installed' : 'critical findings → refused before anything was installed')
+if (!installed) ok(K('-n metrics-server get deploy metrics-server').code !== 0, 'nothing was installed')
+
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nAll checks passed')
 fs.rmSync(DATA, { recursive: true, force: true })
 process.exit(fails ? 1 : 0)

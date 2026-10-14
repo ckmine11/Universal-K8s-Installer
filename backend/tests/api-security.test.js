@@ -108,6 +108,27 @@ test('WebSocket streams are tenant-scoped', async () => {
     assert.ok(!orb.msgs.some(m => m.nodeIp === '10.255.255.1'), 'no command ran on another tenant\'s node')
 })
 
+test('terminal: no command without a current access grant; with one, the session is recorded', async () => {
+    const cmd = { type: 'command', clusterId: 'c-alice', nodes: [{ ip: '10.255.255.1' }], command: 'uptime' }
+    let orb = await ws('/ws/orbital/c-alice', alice.token, cmd)
+    assert.ok(orb.msgs.some(m => m.type === 'access-required'), 'no grant → refused')
+    assert.ok(!orb.msgs.some(m => m.type === 'terminal-output' && m.nodeIp === '10.255.255.1'), 'nothing ran')
+    const g = await api('POST', '/api/terminal/grants', alice.token, { clusterId: 'c-alice', reason: 'check uptime after reboot', minutes: 15 })
+    assert.deepEqual([g.status, g.data.status], [201, 'active'], 'an admin grants herself (recorded)')
+    orb = await ws('/ws/orbital/c-alice', alice.token, cmd)
+    assert.ok(!orb.msgs.some(m => m.type === 'access-required'))
+    let s
+    for (let i = 0; i < 20; i++) {
+        s = (await api('GET', '/api/terminal/sessions', alice.token)).data.sessions
+        if (s?.[0]?.endedAt) break
+        await new Promise(r => setTimeout(r, 250))
+    }
+    assert.deepEqual([s.length, s[0].commands, s[0].reason, s[0].user], [1, 1, 'check uptime after reboot', 'alice'])
+    const trail = (await api('GET', '/api/compliance/audit?action=terminal', alice.token)).data.entries.map(e => e.action)
+    for (const a of ['terminal.access_granted', 'terminal.session_start', 'terminal.command', 'terminal.session_end']) assert.ok(trail.includes(a), a)
+    assert.equal((await api('GET', '/api/terminal/sessions', bob.token)).data.sessions.length, 0, 'another workspace sees nothing')
+})
+
 test('role changes apply to existing tokens immediately', async () => {
     await api('PUT', `/api/superadmin/users/${bob.user.id}/role`, root.token, { role: 'viewer' })
     assert.equal((await api('GET', '/api/auth/me', bob.token)).data.role, 'viewer')

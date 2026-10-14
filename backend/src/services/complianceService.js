@@ -47,6 +47,10 @@ class ComplianceStore {
         this._write(d)
         return o.schedule
     }
+    setAddonScan(orgId, mode) {
+        if (!['off', 'warn', 'block'].includes(mode)) throw Object.assign(new Error('Choose off, warn or block'), { status: 400 })
+        const d = this._read(); this._org(d, orgId).addonScan = mode; this._write(d); return mode
+    }
     markScheduled(orgId) { const d = this._read(); this._org(d, orgId).lastScheduledAt = new Date().toISOString(); this._write(d) }
 
     save(report) {
@@ -129,7 +133,7 @@ export async function runScan(cluster, { by = 'KubeEZ', cis = true, onProgress =
     onProgress(75, 'Collecting backups, alerts, incidents and accounts')
     const kubeez = await kubeezEvidence(cluster, now)
     const org = complianceStore.org(cluster.orgId)
-    const evidence = { ...cp, nodes, kubeez, attestations: org.attestations, now, latestMinor: LATEST_K8S_MINOR }
+    const evidence = { ...cp, nodes, kubeez: { ...kubeez, addonScan: org.addonScan || 'off' }, attestations: org.attestations, now, latestMinor: LATEST_K8S_MINOR }
     onProgress(90, 'Scoring')
     const ev = evaluateControls(evidence)
     const prev = complianceStore.reports(cluster.id)[0] || null

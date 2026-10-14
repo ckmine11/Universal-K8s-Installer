@@ -89,6 +89,7 @@ export default function Compliance() {
     const [params, setParams] = useSearchParams()
     const canManage = can(user?.role, 'compliance:manage')
     const canAudit = can(user?.role, 'audit:view')
+    const canApprove = can(user?.role, 'access:approve')
     const [meta, setMeta] = useState(null)
     const [ov, setOv] = useState(null)
     const [report, setReport] = useState(null)
@@ -139,7 +140,7 @@ export default function Compliance() {
 
     const TABS = [
         ['controls', 'Controls', ListChecks], ['attest', 'Attestations', BadgeCheck], ['certin', 'CERT-In report', Siren],
-        ...(canAudit ? [['audit', 'Audit trail', ScrollText]] : []), ['schedule', 'Monthly report', CalendarClock]
+        ...(canAudit ? [['audit', 'Audit trail', ScrollText]] : []), ...(canApprove ? [['access', 'Access', Lock]] : []), ['schedule', 'Monthly report & settings', CalendarClock]
     ]
     const setTabUrl = (t) => { setTab(t); const p = new URLSearchParams(params); p.set('tab', t); setParams(p, { replace: true }) }
 
@@ -229,6 +230,7 @@ export default function Compliance() {
             {tab === 'attest' && <Attestations ov={ov} meta={meta} canManage={canManage} reload={loadOverview} toast={toast} />}
             {tab === 'certin' && <CertIn clusterId={clusterId} meta={meta} pro={ov.pro} toast={toast} attest={ov.attestations.certin_poc} />}
             {tab === 'audit' && canAudit && <Audit clusters={ov.clusters} toast={toast} />}
+            {tab === 'access' && canApprove && <Access toast={toast} />}
             {tab === 'schedule' && <Schedule ov={ov} canManage={canManage} reload={loadOverview} toast={toast} />}
         </div>
     )
@@ -476,6 +478,120 @@ function Schedule({ ov, canManage, reload, toast }) {
                 <label className="flex items-center gap-2"><input type="checkbox" disabled={!canManage || !s.enabled} checked={s.cis !== false} onChange={e => save({ ...s, cis: e.target.checked })} /> Include the CIS benchmark</label>
             </div>
             <div className="mt-3 text-[11px] text-slate-500">Last monthly run: {fmt(ov.lastScheduledAt)}</div>
+            <div className="mt-6 pt-5 border-t border-white/[0.06]">
+                <div className="text-sm font-semibold text-white">Scan add-on images before install</div>
+                <p className="mt-1 text-xs text-slate-400">Before an add-on is installed or updated, KubeEZ renders its chart and scans every image with Trivy for critical vulnerabilities that have a fix. The first scan on a cluster downloads the scanner and its database (about 2 minutes).</p>
+                <select disabled={!canManage} value={ov.addonScan || 'off'} onChange={async e => {
+                    const r = await apiFetch('/api/compliance/addon-scan', { method: 'PUT', body: JSON.stringify({ mode: e.target.value }) })
+                    const j = await r.json()
+                    if (!r.ok) return toast({ title: 'Not saved', message: j.error, type: 'error' })
+                    toast({ title: 'Add-on scan: ' + j.addonScan, type: 'success' }); reload()
+                }} className="mt-3 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    <option value="off" className="bg-slate-950">Off</option>
+                    <option value="warn" className="bg-slate-950">Warn — report findings in the install log</option>
+                    <option value="block" className="bg-slate-950">Block — refuse images with fixable critical vulnerabilities</option>
+                </select>
+            </div>
+        </div>
+    )
+}
+
+function Access({ toast }) {
+    const [data, setData] = useState(null)
+    const [sessions, setSessions] = useState([])
+    const [view, setView] = useState(null)
+    const load = async () => {
+        const [g, s] = await Promise.all([apiFetch('/api/terminal/grants'), apiFetch('/api/terminal/sessions')])
+        if (g.ok) setData(await g.json())
+        if (s.ok) setSessions((await s.json()).sessions)
+    }
+    useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t) }, [])
+    const act = async (id, what) => {
+        const r = await apiFetch(`/api/terminal/grants/${id}/${what}`, { method: 'POST' })
+        const j = await r.json()
+        if (!r.ok) return toast({ title: 'Not done', message: j.error, type: 'error' })
+        toast({ title: what === 'approve' ? 'Access approved' : what === 'deny' ? 'Request denied' : 'Access ended', message: `${j.username} → ${j.clusterName}`, type: 'success' })
+        load()
+    }
+    const setApproval = async (v) => {
+        const r = await apiFetch('/api/terminal/settings', { method: 'PUT', body: JSON.stringify({ requireApproval: v }) })
+        if (r.ok) load()
+    }
+    const open = async (id) => {
+        const r = await apiFetch(`/api/terminal/sessions/${id}`)
+        if (r.ok) setView({ id, events: (await r.json()).events })
+    }
+    if (!data) return <div className="flex items-center gap-2 text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+    const pending = data.grants.filter(g => g.status === 'pending')
+    const live = data.grants.filter(g => g.status === 'active')
+    const row = (g, actions) => (
+        <div key={g.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+            <div className="flex-1 min-w-0">
+                <div className="text-white">{g.username} <span className="text-slate-500">({g.role})</span> → {g.clusterName} · {g.minutes} min</div>
+                <div className="text-xs text-slate-400">"{g.reason}" · asked {fmt(g.requestedAt)}{g.expiresAt && g.status === 'active' ? ` · until ${new Date(g.expiresAt).toLocaleTimeString()}` : ''}{g.decidedBy ? ` · by ${g.decidedBy}` : ''}</div>
+            </div>
+            {actions}
+        </div>
+    )
+    const transcript = (events) => events.map(e => e.type === 'start' ? `# ${e.user?.username} on ${e.clusterName} — ${e.t}\n# reason: ${e.reason || '—'}\n`
+        : e.type === 'cmd' ? `\n[${new Date(e.t).toLocaleTimeString()}] $ ${e.command}\n`
+            : e.type === 'out' ? e.text.split('\n').map(l => l ? `[${e.node}] ${l}` : '').join('\n')
+                : e.type === 'end' ? `\n# ended ${e.t} (${e.why})\n` : `\n# ${e.text}\n`).join('')
+    return (
+        <div className="space-y-6">
+            <section className="kz-card p-4 flex flex-wrap items-center gap-3 text-sm">
+                <Lock className="w-4 h-4 text-amber-300" />
+                <span className="text-slate-300 flex-1">Terminal access is just in time: a reason and a time limit for every session, and every session is recorded.</span>
+                <label className="flex items-center gap-2 text-slate-300"><input type="checkbox" checked={data.settings.requireApproval} onChange={e => setApproval(e.target.checked)} /> Operators need an admin's approval</label>
+            </section>
+            <section>
+                <h3 className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Waiting for approval ({pending.length})</h3>
+                <div className="kz-card divide-y divide-white/[0.05]">
+                    {pending.length ? pending.map(g => row(g, <>
+                        <button onClick={() => act(g.id, 'approve')} className="kz-btn-primary !py-1.5 !text-xs"><CheckCircle2 className="w-3.5 h-3.5" /> Approve</button>
+                        <button onClick={() => act(g.id, 'deny')} className="kz-btn-ghost !py-1.5 !text-xs"><XCircle className="w-3.5 h-3.5" /> Deny</button>
+                    </>)) : <div className="px-4 py-4 text-sm text-slate-500">No requests.</div>}
+                </div>
+            </section>
+            <section>
+                <h3 className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Access right now ({live.length})</h3>
+                <div className="kz-card divide-y divide-white/[0.05]">
+                    {live.length ? live.map(g => row(g, <button onClick={() => act(g.id, 'revoke')} className="kz-btn-ghost !py-1.5 !text-xs text-red-300"><XCircle className="w-3.5 h-3.5" /> End now</button>))
+                        : <div className="px-4 py-4 text-sm text-slate-500">Nobody has terminal access now.</div>}
+                </div>
+            </section>
+            <section>
+                <h3 className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Recorded sessions</h3>
+                <div className="kz-card overflow-x-auto">
+                    <table className="w-full text-xs">
+                        <thead className="text-slate-500 text-left"><tr>{['Started', 'Who', 'Cluster', 'Reason', 'Commands', ''].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
+                        <tbody className="divide-y divide-white/[0.04] text-slate-300">
+                            {sessions.map(s => (
+                                <tr key={s.id}>
+                                    <td className="px-3 py-2 whitespace-nowrap">{fmt(s.at)}{s.live && <span className="ml-2 text-red-300">● live</span>}</td>
+                                    <td className="px-3 py-2">{s.user} <span className="text-slate-500">{s.role}</span></td>
+                                    <td className="px-3 py-2">{s.clusterName}</td>
+                                    <td className="px-3 py-2 text-slate-400">{s.reason}</td>
+                                    <td className="px-3 py-2">{s.commands}</td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                        <button onClick={() => open(s.id)} className="kz-btn-ghost !py-1 !text-xs">Replay</button>
+                                        <button onClick={() => download(`/api/terminal/sessions/${s.id}?format=text`, 'terminal.txt', toast)} className="kz-btn-ghost !py-1 !text-xs"><Download className="w-3.5 h-3.5" /></button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {!sessions.length && <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-500">No terminal sessions yet.</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            {view && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onClick={() => setView(null)}>
+                    <div className="kz-card w-full max-w-4xl max-h-[80vh] overflow-auto p-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-3"><span className="text-sm font-semibold text-white">Session {view.id.slice(0, 8)}</span><button onClick={() => setView(null)} className="kz-btn-ghost !py-1 !text-xs">Close</button></div>
+                        <pre className="text-[11px] font-mono whitespace-pre-wrap text-slate-300">{transcript(view.events)}</pre>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

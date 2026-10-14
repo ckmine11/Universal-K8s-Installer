@@ -1098,7 +1098,11 @@ class AutomationEngine {
         onLog('info', `${plan.label} ${plan.version} — ${Object.entries(plan.settings).map(([k, v]) => `${k}=${v}`).join(', ')}${plan.advanced.trim() ? ' + advanced values' : ''}`)
         addonSettingsStore.setPending(clusterId, key, { settings: plan.settings, advanced: plan.advanced, version: plan.version }, { by: installation.requestedBy || 'KubeEZ', jobId: installation.id })
         try {
-            const w = await ssh.execCommand(writePlanCommand(key, planFiles(plan)))
+            // images scanned for critical vulnerabilities before anything changes (Compliance → setting)
+            const { complianceStore } = await import('./complianceService.js')
+            const scan = complianceStore.org(installation.orgId).addonScan || 'off'
+            if (scan !== 'off') onLog('info', `Images are scanned for critical vulnerabilities before the install (${scan === 'block' ? 'blocks the install' : 'warns'})`)
+            const w = await ssh.execCommand(writePlanCommand(key, { ...planFiles(plan), ...(scan !== 'off' ? { scan } : {}) }))
             if (w.code !== 0) throw new Error(`Could not hand the settings to the node: ${(w.stderr || w.stdout || '').trim()}`)
             if (def.prepare === 'velero') await this.writeVeleroSettings(ssh, clusterId, installation.orgId)
             await this.executeScript(ssh, join(__dirname, '../automation/addons/helm-addon.sh'), [key], onLog, opts)

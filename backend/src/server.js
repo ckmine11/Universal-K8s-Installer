@@ -76,6 +76,8 @@ server.on('upgrade', (req, socket, head) => {
 import { requestLogger, errorLogger } from './middleware/logger.js'
 import { auditLog, auditTrail } from './services/auditLog.js'
 import complianceRoutes from './routes/compliance.js'
+import terminalRoutes from './routes/terminal.js'
+import { terminalAccess, terminalRecorder } from './services/terminalAccess.js'
 import { startComplianceSchedule } from './services/complianceService.js'
 
 // Middleware
@@ -289,6 +291,7 @@ app.use('/api/notifications', requireAuth, notificationsRoutes)
 app.use('/api/addon-catalog', requireAuth, addonCatalogRoutes)   // add-on forms before a cluster exists (wizard)
 app.use('/api/alert-actions', alertActionsRoutes)   // signed links in alerts — public, see the route
 app.use('/api/compliance', requireAuth, complianceRoutes)   // Compliance Center + audit trail
+app.use('/api/terminal', requireAuth, terminalRoutes)       // just-in-time terminal access + recordings
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 
@@ -335,6 +338,10 @@ wss.on('connection', (ws, req) => {
         const cookieHeader = req.headers.cookie || ''
         const cookieToken = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('token='))?.split('=')[1]
         if (cookieToken) token = cookieToken
+    }
+    if (!token && /^Bearer\s+/i.test(req.headers.authorization || '')) {
+        // the Gateway Agent sends its token as a header (never in the URL)
+        token = req.headers.authorization.replace(/^Bearer\s+/i, '').trim()
     }
 
     if (!token) {
@@ -402,6 +409,8 @@ wss.on('connection', (ws, req) => {
         // SSH sessions belong to THIS connection only — never shared by clusterId
         const sessionKey = uuidv4()
         const send = (payload) => { if (ws.readyState === 1) ws.send(JSON.stringify(payload)) }
+        let recording = null
+        const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null
 
         ws.on('message', async (message) => {
             try {
@@ -419,13 +428,24 @@ wss.on('connection', (ws, req) => {
                     return send({ type: 'terminal-output', nodeIp: 'system', streamType: 'error', content: 'Unauthorized access to this cluster\n' })
                 }
 
+                // Just-in-time access: a current grant for THIS user and cluster (reason + time limit)
+                const grant = terminalAccess.activeGrant(current.id, cluster.id)
+                if (!grant) {
+                    if (recording) { terminalRecorder.end(recording, 'access ended'); recording = null }
+                    return send({ type: 'access-required', content: 'No current terminal access for this cluster — request access (reason and time limit).' })
+                }
+
                 const requestedIps = new Set((Array.isArray(data.nodes) ? data.nodes : [])
                     .map(n => (typeof n === 'string' ? n : n?.ip)).filter(Boolean))
                 const targets = [...(cluster.masterNodes || []), ...(cluster.workerNodes || [])]
                     .filter(n => requestedIps.size === 0 || requestedIps.has(n.ip))
                     .map(n => ({ ...n, ownerId: cluster.ownerId, orgId: cluster.orgId }))
 
+                // every session is recorded: commands and output
+                if (!recording) recording = terminalRecorder.start({ orgId: cluster.orgId || null, clusterId: cluster.id, clusterName: cluster.clusterName, user: { id: current.id, username: current.username, role: current.role }, grantId: grant.id, reason: grant.reason, ip })
+                terminalRecorder.command(recording, targets.map(n => n.ip), data.command)
                 await terminalService.broadcastCommand(sessionKey, targets, data.command, (nodeIp, type, chunk) => {
+                    terminalRecorder.output(recording, nodeIp, type, chunk)
                     send({ type: 'terminal-output', nodeIp, streamType: type, content: chunk })
                 })
             } catch (err) {
@@ -435,6 +455,7 @@ wss.on('connection', (ws, req) => {
 
         ws.on('close', () => {
             console.log(`WebSocket: Orbital Terminal disconnected for ${id}`)
+            if (recording) terminalRecorder.end(recording, 'closed')
             terminalService.closeSession(sessionKey)
         })
     }
@@ -474,6 +495,7 @@ server.listen(PORT, () => {
     telegramPoller.start()    // Acknowledge / Mute / Fix buttons in Telegram alerts
     addonVersionService.start()   // new add-on versions from their Helm repositories (every 12 h)
     auditLog.start()              // audit trail retention (daily)
+    setInterval(() => terminalRecorder.prune(), 24 * 3600e3).unref?.()   // terminal recordings, same retention
     startComplianceSchedule()     // monthly compliance reports (Pro)
 
     console.log(`

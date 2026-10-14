@@ -173,13 +173,19 @@ class OffsiteService {
     async download(cluster, target, snapshot, { recovery = false } = {}) {
         if (!/^[A-Za-z0-9._-]+\.db$/.test(snapshot || '')) return { ok: false, code: 'BAD_INPUT', error: 'Invalid snapshot name' }
         const folder = folderOf(target, cluster.id)
-        const r = await this._run(cluster, 'download', [
-            ...this._common(target, cluster.id),
-            ['KZ_ENC_KEY', target.encKey],
-            ['KZ_NAME', snapshot],
-            ['KZ_RECOVERY', recovery ? '1' : '0'],
-            ['KZ_GET', presign(target, { method: 'GET', key: `${folder}/${bundleName(snapshot)}`, expires: 6 * 3600 })]
-        ])
+        // after a key change, older bundles were made with an earlier key — try them in turn
+        const keys = [target.encKey, ...(target.prevKeys || [])].filter(Boolean)
+        let r
+        for (const key of keys) {
+            r = await this._run(cluster, 'download', [
+                ...this._common(target, cluster.id),
+                ['KZ_ENC_KEY', key],
+                ['KZ_NAME', snapshot],
+                ['KZ_RECOVERY', recovery ? '1' : '0'],
+                ['KZ_GET', presign(target, { method: 'GET', key: `${folder}/${bundleName(snapshot)}`, expires: 6 * 3600 })]
+            ])
+            if (r.ok || r.code !== 'BAD_KEY') break
+        }
         if (!r.ok) return r
         return { ok: true, snapshot, kubeadm: r.recovery[0] || null }
     }

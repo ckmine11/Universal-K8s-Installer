@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { Terminal, X, Zap, Loader2, Globe, Command } from 'lucide-react';
+import { Terminal, X, Zap, Loader2, Globe, Command, Lock, Clock, Circle } from 'lucide-react';
+import { apiFetch } from '../context/AuthContext';
 
 const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
     const [command, setCommand] = useState('');
@@ -11,6 +12,36 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
     const terminalRef = useRef(null);
     const xtermRef = useRef(null);
     const wsRef = useRef(null);
+    // Just-in-time access: a grant (reason + time limit) for this cluster
+    const [access, setAccess] = useState(null);        // { active, grants, minutes, requireApproval }
+    const [reason, setReason] = useState('');
+    const [minutes, setMinutes] = useState(30);
+    const [asking, setAsking] = useState(false);
+    const [askError, setAskError] = useState('');
+    const [now, setNow] = useState(Date.now());
+    const loadAccess = async () => {
+        const r = await apiFetch(`/api/terminal/grants/mine?clusterId=${encodeURIComponent(clusterId)}`);
+        if (r.ok) setAccess(await r.json());
+    };
+    useEffect(() => {
+        loadAccess();
+        const t = setInterval(() => { setNow(Date.now()); }, 1000);
+        const p = setInterval(loadAccess, 5000);
+        return () => { clearInterval(t); clearInterval(p); };
+    }, [clusterId]);
+    const active = access?.active && Date.parse(access.active.expiresAt) > now ? access.active : null;
+    const pending = access?.grants?.find(g => g.status === 'pending');
+    const left = active ? Math.max(0, Math.round((Date.parse(active.expiresAt) - now) / 1000)) : 0;
+    const askAccess = async (e) => {
+        e.preventDefault();
+        setAsking(true); setAskError('');
+        try {
+            const r = await apiFetch('/api/terminal/grants', { method: 'POST', body: JSON.stringify({ clusterId, reason, minutes }) });
+            const j = await r.json();
+            if (!r.ok) setAskError(j.error || 'Not possible');
+            await loadAccess();
+        } finally { setAsking(false); }
+    };
 
     useEffect(() => {
         // Initialize XTerm for global view
@@ -44,6 +75,11 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
+            if (data.type === 'access-required') {
+                term.writeln('\r\n\x1b[1;31m[ACCESS] ' + data.content + '\x1b[0m');
+                loadAccess();
+                return;
+            }
             if (data.type === 'terminal-output') {
                 const prefix = `\x1b[1;36m[${data.nodeIp}]\x1b[0m `;
                 term.write(prefix + data.content.replace(/\n/g, '\r\n' + prefix));
@@ -63,7 +99,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
 
     const handleBroadcast = (e) => {
         e.preventDefault();
-        if (!command.trim() || isBroadcasting) return;
+        if (!command.trim() || isBroadcasting || !active) return;
 
         setIsBroadcasting(true);
         xtermRef.current.writeln(`\r\n\x1b[1;33m$ ${command}\x1b[0m`);
@@ -98,6 +134,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                                 <span className="ml-3 px-2 py-0.5 bg-blue-500/20 border border-blue-500/40 rounded text-[10px] text-blue-400 uppercase tracking-tighter">Broadcast Mode</span>
                             </h2>
                             <p className="text-xs text-slate-400 font-mono">Parallel SSH Gateway - Synchronized Execution</p>
+                            {active && <p className="mt-1 flex items-center gap-2 text-[11px] text-amber-200"><Circle className="w-2.5 h-2.5 fill-red-500 text-red-500" /> Recorded session · access ends in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')} · {active.reason}</p>}
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-slate-400 hover:text-white">
@@ -111,6 +148,26 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                     <div className="flex-1 p-6 flex flex-col min-w-0">
                         <div className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-4 overflow-hidden" ref={terminalRef}></div>
 
+                        {!active && (
+                            <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4">
+                                {!access ? <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Checking access…</div>
+                                    : pending ? (
+                                        <div className="flex items-center gap-2 text-sm text-amber-100"><Clock className="w-4 h-4" /> Waiting for an admin to approve {pending.minutes} minutes of access ("{pending.reason}"). This window opens by itself once approved.</div>
+                                    ) : (
+                                        <form onSubmit={askAccess} className="flex flex-wrap items-center gap-2">
+                                            <Lock className="w-4 h-4 text-amber-300" />
+                                            <span className="text-sm text-amber-100">Terminal access is given for a limited time and every session is recorded.</span>
+                                            <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why do you need it? (recorded)" className="flex-1 min-w-[14rem] bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200" />
+                                            <select value={minutes} onChange={e => setMinutes(Number(e.target.value))} className="bg-black/40 border border-white/10 rounded-xl px-2 py-2 text-sm text-slate-200">
+                                                {(access.minutes || [15, 30, 60, 120]).map(m => <option key={m} value={m} className="bg-slate-950">{m} min</option>)}
+                                            </select>
+                                            <button disabled={asking || reason.trim().length < 5} className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl text-sm font-bold">{asking ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Get access'}</button>
+                                            {askError && <span className="w-full text-xs text-red-300">{askError}</span>}
+                                            {access.requireApproval && <span className="w-full text-[11px] text-slate-500">Operators need an admin's approval; admins get access at once (recorded).</span>}
+                                        </form>
+                                    )}
+                            </div>
+                        )}
                         <form onSubmit={handleBroadcast} className="mt-4 relative">
                             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500">
                                 <Command size={18} />
@@ -125,7 +182,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                             />
                             <button
                                 type="submit"
-                                disabled={isBroadcasting || !command.trim()}
+                                disabled={isBroadcasting || !command.trim() || !active}
                                 className="absolute right-2 top-2 bottom-2 px-6 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl transition-all flex items-center justify-center font-bold"
                             >
                                 {isBroadcasting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap size={18} />}

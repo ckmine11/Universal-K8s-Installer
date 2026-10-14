@@ -81,6 +81,51 @@ if [ -f "$DIR/pre.sh" ]; then
     log "✓ Settings checked"
 fi
 
+# ── 2b. Images scanned for critical vulnerabilities (optional: "scan" = warn | block) ──
+TRIVY_VERSION=${TRIVY_VERSION:-0.75.0}
+if [ -f "$DIR/scan" ]; then
+    SCAN_MODE=$(head -1 "$DIR/scan")
+    progress 12 "Scanning the add-on's images"
+    TRIVY=/usr/local/lib/kubeez/trivy
+    if ! "$TRIVY" --version 2>/dev/null | grep -q "$TRIVY_VERSION"; then
+        log "Installing Trivy ${TRIVY_VERSION} (image scanner, once)..."
+        A=64bit; [ "$(uname -m)" = "aarch64" ] && A=ARM64
+        T=$(mktemp -d)
+        if curl -fsSL --retry 3 -m 300 "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${A}.tar.gz" -o "$T/t.tgz" \
+            && tar xzf "$T/t.tgz" -C "$T" trivy && install -D -m0755 "$T/trivy" "$TRIVY"; then
+            log "✓ Trivy ${TRIVY_VERSION}"
+        else
+            [ "$SCAN_MODE" = block ] && fail SCAN_UNAVAILABLE "Trivy could not be downloaded, so the images could not be checked (the scan blocks installs)." "Allow this control-plane to reach github.com, or set the add-on scan to Warn under Compliance."
+            log "⚠ Trivy could not be downloaded — images are not scanned this time"
+        fi
+        rm -rf "$T"
+    fi
+    if [ -x "$TRIVY" ]; then
+        IMAGES=""
+        while IFS='|' read -r NAME REPO URL CHART VERSION FLAGS; do
+            [ -n "$NAME" ] || continue
+            if [ "$REPO" = "local" ]; then REF="$DIR/charts/$CHART"; VA=(); else
+                $HELM repo add "$REPO" "$URL" --force-update >/dev/null 2>&1; REF="$REPO/$CHART"; VA=(--version "$VERSION"); fi
+            VF=(); [ -f "$DIR/$NAME.auto.yaml" ] && VF+=(-f "$DIR/$NAME.auto.yaml"); VF+=(-f "$DIR/$NAME.values.yaml")
+            IMAGES="$IMAGES $($HELM template "$NAME" "$REF" "${VA[@]}" -n "$NS" "${VF[@]}" 2>/dev/null | grep -oE '^[[:space:]-]*image:[[:space:]]*["'\'']?[^"'\''[:space:]]+' | sed -E 's/^[[:space:]-]*image:[[:space:]]*["'\'']?//')"
+        done < "$DIR/releases"
+        CRIT_TOTAL=0; WORST=""
+        for IMG in $(echo "$IMAGES" | tr ' ' '\n' | grep -E '^[A-Za-z0-9]' | sort -u); do
+            OUT=$("$TRIVY" image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed --format json --timeout 10m --cache-dir /var/cache/kubeez-trivy "$IMG" 2>/tmp/kubeez-trivy.err)
+            if [ $? -ne 0 ]; then log "  ? $IMG — not scanned: $(tail -1 /tmp/kubeez-trivy.err | cut -c1-160)"; continue; fi
+            N=$(echo "$OUT" | grep -o '"Severity": *"CRITICAL"' | wc -l)
+            CRIT_TOTAL=$((CRIT_TOTAL + N))
+            if [ "$N" -gt 0 ]; then log "  ✗ $IMG — $N critical (fix available)"; WORST="$WORST $IMG($N)"; else log "  ✓ $IMG — no fixable critical vulnerabilities"; fi
+        done
+        if [ "$CRIT_TOTAL" -gt 0 ]; then
+            [ "$SCAN_MODE" = block ] && fail ADDON_CVE "The add-on's images have $CRIT_TOTAL critical vulnerabilities with a fix available:$WORST — nothing was installed." "Choose a newer version of the add-on, or set the add-on scan to Warn under Compliance to install anyway."
+            log "⚠ $CRIT_TOTAL critical vulnerabilities with a fix available in the images (scan mode: warn) — consider a newer version"
+        else
+            log "✓ No fixable critical vulnerabilities in the add-on's images"
+        fi
+    fi
+fi
+
 # ── 3. An install made before KubeEZ managed it with Helm? ───────────────────
 # A release that never deployed successfully (e.g. an interrupted takeover)
 # still counts as "not taken over yet"

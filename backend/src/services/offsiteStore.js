@@ -31,7 +31,8 @@ class OffsiteStore {
             ...r,
             accessKey: r.accessKey ? decrypt(r.accessKey) : '',
             secretKey: r.secretKey ? decrypt(r.secretKey) : '',
-            encKey: r.encKey ? decrypt(r.encKey) : ''
+            encKey: r.encKey ? decrypt(r.encKey) : '',
+            prevKeys: (r.prevKeys || []).map(k => decrypt(k.key))
         }
     }
 
@@ -56,8 +57,35 @@ class OffsiteStore {
             accessKeyHint: r.accessKey ? `••••${r.accessKey.slice(-4)}` : '',
             connectedAt: r.connectedAt || null,
             hasRecoveryKey: !!r.encKey,
+            keySource: r.keySource || 'kubeez',          // 'kubeez' (generated) | 'customer' (brought by the customer)
+            keySetAt: r.keySetAt || r.connectedAt || null,
+            previousKeys: (r.prevKeys || []).length,
             lastSync: r.lastSync || {}
         }
+    }
+
+    /**
+     * Bring your own key / rotate: new bundles use the new key; earlier keys
+     * stay (encrypted) so older bundles can still be restored.
+     * key = null → KubeEZ generates one. Returns the key once.
+     */
+    setKey(orgId, key, by) {
+        const all = this._read()
+        const r = all[orgId]
+        if (!r) throw Object.assign(new Error('Connect offsite storage first.'), { status: 400 })
+        const own = key != null && String(key).trim() !== ''
+        const k = own ? String(key).trim() : crypto.randomBytes(32).toString('hex')
+        if (own && (k.length < 32 || !/^[\x21-\x7e]+$/.test(k) || new Set(k).size < 10)) {
+            throw Object.assign(new Error('Use at least 32 random characters without spaces — e.g. the output of: openssl rand -hex 32'), { status: 400 })
+        }
+        if (r.encKey && decrypt(r.encKey) === k) throw Object.assign(new Error('That is the key in use already.'), { status: 400 })
+        if (r.encKey) r.prevKeys = [{ key: r.encKey, until: new Date().toISOString() }, ...(r.prevKeys || [])].slice(0, 10)
+        r.encKey = encrypt(k)
+        r.keySource = own ? 'customer' : 'kubeez'
+        r.keySetAt = new Date().toISOString()
+        r.keySetBy = by || null
+        this._write(all)
+        return { recoveryKey: k, keySource: r.keySource }
     }
 
     /**
@@ -83,6 +111,11 @@ class OffsiteStore {
             accessKey: encrypt(cfg.accessKey),
             secretKey: encrypt(cfg.secretKey),
             encKey,
+            // keep the key history (older bundles) and who brought the key
+            prevKeys: prev.prevKeys || [],
+            keySource: prev.keySource || 'kubeez',
+            keySetAt: prev.keySetAt || new Date().toISOString(),
+            keySetBy: prev.keySetBy || null,
             connected: true,
             connectedAt: new Date().toISOString(),
             lastSync: prev.lastSync || {}

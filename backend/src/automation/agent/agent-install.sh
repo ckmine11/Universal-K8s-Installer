@@ -13,12 +13,13 @@
 # Safe to run again: it replaces the running agent — never two copies.
 set -euo pipefail
 
-TOKEN=""; AGENT_ID=""; SERVER=""
+TOKEN=""; AGENT_ID=""; SERVER=""; INSECURE=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --token) TOKEN="${2:-}"; shift 2 ;;
     --agent-id) AGENT_ID="${2:-}"; shift 2 ;;
     --server) SERVER="${2:-}"; shift 2 ;;
+    --allow-insecure) [ "${2:-}" = yes ] && INSECURE=true; shift 2 ;;   # KubeEZ without HTTPS (labs only)
     *) shift ;;
   esac
 done
@@ -55,7 +56,7 @@ mv -f agent-bundle.js.new agent-bundle.js
 # parent folder (e.g. $HOME) cannot make Node load it as an ES module.
 echo '{"type":"commonjs"}' > package.json
 json() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
-( umask 077; printf '{"token":"%s","agentId":"%s","server":"%s"}\n' "$(json "$TOKEN")" "$(json "$AGENT_ID")" "$(json "$SERVER")" > config.json )
+( umask 077; printf '{"token":"%s","agentId":"%s","server":"%s","allowInsecure":%s}\n' "$(json "$TOKEN")" "$(json "$AGENT_ID")" "$(json "$SERVER")" "$INSECURE" > config.json )
 RUN_ARGS="$AGENT_DIR/agent-bundle.js --config $AGENT_DIR/config.json"
 
 # ── Stop any earlier copy (re-install / upgrade) ─────────────────────────────

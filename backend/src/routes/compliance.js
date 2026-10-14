@@ -53,7 +53,7 @@ router.get('/overview', async (req, res) => {
             pro: paid(req),
             clusters: clusters.map(c => ({ id: c.id, name: c.clusterName || c.id, k8sVersion: c.k8sVersion, status: c.status, latest: summaryOf(complianceStore.reports(c.id)[0]), history: complianceStore.reports(c.id).slice(0, 12).map(r => ({ id: r.id, at: r.at, score: r.score })).reverse() })),
             attestations: Object.fromEntries(Object.keys(ATTESTATIONS).map(k => [k, org.attestations[k] ? { ...org.attestations[k], state: attestationStatus(org.attestations[k]) } : { state: 'todo' }])),
-            schedule: org.schedule, lastScheduledAt: org.lastScheduledAt
+            schedule: org.schedule, lastScheduledAt: org.lastScheduledAt, addonScan: org.addonScan || 'off'
         })
     } catch (e) { fail(res, e) }
 })
@@ -135,6 +135,15 @@ router.delete('/attestations/:key', requirePermission('compliance:manage'), (req
 router.put('/schedule', requirePermission('compliance:manage'), (req, res) => {
     if (needPro(req, res)) return
     res.json(complianceStore.setSchedule(req.user.orgId, req.body || {}))
+})
+
+// Add-on images scanned for critical vulnerabilities before install: off | warn | block
+router.put('/addon-scan', requirePermission('compliance:manage'), (req, res) => {
+    try {
+        const mode = complianceStore.setAddonScan(req.user.orgId, req.body?.mode)
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'compliance.addon_scan', detail: mode })
+        res.json({ addonScan: mode })
+    } catch (e) { fail(res, e) }
 })
 
 // CERT-In report for an incident (form: { type, occurredAt, description, actions, organisation })

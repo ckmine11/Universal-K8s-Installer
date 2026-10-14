@@ -9,7 +9,8 @@
 param (
     [Parameter(Mandatory = $true)][string]$Token,
     [Parameter(Mandatory = $true)][string]$AgentId,
-    [Parameter(Mandatory = $true)][string]$ServerUrl
+    [Parameter(Mandatory = $true)][string]$ServerUrl,
+    [string]$AllowInsecure = "no"
 )
 $ErrorActionPreference = 'Stop'
 $TaskName = 'KubeEZ Gateway Agent'
@@ -51,7 +52,7 @@ $HttpUrl = $ServerUrl -replace '^ws', 'http'
 Invoke-WebRequest -Uri "$HttpUrl/agent-bundle.js" -OutFile 'agent-bundle.js' -UseBasicParsing
 # The bundle is CommonJS - pin it so a parent package.json cannot turn it into an ES module
 Set-Content -Path (Join-Path $AgentDir 'package.json') -Value '{"type":"commonjs"}' -Encoding ascii
-@{ token = $Token; agentId = $AgentId; server = $ServerUrl } | ConvertTo-Json -Compress |
+@{ token = $Token; agentId = $AgentId; server = $ServerUrl; allowInsecure = ($AllowInsecure -eq "yes") } | ConvertTo-Json -Compress |
     Set-Content -Path (Join-Path $AgentDir 'config.json') -Encoding ascii
 
 # Keeps the agent running: restarts it whenever it exits (except 78 = removed in KubeEZ)

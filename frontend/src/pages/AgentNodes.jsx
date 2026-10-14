@@ -154,6 +154,7 @@ function GenerateAgentCard({ onGenerated }) {
                                 <CopyButton text={osTab === 'windows' ? result.installCommandWindows : result.installCommandLinux} />
                             </div>
                         </div>
+                        {result.insecure && <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-200 bg-amber-500/10 border border-amber-400/20 rounded-lg p-2"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{result.insecure}</p>}
                     </div>
 
                     {/* Step 2 */}
@@ -354,6 +355,7 @@ function AgentCard({ agent, onDelete, canManage = true }) {
                                 </code>
                                 <CopyButton text={cmdOs === 'linux' ? cmd.installCommandLinux : cmd.installCommandWindows} />
                             </div>
+                            {cmd.insecure && <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-200 bg-amber-500/10 border border-amber-400/20 rounded-lg p-2"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{cmd.insecure}</p>}
                             <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
                                 Same agent and token. Installs it as a service that starts at boot and restarts after a crash
                                 {cmdOs === 'linux' ? ' (run with sudo for a boot-time systemd service).' : ' (run PowerShell as Administrator to start at boot).'} Safe to run again — it replaces the running agent.

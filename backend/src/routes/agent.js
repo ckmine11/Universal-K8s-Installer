@@ -11,12 +11,18 @@ function installCommands(req, record) {
     const host = process.env.KUBEEZ_PUBLIC_URL || `${req.protocol}://${hostHeader}`
     const wsHost = host.replace(/^http/, 'ws')
     const ts = Date.now()
+    // The agent only talks TLS. A KubeEZ served without HTTPS (a lab / LAN install)
+    // gets an explicit opt-out in the command — and the page warns about it.
+    const insecure = !/^https:/i.test(host)
     // Quote the URL — zsh (default on macOS) treats the '?' in the query string
     // as a glob and errors with "no matches found" if left unquoted.
-    const installCommandLinux = `curl -sfL "${host}/agent-install.sh?v=${ts}" | bash -s -- --token ${record.token} --agent-id ${record.agentId} --server ${wsHost}`
-    const psCmd = `$t="$env:TEMP\\kbagent.ps1"; Invoke-WebRequest -Uri "${host}/agent-install.ps1?v=${ts}" -OutFile $t; & $t -Token ${record.token} -AgentId ${record.agentId} -ServerUrl ${wsHost}`
+    const installCommandLinux = `curl -sfL "${host}/agent-install.sh?v=${ts}" | bash -s -- --token ${record.token} --agent-id ${record.agentId} --server ${wsHost}${insecure ? ' --allow-insecure yes' : ''}`
+    const psCmd = `$t="$env:TEMP\\kbagent.ps1"; Invoke-WebRequest -Uri "${host}/agent-install.ps1?v=${ts}" -OutFile $t; & $t -Token ${record.token} -AgentId ${record.agentId} -ServerUrl ${wsHost}${insecure ? ' -AllowInsecure yes' : ''}`
     const installCommandWindows = `powershell -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(psCmd, 'utf16le').toString('base64')}`
-    return { installCommandLinux, installCommandWindows }
+    return {
+        installCommandLinux, installCommandWindows,
+        insecure: insecure ? 'KubeEZ is not served over HTTPS, so this tunnel (SSH credentials and commands) is not encrypted. Put KubeEZ behind HTTPS before using the agent outside a lab.' : null
+    }
 }
 
 // Generate a new agent registration token + install command
@@ -27,7 +33,7 @@ router.post('/agent/token', requireAuth, requirePermission('agent:manage'), asyn
 
         const record = await agentService.generateToken(ownerId, ownerUsername, orgId, label)
 
-        const { installCommandLinux, installCommandWindows } = installCommands(req, record)
+        const { installCommandLinux, installCommandWindows, insecure } = installCommands(req, record)
 
         res.json({
             agentId: record.agentId,
@@ -35,6 +41,7 @@ router.post('/agent/token', requireAuth, requirePermission('agent:manage'), asyn
             label: record.label,
             installCommandLinux,
             installCommandWindows,
+            insecure,
             status: 'pending',
             createdAt: record.createdAt
         })

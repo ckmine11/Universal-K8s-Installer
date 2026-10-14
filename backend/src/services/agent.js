@@ -44,6 +44,23 @@ if (!token || !agentId || !server) {
     process.exit(1);
 }
 
+// The tunnel carries SSH credentials and commands: only over TLS (wss://), with
+// the server's certificate verified. Plain ws:// is accepted only for a KubeEZ on
+// this machine / a lab, and only when asked for explicitly.
+const allowInsecure = argMap['allow-insecure'] === 'yes' || fileCfg.allowInsecure === true || process.env.KUBEEZ_AGENT_ALLOW_INSECURE === '1';
+if (!/^wss:\/\//i.test(server)) {
+    const local = /^ws:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(server);
+    if (!local && !allowInsecure) {
+        console.error(`Refusing to connect to ${server}: the link to KubeEZ must use TLS (wss://). Serve KubeEZ over HTTPS and reinstall the agent with the new command.`);
+        console.error('(For a lab without TLS only: --allow-insecure yes)');
+        process.exit(1);
+    }
+}
+if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
+    console.error('NODE_TLS_REJECT_UNAUTHORIZED=0 turns off certificate checks — the agent will not run like this.');
+    process.exit(1);
+}
+
 const log = (...m) => console.log(new Date().toISOString(), '[Gateway Agent]', ...m);
 
 // A bug or an unexpected library error must never take the tunnel down for good.
@@ -96,8 +113,11 @@ function closeSessions() {
 }
 
 function connect() {
-    const ws = new WebSocket(`${server}/ws/agent/${agentId}?token=${encodeURIComponent(token)}`, {
-        handshakeTimeout: 20000
+    // the token travels in a header, never in the URL (proxies and access logs record URLs)
+    const ws = new WebSocket(`${server}/ws/agent/${agentId}`, {
+        handshakeTimeout: 20000,
+        headers: { Authorization: `Bearer ${token}` },
+        rejectUnauthorized: true
     });
     let pingTimer = null;
     let lastHeard = Date.now();

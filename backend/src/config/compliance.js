@@ -310,6 +310,16 @@ export const CONTROLS = [
         }
     },
     {
+        id: 'VUL-4', domain: 'hardening', severity: 'medium', title: 'Add-on images scanned before install',
+        refs: { iso: ['8.8 Management of technical vulnerabilities', '8.32 Change management'], dpdp: ['Rules 2025, Rule 6 — security safeguards'] },
+        evaluate(ev) {
+            const m = ev.kubeez.addonScan || 'off'
+            if (m === 'block') return { status: 'pass', evidence: 'Every add-on install and update scans its images first (Trivy) and is refused with fixable critical vulnerabilities.' }
+            if (m === 'warn') return { status: 'partial', evidence: 'Add-on images are scanned before install; critical findings are reported but do not stop the install.', fix: 'Set the add-on scan to Block under Compliance → Monthly report & settings.' }
+            return { status: 'fail', evidence: 'Add-on images are installed without a vulnerability scan.', fix: 'Turn on the add-on scan (Warn or Block) under Compliance → Monthly report & settings.' }
+        }
+    },
+    {
         id: 'CIS-1', domain: 'hardening', severity: 'high', title: 'CIS Kubernetes Benchmark',
         refs: { cis: ['CIS Kubernetes Benchmark — control plane, etcd, kubelet'], iso: ['8.9 Configuration management'] },
         evaluate(ev) {

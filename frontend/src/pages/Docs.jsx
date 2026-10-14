@@ -279,6 +279,7 @@ export default function Docs() {
                         ]} />
                         <Code>{"sudo systemctl status kubeez-agent      # Linux service\njournalctl -u kubeez-agent -f            # live log"}</Code>
                         <Note>Long operations (add-ons up to 30 min, upgrades up to 45 min) are given matching relay time-outs, so they are not cut off midway.</Note>
+                        <Note>The tunnel only runs over TLS (wss://) with the server certificate verified, and the agent sends its token in a header, never in a URL. A KubeEZ served without HTTPS (a lab) gets <C>--allow-insecure yes</C> in the install command and a warning on the page — put KubeEZ behind HTTPS before using the agent for real servers.</Note>
                     </Section>
 
                     {/* ── Clusters ────────────────────────────────────── */}
@@ -328,7 +329,7 @@ export default function Docs() {
                     </Section>
 
                     <Section id="scale" Icon={Plus} color="text-blue-400" title="Scale & Terminal">
-                        <P><b className="text-white">Scale</b> adds worker nodes to a running cluster with a fresh join token. <b className="text-white">Terminal</b> opens a browser shell on the cluster nodes (Operator / Admin). <b className="text-white">Kubeconfig</b> downloads admin access for kubectl.</P>
+                        <P><b className="text-white">Scale</b> adds worker nodes to a running cluster with a fresh join token. <b className="text-white">Terminal</b> opens a browser shell on the cluster nodes (Operator / Admin) — <b className="text-white">just in time</b>: give a reason and a time limit (15 min – 2 h); admins get access at once, operators after an admin approves (Compliance → Access, plus an alert). Every session is <b className="text-white">recorded</b> (commands and output) and every command lands in the audit trail. <b className="text-white">Kubeconfig</b> downloads admin access for kubectl.</P>
                     </Section>
 
                     {/* ── Add-ons ─────────────────────────────────────── */}
@@ -472,6 +473,7 @@ export default function Docs() {
                             <><b>Download the recovery key</b> shown once. Bundles are encrypted with it (AES-256) — without it a backup cannot be opened if KubeEZ itself is lost.</>,
                             'New snapshots are copied automatically (after Backup Now, each upgrade and each restore); use Sync now any time.'
                         ]} />
+                        <Note><b>Encryption key:</b> bring your own (32+ random characters, e.g. <C>openssl rand -hex 32</C>) or rotate to a newly generated one under Offsite → Encryption key. New bundles use the new key; earlier keys are kept so older backups still restore. Keep a copy offline.</Note>
                         <Note>The upload runs from the cluster&apos;s control-plane, so it must reach the storage. Your keys stay encrypted in KubeEZ — the node only receives short-lived signed links.</Note>
                         <Note kind="warn">Storage on a node of the same cluster is not offsite — KubeEZ warns about it. Use another cluster, another server or a cloud bucket.</Note>
                         <P>Decrypt a bundle by hand:</P>
@@ -525,7 +527,9 @@ export default function Docs() {
                             ['Report (Pro)', 'A PDF for auditors and client questionnaires: cover with scores, executive summary, framework scorecards, every control with evidence, references and fix, node evidence, CIS failures, attestations, ready-made fixes. Sealed with SHA-256 + a KubeEZ signature — "Verify seal" shows whether it was changed. The evidence is also available as JSON.'],
                             ['Monthly (Pro)', 'Every 30 days each cluster is scanned, the PDF is emailed to the admins, and an alert ("a control got worse") goes to your channels when something regressed.'],
                             ['CERT-In report (Pro)', 'From an incident: a pre-filled CERT-In incident report (type from Annexure I, times in IST, affected systems, evidence, actions taken) with the 6-hour deadline shown.'],
-                            ['Audit trail', 'Every change made through KubeEZ (who, role, IP, cluster, result), sign-ins and failed sign-ins, restores and verifications — kept 400 days, chained with SHA-256 so a changed or deleted line is detected. Filter and export as CSV (admins).']
+                            ['Audit trail', 'Every change made through KubeEZ (who, role, IP, cluster, result), sign-ins and failed sign-ins, restores and verifications, terminal access and every terminal command — kept 400 days, chained with SHA-256 so a changed or deleted line is detected. Filter and export as CSV (admins).'],
+                            ['Access', 'Terminal access requests to approve or deny, who has access right now (end it at once), and the recorded terminal sessions to replay or download (admins).'],
+                            ['Add-on image scan', 'Off, Warn or Block: before an add-on is installed or updated, every image of its chart is scanned with Trivy on the control-plane; Block refuses images with critical vulnerabilities that have a fix.']
                         ]} />
                         <Note>The mapping to CERT-In, DPDP and ISO 27001 is an aid for audits — it is not legal advice or a certification.</Note>
                     </Section>
