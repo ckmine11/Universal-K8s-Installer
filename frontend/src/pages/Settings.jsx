@@ -3,7 +3,9 @@ import { useSearchParams, Navigate } from 'react-router-dom'
 import { PageTitle } from '../components/ui/PageHeader'
 import { useToast } from '../components/ToastProvider'
 import { useAuth, apiFetch } from '../context/AuthContext'
-import { Bell, SlidersHorizontal,
+import { can } from '../config/permissions'
+import AiSettings from '../components/ai/AiSettings'
+import { Bell, SlidersHorizontal, Bot,
     Activity,
     Database,
     RefreshCw,
@@ -315,6 +317,7 @@ export default function Settings() {
 
     const isSuperAdmin = user.role === 'superadmin';
     const isAdmin = user.role === 'admin' || isSuperAdmin;
+    const canAi = can(user.role, 'ai:manage');
     const planCode = String(licenseStatus?.planCode || '').toUpperCase();
     const isPaidPlan = planCode === 'PRO' || planCode === 'ENTERPRISE';
     const canBackup = isSuperAdmin || isPaidPlan; // Daily backups = Pro feature
@@ -361,6 +364,19 @@ export default function Settings() {
                     <Key className="w-4 h-4" />
                     <span>{configMode === 'saas' ? 'Plans & Quotas' : 'Licensing & Plans'}</span>
                 </button>
+                {canAi && (
+                    <button
+                        onClick={() => selectTab('ai')}
+                        className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                            activeTab === 'ai'
+                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(128,105,251,.35)]'
+                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                        }`}
+                    >
+                        <Bot className="w-4 h-4" />
+                        <span>AI</span>
+                    </button>
+                )}
                 <button
                     onClick={() => selectTab('security')}
                     className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
@@ -1030,6 +1046,8 @@ export default function Settings() {
             )}
 
             {/* Security Tab */}
+            {activeTab === 'ai' && canAi && <AiSettings />}
+
             {activeTab === 'security' && (
                 <div className="animate-in fade-in duration-300 max-w-xl">
                     <div className="glass rounded-3xl border border-white/5 p-8">

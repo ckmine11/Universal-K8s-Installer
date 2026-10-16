@@ -70,6 +70,17 @@ export const ADDONS_LIST = [
         tier: 'pro'
     },
     {
+        key: 'kubeez-ai',
+        name: 'KubeEZ AI',
+        desc: 'A free, private AI model in your cluster — explains failures and incidents; nothing leaves your network',
+        iconName: 'Bot',
+        gradient: 'from-violet-500 via-fuchsia-500 to-pink-600',
+        badge: '✨ New',
+        badgeColor: 'text-violet-400 border-violet-500/30',
+        tier: 'free',
+        helm: true
+    },
+    {
         key: 'argocd',
         name: 'ArgoCD',
         desc: 'Declarative GitOps continuous delivery',

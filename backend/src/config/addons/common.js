@@ -39,6 +39,7 @@ export const REPOS = {
     'vmware-tanzu': { name: 'kubeez-vmware-tanzu', url: 'https://vmware-tanzu.github.io/helm-charts' },
     'prometheus-community': { name: 'kubeez-prometheus-community', url: 'https://prometheus-community.github.io/helm-charts' },
     skyhook: { name: 'kubeez-skyhook', url: 'https://skyhook-io.github.io/helm-charts' },
+    ollama: { name: 'kubeez-ollama', url: 'https://otwld.github.io/ollama-helm/' },
     harbor: { name: 'kubeez-harbor', url: 'https://helm.goharbor.io' },
     elastic: { name: 'kubeez-elastic', url: 'https://helm.elastic.co' },
     'nfs-subdir': { name: 'kubeez-nfs-subdir', url: 'https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/' },

@@ -74,7 +74,11 @@ export const PERMISSIONS = {
     'compliance:view':   ['admin', 'operator', 'viewer'],   // compliance scores and reports
     'compliance:manage': ['admin'],               // run scans, attestations, fixes, monthly reports
     'audit:view':        ['admin'],               // the audit trail and terminal recordings
-    'access:approve':    ['admin']                // approve terminal access (just in time)
+    'access:approve':    ['admin'],               // approve terminal access (just in time)
+
+    // KubeEZ AI
+    'ai:use':            ['admin', 'operator', 'viewer'],   // ask KubeEZ AI (it only explains / suggests)
+    'ai:manage':         ['admin']                // AI engines, routing, safety switches, activity
 }
 
 // Human-readable grouping for the transparency matrix shown in the UI
@@ -112,6 +116,10 @@ export const PERMISSION_GROUPS = [
         { key: 'compliance:manage', label: 'Run scans, confirm attestations, apply fixes' },
         { key: 'audit:view',        label: 'View the audit trail and terminal recordings' },
         { key: 'access:approve',    label: 'Approve terminal access requests' }
+    ]},
+    { group: 'KubeEZ AI', items: [
+        { key: 'ai:use',    label: 'Ask KubeEZ AI (explanations and suggestions)' },
+        { key: 'ai:manage', label: 'Manage AI engines, routing and safety' }
     ]}
 ]
 

@@ -1,0 +1,423 @@
+import { useState, useEffect, useCallback } from 'react'
+import { Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
+import { apiFetch } from '../../context/AuthContext'
+import { useToast } from '../ToastProvider'
+import useBackdropClose from '../ui/useBackdropClose'
+
+// Settings → AI: the engines (models) KubeEZ AI may use, which engine does
+// which job (with fallbacks), the safety switches, a test box and the log.
+const AUTONOMY_INFO = {
+    suggest: ['Suggest only', 'AI explains and suggests; it never runs anything.'],
+    approve: ['Ask first (recommended)', 'AI may prepare a fix; a person approves before it runs.'],
+    auto: ['Auto for low-risk', 'Low-risk fixes (e.g. restart a crashed pod) run on their own; everything else asks first.']
+}
+const LANGS = [['en', 'English'], ['hinglish', 'Hinglish'], ['hi', 'हिन्दी']]
+const kindIcon = (k) => k === 'server' ? Server : k === 'cluster' ? Boxes : (k === 'ollama' ? Bot : Cloud)
+const isLocal = (k) => ['ollama', 'server', 'cluster'].includes(k)
+
+async function call(url, opts) {
+    const res = await apiFetch(url, opts)
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw Object.assign(new Error(d.error || 'Request failed'), { data: d })
+    return d
+}
+const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+function Toggle({ on, onChange, label, disabled }) {
+    return (
+        <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}
+            className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-blue-500' : 'bg-white/15'} disabled:opacity-40`}>
+            <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${on ? 'left-5' : 'left-1'}`} />
+        </button>
+    )
+}
+
+function EngineStatus({ e }) {
+    if (e.kind === 'server') {
+        const st = e.state?.status
+        if (st === 'ready') return <span className="kz-chip !text-emerald-300">ready</span>
+        if (st === 'downloading') return <span className="kz-chip !text-amber-300"><Loader2 className="w-3 h-3 animate-spin" /> downloading model</span>
+        if (st === 'waiting' || st === 'unknown') return <span className="kz-chip !text-amber-300">starting</span>
+        return <span className="kz-chip !text-red-300">unavailable</span>
+    }
+    if (e.enabled === false) return <span className="kz-chip !text-slate-400">off</span>
+    if (e.breaker?.open) return <span className="kz-chip !text-red-300" title="It failed 3 times in a row; KubeEZ skips it for 2 minutes and uses the next engine">paused — failing</span>
+    if (e.pull?.status === 'downloading') return <span className="kz-chip !text-amber-300"><Loader2 className="w-3 h-3 animate-spin" /> downloading {e.pull.model}</span>
+    if (e.pull?.status === 'failed') return <span className="kz-chip !text-red-300" title={e.pull.error}>download failed</span>
+    return <span className="kz-chip !text-emerald-300">on</span>
+}
+
+function EngineDialog({ data, initial, onClose, onSaved }) {
+    const { toast } = useToast()
+    const backdrop = useBackdropClose(onClose)
+    const editing = !!initial
+    const [f, setF] = useState(() => initial ? { ...initial, apiKey: '' } : { kind: 'ollama', name: '', baseUrl: '', model: '', apiKey: '', clusterId: '' })
+    const [busy, setBusy] = useState(false)
+    const kind = data.kinds[f.kind] || {}
+    const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+    const pickKind = (k) => setF(p => ({ ...p, kind: k, baseUrl: k === 'openai' ? (data.kinds[k]?.example?.baseUrl || '') : '', model: data.kinds[k]?.example?.model || '', name: (!p.name || Object.values(data.kinds).some(v => v.label === p.name)) ? (data.kinds[k]?.label || '') : p.name }))
+    useEffect(() => { if (!initial) pickKind('ollama') }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+    const save = async (ev) => {
+        ev.preventDefault(); setBusy(true)
+        try {
+            const body = { name: f.name, model: f.model, ...(kind.needsUrl ? { baseUrl: f.baseUrl } : {}), ...(f.kind === 'cluster' ? { clusterId: f.clusterId } : {}), ...(f.apiKey ? { apiKey: f.apiKey } : {}) }
+            if (editing) await call(`/api/ai/providers/${initial.id}`, json('PUT', body))
+            else await call('/api/ai/providers', json('POST', { ...body, kind: f.kind }))
+            toast({ title: editing ? 'Engine saved' : 'Engine added', message: 'Use "Test" to check it answers.', type: 'success' })
+            onSaved()
+        } catch (e) { toast({ title: 'Not saved', message: e.message, type: 'error' }) } finally { setBusy(false) }
+    }
+
+    const kinds = Object.entries(data.kinds).filter(([k]) => k !== 'server')
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" {...backdrop}>
+            <form onSubmit={save} onClick={e => e.stopPropagation()} className="kz-card w-full max-w-xl max-h-[92vh] overflow-y-auto p-6 space-y-4" role="dialog" aria-label={editing ? 'Edit AI engine' : 'Add AI engine'}>
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-white">{editing ? `Edit ${initial.name}` : 'Add an AI engine'}</h3>
+                    <button type="button" onClick={onClose} className="kz-btn-ghost !p-2" aria-label="Close"><X className="w-4 h-4" /></button>
+                </div>
+                {!editing && (
+                    <div>
+                        <label className="kz-label">Type</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {kinds.map(([k, v]) => (
+                                <button type="button" key={k} onClick={() => pickKind(k)}
+                                    className={`text-left rounded-xl border px-3 py-2 text-xs transition ${f.kind === k ? 'border-blue-400/60 bg-blue-500/10 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'}`}>
+                                    <div className="font-semibold">{v.label}</div>
+                                    <div className="text-slate-500 mt-0.5">{isLocal(k) ? 'Free · private' : 'Cloud · your API key'}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                <div>
+                    <label className="kz-label" htmlFor="ai-name">Name</label>
+                    <input id="ai-name" className="kz-input" value={f.name} onChange={e => set('name', e.target.value)} maxLength={60} autoComplete="off" />
+                </div>
+                {kind.needsUrl && (
+                    <div>
+                        <label className="kz-label" htmlFor="ai-url">Address</label>
+                        <input id="ai-url" className="kz-input font-mono" value={f.baseUrl || ''} onChange={e => set('baseUrl', e.target.value)} placeholder={kind.example?.baseUrl} autoComplete="off" />
+                        <p className="text-[11px] text-slate-500 mt-1">{f.kind === 'ollama' ? 'Where Ollama listens. On KubeEZ Cloud it must be a public https address — for a private model use the KubeEZ AI add-on instead.' : 'The API base, ending in /v1 — OpenAI, Groq, DeepSeek, Mistral, OpenRouter, vLLM, LM Studio…'}</p>
+                    </div>
+                )}
+                {f.kind === 'cluster' && (
+                    <div>
+                        <label className="kz-label" htmlFor="ai-cluster">Cluster</label>
+                        <select id="ai-cluster" className="kz-input" value={f.clusterId || ''} onChange={e => set('clusterId', e.target.value)}>
+                            <option value="">Pick a cluster…</option>
+                            {data.clusters.map(c => <option key={c.id} value={c.id}>{c.name}{c.hasAi ? ' — KubeEZ AI installed' : ''}</option>)}
+                        </select>
+                        {!data.clusters.some(c => c.hasAi) && <p className="text-[11px] text-amber-300/90 mt-1">Install the <b>KubeEZ AI</b> add-on on a cluster first (cluster page → Add-ons). It is free on every plan.</p>}
+                    </div>
+                )}
+                <div>
+                    <label className="kz-label" htmlFor="ai-model">Model</label>
+                    <input id="ai-model" className="kz-input font-mono" value={f.model || ''} onChange={e => set('model', e.target.value)} placeholder={kind.example?.model || 'qwen2.5:3b'} autoComplete="off" />
+                </div>
+                {kind.needsKey && (
+                    <div>
+                        <label className="kz-label" htmlFor="ai-key">API key</label>
+                        <input id="ai-key" type="password" className="kz-input font-mono" value={f.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder={editing && initial.hasKey ? 'Saved — type to replace' : ''} autoComplete="new-password" />
+                        <p className="text-[11px] text-slate-500 mt-1">Stored encrypted on the KubeEZ server; never shown again or sent to the browser.</p>
+                    </div>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={onClose} className="kz-btn-ghost">Cancel</button>
+                    <button type="submit" disabled={busy} className="kz-btn-primary">{busy && <Loader2 className="w-4 h-4 animate-spin" />}{editing ? 'Save' : 'Add engine'}</button>
+                </div>
+            </form>
+        </div>
+    )
+}
+
+function RouteEditor({ data, onSave }) {
+    const [routes, setRoutes] = useState(() => Object.fromEntries(Object.keys(data.tasks).map(t => [t, data.routes[t]?.length ? data.routes[t] : []])))
+    const [dirty, setDirty] = useState(false)
+    const names = Object.fromEntries(data.engines.map(e => [e.id, e.name]))
+    const change = (t, list) => { setRoutes(r => ({ ...r, [t]: list })); setDirty(true) }
+    const move = (t, i, d) => { const l = [...routes[t]]; const j = i + d; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; change(t, l) }
+
+    return (
+        <div className="space-y-3">
+            {Object.entries(data.tasks).map(([t, label]) => {
+                const list = routes[t]
+                const shown = list.length ? list : data.effectiveRoutes[t]
+                const unused = data.engines.filter(e => !list.includes(e.id))
+                return (
+                    <div key={t} className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-sm font-semibold text-white">{label}</div>
+                            {!list.length && <span className="text-[11px] text-slate-500">Automatic: every engine, in list order</span>}
+                        </div>
+                        <ol className="mt-2 flex flex-wrap items-center gap-2">
+                            {shown.map((id, i) => (
+                                <li key={id} className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs ${list.length ? 'border-blue-400/30 bg-blue-500/10 text-white' : 'border-white/10 text-slate-400'}`}>
+                                    <span className="text-slate-500">{i === 0 ? 'first' : 'then'}</span> {names[id] || id}
+                                    {list.length > 0 && <>
+                                        <button type="button" onClick={() => move(t, i, -1)} className="p-0.5 hover:text-blue-300" aria-label="Earlier"><ArrowUp className="w-3 h-3" /></button>
+                                        <button type="button" onClick={() => move(t, i, 1)} className="p-0.5 hover:text-blue-300" aria-label="Later"><ArrowDown className="w-3 h-3" /></button>
+                                        <button type="button" onClick={() => change(t, list.filter(x => x !== id))} className="p-0.5 hover:text-red-300" aria-label="Remove"><X className="w-3 h-3" /></button>
+                                    </>}
+                                </li>
+                            ))}
+                            {unused.length > 0 && (
+                                <select className="kz-input !w-auto !py-1 !text-xs" value="" onChange={e => e.target.value && change(t, [...list, e.target.value])} aria-label={`Add an engine to ${label}`}>
+                                    <option value="">+ add engine</option>
+                                    {unused.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                                </select>
+                            )}
+                            {list.length > 0 && <button type="button" onClick={() => change(t, [])} className="text-[11px] text-slate-500 hover:text-white underline">automatic</button>}
+                        </ol>
+                    </div>
+                )
+            })}
+            <div className="flex justify-end">
+                <button type="button" disabled={!dirty} onClick={async () => { if (await onSave({ routes })) setDirty(false) }} className="kz-btn-primary">Save routing</button>
+            </div>
+        </div>
+    )
+}
+
+function TryIt() {
+    const { toast } = useToast()
+    const [q, setQ] = useState('A pod is in CrashLoopBackOff. What should I check first?')
+    const [busy, setBusy] = useState(false)
+    const [r, setR] = useState(null)
+    const ask = async () => {
+        setBusy(true); setR(null)
+        try { setR(await call('/api/ai/ask', json('POST', { question: q }))) }
+        catch (e) { setR({ error: e.message, attempts: e.data?.attempts }); if (!e.data?.attempts) toast({ title: 'No answer', message: e.message, type: 'error' }) }
+        finally { setBusy(false) }
+    }
+    return (
+        <div className="space-y-3">
+            <textarea className="kz-input min-h-[80px]" value={q} onChange={e => setQ(e.target.value)} maxLength={4000} aria-label="Question for KubeEZ AI" />
+            <div className="flex items-center gap-3">
+                <button type="button" onClick={ask} disabled={busy || q.trim().length < 3} className="kz-btn-primary">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Ask</button>
+                {busy && <span className="text-xs text-slate-500">A local model on CPU can take 10–60 seconds…</span>}
+            </div>
+            {r && (
+                <div className={`rounded-2xl border p-4 text-sm ${r.error ? 'border-red-400/25 bg-red-500/[0.05]' : 'border-white/10 bg-white/[0.02]'}`}>
+                    {r.error ? <p className="text-red-200 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{r.error}</p>
+                        : <p className="text-slate-200 whitespace-pre-wrap leading-relaxed">{r.answer}</p>}
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        {r.provider && <span className="kz-chip">{r.provider} · {r.model} · {(r.ms / 1000).toFixed(1)} s</span>}
+                        {r.masked > 0 && <span className="kz-chip !text-amber-300"><EyeOff className="w-3 h-3" />{r.masked} secret(s) masked before sending</span>}
+                        {(r.attempts || []).filter(a => !a.ok).map((a, i) => <span key={i} className="kz-chip !text-slate-400" title={a.error || a.skipped}>{a.provider}: {a.skipped || 'failed'} → next</span>)}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function Activity() {
+    const [list, setList] = useState(null)
+    useEffect(() => { call('/api/ai/activity?limit=50').then(d => setList(d.traces)).catch(() => setList([])) }, [])
+    if (!list) return <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
+    if (!list.length) return <p className="text-sm text-slate-500">Nothing yet — questions to KubeEZ AI show up here (with secrets masked).</p>
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+                <thead className="text-left text-slate-500"><tr><th className="py-2 pr-3">When</th><th className="pr-3">Who</th><th className="pr-3">For</th><th className="pr-3">Engine</th><th className="pr-3">Time</th><th>Notes</th></tr></thead>
+                <tbody>
+                    {list.map(t => (
+                        <tr key={t.id} className="border-t border-white/5 text-slate-300 align-top">
+                            <td className="py-2 pr-3 whitespace-nowrap">{new Date(t.at).toLocaleString()}</td>
+                            <td className="pr-3">{t.user}</td>
+                            <td className="pr-3">{t.purpose}</td>
+                            <td className="pr-3">{t.ok ? `${t.provider} (${t.model})` : <span className="text-red-300">no answer</span>}</td>
+                            <td className="pr-3 whitespace-nowrap">{(t.ms / 1000).toFixed(1)} s</td>
+                            <td className="space-x-1">
+                                {t.attempts?.length > 1 && <span className="kz-chip" title={t.attempts.map(a => `${a.provider}: ${a.ok ? 'ok' : a.skipped || a.error}`).join('\n')}>{t.attempts.length} attempts</span>}
+                                {t.masked > 0 && <span className="kz-chip !text-amber-300">{t.masked} masked</span>}
+                                {t.suspicious && <span className="kz-chip !text-red-300" title={t.injectionHits?.join(', ')}>trick text flagged</span>}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
+const Section = ({ icon: Icon, title, hint, children, right }) => (
+    <section className="kz-card p-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2"><Icon className="w-4 h-4 text-blue-300" />{title}</h3>
+                {hint && <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">{hint}</p>}
+            </div>
+            {right}
+        </div>
+        {children}
+    </section>
+)
+
+export default function AiSettings() {
+    const { toast } = useToast()
+    const [data, setData] = useState(null)
+    const [error, setError] = useState(null)
+    const [dialog, setDialog] = useState(null)    // null | 'new' | engine
+    const [busy, setBusy] = useState(null)        // engine id being tested / pulled
+    const [tests, setTests] = useState({})
+
+    const load = useCallback(() => call('/api/ai').then(d => { setData(d); setError(null) }).catch(e => setError(e.message)), [])
+    useEffect(() => { load() }, [load])
+    // while a model downloads, keep the list fresh
+    const downloading = data?.engines.some(e => e.pull?.status === 'downloading' || ['downloading', 'waiting'].includes(e.state?.status))
+    useEffect(() => { if (!downloading) return; const t = setInterval(load, 5000); return () => clearInterval(t) }, [downloading, load])
+
+    const saveSettings = async (patch, msg) => {
+        try { await call('/api/ai/settings', json('PUT', patch)); if (msg) toast({ title: msg, type: 'success' }); await load(); return true }
+        catch (e) { toast({ title: 'Not saved', message: e.message, type: 'error' }); return false }
+    }
+    const test = async (e) => {
+        setBusy(e.id)
+        try { const r = await call(`/api/ai/providers/${e.id}/test`, { method: 'POST' }); setTests(t => ({ ...t, [e.id]: r })) }
+        catch (err) { setTests(t => ({ ...t, [e.id]: { ok: false, detail: err.message } })) } finally { setBusy(null) }
+    }
+    const pull = async (e) => {
+        const model = window.prompt('Which model should this engine download? (e.g. qwen2.5:3b, llama3.2:3b)', e.model || 'qwen2.5:3b')
+        if (!model) return
+        try { await call(`/api/ai/providers/${e.id}/pull`, json('POST', { model })); toast({ title: 'Download started', message: `${model} — this can take a few minutes.`, type: 'success' }); load() }
+        catch (err) { toast({ title: 'Download not started', message: err.message, type: 'error' }) }
+    }
+    const remove = async (e) => {
+        if (!window.confirm(`Remove the AI engine "${e.name}"?`)) return
+        try { await call(`/api/ai/providers/${e.id}`, { method: 'DELETE' }); load() } catch (err) { toast({ title: 'Not removed', message: err.message, type: 'error' }) }
+    }
+    const toggleEngine = async (e, enabled) => {
+        try { await call(`/api/ai/providers/${e.id}`, json('PUT', { enabled })); load() } catch (err) { toast({ title: 'Not saved', message: err.message, type: 'error' }) }
+    }
+
+    if (error) return <div className="kz-card p-6 text-sm text-red-200">{error}</div>
+    if (!data) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
+
+    return (
+        <div className="space-y-6">
+            {/* on/off + how it works */}
+            <section className="kz-card p-6">
+                <div className="flex flex-wrap items-center gap-4">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center"><Bot className="w-5 h-5 text-white" /></div>
+                    <div className="flex-1 min-w-[220px]">
+                        <h2 className="text-lg font-semibold text-white">KubeEZ AI</h2>
+                        <p className="text-xs text-slate-400">Free on every plan. Uses open-source models on KubeEZ or in your cluster — or your own API keys. Secrets are masked before any model sees the data.</p>
+                    </div>
+                    <span className="text-xs text-slate-400">{data.enabled ? 'On' : 'Off'} for this workspace</span>
+                    <Toggle on={data.enabled} label="KubeEZ AI on" onChange={v => saveSettings({ enabled: v }, v ? 'KubeEZ AI is on' : 'KubeEZ AI is off')} />
+                </div>
+                <div className="grid md:grid-cols-3 gap-3 mt-5">
+                    {[
+                        ['1 · Engines', 'Add the models KubeEZ AI may use: the built-in server model, the KubeEZ AI add-on in your cluster, your own Ollama, or a cloud API.'],
+                        ['2 · Routing', 'Pick which engines do each job and in what order. If one is slow or down, the next one answers — automatically.'],
+                        ['3 · Safety', 'AI never runs anything alone unless you allow it. One switch stops all AI actions at once. Every call is logged.']
+                    ].map(([t, d]) => (
+                        <div key={t} className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+                            <div className="text-sm font-semibold text-white">{t}</div>
+                            <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">{d}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            <Section icon={PlugZap} title="Engines" hint="Local engines (Ollama, the add-on, the server model) are free and private. Cloud engines use your own API key and bill to your account."
+                right={<button onClick={() => setDialog('new')} className="kz-btn-primary"><Plus className="w-4 h-4" /> Add engine</button>}>
+                {!data.engines.length && <p className="text-sm text-slate-400">No engine yet. Install the free <b>KubeEZ AI</b> add-on on a cluster, or add your own Ollama or API.</p>}
+                <div className="grid md:grid-cols-2 gap-3">
+                    {data.engines.map(e => {
+                        const Icon = kindIcon(e.kind)
+                        const t = tests[e.id]
+                        return (
+                            <div key={e.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4 space-y-3">
+                                <div className="flex items-start gap-3">
+                                    <Icon className="w-5 h-5 text-blue-300 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-semibold text-white truncate">{e.name}</div>
+                                        <div className="text-[11px] text-slate-500 truncate">{data.kinds[e.kind]?.label} · <span className="font-mono">{e.model || 'default model'}</span>{e.hasKey ? ' · key saved' : ''}</div>
+                                    </div>
+                                    <EngineStatus e={e} />
+                                    {!e.builtin && <Toggle on={e.enabled !== false} label={`${e.name} on`} onChange={v => toggleEngine(e, v)} />}
+                                </div>
+                                {e.kind === 'server' && e.state?.status === 'downloading' && <p className="text-[11px] text-amber-300/90">First start: the server downloads {e.model} once (a few minutes).</p>}
+                                {e.queue?.busy > 0 && <p className="text-[11px] text-slate-500">Answering now{e.queue.waiting ? ` · ${e.queue.waiting} waiting` : ''}</p>}
+                                {t && <p className={`text-[11px] flex items-center gap-1.5 ${t.ok ? 'text-emerald-300' : 'text-red-300'}`}>{t.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}{t.detail}{t.ms != null ? ` (${t.ms} ms)` : ''}</p>}
+                                <div className="flex flex-wrap gap-2">
+                                    <button onClick={() => test(e)} disabled={busy === e.id} className="kz-btn-ghost !py-1.5 !text-xs">{busy === e.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />} Test</button>
+                                    {isLocal(e.kind) && <button onClick={() => pull(e)} disabled={e.pull?.status === 'downloading'} className="kz-btn-ghost !py-1.5 !text-xs"><Download className="w-3.5 h-3.5" /> Download model</button>}
+                                    {!e.builtin && <button onClick={() => setDialog(e)} className="kz-btn-ghost !py-1.5 !text-xs"><Pencil className="w-3.5 h-3.5" /> Edit</button>}
+                                    {!e.builtin && <button onClick={() => remove(e)} className="kz-btn-ghost !py-1.5 !text-xs hover:!text-red-300"><Trash2 className="w-3.5 h-3.5" /> Remove</button>}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            </Section>
+
+            {data.engines.length > 0 && (
+                <Section icon={Route} title="Routing" hint="For each job, the engines to try in order. Each engine gets a time limit and one retry; one that keeps failing is paused for 2 minutes and the next engine answers.">
+                    <RouteEditor key={JSON.stringify(data.routes) + data.engines.length} data={data} onSave={(p) => saveSettings(p, 'Routing saved')} />
+                </Section>
+            )}
+
+            <Section icon={ShieldCheck} title="Safety">
+                <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+                    <Power className={`w-5 h-5 ${data.actionsEnabled ? 'text-emerald-300' : 'text-red-300'}`} />
+                    <div className="flex-1 min-w-[220px]">
+                        <div className="text-sm font-semibold text-white">AI actions {data.actionsEnabled ? 'allowed' : 'stopped'}</div>
+                        <p className="text-xs text-slate-400">The kill switch. Off = AI can only explain; nothing it suggests can run until you switch it back on.</p>
+                    </div>
+                    <Toggle on={data.actionsEnabled} label="AI actions allowed" onChange={v => saveSettings({ actionsEnabled: v }, v ? 'AI actions allowed again' : 'All AI actions stopped')} />
+                </div>
+                <div>
+                    <label className="kz-label">When AI suggests a fix</label>
+                    <div className="grid md:grid-cols-3 gap-2">
+                        {data.autonomyLevels.map(a => (
+                            <button type="button" key={a} onClick={() => saveSettings({ autonomy: a }, 'Saved')}
+                                className={`text-left rounded-xl border px-3 py-2.5 transition ${data.autonomy === a ? 'border-blue-400/60 bg-blue-500/10' : 'border-white/10 hover:bg-white/5'}`}>
+                                <div className="text-xs font-semibold text-white">{AUTONOMY_INFO[a][0]}</div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">{AUTONOMY_INFO[a][1]}</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">
+                    <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] p-3">
+                        <div className="flex-1"><div className="text-xs font-semibold text-white">Mask e-mail addresses</div><div className="text-[11px] text-slate-500">Passwords, tokens and keys are always masked.</div></div>
+                        <Toggle on={data.maskEmails} label="Mask e-mail addresses" onChange={v => saveSettings({ maskEmails: v })} />
+                    </div>
+                    <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] p-3">
+                        <div className="flex-1"><div className="text-xs font-semibold text-white">Mask IP addresses</div><div className="text-[11px] text-slate-500">Hides IPs from models (answers get less specific).</div></div>
+                        <Toggle on={data.maskIps} label="Mask IP addresses" onChange={v => saveSettings({ maskIps: v })} />
+                    </div>
+                    <div className="rounded-xl border border-white/[0.07] p-3">
+                        <label className="kz-label" htmlFor="ai-lang">Answer language</label>
+                        <select id="ai-lang" className="kz-input" value={data.language} onChange={e => saveSettings({ language: e.target.value }, 'Saved')}>
+                            {LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                    </div>
+                    {data.server && (
+                        <div className="rounded-xl border border-white/[0.07] p-3">
+                            <label className="kz-label" htmlFor="ai-limit">Server model: questions per day</label>
+                            <input id="ai-limit" type="number" min={0} max={10000} className="kz-input" defaultValue={data.dailyLimit}
+                                onBlur={e => Number(e.target.value) !== data.dailyLimit && saveSettings({ dailyLimit: Number(e.target.value) }, 'Saved')} />
+                            <p className="text-[11px] text-slate-500 mt-1">{data.usedToday} used today. Your own engines have no limit.</p>
+                        </div>
+                    )}
+                </div>
+            </Section>
+
+            <Section icon={Send} title="Try it" hint="Ask anything — it goes through the same routing, masking and fallbacks as the real features.">
+                <TryIt />
+            </Section>
+
+            <Section icon={History} title="Activity" hint="The last questions and which engine answered. Prompts are stored masked; API keys are never stored here.">
+                <Activity />
+            </Section>
+
+            {dialog && <EngineDialog data={data} initial={dialog === 'new' ? null : dialog} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); load() }} />}
+        </div>
+    )
+}

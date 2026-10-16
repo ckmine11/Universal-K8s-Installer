@@ -33,6 +33,8 @@ export const PERMISSIONS = {
     'compliance:manage':   ['admin'],
     'audit:view':          ['admin'],
     'access:approve':    ['admin'],
+    'ai:use':            ['admin', 'operator', 'viewer'],
+    'ai:manage':         ['admin'],
 }
 
 // The signed-in member's real access (custom role + cluster rules), loaded

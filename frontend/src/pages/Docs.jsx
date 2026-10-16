@@ -4,7 +4,7 @@ import {
     Bell, BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
     Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse, Search,
     LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass, ShieldCheck, Rocket,
-    HelpCircle, Lock, Settings as SettingsIcon, X
+    HelpCircle, Lock, Settings as SettingsIcon, X, Bot
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -141,6 +141,7 @@ const NAV = [
     ] },
     { title: 'Operations', items: [
         { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
+        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch' },
         { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
         { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review namespace approval two-person temporary elevation kubeconfig' },
@@ -662,6 +663,34 @@ export default function Docs() {
                         <P><B>Access review:</B> Team & Roles → <B>Access review</B> downloads a CSV of every member, on every cluster, with what they may do and why. Keep it as audit evidence (ISO 27001 access reviews). Every role and access change is also in the audit trail.</P>
                     </Section>
 
+                    <Section id="ai" Icon={Bot} color="text-violet-400" title="KubeEZ AI"
+                        intro="An AI assistant for your clusters — free on every plan. It runs on open-source models (on the KubeEZ server or inside your own cluster), or on your own API keys.">
+                        <H4>Set it up (Settings → AI)</H4>
+                        <Steps items={[
+                            <>Pick where the model runs. <B>Free and private:</B> the built-in server model, or the <B>KubeEZ AI</B> add-on on one of your clusters (cluster page → Add-ons; nothing leaves your network). <B>Your own:</B> an Ollama machine on your network, or a cloud API (OpenAI-compatible such as Groq or DeepSeek, Google Gemini, Anthropic Claude) with your key.</>,
+                            <>Settings → AI → <B>Add engine</B>, then <B>Test</B>. For Ollama engines, <B>Download model</B> fetches a model (e.g. <C>qwen2.5:3b</C>).</>,
+                            <>Optional: <B>Routing</B> — which engines do each job and in what order. Without it, every engine is tried in list order.</>,
+                            <>Use <B>Try it</B> to ask a question and see which engine answered.</>
+                        ]} />
+                        <H4>Why it does not let you down</H4>
+                        <Table head={['', '']} rows={[
+                            ['Fallbacks', 'If an engine is slow, down or gives a broken answer, the next engine answers. One that fails 3 times in a row is paused for 2 minutes.'],
+                            ['Time limits', 'Every engine has a time limit and one retry. Local engines answer one question at a time, so a busy model is never overloaded.'],
+                            ['Never invents', 'Answers must be based on the cluster data it is given; when that is not enough, it says what is missing.'],
+                            ['No answer at all', 'You still get the facts and KubeEZ’s own rule-based checks — never a blank screen.']
+                        ]} />
+                        <H4>Safety</H4>
+                        <Table head={['', '']} rows={[
+                            ['Secrets are masked', 'Passwords, tokens, keys, certificates and kubeconfigs are replaced before any model sees the data. E-mail and IP masking can be switched on.'],
+                            ['Trick text', 'Text inside logs or resources that tries to give the AI orders is marked as data and ignored, and flagged in the activity log.'],
+                            ['Kill switch', <><B>AI actions allowed</B> off = AI can only explain. It is in the audit trail.</>],
+                            ['Who decides', <><B>Suggest only</B>, <B>Ask first</B> (default — a person approves) or <B>Auto for low-risk</B>.</>],
+                            ['Who may use it', <>Permission <C>ai:use</C> (all built-in roles) and <C>ai:manage</C> for the settings (admins; can be given in a custom role).</>],
+                            ['Records', 'Every question is in Settings → AI → Activity (masked) and in the audit trail. API keys are stored encrypted and never shown again.']
+                        ]} />
+                        <Note>The server model has a daily allowance per workspace (Settings → AI). Your own engines — the add-on, Ollama or your API keys — have no KubeEZ limit.</Note>
+                    </Section>
+
                     <Section id="security" Icon={Lock} color="text-emerald-400" title="Security & Privacy"
                         intro="How KubeEZ protects your clusters and your data.">
                         <Table head={['', '']} rows={[
@@ -678,7 +707,8 @@ export default function Docs() {
                             ['Deploy, upgrade, scale, resume', '✓', '✓'],
                             ['Auto-healing & incidents', '✓', '✓'],
                             ['Compliance scan & audit trail', '✓', '✓'],
-                            ['Add-ons', 'Kubernetes Dashboard, Metrics Server', 'All add-ons, incl. the KubeEZ Explorer'],
+                            ['Add-ons', 'Kubernetes Dashboard, Metrics Server, KubeEZ AI', 'All add-ons, incl. the KubeEZ Explorer'],
+                            ['KubeEZ AI (own engines, fallbacks, safety)', '✓', '✓'],
                             ['Cluster snapshots, restore, offsite backup, disaster recovery', '—', '✓'],
                             ['Volume backups', '—', '✓'],
                             ['Compliance PDF, monthly reports, fixes, CERT-In report', '—', '✓'],

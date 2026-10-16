@@ -1,0 +1,158 @@
+import express from 'express'
+import { requirePermission } from '../middleware/authMiddleware.js'
+import { aiStore, TASKS, AUTONOMY } from '../services/ai/aiStore.js'
+import { KINDS, health, pullModel, serverModel, serverModelState } from '../services/ai/providers.js'
+import { checkProviderUrl } from '../services/ai/http.js'
+import { ask, routeFor, breakerState, queueState, serverAvailable, AiUnavailable } from '../services/ai/engine.js'
+import { canSeeCluster } from '../services/accessControl.js'
+import { clusterStore } from '../services/clusterStore.js'
+import { auditLog } from '../services/auditLog.js'
+
+// KubeEZ AI: engines (providers), routing per task, safety switches, a test
+// box and the activity log. Mounted at /api/ai behind requireAuth.
+const router = express.Router()
+const fail = (res, e) => res.status(e.status || (e.code === 'BAD_URL' ? 400 : 500)).json({ error: e.message, code: e.code, attempts: e.attempts })
+const bad = (m) => Object.assign(new Error(m), { status: 400 })
+const SERVER = () => serverAvailable() ? { id: 'server', name: 'KubeEZ server model', kind: 'server', model: serverModel().model, builtin: true, enabled: true, state: { ...serverModelState } } : null
+const pulls = new Map()   // `${org}:${provider}` → { model, status, error, at }
+
+function cleanProvider(input, orgClusterIds, partial = false) {
+    const out = {}
+    if (!partial || input.name !== undefined) {
+        out.name = String(input.name || '').trim().slice(0, 60)
+        if (out.name.length < 2) throw bad('Give the engine a name')
+    }
+    if (!partial) {
+        if (!KINDS[input.kind] || input.kind === 'server') throw bad('Unknown engine type')
+        out.kind = input.kind
+    }
+    const kind = input.kind
+    if (input.baseUrl !== undefined && input.baseUrl !== null && input.baseUrl !== '') { checkProviderUrl(input.baseUrl); out.baseUrl = String(input.baseUrl).trim().replace(/\/+$/, '') }
+    if (!partial && KINDS[kind]?.needsUrl && !out.baseUrl) throw bad('This engine needs its address')
+    if (input.model !== undefined) {
+        const m = String(input.model || '').trim()
+        if (m && !/^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,120}$/.test(m)) throw bad('Model name: letters, numbers and . _ : / @ -')
+        out.model = m || null
+    }
+    if (!partial && !out.model && kind !== 'cluster') throw bad('Which model? (e.g. qwen2.5:3b, gpt-4.1-mini, gemini-2.5-flash, claude-opus-5)')
+    if (input.clusterId !== undefined) {
+        if (kind === 'cluster' || input.clusterId) {
+            if (!orgClusterIds.includes(input.clusterId)) throw bad('Pick one of your clusters')
+            out.clusterId = input.clusterId
+        }
+    }
+    if (!partial && kind === 'cluster' && !out.clusterId) throw bad('Pick the cluster where the KubeEZ AI add-on runs')
+    if (input.apiKey !== undefined) {
+        const k = String(input.apiKey || '').trim()
+        if (k.length > 500) throw bad('That API key is too long')
+        out.apiKey = k
+    }
+    if (!partial && KINDS[kind]?.needsKey && !out.apiKey) throw bad('This engine needs an API key')
+    if (input.enabled !== undefined) out.enabled = !!input.enabled
+    return out
+}
+
+const orgClusters = async (req) => (await clusterStore.getClusters().catch(() => [])).filter(c => c.orgId === req.user.orgId)
+
+// Everything Settings → AI shows
+router.get('/', requirePermission('ai:use'), async (req, res) => {
+    const s = aiStore.get(req.user.orgId)
+    const server = SERVER()
+    const engines = [...s.providers.map(p => aiStore.view(p)), ...(server ? [server] : [])].map(p => ({
+        ...p, breaker: breakerState(req.user.orgId, p), queue: queueState(req.user.orgId, p), pull: pulls.get(`${req.user.orgId}:${p.id}`) || null
+    }))
+    res.json({
+        enabled: s.enabled, autonomy: s.autonomy, actionsEnabled: s.actionsEnabled, maskEmails: s.maskEmails, maskIps: s.maskIps,
+        dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), language: s.language,
+        engines, routes: s.routes, effectiveRoutes: Object.fromEntries(Object.keys(TASKS).map(t => [t, routeFor(req.user.orgId, t).map(p => p.id)])),
+        tasks: TASKS, kinds: KINDS, autonomyLevels: AUTONOMY, server: server ? { model: server.model } : null,
+        clusters: (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => ({ id: c.id, name: c.clusterName, hasAi: !!c.addons?.['kubeez-ai'] }))
+    })
+})
+
+router.put('/settings', requirePermission('ai:manage'), (req, res) => {
+    try {
+        const b = req.body || {}
+        const s = aiStore.get(req.user.orgId)
+        const patch = {}
+        if (b.enabled !== undefined) patch.enabled = !!b.enabled
+        if (b.actionsEnabled !== undefined) patch.actionsEnabled = !!b.actionsEnabled
+        if (b.maskEmails !== undefined) patch.maskEmails = !!b.maskEmails
+        if (b.maskIps !== undefined) patch.maskIps = !!b.maskIps
+        if (b.autonomy !== undefined) { if (!AUTONOMY.includes(b.autonomy)) throw bad('Autonomy: suggest, approve or auto'); patch.autonomy = b.autonomy }
+        if (b.language !== undefined) { if (!['en', 'hi', 'hinglish'].includes(b.language)) throw bad('Language: en, hi or hinglish'); patch.language = b.language }
+        if (b.dailyLimit !== undefined) { const n = Number(b.dailyLimit); if (!Number.isInteger(n) || n < 0 || n > 10000) throw bad('Daily limit: 0 – 10000'); patch.dailyLimit = n }
+        if (b.routes !== undefined) {
+            const ids = new Set([...s.providers.map(p => p.id), 'server'])
+            const routes = {}
+            for (const [task, list] of Object.entries(b.routes || {})) {
+                if (!TASKS[task] && task !== 'default') continue
+                if (!Array.isArray(list) || list.length > 10 || list.some(id => !ids.has(id))) throw bad(`Route for ${task}: pick engines from your list`)
+                routes[task] = [...new Set(list)]
+            }
+            patch.routes = routes
+        }
+        const out = aiStore.save(req.user.orgId, patch)
+        if (patch.actionsEnabled === false) auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.actions_stopped', detail: 'Kill switch: AI actions stopped' })
+        res.json({ ...out, providers: out.providers.map(p => aiStore.view(p)) })
+    } catch (e) { fail(res, e) }
+})
+
+router.post('/providers', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const p = aiStore.addProvider(req.user.orgId, cleanProvider(req.body || {}, (await orgClusters(req)).map(c => c.id)))
+        res.json(aiStore.view(p))
+    } catch (e) { fail(res, e) }
+})
+router.put('/providers/:id', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const cur = aiStore.get(req.user.orgId).providers.find(p => p.id === req.params.id)
+        if (!cur) return res.status(404).json({ error: 'AI engine not found' })
+        const p = aiStore.updateProvider(req.user.orgId, req.params.id, cleanProvider({ ...req.body, kind: cur.kind }, (await orgClusters(req)).map(c => c.id), true))
+        res.json(aiStore.view(p))
+    } catch (e) { fail(res, e) }
+})
+router.delete('/providers/:id', requirePermission('ai:manage'), (req, res) => {
+    aiStore.removeProvider(req.user.orgId, req.params.id)
+    res.json({ success: true })
+})
+
+const findEngine = (req) => req.params.id === 'server' ? SERVER() : aiStore.get(req.user.orgId).providers.find(p => p.id === req.params.id)
+
+// Is it reachable, is the model there?
+router.post('/providers/:id/test', requirePermission('ai:manage'), async (req, res) => {
+    const p = findEngine(req)
+    if (!p) return res.status(404).json({ error: 'AI engine not found' })
+    res.json(await health(p, p.builtin ? null : aiStore.keyOf(p)))
+})
+
+// Download a model into an Ollama engine (runs in the background; the list shows progress)
+router.post('/providers/:id/pull', requirePermission('ai:manage'), async (req, res) => {
+    const p = findEngine(req)
+    if (!p) return res.status(404).json({ error: 'AI engine not found' })
+    const model = String(req.body?.model || p.model || '').trim()
+    const k = `${req.user.orgId}:${p.id}`
+    if (pulls.get(k)?.status === 'downloading') return res.status(409).json({ error: 'A download is already running for this engine' })
+    pulls.set(k, { model, status: 'downloading', at: new Date().toISOString() })
+    pullModel(p, model).then(() => pulls.set(k, { model, status: 'done', at: new Date().toISOString() }))
+        .catch(e => pulls.set(k, { model, status: 'failed', error: e.message, at: new Date().toISOString() }))
+    auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.model_download', detail: `${p.name}: ${model}` })
+    res.status(202).json({ status: 'downloading', model })
+})
+
+// The "Try it" box: a question with no cluster data
+router.post('/ask', requirePermission('ai:use'), async (req, res) => {
+    try {
+        const question = String(req.body?.question || '').trim()
+        if (question.length < 3) throw bad('Ask a question')
+        const r = await ask(req.user, { task: 'chat', purpose: 'try it', question, maxTokens: 800 })
+        res.json({ answer: r.text, provider: r.provider, model: r.model, ms: r.ms, attempts: r.attempts, masked: r.masked, traceId: r.traceId })
+    } catch (e) { if (e instanceof AiUnavailable) return res.status(e.status || 503).json({ error: e.message, code: e.code, attempts: e.attempts }); fail(res, e) }
+})
+
+// What the AI did (masked) — admins
+router.get('/activity', requirePermission('ai:manage'), (req, res) => {
+    res.json({ traces: aiStore.traces(req.user.orgId).slice(0, Math.min(300, Number(req.query.limit) || 100)) })
+})
+
+export default router

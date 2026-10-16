@@ -5,6 +5,7 @@
 import { CORE_ADDONS } from './addons/core.js'
 import { EXTRA_ADDONS } from './addons/extras.js'
 import { PLATFORM_ADDONS } from './addons/platform.js'
+import { AI_ADDONS } from './addons/ai.js'
 import { minorOf, tagVersion, SAMPLE_CTX, sampleSettings } from './addons/common.js'
 import { addonVersionService, cmpVersion } from '../services/addonVersions.js'
 
@@ -12,7 +13,7 @@ export { SYSTEM_NAMESPACES } from './addons/common.js'
 export { parseAddressPool, KYVERNO_POLICIES, GRAFANA_DATASOURCES_WITH_LOKI, LOKI_DATASOURCE_CM } from './addons/extras.js'
 
 // Order = the order on the cluster page
-export const HELM_ADDONS = { ...CORE_ADDONS, ...EXTRA_ADDONS, ...PLATFORM_ADDONS }
+export const HELM_ADDONS = { ...CORE_ADDONS, ...EXTRA_ADDONS, ...PLATFORM_ADDONS, ...AI_ADDONS }
 
 export const HELM_ADDON_KEYS = Object.keys(HELM_ADDONS)
 export const isHelmAddon = (key) => Object.prototype.hasOwnProperty.call(HELM_ADDONS, key)
