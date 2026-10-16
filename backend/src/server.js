@@ -81,6 +81,7 @@ import terminalRoutes from './routes/terminal.js'
 import approvalRoutes from './routes/approvals.js'
 import aiRoutes from './routes/ai.js'
 import aiOpsRoutes, { actionsRouter as aiActionsRoutes } from './routes/aiOps.js'
+import aiQualityRoutes from './routes/aiQuality.js'
 import { startApprovalSweeper } from './services/approvals.js'
 import { terminalAccess, terminalRecorder } from './services/terminalAccess.js'
 import { openNodeShell } from './services/nodeShell.js'
@@ -300,6 +301,7 @@ app.use('/api/compliance', requireAuth, complianceRoutes)   // Compliance Center
 app.use('/api/terminal', requireAuth, terminalRoutes)       // just-in-time terminal access + recordings
 app.use('/api/approvals', requireAuth, approvalRoutes)      // two-person approval + temporary elevation
 app.use('/api/ai', requireAuth, aiRoutes)                    // KubeEZ AI: engines, routing, safety, activity
+app.use('/api/ai', requireAuth, aiQualityRoutes)             // quality test, model comparison, feedback
 app.use('/api/ai', requireAuth, aiOpsRoutes)                 // Install Doctor, incident explainer, What changed?
 app.use('/api/clusters', requireAuth, aiActionsRoutes)       // safe fixes with dry-run and undo
 app.use('/api/clusters', requireAuth, installationRoutes)

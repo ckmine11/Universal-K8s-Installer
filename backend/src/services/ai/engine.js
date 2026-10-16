@@ -73,6 +73,8 @@ export function parseJson(text) {
 
 /**
  * ask(user, { task, purpose, system, data: [{ label, text }], question, json, validate, maxTokens })
+ * Quality tests: { only: engine } asks exactly that engine (no fallback, no breaker,
+ * no daily allowance), { trace: false } keeps it out of the activity log.
  *   → { text, json?, provider, model, ms, attempts, masked, suspicious, traceId }
  */
 export async function ask(user, opts) {
@@ -104,13 +106,13 @@ export async function ask(user, opts) {
     const messages = [{ role: 'user', content }]
 
     // 3–4) engines in order, with retries, breaker, queue and validation
-    const route = routeFor(orgId, task)
+    const route = opts.only ? [opts.only] : routeFor(orgId, task)
     if (!route.length) throw new AiUnavailable('No AI engine is set up — add one in Settings → AI, or install the KubeEZ AI add-on')
     const attempts = []
     let result = null
     for (const p of route) {
-        if (breakerState(orgId, p).open) { attempts.push({ provider: p.name, kind: p.kind, skipped: 'failing — paused for a moment' }); continue }
-        if (p.kind === 'server' && aiStore.usedToday(orgId) >= s.dailyLimit) { attempts.push({ provider: p.name, kind: p.kind, skipped: `daily limit (${s.dailyLimit}) reached` }); continue }
+        if (!opts.only && breakerState(orgId, p).open) { attempts.push({ provider: p.name, kind: p.kind, skipped: 'failing — paused for a moment' }); continue }
+        if (!opts.only && p.kind === 'server' && aiStore.usedToday(orgId) >= s.dailyLimit) { attempts.push({ provider: p.name, kind: p.kind, skipped: `daily limit (${s.dailyLimit}) reached` }); continue }
         const local = LOCAL_KINDS.has(p.kind)
         const timeoutMs = opts.timeoutMs || (local ? 150000 : 60000)
         let release
@@ -128,13 +130,14 @@ export async function ask(user, opts) {
                         if (problem) { attempts.push({ provider: p.name, kind: p.kind, model: r.model, ms: Date.now() - a0, error: `answer rejected: ${problem}` }); if (attempt === 1) continue; throw Object.assign(new Error(`answer rejected: ${problem}`), { code: 'INVALID' }) }
                     }
                     attempts.push({ provider: p.name, kind: p.kind, model: r.model, ms: Date.now() - a0, ok: true, tokensIn: r.tokensIn, tokensOut: r.tokensOut })
-                    noteResult(orgId, p, true)
-                    if (p.kind === 'server') aiStore.countUse(orgId)
-                    result = { ...r, json, provider: p.name, providerKind: p.kind }
+                    if (!opts.only) { noteResult(orgId, p, true); if (p.kind === 'server') aiStore.countUse(orgId) }
+                    result = { ...r, json, provider: p.name, providerId: p.id, providerKind: p.kind }
                     break
                 } catch (e) {
                     if (e.code !== 'INVALID') attempts.push({ provider: p.name, kind: p.kind, ms: Date.now() - a0, error: e.message, code: e.code })
-                    if (!(e.retryable && attempt === 1)) { if (e.code !== 'INVALID') noteResult(orgId, p, false); break }
+                    // a local model that ran out of time is as slow the second time — go to the next engine
+                    const retry = e.retryable && attempt === 1 && !(local && e.code === 'TIMEOUT')
+                    if (!retry) { if (e.code !== 'INVALID' && !opts.only) noteResult(orgId, p, false); break }
                 }
             }
         } finally { release() }
@@ -145,17 +148,17 @@ export async function ask(user, opts) {
     const ms = Date.now() - t0
     const trace = {
         id: traceId, at: new Date().toISOString(), user: user.username, task, purpose: opts.purpose || task,
-        ok: !!result, ms, provider: result?.provider || null, model: result?.model || null, attempts,
+        ok: !!result, ms, provider: result?.provider || null, providerId: result?.providerId || null, model: result?.model || null, attempts,
         masked, maskedKinds: kinds, suspicious: hits.length > 0, injectionHits: [...new Set(hits)].slice(0, 5),
         promptHash: createHash('sha256').update(system + content).digest('hex').slice(0, 16),
         question: q.text.slice(0, 500), answer: result ? String(result.text).slice(0, 2000) : null
     }
-    aiStore.addTrace(orgId, trace)
-    auditLog.record({ orgId, actor: user, action: 'ai.ask', ok: !!result, target: opts.clusterId ? { clusterId: opts.clusterId, clusterName: opts.clusterName } : null,
+    if (opts.trace !== false) aiStore.addTrace(orgId, trace)
+    if (opts.trace !== false) auditLog.record({ orgId, actor: user, action: 'ai.ask', ok: !!result, target: opts.clusterId ? { clusterId: opts.clusterId, clusterName: opts.clusterName } : null,
         detail: `${opts.purpose || task} — ${result ? `${result.provider} (${result.model}), ${ms} ms` : 'no engine answered'}${masked ? `, ${masked} secret(s) masked` : ''}${hits.length ? ', trick text flagged' : ''}` })
 
     if (!result) throw new AiUnavailable(attempts.some(a => a.skipped?.startsWith('daily limit')) && attempts.every(a => a.skipped || a.error) ? 'Today\'s AI limit is used up — tomorrow it resets, or add your own engine in Settings → AI' : 'No AI engine could answer right now', attempts)
-    return { text: result.text, json: result.json, provider: result.provider, providerKind: result.providerKind, model: result.model, ms, attempts, masked, suspicious: hits.length > 0, traceId }
+    return { text: result.text, json: result.json, provider: result.provider, providerId: result.providerId, providerKind: result.providerKind, model: result.model, ms, attempts, masked, suspicious: hits.length > 0, traceId }
 }
 
 /** Kill switch + autonomy level for AI-proposed actions (used by the action features). */

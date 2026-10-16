@@ -7,6 +7,7 @@ import { ask, routeFor, breakerState, queueState, serverAvailable, AiUnavailable
 import { canSeeCluster } from '../services/accessControl.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { auditLog } from '../services/auditLog.js'
+import { latestByEngine, feedbackStats } from '../services/ai/quality.js'
 
 // KubeEZ AI: engines (providers), routing per task, safety switches, a test
 // box and the activity log. Mounted at /api/ai behind requireAuth.
@@ -58,9 +59,16 @@ const orgClusters = async (req) => (await clusterStore.getClusters().catch(() =>
 router.get('/', requirePermission('ai:use'), async (req, res) => {
     const s = aiStore.get(req.user.orgId)
     const server = SERVER()
-    const engines = [...s.providers.map(p => aiStore.view(p)), ...(server ? [server] : [])].map(p => ({
-        ...p, breaker: breakerState(req.user.orgId, p), queue: queueState(req.user.orgId, p), pull: pulls.get(`${req.user.orgId}:${p.id}`) || null
-    }))
+    const latest = latestByEngine(req.user.orgId), fb = feedbackStats(req.user.orgId)
+    const engines = [...s.providers.map(p => aiStore.view(p)), ...(server ? [server] : [])].map(p => {
+        const q = latest[p.id]
+        return {
+            ...p, breaker: breakerState(req.user.orgId, p), queue: queueState(req.user.orgId, p), pull: pulls.get(`${req.user.orgId}:${p.id}`) || null,
+            // the last quality test — and whether the model changed since (then it is untested)
+            quality: q ? { score: q.summary.score, at: q.finishedAt, stale: (q.engineModel || null) !== (p.model || null) } : null,
+            feedback: fb[p.id] || null
+        }
+    })
     res.json({
         enabled: s.enabled, autonomy: s.autonomy, actionsEnabled: s.actionsEnabled, maskEmails: s.maskEmails, maskIps: s.maskIps,
         dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), language: s.language,

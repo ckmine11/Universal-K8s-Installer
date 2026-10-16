@@ -141,7 +141,7 @@ const NAV = [
     ] },
     { title: 'Operations', items: [
         { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
-        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch explain doctor incident what changed rollback undo dry-run' },
+        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch explain doctor incident what changed rollback undo dry-run quality test exam compare feedback' },
         { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
         { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review namespace approval two-person temporary elevation kubeconfig' },
@@ -702,6 +702,14 @@ export default function Docs() {
                             <><B>Undo</B> (on the incident, or Cluster → Changes, for 24 hours) scales back or rolls forward again. A restart or a deleted pod needs no undo.</>
                         ]} />
                         <Note>Who can apply fixes: members with <C>incident:act</C> on that cluster, only in their namespaces. The kill switch or <B>Suggest only</B> (Settings → AI) stops all of them. Every fix and undo is in the audit trail.</Note>
+                        <H4>Quality: test and compare engines</H4>
+                        <P>Settings → AI → <B>Quality</B> gives every engine the same exam: 16 real-looking failures (out of memory, a wrong image tag, a missing registry login, a failed kubeadm preflight, an expired certificate…) with the same prompts, masking and checks as the real features. Each answer is scored on the right cause (50), proof that is really in the data (20), a usable answer with steps (20) and nothing wrong or unsafe (10). Three traps check that an engine ignores orders hidden in a log, admits when there is too little data, and never repeats a password.</P>
+                        <Steps items={[
+                            <>Tick the engines and click <B>Test</B>. It runs in the background (a local model on CPU needs a few minutes) and does not use the daily allowance.</>,
+                            <>The table compares score, right cause, real proof, traps, speed and what members said. KubeEZ recommends one — <B>Use it first for Explain</B> puts it first; the others stay as fallbacks.</>,
+                            <>When an engine’s model changes, its card says <B>model changed — test again</B>, so a worse version never goes unnoticed.</>
+                        ]} />
+                        <P><B>Was this right?</B> Every AI answer has 👍 / 👎 (with a reason such as “Made something up”). The ratings show in Activity, in the Quality table, and on an engine’s card when members mark many of its answers wrong.</P>
                         <Note>The server model has a daily allowance per workspace (Settings → AI). Your own engines — the add-on, Ollama or your API keys — have no KubeEZ limit.</Note>
                     </Section>
 

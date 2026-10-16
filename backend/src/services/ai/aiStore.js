@@ -66,5 +66,6 @@ export const aiStore = {
         try { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAtomicSync(TRACES, JSON.stringify(all)) } catch { }
     },
     traces(orgId) { return (loadTraces()[orgId || '_'] || []) },
+    saveTraces() { try { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAtomicSync(TRACES, JSON.stringify(loadTraces())) } catch { } },
     _reset() { cache = null; traces = null }
 }

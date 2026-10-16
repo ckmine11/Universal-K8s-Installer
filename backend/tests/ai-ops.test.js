@@ -15,7 +15,7 @@ delete process.env.KUBEEZ_AI_URL
 const prevMode = process.env.KUBEEZ_MODE
 process.env.KUBEEZ_MODE = 'selfhosted'
 const { parseClusterChanges, kubeezChanges, collectChanges } = await import('../src/services/ai/changes.js')
-const { checkEvidence, allowedActions, pickAction, explainInstall, explainIncident, installFacts, asList } = await import('../src/services/ai/doctor.js')
+const { checkEvidence, allowedActions, pickAction, explainInstall, explainIncident, installFacts, asList, finish, screenSteps, shape } = await import('../src/services/ai/doctor.js')
 const { planAction, applyAction, undoAction, cleanSpec, actionLog } = await import('../src/services/ai/actions.js')
 const { aiStore } = await import('../src/services/ai/aiStore.js')
 const { auditLog } = await import('../src/services/auditLog.js')
@@ -186,6 +186,20 @@ describe('the doctor', () => {
         const src = 'line one\n[ERROR] kubelet: failed to pull image "pause:3.9": i/o timeout\nline three'
         const r = checkEvidence(['failed to pull image "pause:3.9": i/o timeout', 'ERROR]   KUBELET:  Failed to pull', 'containerd crashed with code 137'], src)
         assert.equal(r.kept.length, 2); assert.equal(r.dropped.length, 1)
+    })
+
+    test('steps that would damage the cluster never reach the user; risky ones are marked', () => {
+        const a = finish({ summary: 'config file missing', cause: 'no config.yaml', evidence: [], fix: ['Mount the ConfigMap', 'run: kubectl delete namespace kube-system', 'sudo kubeadm reset -f', 'kubectl delete pods --all -A', 'rm -rf /'], confidence: 'high' }, 'x')
+        assert.deepEqual(a.fix, ['Mount the ConfigMap', 'sudo kubeadm reset -f'])
+        assert.deepEqual(a.blockedSteps, ['run: kubectl delete namespace kube-system', 'kubectl delete pods --all -A', 'rm -rf /'])
+        assert.deepEqual(a.cautionSteps, ['sudo kubeadm reset -f'])
+        assert.deepEqual(screenSteps(['kubectl rollout undo deployment/web -n shop', 'sudo swapoff -a', 'kubectl delete pod web-1 -n shop']).removed, [])
+        assert.deepEqual(screenSteps(['etcdctl del --prefix /registry', 'iptables -F', 'mkfs.ext4 /dev/sdb']).removed.length, 3)
+    })
+
+    test('an answer that copies the format description is rejected (one correction, then the next engine)', () => {
+        assert.match(shape({ summary: 'Workload not available', cause: 'the most likely root cause', fix: ['Short concrete steps, in order', 'commands in backticks'] }), /copied the format/)
+        assert.equal(shape({ summary: 'billing has 0 replicas', cause: 'unknown — events needed', fix: ['kubectl describe deployment billing'] }), null)
     })
 
     test('a small model\'s loose format is still used (steps as text, steps as objects)', () => {

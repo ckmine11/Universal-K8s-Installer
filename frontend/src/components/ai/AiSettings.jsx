@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
+import { GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
+import QualityPanel from './QualityPanel'
+import Feedback from './Feedback'
 
 // Settings → AI: the engines (models) KubeEZ AI may use, which engine does
 // which job (with fallbacks), the safety switches, a test box and the log.
@@ -207,6 +209,7 @@ function TryIt() {
                         {r.masked > 0 && <span className="kz-chip !text-amber-300"><EyeOff className="w-3 h-3" />{r.masked} secret(s) masked before sending</span>}
                         {(r.attempts || []).filter(a => !a.ok).map((a, i) => <span key={i} className="kz-chip !text-slate-400" title={a.error || a.skipped}>{a.provider}: {a.skipped || 'failed'} → next</span>)}
                     </div>
+                    {!r.error && <div className="mt-2"><Feedback traceId={r.traceId} /></div>}
                 </div>
             )}
         </div>
@@ -221,7 +224,7 @@ function Activity() {
     return (
         <div className="overflow-x-auto">
             <table className="w-full text-xs">
-                <thead className="text-left text-slate-500"><tr><th className="py-2 pr-3">When</th><th className="pr-3">Who</th><th className="pr-3">For</th><th className="pr-3">Engine</th><th className="pr-3">Time</th><th>Notes</th></tr></thead>
+                <thead className="text-left text-slate-500"><tr><th className="py-2 pr-3">When</th><th className="pr-3">Who</th><th className="pr-3">For</th><th className="pr-3">Engine</th><th className="pr-3">Time</th><th className="pr-3">Rated</th><th>Notes</th></tr></thead>
                 <tbody>
                     {list.map(t => (
                         <tr key={t.id} className="border-t border-white/5 text-slate-300 align-top">
@@ -230,6 +233,7 @@ function Activity() {
                             <td className="pr-3">{t.purpose}</td>
                             <td className="pr-3">{t.ok ? `${t.provider} (${t.model})` : <span className="text-red-300">no answer</span>}</td>
                             <td className="pr-3 whitespace-nowrap">{(t.ms / 1000).toFixed(1)} s</td>
+                            <td className="pr-3" title={t.feedback ? `${t.feedback.by}${t.feedback.reason ? ` — ${t.feedback.reason}` : ''}${t.feedback.comment ? `: ${t.feedback.comment}` : ''}` : ''}>{t.feedback ? (t.feedback.rating === 'up' ? <ThumbsUp className="w-3.5 h-3.5 text-emerald-300" /> : <ThumbsDown className="w-3.5 h-3.5 text-red-300" />) : ''}</td>
                             <td className="space-x-1">
                                 {t.attempts?.length > 1 && <span className="kz-chip" title={t.attempts.map(a => `${a.provider}: ${a.ok ? 'ok' : a.skipped || a.error}`).join('\n')}>{t.attempts.length} attempts</span>}
                                 {t.masked > 0 && <span className="kz-chip !text-amber-300">{t.masked} masked</span>}
@@ -342,6 +346,11 @@ export default function AiSettings() {
                                     {!e.builtin && <Toggle on={e.enabled !== false} label={`${e.name} on`} onChange={v => toggleEngine(e, v)} />}
                                 </div>
                                 {e.kind === 'server' && e.state?.status === 'downloading' && <p className="text-[11px] text-amber-300/90">First start: the server downloads {e.model} once (a few minutes).</p>}
+                                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                    {e.quality ? <span className={`kz-chip ${e.quality.score >= 80 ? '!text-emerald-300' : e.quality.score >= 60 ? '!text-amber-300' : '!text-red-300'}`} title="Last quality test (Quality below)"><GraduationCap className="w-3 h-3" />{e.quality.score}/100</span> : <span className="kz-chip !text-slate-500">not tested yet</span>}
+                                    {e.quality?.stale && <span className="kz-chip !text-amber-300">model changed — test again</span>}
+                                    {e.feedback && e.feedback.up + e.feedback.down >= 5 && e.feedback.rate < 60 && <span className="kz-chip !text-red-300" title={Object.entries(e.feedback.reasons).map(([k, v]) => `${k}: ${v}`).join(', ')}><ThumbsDown className="w-3 h-3" />members marked {100 - e.feedback.rate}% of its answers wrong</span>}
+                                </div>
                                 {e.queue?.busy > 0 && <p className="text-[11px] text-slate-500">Answering now{e.queue.waiting ? ` · ${e.queue.waiting} waiting` : ''}</p>}
                                 {t && <p className={`text-[11px] flex items-center gap-1.5 ${t.ok ? 'text-emerald-300' : 'text-red-300'}`}>{t.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}{t.detail}{t.ms != null ? ` (${t.ms} ms)` : ''}</p>}
                                 <div className="flex flex-wrap gap-2">
@@ -408,6 +417,12 @@ export default function AiSettings() {
                     )}
                 </div>
             </Section>
+
+            {data.engines.length > 0 && (
+                <Section icon={GraduationCap} title="Quality" hint="Test your engines on real-looking Kubernetes failures and compare them — so a weak model or a worse new version never goes unnoticed.">
+                    <QualityPanel settings={data} onRoutesSaved={load} />
+                </Section>
+            )}
 
             <Section icon={Send} title="Try it" hint="Ask anything — it goes through the same routing, masking and fallbacks as the real features.">
                 <TryIt />

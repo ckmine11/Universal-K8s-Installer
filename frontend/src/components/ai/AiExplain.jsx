@@ -2,16 +2,17 @@ import { useState } from 'react'
 import { Sparkles, Loader2, RefreshCw, Quote, ListChecks, GitCommitHorizontal, AlertTriangle, EyeOff, HelpCircle } from 'lucide-react'
 import { aiJob } from './aiJob'
 import FixPreview from './FixPreview'
+import Feedback from './Feedback'
 
 // "Explain with AI" for a failed job or an incident. Shows the cause, the
 // proof (lines checked against the real data), the steps, what changed
 // before it, and — for incidents — a fix that can be previewed and applied.
 const CONF = { high: ['High confidence', 'text-emerald-300 border-emerald-400/30'], medium: ['Medium confidence', 'text-amber-300 border-amber-400/30'], low: ['Low confidence — check it', 'text-red-300 border-red-400/30'] }
 
-function Steps({ items }) {
+function Steps({ items, caution = [] }) {
     // `code` in backticks becomes monospace
     const fmt = (s) => s.split(/(`[^`]+`)/g).map((p, i) => p.startsWith('`') && p.endsWith('`') ? <code key={i} className="rounded bg-black/40 px-1 py-0.5 font-mono text-[11px] text-blue-200 break-all">{p.slice(1, -1)}</code> : p)
-    return <ol className="mt-1.5 space-y-1.5 list-decimal list-inside text-xs text-slate-300 leading-relaxed">{items.map((s, i) => <li key={i}>{fmt(s)}</li>)}</ol>
+    return <ol className="mt-1.5 space-y-1.5 list-decimal list-inside text-xs text-slate-300 leading-relaxed">{items.map((s, i) => <li key={i}>{fmt(s)}{caution.includes(s) && <span className="block ml-4 mt-0.5 text-[11px] text-red-300">⚠ Destroys data or setup on that machine — only if it is not part of a working cluster, and after a snapshot.</span>}</li>)}</ol>
 }
 
 export default function AiExplain({ url, label = 'Explain with AI', hint, clusterId, incidentId, onFallback }) {
@@ -71,7 +72,8 @@ export default function AiExplain({ url, label = 'Explain with AI', hint, cluste
                 </div>
             )}
             {a.unverified > 0 && <p className="text-[11px] text-amber-300/80">{a.unverified} quoted line(s) were not in the data and were removed.</p>}
-            {a.fix?.length > 0 && <div><p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400"><ListChecks className="w-3.5 h-3.5" /> What to do</p><Steps items={a.fix} /></div>}
+            {a.fix?.length > 0 && <div><p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400"><ListChecks className="w-3.5 h-3.5" /> What to do</p><Steps items={a.fix} caution={a.cautionSteps || []} /></div>}
+            {a.blockedSteps?.length > 0 && <p className="flex items-start gap-1.5 text-[11px] text-red-300"><AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> KubeEZ removed {a.blockedSteps.length} step(s) that would damage the cluster{engine.suspicious ? ' — the data contained text trying to give the AI orders' : ''}. Do not run: <code className="font-mono break-all">{a.blockedSteps.join(' · ')}</code></p>}
             {a.action && clusterId && (canAct ? <FixPreview clusterId={clusterId} spec={a.action} incidentId={incidentId} /> : <p className="text-[11px] text-slate-500">Suggested fix: {a.action.type} {a.action.kind}/{a.action.name} — someone who may act on incidents can apply it.</p>)}
             {a.missing && <p className="flex items-start gap-1.5 text-[11px] text-slate-500"><HelpCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> To be sure: {a.missing}</p>}
             {changes?.length > 0 && !a.change && (
@@ -86,6 +88,7 @@ export default function AiExplain({ url, label = 'Explain with AI', hint, cluste
                 {engine.suspicious && <span className="text-amber-300">trick text in the data was ignored</span>}
                 {freshError && <span>live cluster data: {freshError}</span>}
             </p>
+            <Feedback key={engine.traceId} traceId={engine.traceId} />
         </div>
     )
 }

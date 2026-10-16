@@ -162,6 +162,7 @@ describe('the engine', () => {
             const r = await ask(USER(org), { question: 'quick?', timeoutMs: 300 })
             assert.equal(r.provider, 'Slow')
             assert.ok(Date.now() - t0 < 2500, 'no hang')
+            assert.equal(hang.seen.length, 1, 'a local model that timed out is not asked again — the next engine answers')
             aiStore.save(org, { routes: { chat: [s.id] } })
             const all = await Promise.all([1, 2, 3].map(() => ask(USER(org), { task: 'chat', question: 'in a queue?' })))
             assert.equal(all.every(x => x.text === 'slow ok'), true)

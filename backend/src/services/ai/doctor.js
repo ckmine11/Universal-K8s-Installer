@@ -11,6 +11,32 @@ import { ACTION_TYPES } from './actions.js'
 import { changesText } from './changes.js'
 
 const CONFIDENCE = ['high', 'medium', 'low']
+// a good answer needs ~250–350 tokens; a tight budget stops a rambling small model sooner
+export const TOKENS = { install: 600, incident: 700 }
+
+// "Never makes it worse": steps that destroy a cluster or its data are never shown
+// as advice (a model can be tricked by text in a log, or simply be wrong)
+const DANGEROUS = [
+    /kubectl\s+delete\s+(ns|namespaces?)\s+(kube-system|kube-public|kube-node-lease|default)\b/i,
+    /kubectl\s+delete\s+\S+.*\s(--all\b|-A\b|--all-namespaces\b)/i,
+    /kubectl\s+delete\s+(crds?|customresourcedefinitions?|pv|persistentvolumes?)\b.*--all/i,
+    /\brm\s+-[a-z]*r[a-z]*f?[a-z]*\s+(\/\s|\/$|\/\*|\/(etc|root|home|usr|boot)\b)/i,
+    /\betcdctl\b.*\b(del|delete)\b/i,
+    /\b(mkfs(\.\w+)?|wipefs)\b|\bdd\s+if=.*\bof=\/dev\//i,
+    /\biptables\s+(-F|--flush)\b/i,
+    /\bdrop\s+(database|schema)\b/i,
+    /\bhelm\s+uninstall\b.*\s(-n|--namespace)\s+kube-system\b/i
+]
+// sometimes right (clearing a half-finished install) but destroys a working node — shown with a warning
+const CAUTION = [/\bkubeadm\s+reset\b/i, /\brm\s+-[a-z]*r[a-z]*\s+\/var\/lib\/(etcd|kubelet|containerd)\b/i, /kubectl\s+delete\s+(node|pvc|pv|statefulset|namespace|ns)\b/i, /\bhelm\s+uninstall\b/i]
+export function screenSteps(steps) {
+    const kept = [], removed = [], caution = []
+    for (const s of steps) {
+        if (DANGEROUS.some(re => re.test(s))) removed.push(s)
+        else { kept.push(s); if (CAUTION.some(re => re.test(s))) caution.push(s) }
+    }
+    return { kept, removed, caution }
+}
 const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 
 /** Keep only quotes that appear in the source (whitespace/case-insensitive). */
@@ -32,15 +58,21 @@ export function asList(v) {
     const parts = v.split(/\n+|(?:^|\s)\d+[.)]\s+|;\s+/).map(s => s.replace(/^[-*•]\s*/, '').trim()).filter(Boolean)
     return parts.length ? parts : [v.trim()]
 }
-const shape = (j) => {
+// small models sometimes copy the format's own descriptions back as the answer
+const PLACEHOLDERS = [/what happened, in one or two plain sentences/i, /^the most likely root cause\.?$/i, /short concrete steps,? in order/i, /commands in backticks/i, /lines copied exactly from the data/i, /what information would make you certain/i]
+const parroted = (v) => asList(Array.isArray(v) ? v : [v]).some(s => PLACEHOLDERS.some(re => re.test(String(s).trim())))
+export const shape = (j) => {
     if (typeof j.summary !== 'string' || j.summary.length < 5) return 'missing summary'
     if (!asList(j.fix).length && !(typeof j.cause === 'string' && j.cause.length > 5)) return 'no cause and no steps'
+    if (parroted(j.summary) || parroted(j.cause) || parroted(j.fix)) return 'it copied the format description instead of answering'
     return null
 }
 
 // the answer as the UI gets it — checked and trimmed
-function finish(j, source, extra = {}) {
+export function finish(j, source, extra = {}) {
     j = { ...j, fix: asList(j.fix), evidence: asList(j.evidence) }
+    const steps = screenSteps(j.fix)
+    j.fix = steps.kept
     const ev = checkEvidence(j.evidence, source)
     let confidence = CONFIDENCE.includes(j.confidence) ? j.confidence : 'medium'
     if (ev.dropped.length && !ev.kept.length && confidence === 'high') confidence = 'medium'
@@ -49,11 +81,15 @@ function finish(j, source, extra = {}) {
         summary: String(j.summary).slice(0, 600), cause: String(j.cause || '').slice(0, 600),
         evidence: ev.kept, unverified: ev.dropped.length,
         fix: j.fix.map(x => String(x).slice(0, 400)).filter(Boolean).slice(0, 8),
-        missing: String(j.missing || '').slice(0, 300) || null, confidence, ...extra
+        missing: String(j.missing || '').slice(0, 300) || null, confidence,
+        claimedConfidence: CONFIDENCE.includes(j.confidence) ? j.confidence : null,   // before KubeEZ lowered it
+        blockedSteps: steps.removed.map(x => String(x).slice(0, 200)),
+        cautionSteps: steps.caution.map(x => String(x).slice(0, 400)),
+        ...extra
     }
 }
 
-const JSON_RULES = `Reply with ONLY a JSON object:
+export const JSON_RULES = `Reply with ONLY a JSON object:
 {
   "summary": "what happened, in one or two plain sentences",
   "cause": "the most likely root cause",
@@ -65,6 +101,10 @@ const JSON_RULES = `Reply with ONLY a JSON object:
 Copy evidence lines exactly — they are checked against the data, and invented lines are removed.`
 
 // ── install / upgrade / add-on job ──
+// the prompts are exported: the quality test (quality.js) uses exactly what users get
+export const INSTALL_SYSTEM = `You are the KubeEZ Install Doctor. A job on the customer's own Linux servers failed (kubeadm, containerd, Helm, SSH). Find the real root cause from the log — usually the first real error, not the last line. Fixes must be safe and specific to what the log shows; say "Resume" (KubeEZ retries from the failed step) when the fix is outside the cluster (network, disk, packages).\n\n${JSON_RULES}`
+export const incidentSystem = (actionRules = 'Do not suggest an action ("action": null).') => `You are the KubeEZ incident explainer for a Kubernetes cluster. Explain the incident to an on-call engineer: the real cause, the proof, and the fix. If a change listed under "what changed" plausibly caused it, name it in "change" (copy that line exactly), else "change": "".\n\n${JSON_RULES.replace('"missing":', '"change": "the change line that caused it, or empty",\n  "action": null,\n  "missing":')}\n${actionRules}`
+
 const MODE = { install: 'cluster installation', upgrade: 'Kubernetes upgrade', scale: 'adding worker nodes', resume: 'resumed installation' }
 
 /** The log of a failed job, focused: errors and warnings plus the last lines. */
@@ -89,9 +129,9 @@ export function installFacts(inst) {
 export async function explainInstall(user, inst) {
     const { facts, log } = installFacts(inst)
     const r = await ask(user, {
-        task: 'explain', purpose: 'install doctor', json: true, validate: shape, maxTokens: 900,
+        task: 'explain', purpose: 'install doctor', json: true, validate: shape, maxTokens: TOKENS.install,
         clusterId: inst.originalClusterId || inst.id, clusterName: inst.clusterName,
-        system: `You are the KubeEZ Install Doctor. A job on the customer's own Linux servers failed (kubeadm, containerd, Helm, SSH). Find the real root cause from the log — usually the first real error, not the last line. Fixes must be safe and specific to what the log shows; say "Resume" (KubeEZ retries from the failed step) when the fix is outside the cluster (network, disk, packages).\n\n${JSON_RULES}`,
+        system: INSTALL_SYSTEM,
         data: [{ label: 'job facts', text: facts }, { label: 'job log', text: log }],
         question: 'Why did this job fail, and how do I fix it?'
     })
@@ -186,8 +226,8 @@ export async function explainIncident(user, { incident: inc, catalog, cluster, f
         ? `You may suggest ONE fix KubeEZ can run (a person previews and approves it), only if the evidence supports it, as "action": {"type": "${[...new Set(allowed.map(a => a.type))].join(' | ')}", "target": "${[...new Set(allowed.map(a => `${a.kind}/${a.name}`))].join(' | ')}", "replicas": number for scale}. Prefer rollback when a recent rollout caused it, restart for a stuck or leaking process. Use "action": null when the fix is a config change a person must make (memory limit, image name, missing secret…).`
         : 'Do not suggest an action ("action": null).'
     const r = await ask(user, {
-        task: 'explain', purpose: 'incident explainer', json: true, validate: shape, maxTokens: 1000, clusterId: cluster.id, clusterName: cluster.clusterName,
-        system: `You are the KubeEZ incident explainer for a Kubernetes cluster. Explain the incident to an on-call engineer: the real cause, the proof, and the fix. If a change listed under "what changed" plausibly caused it, name it in "change" (copy that line exactly), else "change": "".\n\n${JSON_RULES.replace('"missing":', '"change": "the change line that caused it, or empty",\n  "action": null,\n  "missing":')}\n${actionRules}`,
+        task: 'explain', purpose: 'incident explainer', json: true, validate: shape, maxTokens: TOKENS.incident, clusterId: cluster.id, clusterName: cluster.clusterName,
+        system: incidentSystem(actionRules),
         data, question: 'Why is this happening, and what should I do?'
     })
     const source = data.map(d => d.text).join('\n')
