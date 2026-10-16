@@ -11,7 +11,7 @@ function nodeVisual(role, status) {
     const pending = s === 'pending'
     if (down)    return { color: '#ef4444', label: 'DOWN', ring: '#ef4444', pulse: true }   // red
     if (pending) return { color: '#f59e0b', label: 'PENDING', ring: '#f59e0b', pulse: true } // amber
-    return { color: isMaster ? '#3b82f6' : '#a855f7', label: 'READY', ring: '#4ade80', pulse: false } // healthy
+    return { color: isMaster ? '#8069fb' : '#38bdf8', label: 'READY', ring: '#4ade80', pulse: false } // healthy
 }
 
 function ClusterNode({ position, role, name, status, ip, onSelect, selected }) {
@@ -147,7 +147,7 @@ function Scene({ clusterInfo, onSelect, selected }) {
                         {/* Connection line turns red if the node is down */}
                         <Line
                             points={[masterPos, pos]}
-                            color={down ? '#ef4444' : '#a855f7'}
+                            color={down ? '#ef4444' : '#38bdf8'}
                             lineWidth={down ? 2 : 1}
                             transparent
                             opacity={down ? 0.7 : 0.3}
@@ -206,8 +206,8 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
 
             {/* Legend */}
             <div className="absolute top-4 right-4 pointer-events-none z-10 flex flex-col gap-1.5 bg-black/40 backdrop-blur-md rounded-xl px-3 py-2 border border-white/10">
-                <LegendItem color="#3b82f6" label="Master (Ready)" />
-                <LegendItem color="#a855f7" label="Worker (Ready)" />
+                <LegendItem color="#8069fb" label="Master (Ready)" />
+                <LegendItem color="#38bdf8" label="Worker (Ready)" />
                 <LegendItem color="#ef4444" label="Down / NotReady" />
                 <LegendItem color="#f59e0b" label="Pending" />
             </div>
@@ -236,8 +236,8 @@ export default function ClusterTopology3D({ clusterId, clusterInfo, stats, heigh
             {stats && (
                 <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2 bg-black/50 backdrop-blur-md rounded-2xl px-4 py-3 border border-white/10 w-44">
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Live Metrics</span>
-                    <Metric label="CPU"    value={stats.cpu}  color="#3b82f6" unit="%" />
-                    <Metric label="Memory" value={stats.mem}  color="#a855f7" unit="%" />
+                    <Metric label="CPU"    value={stats.cpu}  color="#8069fb" unit="%" />
+                    <Metric label="Memory" value={stats.mem}  color="#38bdf8" unit="%" />
                     <Metric label="Disk"   value={stats.disk} color="#f59e0b" unit="%" />
                     <div className="flex items-center justify-between pt-1 border-t border-white/5">
                         <span className="text-[10px] text-slate-400 font-bold">Running Pods</span>

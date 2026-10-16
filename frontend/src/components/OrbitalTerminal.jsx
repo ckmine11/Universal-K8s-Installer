@@ -7,7 +7,7 @@ import { Terminal, X, Zap, Loader2, Server, Command, Lock, Clock, Circle, Plug, 
 import { apiFetch } from '../context/AuthContext';
 
 const wsBase = () => `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-const theme = { background: '#0b0f19', foreground: '#e2e8f0', cursor: '#60a5fa', selectionBackground: 'rgba(96, 165, 250, 0.3)' };
+const theme = { background: '#0e0e13', foreground: '#e2e8f0', cursor: '#60a5fa', selectionBackground: 'rgba(96, 165, 250, 0.3)' };
 
 // One node's interactive shell (xterm ⇄ /ws/shell ⇄ SSH)
 function NodeShell({ clusterId, node, visible, onState }) {
@@ -226,7 +226,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                         {tabs.length > 0 && (
                             <div className="flex items-center gap-1 px-2 pt-2 border-b border-white/5 overflow-x-auto">
                                 {tabs.map(t => (
-                                    <div key={t.key} onClick={() => setCurrent(t.key)} className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer ${current === t.key ? 'bg-[#0b0f19] text-white' : 'text-slate-400 hover:text-white'}`}>
+                                    <div key={t.key} onClick={() => setCurrent(t.key)} className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer ${current === t.key ? 'bg-[#0e0e13] text-white' : 'text-slate-400 hover:text-white'}`}>
                                         {t.node ? <Server className="w-3 h-3" /> : <Radio className="w-3 h-3" />}
                                         {t.node ? label(t.node) : 'Several nodes'}
                                         {t.node && states[t.key] === 'connected' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
@@ -235,7 +235,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                                 ))}
                             </div>
                         )}
-                        <div className="relative flex-1 min-h-0 bg-[#0b0f19]">
+                        <div className="relative flex-1 min-h-0 bg-[#0e0e13]">
                             {active && !tabs.length && (
                                 <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 text-sm gap-2">
                                     <Plug className="w-8 h-8 text-slate-600" />

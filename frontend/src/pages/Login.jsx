@@ -1,13 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { Link } from 'react-router-dom';
+import { BorderBeam } from '@/components/lightswind/border-beam';
 import { useAuth } from '../context/AuthContext';
 import AuroraBackground from '../components/shell/AuroraBackground';
 import { LogoMark, LogoWord } from '../components/shell/Logo';
-import Constellation from '../components/auth/Constellation';
 import FeatureTicker from '../components/auth/FeatureTicker';
 import { Eye, EyeOff,
     Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key, CheckCircle2,
     ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users, HardDrive, Compass
 } from 'lucide-react';
+
+// WebGL globe (lazy — the form paints first)
+const Globe = lazy(() => import('@/components/lightswind/globe'));
+const GLOBE_MARKERS = [[19.07, 72.87], [28.61, 77.2], [12.97, 77.59], [1.35, 103.82], [25.2, 55.27], [50.11, 8.68], [51.5, -0.12], [38.9, -77.03], [35.68, 139.69]]
+    .map(location => ({ location, size: 0.03 }));
 
 // What KubeEZ does — shown to everyone arriving at the login page.
 const FEATURE_GROUPS = [
@@ -44,7 +50,8 @@ const FEATURE_GROUPS = [
 
 export default function Login() {
     const { login, setup, register, forgotPassword, verifyResetCode, resetPassword, isSetupRequired } = useAuth();
-    const [authMode, setAuthMode] = useState('login'); // 'login', 'register', 'forgot' → 'verify' → 'reset'
+    // ?mode=register (from the landing page) opens on Create account
+    const [authMode, setAuthMode] = useState(() => new URLSearchParams(window.location.search).get('mode') === 'register' ? 'register' : 'login'); // 'login', 'register', 'forgot' → 'verify' → 'reset'
     const [ticket, setTicket] = useState('');   // from a verified code, for the new password
     const [formData, setFormData] = useState({ username: '', email: '', password: '', resetCode: '', identifier: '', confirm: '' });
     const [error, setError] = useState('');
@@ -119,46 +126,53 @@ export default function Login() {
             <div className={`max-w-[1400px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12 relative z-10 px-4 sm:px-6 xl:px-10 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
                 
                 {/* Left: a living cluster + what KubeEZ does */}
-                <div className="hidden lg:flex flex-col justify-center lg:col-span-7 pr-6 py-10 min-h-screen">
-                    <div className="flex items-center gap-3">
-                        <LogoMark className="w-10 h-10 drop-shadow-[0_0_18px_rgba(44,203,238,.5)]" />
+                <div className="hidden lg:flex flex-col justify-center lg:col-span-7 pr-6 py-10 min-h-screen relative">
+                    <Link to="/" className="flex items-center gap-3 w-fit" aria-label="KubeEZ home">
+                        <LogoMark className="w-10 h-10 drop-shadow-[0_0_20px_rgba(128,105,251,.6)]" />
                         <LogoWord className="text-2xl" />
-                    </div>
+                    </Link>
 
-                    <h1 className="mt-10 font-display text-[44px] xl:text-[54px] font-bold tracking-tight text-white leading-[1.04]">
-                        Kubernetes on your servers,{" "}<br className="hidden 2xl:block" />
-                        <span className="aurora-text">calm as a cloud.</span>
+                    <h1 className="mt-12 text-[44px] xl:text-[54px] font-semibold tracking-[-0.045em] leading-[1.02] gradient-text">
+                        Kubernetes on your servers,<br />
+                        <span className="kz-serif aurora-text text-[54px] xl:text-[66px] leading-none pr-2">calm as a cloud.</span>
                     </h1>
-                    <p className="mt-5 text-lg text-slate-400 max-w-xl leading-relaxed">
+                    <p className="mt-6 text-lg text-slate-400 max-w-xl leading-relaxed">
                         Install, upgrade, back up and heal production clusters from one console — with a clear reason and a fix whenever something goes wrong.
                     </p>
 
-                    <div className="relative mt-6 -ml-4 max-w-[640px]"><Constellation /></div>
+                    <div aria-hidden="true" className="relative mt-4 -ml-10 h-[380px] max-w-[620px] [mask-image:radial-gradient(closest-side,#000_60%,transparent)]">
+                        <Suspense fallback={null}>
+                            <Globe className="!min-h-0 h-full" dark={1} diffuse={1.1} mapSamples={14000} mapBrightness={5} scale={1}
+                                baseColor={[0.22, 0.2, 0.32]} markerColor={[0.62, 0.55, 1]} glowColor={[0.32, 0.27, 0.62]}
+                                markers={GLOBE_MARKERS} enableZoom={false} autoRotateSpeed={0.0025} theta={0.3} />
+                        </Suspense>
+                    </div>
 
-                    <div className="mt-2 max-w-[720px]"><FeatureTicker groups={FEATURE_GROUPS} /></div>
+                    <div className="-mt-6 max-w-[720px]"><FeatureTicker groups={FEATURE_GROUPS} /></div>
                 </div>
 
                 {/* Right Side: Ultra Premium Login Box */}
                 <div className="flex flex-col justify-center items-center lg:items-end w-full lg:col-span-5 relative lg:sticky lg:top-0 lg:h-screen lg:self-start">
                     {/* Glowing effect behind the card */}
-                    <div className="absolute top-1/2 right-0 -translate-y-1/2 w-[120%] h-[120%] bg-gradient-to-br from-blue-600/10 to-purple-600/10 blur-[100px] rounded-full z-0 pointer-events-none"></div>
+                    <div className="absolute top-1/2 right-0 -translate-y-1/2 w-[110%] h-[90%] bg-[radial-gradient(closest-side,rgba(128,105,251,.22),transparent)] blur-3xl rounded-full z-0 pointer-events-none"></div>
                     
                     {/* Phones/tablets: brand + headline above the card */}
                     <div className="lg:hidden w-full max-w-[460px] mb-6 text-center relative z-10">
                         <div className="flex items-center justify-center gap-2.5">
-                            <LogoMark className="w-10 h-10 drop-shadow-[0_0_18px_rgba(44,203,238,.5)]" />
+                            <LogoMark className="w-10 h-10 drop-shadow-[0_0_18px_rgba(128,105,251,.5)]" />
                             <LogoWord className="text-2xl" />
                         </div>
-                        <h1 className="mt-5 font-display text-3xl font-bold tracking-tight leading-tight">
-                            Kubernetes on your servers, <span className="aurora-text">calm as a cloud.</span>
+                        <h1 className="mt-6 text-[34px] font-semibold tracking-[-0.04em] leading-[1.05] gradient-text">
+                            Kubernetes on your servers, <span className="kz-serif aurora-text text-[40px]">calm as a cloud.</span>
                         </h1>
                         <p className="text-sm text-slate-400 mt-3 leading-relaxed">
                             Install, upgrade, back up and heal clusters — from one console.
                         </p>
                     </div>
 
-                    <div className="w-full max-w-[460px] relative z-10 rounded-[30px] p-px bg-gradient-to-br from-blue-400/60 via-white/10 to-violet-500/60 shadow-[0_40px_100px_-30px_rgba(44,203,238,.35)]">
-                    <div className="relative rounded-[29px] bg-[#0a0f1c]/90 backdrop-blur-2xl p-6 sm:p-9 overflow-hidden">
+                    <div className="w-full max-w-[460px] relative z-10 rounded-[30px] shadow-[0_50px_120px_-40px_rgba(128,105,251,.5)]">
+                    <div className="relative rounded-[30px] border border-white/10 bg-[#0c0c11]/85 backdrop-blur-2xl p-6 sm:p-9 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,.08)]">
+                        <BorderBeam size={220} duration={9} colorFrom="#b6a8ff" colorTo="#38bdf8" />
                         
                         
                         <div className="relative z-10 mb-7">
@@ -166,7 +180,7 @@ export default function Login() {
                                 <div className="mb-7 grid grid-cols-2 rounded-2xl border border-white/10 bg-black/30 p-1" role="tablist">
                                     {[['login', 'Sign in'], ['register', 'Create account']].map(([m, label]) => (
                                         <button key={m} type="button" role="tab" aria-selected={authMode === m} onClick={() => go(m)}
-                                            className={`rounded-xl py-2.5 text-sm font-bold transition ${authMode === m ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/25 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.3)]' : 'text-slate-400 hover:text-white'}`}>{label}</button>
+                                            className={`rounded-xl py-2.5 text-sm font-semibold transition ${authMode === m ? 'bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,.08),inset_0_0_0_1px_rgba(255,255,255,.06)]' : 'text-slate-400 hover:text-white'}`}>{label}</button>
                                     ))}
                                 </div>
                             )}
@@ -178,7 +192,7 @@ export default function Login() {
                                     })}
                                 </div>
                             )}
-                            <h2 className="font-display text-[28px] font-bold tracking-tight text-white">
+                            <h2 className="text-[30px] font-semibold tracking-[-0.035em] gradient-text">
                                 {isSetupRequired ? 'Set up KubeEZ' : authMode === 'register' ? 'Create your workspace' : authMode === 'forgot' ? 'Forgot your password?' : authMode === 'verify' ? 'Check your email' : authMode === 'reset' ? 'Choose a new password' : 'Welcome back'}
                             </h2>
                             <p className="mt-1.5 text-sm text-slate-400">
@@ -214,7 +228,7 @@ export default function Login() {
                                     <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">
                                         <Mail className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                                     </div>
-                                    <input type="text" required autoComplete="username" autoCapitalize="none" className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                    <input type="text" required autoComplete="username" autoCapitalize="none" className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/[0.09] rounded-2xl focus:border-blue-400/60 focus:bg-white/[0.03] outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                         placeholder="Email address or username" value={formData.identifier}
                                         onChange={(e) => setFormData({ ...formData, identifier: e.target.value })} />
                                 </div>
@@ -240,7 +254,7 @@ export default function Login() {
                                         <input
                                             type="email"
                                             required
-                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/[0.09] rounded-2xl focus:border-blue-400/60 focus:bg-white/[0.03] outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder="Email Address"
                                             value={formData.email}
                                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -261,7 +275,7 @@ export default function Login() {
                                             inputMode="numeric"
                                             autoComplete="one-time-code"
                                             pattern="[0-9]{6}"
-                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner tracking-widest uppercase font-mono"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/[0.09] rounded-2xl focus:border-blue-400/60 focus:bg-white/[0.03] outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner tracking-widest uppercase font-mono"
                                             placeholder="6-digit code"
                                             value={formData.resetCode}
                                             onChange={(e) => setFormData({ ...formData, resetCode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
@@ -282,7 +296,7 @@ export default function Login() {
                                             required
                                             autoComplete="username"
                                             autoCapitalize="none"
-                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-blue-500/50 focus:bg-blue-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/[0.09] rounded-2xl focus:border-blue-400/60 focus:bg-white/[0.03] outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder={authMode === 'login' && !isSetupRequired ? 'Username or email' : 'Username'}
                                             value={formData.username}
                                             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -301,7 +315,7 @@ export default function Login() {
                                             type={showPw ? 'text' : 'password'}
                                             required
                                             autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-                                            className="w-full pl-14 pr-14 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                            className="w-full pl-14 pr-14 py-4 sm:py-5 bg-black/40 border border-white/[0.09] rounded-2xl focus:border-blue-400/60 focus:bg-white/[0.03] outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                             placeholder={authMode === 'reset' ? 'New password (min. 8 characters)' : 'Password'}
                                             value={formData.password}
                                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -320,7 +334,7 @@ export default function Login() {
                                         <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-purple-400 transition-colors" />
                                     </div>
                                     <input type={showPw ? 'text' : 'password'} required autoComplete="new-password"
-                                        className="w-full pl-14 pr-6 py-4 sm:py-5 bg-[#05080f]/70 border border-white/[0.09] rounded-2xl focus:border-purple-500/50 focus:bg-purple-500/5 outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
+                                        className="w-full pl-14 pr-6 py-4 sm:py-5 bg-black/40 border border-white/[0.09] rounded-2xl focus:border-blue-400/60 focus:bg-white/[0.03] outline-none transition-all text-base sm:text-sm font-medium placeholder:text-slate-600 text-white shadow-inner"
                                         placeholder="Repeat the new password" value={formData.confirm}
                                         onChange={(e) => setFormData({ ...formData, confirm: e.target.value })} />
                                     {formData.confirm && formData.confirm !== formData.password && <p className="mt-1.5 ml-2 text-[11px] text-red-400">The passwords are not the same yet</p>}
@@ -345,10 +359,10 @@ export default function Login() {
                                     disabled={loading}
                                     className="w-full relative group active:scale-[0.98] transition-all duration-300"
                                 >
-                                    <div className="absolute inset-0 bg-blue-600 blur-xl opacity-30 group-hover:opacity-50 transition-opacity rounded-2xl"></div>
-                                    <div className="relative flex items-center justify-center space-x-3 w-full py-5 bg-gradient-to-r from-[#0784ad] via-[#5b63f0] to-[#9333ea] hover:brightness-110 !text-white font-bold tracking-wide text-[15px] [text-shadow:0_1px_2px_rgba(0,0,0,.35)] rounded-2xl shadow-xl shadow-blue-900/40 border border-white/10 group-hover:border-white/30">
+                                    <div className="absolute inset-0 bg-blue-500 blur-2xl opacity-20 group-hover:opacity-40 transition-opacity rounded-2xl"></div>
+                                    <div className="relative flex items-center justify-center space-x-3 w-full py-4 sm:py-[18px] bg-gradient-to-b from-white to-[#e4e1f3] text-[#0b0b0f] font-semibold text-[15px] rounded-2xl shadow-[0_14px_40px_-14px_rgba(182,168,255,.7),inset_0_-1px_0_rgba(0,0,0,.12)]">
                                         {loading ? (
-                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <div className="w-5 h-5 border-2 border-black/20 border-t-black/70 rounded-full animate-spin" />
                                         ) : (
                                             <>
                                                 <span>

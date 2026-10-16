@@ -418,8 +418,8 @@ function IncidentDrawer({ inc, meta, label, sev, kids, cause, labelOf, canAct, e
     return (
         <div className="fixed inset-0 z-[90] flex justify-end" role="dialog" aria-modal="true" aria-label={label}>
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <aside className="relative w-full max-w-xl h-full overflow-y-auto bg-[#080d19]/95 border-l border-white/10 backdrop-blur-2xl kz-rise">
-                <div className="sticky top-0 z-10 flex items-start gap-3 p-5 border-b border-white/[0.07] bg-[#080d19]/95 backdrop-blur-xl">
+            <aside className="relative w-full max-w-xl h-full overflow-y-auto bg-[#0b0b0f]/95 border-l border-white/10 backdrop-blur-2xl kz-rise">
+                <div className="sticky top-0 z-10 flex items-start gap-3 p-5 border-b border-white/[0.07] bg-[#0b0b0f]/95 backdrop-blur-xl">
                     <div className="min-w-0 flex-1">
                         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${s.chip}`}>{s.label}</span>
                         <h2 className="mt-2 font-display text-xl font-bold text-white">{label}</h2>

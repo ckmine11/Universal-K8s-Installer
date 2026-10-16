@@ -1,31 +1,36 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..900&family=Geist+Mono:wght@400..700&family=Instrument+Serif:ital@0;1&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ════════════════════════════════════════════════════════════════════
-   KubeEZ · Aurora Glass
-   Night-navy base, slow aurora light (cyan → indigo → violet), frosted
-   glass surfaces with a hairline highlight. Colours come from Tailwind
-   (blue = aurora cyan, slate = night grey) — see tailwind.config.js.
+   KubeEZ · Obsidian Iris
+   A near-black, neutral base; light comes from a slow iris → sapphire glow
+   at the top of the page. Surfaces are matte glass with a hairline top
+   highlight. Colours come from Tailwind (blue = iris, slate = graphite) —
+   see tailwind.config.js. Heavy effects (WebGL, shaders) live only on the
+   public pages; the console stays light and fast.
    ════════════════════════════════════════════════════════════════════ */
 :root {
-  --kz-bg: #05070d;
-  --kz-surface: rgba(15, 21, 36, 0.62);
-  --kz-surface-strong: rgba(17, 24, 41, 0.86);
-  --kz-border: rgba(148, 170, 214, 0.10);
-  --kz-border-strong: rgba(148, 170, 214, 0.18);
-  --kz-highlight: rgba(255, 255, 255, 0.06);
-  --kz-cyan: #2ccbee;
-  --kz-indigo: #6d7cff;
-  --kz-violet: #a855f7;
-  --kz-text: #e8edf7;
-  --kz-muted: #8794ae;
+  --kz-bg: #08080b;
+  --kz-surface: rgba(20, 20, 26, 0.66);
+  --kz-surface-strong: rgba(22, 22, 29, 0.9);
+  --kz-border: rgba(255, 255, 255, 0.07);
+  --kz-border-strong: rgba(255, 255, 255, 0.12);
+  --kz-highlight: rgba(255, 255, 255, 0.07);
+  --kz-iris: #8069fb;
+  --kz-sapphire: #4f7dff;
+  --kz-aqua: #38bdf8;
+  --kz-text: #ededf1;
+  --kz-muted: #90909f;
 
   /* kept for older components */
-  --accent-blue: var(--kz-cyan);
-  --accent-purple: var(--kz-violet);
+  --kz-cyan: var(--kz-aqua);
+  --kz-indigo: var(--kz-sapphire);
+  --kz-violet: var(--kz-iris);
+  --accent-blue: var(--kz-iris);
+  --accent-purple: var(--kz-iris);
   --accent-green: #10b981;
   --bg-dark: var(--kz-bg);
   --glass-bg: var(--kz-surface);
@@ -42,7 +47,7 @@
 html { -webkit-text-size-adjust: 100%; }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Geist', 'Inter', system-ui, sans-serif;
   background-color: var(--kz-bg);
   color: var(--kz-text);
   min-height: 100vh;
@@ -50,19 +55,21 @@ body {
   position: relative;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: 'cv11', 'ss01';
 }
 
-::selection { background: rgba(44, 203, 238, 0.3); color: #fff; }
+::selection { background: rgba(128, 105, 251, 0.35); color: #fff; }
 
 h1, h2, h3, .heading-font {
-  font-family: 'Sora', 'Inter', sans-serif;
-  letter-spacing: -0.02em;
+  font-family: 'Geist', 'Inter', sans-serif;
+  letter-spacing: -0.025em;
 }
 
-code, pre, kbd, .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+code, pre, kbd, .font-mono { font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; }
 
-/* ── Aurora background (rendered once in <AuroraBackground/>) ─────────── */
+/* the italic serif accent of the public pages ("calm as a cloud") */
+.kz-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
+
+/* ── Page background (rendered once in <AuroraBackground/>) ───────────── */
 .kz-aurora {
   position: fixed;
   inset: 0;
@@ -70,102 +77,107 @@ code, pre, kbd, .font-mono { font-family: 'JetBrains Mono', ui-monospace, monosp
   overflow: hidden;
   pointer-events: none;
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(44, 203, 238, 0.10), transparent 60%),
-    radial-gradient(900px 600px at 110% 10%, rgba(168, 85, 247, 0.10), transparent 60%),
-    radial-gradient(800px 500px at 50% 120%, rgba(109, 124, 255, 0.08), transparent 60%),
+    radial-gradient(900px 480px at 50% -12%, rgba(128, 105, 251, 0.16), transparent 70%),
+    radial-gradient(700px 420px at 92% 0%, rgba(79, 125, 255, 0.08), transparent 70%),
+    radial-gradient(700px 500px at 0% 100%, rgba(56, 189, 248, 0.05), transparent 70%),
     var(--kz-bg);
 }
 .kz-aurora .blob {
   position: absolute;
-  width: 55vmax;
-  height: 55vmax;
+  width: 50vmax;
+  height: 50vmax;
   border-radius: 9999px;
-  filter: blur(90px);
-  opacity: 0.22;
+  filter: blur(110px);
+  opacity: 0.16;
   mix-blend-mode: screen;
 }
-.kz-aurora .blob.b1 { top: -25vmax; left: -15vmax; background: radial-gradient(circle at 30% 30%, #2ccbee, transparent 65%); }
-.kz-aurora .blob.b2 { top: -10vmax; right: -20vmax; background: radial-gradient(circle at 60% 40%, #a855f7, transparent 65%); }
-.kz-aurora .blob.b3 { bottom: -30vmax; left: 20vw; background: radial-gradient(circle at 50% 50%, #6d7cff, transparent 65%); opacity: .16; }
-/* fine grid, fading out towards the edges */
+.kz-aurora .blob.b1 { top: -30vmax; left: 10vw; background: radial-gradient(circle at 40% 40%, #8069fb, transparent 65%); }
+.kz-aurora .blob.b2 { top: -25vmax; right: -15vmax; background: radial-gradient(circle at 60% 40%, #4f7dff, transparent 65%); opacity: .12; }
+.kz-aurora .blob.b3 { bottom: -35vmax; left: -10vw; background: radial-gradient(circle at 50% 50%, #38bdf8, transparent 65%); opacity: .07; }
+/* fine dot grid, fading out from the top */
 .kz-aurora .grid {
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(148, 170, 214, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 170, 214, 0.045) 1px, transparent 1px);
-  background-size: 56px 56px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 20%, transparent 75%);
 }
 /* film grain — breaks up gradient banding */
 .kz-aurora .grain {
   position: absolute;
   inset: -50%;
-  opacity: 0.035;
+  opacity: 0.04;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* ── Scrollbars ────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(148, 170, 214, 0.14); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background: rgba(148, 170, 214, 0.26); background-clip: padding-box; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); background-clip: padding-box; }
 
 /* ── Glass surfaces ────────────────────────────────────────────────────── */
 .glass {
   background: var(--kz-surface);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--kz-border);
-  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 20px 50px -24px rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 24px 60px -30px rgba(0, 0, 0, 0.8);
 }
 
 .glass-card {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.012) 100%), var(--kz-surface);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  backdrop-filter: blur(14px) saturate(140%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.01) 100%), var(--kz-surface);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  backdrop-filter: blur(14px) saturate(130%);
   border: 1px solid var(--kz-border);
-  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 16px 40px -24px rgba(0, 0, 0, 0.8);
   transition: transform .35s cubic-bezier(.2, .8, .2, 1), border-color .35s, box-shadow .35s;
 }
 
 .glass-card:hover {
-  border-color: rgba(44, 203, 238, 0.28);
+  border-color: rgba(128, 105, 251, 0.3);
   transform: translateY(-3px);
-  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 0 0 1px rgba(44, 203, 238, .08), 0 22px 50px -18px rgba(44, 203, 238, 0.25);
+  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 0 0 1px rgba(128, 105, 251, .08), 0 24px 60px -24px rgba(128, 105, 251, 0.35);
 }
 
 @layer components {
-  /* Card with a soft aurora edge */
+  /* Card: matte glass, hairline highlight on the top edge */
   .kz-card {
     @apply relative rounded-3xl;
-    background: linear-gradient(160deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)), var(--kz-surface);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
-    backdrop-filter: blur(16px) saturate(140%);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.008)), var(--kz-surface);
+    -webkit-backdrop-filter: blur(16px) saturate(130%);
+    backdrop-filter: blur(16px) saturate(130%);
     border: 1px solid var(--kz-border);
-    box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 16px 40px -20px rgba(0, 0, 0, 0.65);
+    box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 20px 50px -28px rgba(0, 0, 0, 0.85);
   }
   .kz-card-hover {
     @apply transition-all duration-300;
   }
   .kz-card-hover:hover {
-    border-color: rgba(44, 203, 238, 0.28);
-    box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 22px 50px -18px rgba(44, 203, 238, 0.22);
+    border-color: rgba(128, 105, 251, 0.3);
+    box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 24px 60px -24px rgba(128, 105, 251, 0.3);
     transform: translateY(-2px);
   }
 
   .kz-btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all duration-200 active:scale-[.97] disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[.97] disabled:opacity-50 disabled:pointer-events-none;
   }
   .kz-btn-primary {
     @apply kz-btn text-white;
-    background: linear-gradient(135deg, #0fb0dc 0%, #6d7cff 55%, #a855f7 100%);
+    background: linear-gradient(135deg, #8069fb 0%, #5d74ff 60%, #3f8cff 100%);
     background-size: 160% 160%;
     background-position: 0% 50%;
-    box-shadow: 0 8px 28px -10px rgba(44, 203, 238, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 30px -12px rgba(128, 105, 251, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   }
-  .kz-btn-primary:hover { background-position: 100% 50%; box-shadow: 0 10px 34px -8px rgba(109, 124, 255, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+  .kz-btn-primary:hover { background-position: 100% 50%; box-shadow: 0 12px 36px -10px rgba(128, 105, 251, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
+  /* the bright "cinematic" call to action of the public pages */
+  .kz-btn-light {
+    @apply kz-btn text-[#0b0b0f];
+    background: linear-gradient(180deg, #ffffff, #e6e4f2);
+    box-shadow: 0 10px 40px -12px rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  }
+  .kz-btn-light:hover { box-shadow: 0 14px 50px -10px rgba(182, 168, 255, 0.55), inset 0 -1px 0 rgba(0, 0, 0, 0.12); }
   .kz-btn-ghost {
     @apply kz-btn text-slate-200 hover:text-white;
     background: rgba(255, 255, 255, 0.04);
@@ -175,32 +187,39 @@ code, pre, kbd, .font-mono { font-family: 'JetBrains Mono', ui-monospace, monosp
 
   .kz-input {
     @apply w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition-all;
-    background: rgba(5, 8, 16, 0.55);
+    background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--kz-border-strong);
   }
-  .kz-input:focus { border-color: rgba(44, 203, 238, 0.6); box-shadow: 0 0 0 4px rgba(44, 203, 238, 0.12); }
+  .kz-input:focus { border-color: rgba(128, 105, 251, 0.65); box-shadow: 0 0 0 4px rgba(128, 105, 251, 0.14); }
 
-  .kz-label { @apply block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 mb-1.5; }
-  .kz-chip { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold; border: 1px solid var(--kz-border-strong); background: rgba(255,255,255,.04); }
+  .kz-label { @apply block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 mb-1.5; }
+  .kz-chip { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold; border: 1px solid var(--kz-border-strong); background: rgba(255,255,255,.04); }
+  /* iridescent text: iris → sapphire → aqua, slowly shining */
   .aurora-text {
-    background: linear-gradient(100deg, #67e0f9 0%, #8b9bff 45%, #c084fc 100%);
+    background: linear-gradient(100deg, #c4b8ff 0%, #8f7dff 30%, #6b8bff 55%, #7dd3fc 80%, #c4b8ff 100%);
+    background-size: 200% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+    animation: shine 8s linear infinite;
   }
   .kz-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--kz-border-strong), transparent); }
-  .kz-kbd { @apply inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-400; border: 1px solid var(--kz-border-strong); background: rgba(255,255,255,.04); }
+  .kz-kbd { @apply inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-400; border: 1px solid var(--kz-border-strong); background: rgba(255,255,255,.04); }
+  /* small uppercase label above a title */
+  .kz-eyebrow { @apply inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-300/90; }
 }
+
+@keyframes shine { 0% { background-position: 200% 50%; } 100% { background-position: -200% 50%; } }
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(100deg, #ffffff 0%, #b6c1d6 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #b9b6cc 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.gradient-blue { background: linear-gradient(135deg, #2ccbee 0%, #0784ad 100%); }
-.gradient-purple { background: linear-gradient(135deg, #c084fc 0%, #8b5cf6 100%); }
+.gradient-blue { background: linear-gradient(135deg, #8069fb 0%, #4f7dff 100%); }
+.gradient-purple { background: linear-gradient(135deg, #b6a8ff 0%, #8069fb 100%); }
 
 /* ── Animations ────────────────────────────────────────────────────────── */
 @keyframes fadeIn {
@@ -219,17 +238,17 @@ code, pre, kbd, .font-mono { font-family: 'JetBrains Mono', ui-monospace, monosp
 
 /* Terminal */
 .terminal {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  background: #060a14;
+  font-family: 'Geist Mono', 'JetBrains Mono', monospace;
+  background: #060609;
   border: 1px solid var(--kz-border-strong);
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6);
 }
 .log-line { padding: 2px 0; border-left: 2px solid transparent; transition: all 0.2s; }
-.log-line:hover { background: rgba(255, 255, 255, 0.03); border-left-color: rgba(44, 203, 238, 0.35); }
+.log-line:hover { background: rgba(255, 255, 255, 0.03); border-left-color: rgba(128, 105, 251, 0.4); }
 
 /* Glow */
-.glow-blue { box-shadow: 0 0 24px rgba(44, 203, 238, 0.3); }
-.glow-purple { box-shadow: 0 0 24px rgba(168, 85, 247, 0.3); }
+.glow-blue { box-shadow: 0 0 24px rgba(128, 105, 251, 0.35); }
+.glow-purple { box-shadow: 0 0 24px rgba(128, 105, 251, 0.35); }
 
 /* Form defaults (pages that style their own inputs override these) */
 input, textarea, select {
@@ -239,17 +258,17 @@ input, textarea, select {
 }
 input:focus, textarea:focus, select:focus {
   background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(44, 203, 238, 0.6);
-  box-shadow: 0 0 0 4px rgba(44, 203, 238, 0.12);
+  border-color: rgba(128, 105, 251, 0.65);
+  box-shadow: 0 0 0 4px rgba(128, 105, 251, 0.14);
   outline: none;
 }
-input[type="checkbox"], input[type="radio"] { accent-color: #2ccbee; box-shadow: none; }
-:focus-visible { outline: 2px solid rgba(44, 203, 238, 0.7); outline-offset: 2px; }
+input[type="checkbox"], input[type="radio"] { accent-color: #8069fb; box-shadow: none; }
+:focus-visible { outline: 2px solid rgba(154, 135, 255, 0.8); outline-offset: 2px; }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
 /* Buttons */
 .btn-primary {
-  background: linear-gradient(135deg, #0fb0dc, #6d7cff 60%, #a855f7);
+  background: linear-gradient(135deg, #8069fb, #5d74ff 60%, #3f8cff);
   position: relative;
   overflow: hidden;
 }
@@ -285,6 +304,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 
 /* Section titles: the older pages set them in heavy capitals — in this theme
-   titles are sentence case (Sora), only small labels stay uppercase. */
-h1.uppercase, h2.uppercase, h3.uppercase { text-transform: none; letter-spacing: -0.015em; }
-h1.font-black, h2.font-black, h3.font-black, h4.font-black { font-weight: 700; }
+   titles are sentence case, only small labels stay uppercase. */
+h1.uppercase, h2.uppercase, h3.uppercase { text-transform: none; letter-spacing: -0.02em; }
+h1.font-black, h2.font-black, h3.font-black, h4.font-black { font-weight: 650; }
+/* "font-black" labels in the older pages read too heavy in Geist */
+.font-black { font-weight: 700; }

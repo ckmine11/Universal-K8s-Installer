@@ -85,7 +85,7 @@ export default function ActiveInstallationIndicator() {
             <div className="fixed bottom-6 right-6 z-[9999]">
                 <button
                     onClick={() => setIsMinimized(false)}
-                    className="relative group flex items-center gap-2 px-4 py-3 bg-[#0d1117]/95 backdrop-blur-xl border border-blue-500/30 rounded-2xl shadow-2xl shadow-blue-500/10 hover:border-blue-500/50 transition-all duration-300 active:scale-95"
+                    className="relative group flex items-center gap-2 px-4 py-3 bg-[#0c0c10]/95 backdrop-blur-xl border border-blue-500/30 rounded-2xl shadow-2xl shadow-blue-500/10 hover:border-blue-500/50 transition-all duration-300 active:scale-95"
                 >
                     {/* Pulse ring for running */}
                     {runningCount > 0 && (
@@ -103,7 +103,7 @@ export default function ActiveInstallationIndicator() {
 
     return (
         <div className="fixed bottom-6 right-6 z-[9999] w-[380px] animate-in slide-in-from-bottom-4 duration-300">
-            <div className="bg-[#0d1117]/95 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl shadow-black/40 overflow-hidden">
+            <div className="bg-[#0c0c10]/95 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl shadow-black/40 overflow-hidden">
                 {/* Header Bar */}
                 <div
                     className="flex items-center justify-between px-5 py-4 border-b border-white/5 cursor-pointer hover:bg-white/[0.02] transition-colors"

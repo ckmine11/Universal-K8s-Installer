@@ -341,7 +341,7 @@ export default function Settings() {
                         onClick={() => selectTab('backups')}
                         className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                             activeTab === 'backups'
-                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                                ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(128,105,251,.35)]'
                                 : 'text-slate-400 hover:bg-white/5 hover:text-white'
                         }`}
                     >
@@ -354,7 +354,7 @@ export default function Settings() {
                     onClick={() => selectTab('licensing')}
                     className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'licensing'
-                            ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                            ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(128,105,251,.35)]'
                             : 'text-slate-400 hover:bg-white/5 hover:text-white'
                     }`}
                 >
@@ -365,7 +365,7 @@ export default function Settings() {
                     onClick={() => selectTab('security')}
                     className={`flex items-center space-x-2 whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'security'
-                            ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+                            ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(128,105,251,.35)]'
                             : 'text-slate-400 hover:bg-white/5 hover:text-white'
                     }`}
                 >

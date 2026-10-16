@@ -220,7 +220,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     }
 
     const tabClass = (active) => `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${active
-        ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(44,203,238,.35)]'
+        ? 'bg-gradient-to-r from-blue-500/25 to-violet-500/20 text-white shadow-[inset_0_0_0_1px_rgba(128,105,251,.35)]'
         : 'text-slate-400 hover:text-white hover:bg-white/5'}`
     const actionBtn = 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95'
 
@@ -329,7 +329,7 @@ export default function ClusterDetails({ onScaleCluster }) {
             )}
 
             {/* Tabs (the open tab is kept in the URL: ?tab=addons) */}
-            <div role="tablist" className="sticky top-16 z-20 mb-6 p-1 rounded-2xl bg-[#070b16]/80 backdrop-blur-xl border border-white/10 flex gap-1 overflow-x-auto">
+            <div role="tablist" className="sticky top-16 z-20 mb-6 p-1 rounded-2xl bg-[#0b0b0f]/80 backdrop-blur-xl border border-white/10 flex gap-1 overflow-x-auto">
                 {TABS.map(t => (
                     <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={tabClass(tab === t.key)}>
                         <t.Icon className="w-4 h-4" /> {t.label}
@@ -583,7 +583,7 @@ export default function ClusterDetails({ onScaleCluster }) {
             {/* UPGRADE MODAL */}
             {upgradeModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in duration-200 max-h-[92vh] overflow-y-auto">
+                    <div className="bg-[#16161b] border border-white/10 rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in duration-200 max-h-[92vh] overflow-y-auto">
                         <h2 className="text-xl font-bold text-white mb-2">Upgrade Cluster Version</h2>
                         <p className="text-slate-400 text-sm mb-6">Select a target version to upgrade to. This process will sequentially upgrade control plane and worker nodes.</p>
 

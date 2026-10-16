@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { InstallationTrackerProvider } from './context/InstallationTrackerContext'
 import ActiveInstallationIndicator from './components/ActiveInstallationIndicator'
 import IncidentNotifier from './components/IncidentNotifier'
-import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
 import AppShell from './components/shell/AppShell'
@@ -23,19 +23,22 @@ import Incidents from './pages/Incidents'
 import Alerts from './pages/Alerts'
 import Compliance from './pages/Compliance'
 import Explorer from './pages/Explorer'
+// the public landing page (heavier: globe, motion) — only for visitors who are not signed in
+const LandingPage = lazy(() => import('./pages/LandingPage'))
 
 function AuthenticatedApp() {
     const navigate = useNavigate()
     const [flowMode, setFlowMode] = useState('install')
     const [initialData, setInitialData] = useState(null)
     const { isAuthenticated, isLoading } = useAuth()
+    const location = useLocation()
 
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center text-white">
                 <AuroraBackground />
                 <div className="flex flex-col items-center gap-5">
-                    <LogoMark className="w-14 h-14 animate-spin-slow drop-shadow-[0_0_24px_rgba(44,203,238,.5)]" />
+                    <LogoMark className="w-14 h-14 animate-spin-slow drop-shadow-[0_0_24px_rgba(128,105,251,.5)]" />
                     <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Loading KubeEZ…</p>
                 </div>
             </div>
@@ -43,6 +46,8 @@ function AuthenticatedApp() {
     }
 
     if (!isAuthenticated) {
+        // "/" is the public landing page; every other address (deep links) asks to sign in
+        if (location.pathname === '/') return <Suspense fallback={<div className="min-h-screen bg-[#060608]" />}><LandingPage /></Suspense>
         return <Login />
     }
 
@@ -125,6 +130,7 @@ function AuthenticatedApp() {
                     <Route path="/alerts" element={<Alerts />} />
                     <Route path="/compliance" element={<Compliance />} />
                     <Route path="/explorer" element={<Explorer />} />
+                    <Route path="/login" element={<Navigate to="/" replace />} />
                     <Route
                         path="/agents"
                         element={<AgentNodes />}

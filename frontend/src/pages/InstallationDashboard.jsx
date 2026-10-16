@@ -482,7 +482,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             {/* Smart Error Rescue Modal */}
             {status === 'failed' && errorState && !errorDismissed && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-[#0f172a] border border-red-500/30 rounded-3xl max-w-2xl w-full p-8 shadow-2xl relative overflow-hidden">
+                    <div className="bg-[#16161b] border border-red-500/30 rounded-3xl max-w-2xl w-full p-8 shadow-2xl relative overflow-hidden">
                         {/* Background Pulse */}
                         <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/10 rounded-full blur-[80px] pointer-events-none animate-pulse"></div>
 
@@ -561,7 +561,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             {/* Add-on Selection Modal */}
             {isAddonModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-[#0f172a]/95 backdrop-blur-xl border border-white/10 rounded-[32px] max-w-5xl w-full p-10 shadow-2xl relative overflow-hidden">
+                    <div className="bg-[#16161b]/95 backdrop-blur-xl border border-white/10 rounded-[32px] max-w-5xl w-full p-10 shadow-2xl relative overflow-hidden">
                         <h2 className="text-2xl font-bold mb-2">Install Add-ons</h2>
                         <p className="text-gray-400 mb-6">Select additional components to install on your cluster.</p>
 
@@ -652,7 +652,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             {/* Upgrade Selection Modal */}
             {isUpgradeModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-[#0f172a]/95 backdrop-blur-xl border border-white/10 rounded-[32px] max-w-xl w-full p-10 shadow-2xl relative overflow-hidden">
+                    <div className="bg-[#16161b]/95 backdrop-blur-xl border border-white/10 rounded-[32px] max-w-xl w-full p-10 shadow-2xl relative overflow-hidden">
                         {/* Animated Background Gradients */}
                         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-[80px] pointer-events-none animate-pulse"></div>
 

@@ -441,7 +441,7 @@ function Audit({ clusters, toast }) {
             </div>
             <div className="overflow-x-auto max-h-[32rem]">
                 <table className="w-full text-xs">
-                    <thead className="text-slate-500 text-left sticky top-0 bg-[#0b0f19]"><tr>{['Time', 'Who', 'Action', 'Cluster', 'Result', 'IP'].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
+                    <thead className="text-slate-500 text-left sticky top-0 bg-[#0e0e13]"><tr>{['Time', 'Who', 'Action', 'Cluster', 'Result', 'IP'].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-white/[0.04] text-slate-300">
                         {(data?.entries || []).map(e => (
                             <tr key={e.hash}>

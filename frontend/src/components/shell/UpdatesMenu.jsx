@@ -44,7 +44,7 @@ export default function UpdatesMenu() {
                 aria-label={`Add-on updates${n ? ` (${n} available)` : ''}`} title="Add-on updates">
                 <Sparkles className="w-5 h-5" />
                 {n > 0 && (
-                    <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-sky-500 text-[9px] font-black text-white flex items-center justify-center ring-2 ring-[#05070d]">{n > 9 ? '9+' : n}</span>
+                    <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-sky-500 text-[9px] font-black text-white flex items-center justify-center ring-2 ring-[#08080b]">{n > 9 ? '9+' : n}</span>
                 )}
             </button>
             {open && (

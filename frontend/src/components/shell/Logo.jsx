@@ -4,9 +4,9 @@ export function LogoMark({ className = 'w-9 h-9' }) {
         <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
             <defs>
                 <linearGradient id="kzg" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stopColor="#2ccbee" />
-                    <stop offset=".55" stopColor="#6d7cff" />
-                    <stop offset="1" stopColor="#a855f7" />
+                    <stop offset="0" stopColor="#8069fb" />
+                    <stop offset=".55" stopColor="#4f7dff" />
+                    <stop offset="1" stopColor="#38bdf8" />
                 </linearGradient>
             </defs>
             <path d="M20 2.5 35.2 11.25v17.5L20 37.5 4.8 28.75v-17.5Z" fill="url(#kzg)" />

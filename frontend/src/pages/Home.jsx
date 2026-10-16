@@ -5,6 +5,8 @@ import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { can } from '../config/permissions'
 import { CardSkeleton } from '../components/Skeleton'
+import SpotlightCard from '../components/ui/Spotlight'
+import { CountUp } from '@/components/lightswind/count-up'
 import Popover from '../components/ui/Popover'
 import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
 import { addonIcon } from '../config/addonIcons'
@@ -128,13 +130,14 @@ export default function Home({ onStartNew, onScaleExisting }) {
         <div className="space-y-8">
             {/* Greeting + actions */}
             <section className="relative overflow-hidden rounded-[28px] kz-card p-6 sm:p-8">
-                <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full bg-violet-500/20 blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-28 left-10 w-80 h-80 rounded-full bg-blue-500/20 blur-3xl pointer-events-none" />
+                <div className="absolute -top-40 left-1/3 w-[520px] h-[300px] rounded-full bg-[radial-gradient(closest-side,rgba(128,105,251,.28),transparent)] blur-2xl pointer-events-none" />
+                <div className="absolute -bottom-32 -right-10 w-80 h-80 rounded-full bg-[radial-gradient(closest-side,rgba(56,189,248,.14),transparent)] blur-2xl pointer-events-none" />
+                <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,.06)_1px,transparent_1px)] [background-size:20px_20px] [mask-image:linear-gradient(to_bottom,#000,transparent_70%)] pointer-events-none" />
                 <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
                     <div>
-                        <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-300/80">{greeting()}, {user?.username}</p>
-                        <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold text-white tracking-tight">
-                            {empty ? <>Let’s launch your <span className="aurora-text">first cluster</span></> : <>Your fleet <span className="aurora-text">at a glance</span></>}
+                        <p className="kz-eyebrow">{greeting()}, {user?.username}</p>
+                        <h2 className="mt-3 text-[34px] sm:text-[44px] font-semibold tracking-[-0.04em] leading-[1.05] gradient-text">
+                            {empty ? <>Let’s launch your <span className="kz-serif aurora-text pr-1">first cluster.</span></> : <>Your fleet, <span className="kz-serif aurora-text pr-1">at a glance.</span></>}
                         </h2>
                         <p className="mt-2 text-slate-400 max-w-xl">
                             {empty ? 'Bring your own servers — KubeEZ checks them, installs Kubernetes and keeps it healthy.' : 'Health, versions and nodes of every cluster you manage — open one for backups, upgrades and the Explorer.'}
@@ -152,10 +155,10 @@ export default function Home({ onStartNew, onScaleExisting }) {
 
                 {!empty && (
                     <div className="relative mt-8 grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <Stat icon={Layers} label="Clusters" value={stats.clusters} tone="from-blue-400/25" />
-                        <Stat icon={Server} label="Nodes" value={stats.nodes} tone="from-indigo-400/25" />
-                        <Stat icon={HeartPulse} label="Healthy" value={`${stats.healthy}/${stats.clusters}`} tone="from-emerald-400/25" />
-                        <Stat icon={ShieldAlert} label="Open incidents" value={openIncidents.length} tone={openIncidents.length ? 'from-red-400/30' : 'from-violet-400/25'}
+                        <Stat icon={Layers} label="Clusters" value={stats.clusters} color="128,105,251" />
+                        <Stat icon={Server} label="Nodes" value={stats.nodes} color="79,125,255" />
+                        <Stat icon={HeartPulse} label="Healthy" value={stats.healthy} of={stats.clusters} color="52,211,153" />
+                        <Stat icon={ShieldAlert} label="Open incidents" value={openIncidents.length} color={openIncidents.length ? '248,113,113' : '56,189,248'}
                             onClick={() => navigate('/incidents')} />
                     </div>
                 )}
@@ -230,15 +233,16 @@ export default function Home({ onStartNew, onScaleExisting }) {
     )
 }
 
-function Stat({ icon: Icon, label, value, tone, onClick }) {
-    const Tag = onClick ? 'button' : 'div'
+function Stat({ icon: Icon, label, value, of, color, onClick }) {
     return (
-        <Tag onClick={onClick} className={`relative overflow-hidden text-left rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 ${onClick ? 'hover:border-white/20 transition' : ''}`}>
-            <div className={`absolute -top-10 -right-8 w-28 h-28 rounded-full bg-gradient-to-br ${tone} to-transparent blur-2xl`} />
-            <Icon className="relative w-4 h-4 text-slate-400" />
-            <div className="relative mt-3 font-display text-3xl font-bold text-white tabular-nums">{value}</div>
-            <div className="relative text-xs font-semibold text-slate-400">{label}</div>
-        </Tag>
+        <SpotlightCard as={onClick ? 'button' : 'div'} onClick={onClick} color={color} className="!rounded-2xl text-left p-4 w-full">
+            <div className="absolute -top-12 -right-10 w-32 h-32 rounded-full blur-2xl pointer-events-none" style={{ background: `radial-gradient(closest-side, rgba(${color},.28), transparent)` }} />
+            <Icon className="relative w-4 h-4" style={{ color: `rgb(${color})` }} />
+            <div className="relative mt-3 text-[32px] leading-none font-semibold tracking-tight text-white tabular-nums">
+                <CountUp value={value} duration={1.2} colorScheme="custom" />{of != null && <span className="text-lg text-slate-500">/{of}</span>}
+            </div>
+            <div className="relative mt-1.5 text-xs font-medium text-slate-400">{label}</div>
+        </SpotlightCard>
     )
 }
 
@@ -246,12 +250,12 @@ function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onS
     const masters = c.masterNodes || [], workers = c.workerNodes || []
     const addons = Object.entries(c.addons || {}).filter(([, v]) => v).map(([k]) => ADDONS_LIST.find(a => a.key === k)?.name || k)
     return (
-        <div onClick={onOpen} role="link" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpen() }}
-            className="group relative kz-card kz-card-hover p-5 cursor-pointer kz-rise" style={{ animationDelay: `${i * 60}ms` }}>
+        <SpotlightCard onClick={onOpen} role="link" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpen() }}
+            className="group p-5 cursor-pointer kz-rise transition-transform duration-300 hover:-translate-y-0.5" style={{ animationDelay: `${i * 60}ms` }}>
             <div className="flex items-start gap-4">
-                <div className="relative w-12 h-12 shrink-0 rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/15 to-violet-500/15 flex items-center justify-center">
+                <div className="relative w-12 h-12 shrink-0 rounded-2xl border border-white/10 bg-[#15151c] shadow-[inset_0_1px_0_rgba(255,255,255,.08),0_10px_26px_-12px_rgba(128,105,251,.7)] flex items-center justify-center">
                     <Cpu className="w-6 h-6 text-blue-200" />
-                    <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ring-4 ring-[#0b1120] ${status.dot}`} />
+                    <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ring-4 ring-[#0e0e13] ${status.dot}`} />
                 </div>
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -284,8 +288,8 @@ function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onS
                     <span className="font-mono text-slate-500">{masters[0]?.ip}</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                    {masters.map((n, k) => <span key={`m${k}`} title={n.hostname || n.ip} className="h-2.5 w-7 rounded-full bg-gradient-to-r from-blue-400 to-indigo-400 shadow-[0_0_10px_rgba(44,203,238,.45)]" />)}
-                    {workers.map((n, k) => <span key={`w${k}`} title={n.hostname || n.ip} className="h-2.5 w-5 rounded-full bg-violet-400/70" />)}
+                    {masters.map((n, k) => <span key={`m${k}`} title={n.hostname || n.ip} className="h-2.5 w-7 rounded-full bg-gradient-to-r from-blue-400 to-indigo-400 shadow-[0_0_10px_rgba(128,105,251,.45)]" />)}
+                    {workers.map((n, k) => <span key={`w${k}`} title={n.hostname || n.ip} className="h-2.5 w-5 rounded-full bg-sky-400/70 shadow-[0_0_8px_rgba(56,189,248,.35)]" />)}
                     {!masters.length && !workers.length && <span className="text-xs text-slate-500">No nodes saved</span>}
                 </div>
             </div>
@@ -303,7 +307,7 @@ function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onS
                     <button onClick={onOpen} className="kz-btn !py-1.5 !px-3 !text-xs text-blue-200 bg-blue-500/10 border border-blue-400/20 hover:bg-blue-500/20">Open <ArrowRight className="w-3.5 h-3.5" /></button>
                 </div>
             </div>
-        </div>
+        </SpotlightCard>
     )
 }
 
@@ -349,7 +353,7 @@ function EmptyFleet({ canCreate, onStartNew }) {
 function Orbit() {
     return (
         <svg className="absolute -right-24 -top-24 w-[420px] h-[420px] opacity-40 pointer-events-none" viewBox="0 0 400 400" aria-hidden="true">
-            <defs><linearGradient id="og" x1="0" x2="1"><stop offset="0" stopColor="#2ccbee" /><stop offset="1" stopColor="#a855f7" /></linearGradient></defs>
+            <defs><linearGradient id="og" x1="0" x2="1"><stop offset="0" stopColor="#8069fb" /><stop offset="1" stopColor="#38bdf8" /></linearGradient></defs>
             {[70, 120, 170].map((r, k) => <circle key={r} cx="200" cy="200" r={r} fill="none" stroke="url(#og)" strokeOpacity={0.35 - k * 0.08} strokeDasharray="2 6" />)}
             <g className="animate-spin-slow" style={{ transformOrigin: '200px 200px', animationDuration: '40s' }}>
                 {[[200, 80], [320, 200], [200, 370], [80, 200], [285, 115]].map(([x, y], k) => <circle key={k} cx={x} cy={y} r={k === 4 ? 4 : 6} fill="url(#og)" />)}
@@ -385,7 +389,7 @@ function AddonDialog({ cluster, selection, setSelection, isFreePlan, busy, toast
                                     : setSelection(p => ({ ...p, [addon.key]: !p[addon.key] }))}
                                 className={`relative text-left rounded-2xl border p-4 transition ${locked ? 'opacity-50 cursor-not-allowed border-white/5' : on ? 'border-blue-400/60 bg-blue-500/[0.08] shadow-glow' : 'border-white/10 bg-white/[0.02] hover:border-white/25'}`}>
                                 <span className={`absolute top-3 right-3 w-5 h-5 rounded-full border flex items-center justify-center ${on ? 'bg-blue-400 border-blue-400' : 'border-white/20'}`}>
-                                    {on && <CheckCircle2 className="w-4 h-4 text-[#05070d]" />}
+                                    {on && <CheckCircle2 className="w-4 h-4 text-[#08080b]" />}
                                     {locked && <Lock className="w-3 h-3 text-amber-300" />}
                                 </span>
                                 <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${on ? `bg-gradient-to-br ${addon.gradient}` : 'bg-white/[0.05] border border-white/10'}`}><Icon className="w-5 h-5 text-white" /></span>
