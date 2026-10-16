@@ -8,6 +8,7 @@ import { CONTROLS, FRAMEWORKS, DOMAINS, ATTESTATIONS, attestationStatus } from '
 import { complianceStore, complianceJobs, runScan, runNtpFix, summaryOf, sealOf } from '../services/complianceService.js'
 import { reportPdf, certinReportPdf, CERTIN_TYPES } from '../services/compliancePdf.js'
 import { auditLog } from '../services/auditLog.js'
+import { canSeeCluster, canOn, kubeLevelOn } from '../services/accessControl.js'
 
 // Compliance Center: scans, reports (screen, PDF, sealed evidence), fixes,
 // attestations, monthly reports, CERT-In incident reports, the audit trail.
@@ -23,13 +24,13 @@ const needPro = (req, res) => {
 }
 async function clusterFor(req, res, id) {
     const c = (await clusterStore.getClusters()).find(x => x.id === id)
-    if (!c || !canAccessResource(req.user, c)) { res.status(404).json({ error: 'Cluster not found' }); return null }
+    if (!c || !canSeeCluster(req.user, c)) { res.status(404).json({ error: 'Cluster not found' }); return null }
     return c
 }
 async function reportFor(req, res) {
     const r = complianceStore.report(req.params.id)
     const c = r && (await clusterStore.getClusters()).find(x => x.id === r.clusterId)
-    if (!r || !c || !canAccessResource(req.user, c)) { res.status(404).json({ error: 'Report not found' }); return null }
+    if (!r || !c || !canSeeCluster(req.user, c)) { res.status(404).json({ error: 'Report not found' }); return null }
     return r
 }
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, jobId: e.jobId })
@@ -47,7 +48,7 @@ router.get('/meta', (req, res) => {
 
 router.get('/overview', async (req, res) => {
     try {
-        const clusters = (await clusterStore.getClusters()).filter(c => canAccessResource(req.user, c))
+        const clusters = (await clusterStore.getClusters()).filter(c => canSeeCluster(req.user, c))
         const org = orgOf(req)
         res.json({
             pro: paid(req),
@@ -153,7 +154,7 @@ router.post('/incidents/:id/certin', async (req, res) => {
         const { incidentDetector } = await import('../services/incidentDetector.js')
         const inc = incidentDetector.find(req.params.id)
         const c = inc && (await clusterStore.getClusters()).find(x => x.id === inc.clusterId)
-        if (!inc || !c || !canAccessResource(req.user, c)) return res.status(404).json({ error: 'Incident not found (incidents are kept 7 days)' })
+        if (!inc || !c || !canSeeCluster(req.user, c)) return res.status(404).json({ error: 'Incident not found (incidents are kept 7 days)' })
         const form = Object.fromEntries(['type', 'occurredAt', 'description', 'actions', 'organisation', 'logs'].map(k => [k, String(req.body?.[k] || '').slice(0, 4000)]))
         if (form.type && !CERTIN_TYPES.includes(form.type)) return res.status(400).json({ error: 'Choose an incident type from the list' })
         const pdf = await certinReportPdf({ incident: inc, org: orgOf(req), form })

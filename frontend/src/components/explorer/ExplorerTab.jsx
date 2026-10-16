@@ -20,7 +20,7 @@ const FEATURES = [
  * The KubeEZ Explorer inside the cluster page. Radar runs in the cluster;
  * KubeEZ is its only door (your login, your role → Kubernetes RBAC).
  */
-export default function ExplorerTab({ clusterId, installed, canInstall, role }) {
+export default function ExplorerTab({ clusterId, installed, canInstall, level = 'view' }) {
     const navigate = useNavigate()
     const [state, setState] = useState(installed ? 'checking' : 'absent')   // checking | ready | absent | error
     const [error, setError] = useState(null)
@@ -49,6 +49,17 @@ export default function ExplorerTab({ clusterId, installed, canInstall, role }) 
             if (!r.ok || !j.newInstallationId) throw new Error(j.error || 'Could not start the install')
             navigate(`/dashboard/${j.newInstallationId}`)
         } catch (e) { setError(e.message); setState('error') } finally { setInstalling(false) }
+    }
+
+    // a role with no Kubernetes access on this cluster (custom roles / cluster rules)
+    if (level === 'none' && installed) {
+        return (
+            <div className="glass rounded-2xl border border-white/8 p-8 text-center">
+                <Compass className="w-8 h-8 text-slate-500 mx-auto" />
+                <h2 className="mt-3 text-lg font-semibold text-white">No Kubernetes access on this cluster</h2>
+                <p className="mt-1 text-sm text-slate-400">Your role lets you see this cluster in KubeEZ, but not inside it. Ask a workspace admin to give your role Kubernetes access (Team &amp; Roles → Roles).</p>
+            </div>
+        )
     }
 
     if (state === 'absent' || (state === 'error' && !installed)) {
@@ -95,7 +106,7 @@ export default function ExplorerTab({ clusterId, installed, canInstall, role }) 
                 <div className="flex items-center gap-2 min-w-0">
                     <Compass className="w-4 h-4 text-cyan-400 shrink-0" />
                     <span className="text-sm font-black text-white">KubeEZ Explorer</span>
-                    <span className="hidden sm:inline text-[10px] text-slate-500 truncate">signed in as you · {role === 'viewer' ? 'read-only' : role === 'operator' ? 'edit' : 'full access'}</span>
+                    <span className="hidden sm:inline text-[10px] text-slate-500 truncate">signed in as you · {level === 'view' ? 'read-only' : level === 'edit' ? 'edit' : level === 'admin' ? 'full access' : 'no access'}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                     <button onClick={() => { if (frame.current) frame.current.src = src; probe() }} aria-label="Reload" className="p-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5"><RefreshCw className="w-3.5 h-3.5" /></button>

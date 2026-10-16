@@ -5,6 +5,7 @@ import { automationEngine } from './automationEngine.js'
 import { installationManager } from './installationManager.js'
 import { authService } from './authService.js'
 import { canAccessResource } from '../utils/access.js'
+import { canSeeCluster, kubeLevelOn } from './accessControl.js'
 
 /**
  * KubeEZ Explorer (Radar, Apache-2.0) behind KubeEZ.
@@ -30,18 +31,22 @@ const targets = new Map()   // clusterId → { ip, at }
 
 const HOP = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'proxy-authorization', 'proxy-authenticate'])
 const ROLE_GROUP = { superadmin: 'kubeez:admins', admin: 'kubeez:admins', operator: 'kubeez:operators' }
+// The member's Kubernetes level on this cluster (role + cluster rules) → the
+// group the Explorer add-on binds: admins → cluster-admin, operators → edit, viewers → view
+const LEVEL_GROUP = { admin: 'kubeez:admins', edit: 'kubeez:operators', view: 'kubeez:viewers' }
 
 /** The identity Radar (and Kubernetes RBAC) sees for a KubeEZ user. */
-export function identityFor(user) {
+export function identityFor(user, level) {
     const clean = (s) => String(s || '').replace(/[^A-Za-z0-9._@-]/g, '_').slice(0, 100)
+    const group = level ? (LEVEL_GROUP[level] || 'kubeez:viewers') : (ROLE_GROUP[user.role] || 'kubeez:viewers')
     return {
         user: `kubeez:${clean(user.username || user.id)}`,
-        groups: [ROLE_GROUP[user.role] || 'kubeez:viewers', `kubeez:org:${clean(user.orgId || 'none')}`]
+        groups: [group, `kubeez:org:${clean(user.orgId || 'none')}`]
     }
 }
 
 /** Request headers for Radar: no KubeEZ credentials, no client-supplied identity. */
-export function upstreamHeaders(reqHeaders, user, { keepUpgrade = false, proto = 'http' } = {}) {
+export function upstreamHeaders(reqHeaders, user, { keepUpgrade = false, proto = 'http', level } = {}) {
     const out = {}
     for (const [k, v] of Object.entries(reqHeaders)) {
         const key = k.toLowerCase()
@@ -54,7 +59,7 @@ export function upstreamHeaders(reqHeaders, user, { keepUpgrade = false, proto =
         if (key === 'cookie') continue
         out[key] = v
     }
-    const id = identityFor(user)
+    const id = identityFor(user, level)
     out['x-forwarded-user'] = id.user
     out['x-forwarded-groups'] = id.groups.join(',')
     out['x-forwarded-proto'] = proto
@@ -127,6 +132,8 @@ async function findCluster(user, clusterId) {
     const cluster = clusters.find(c => c.id === clusterId)
     if (!cluster) throw Object.assign(new Error('Cluster not found'), { status: 404 })
     if (!canAccessResource(user, cluster)) throw Object.assign(new Error('Unauthorized access to this cluster'), { status: 403 })
+    if (!canSeeCluster(user, cluster)) throw Object.assign(new Error('Cluster not found'), { status: 404 })
+    if (kubeLevelOn(user, cluster) === 'none') throw Object.assign(new Error('Your role has no Kubernetes access on this cluster — ask an admin.'), { status: 403 })
     return cluster
 }
 
@@ -220,7 +227,7 @@ export async function explorerHttp(req, res) {
         return sendError(res, e.status || 502, e.status ? e.message : `Could not reach the KubeEZ Explorer: ${e.message}`, e.code)
     }
 
-    const headers = upstreamHeaders(req.headers, req.user, { proto: req.protocol })
+    const headers = upstreamHeaders(req.headers, req.user, { proto: req.protocol, level: kubeLevelOn(req.user, cluster) })
     // Pages come back uncompressed so their inline scripts can be hashed for the CSP
     const wantsPage = String(req.headers.accept || '').includes('text/html')
     if (wantsPage) delete headers['accept-encoding']
@@ -287,7 +294,7 @@ export async function explorerUpgrade(req, socket, head, allowedOrigins = []) {
     } catch (e) {
         return reject(e.status === 403 ? 403 : e.status === 404 ? 404 : 502, e.status === 403 ? 'Forbidden' : 'Bad Gateway')
     }
-    const headers = upstreamHeaders(req.headers, user, { keepUpgrade: true, proto: req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http' })
+    const headers = upstreamHeaders(req.headers, user, { keepUpgrade: true, proto: req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http', level: kubeLevelOn(user, cluster) })
     const lines = [`${req.method} ${req.url} HTTP/1.1`]
     for (const [k, v] of Object.entries(headers)) {
         for (const val of Array.isArray(v) ? v : [v]) lines.push(`${k}: ${String(val).replace(/[\r\n]/g, '')}`)

@@ -4,6 +4,7 @@ import { can } from '../config/permissions.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { canAccessResource } from '../utils/access.js'
 import { terminalAccess, terminalRecorder, GRANT_MINUTES, announceRequest } from '../services/terminalAccess.js'
+import { canSeeCluster, canOn, kubeLevelOn } from '../services/accessControl.js'
 
 // Terminal access just in time (grants with a reason and a time limit,
 // approvals) and the session recordings.
@@ -21,7 +22,7 @@ router.get('/grants/mine', requirePermission('terminal:access'), (req, res) => {
 router.post('/grants', requirePermission('terminal:access'), async (req, res) => {
     try {
         const c = (await clusterStore.getClusters()).find(x => x.id === req.body?.clusterId)
-        if (!c || !canAccessResource(req.user, c)) return res.status(404).json({ error: 'Cluster not found' })
+        if (!c || !canSeeCluster(req.user, c)) return res.status(404).json({ error: 'Cluster not found' })
         const g = terminalAccess.request(req.user, c, req.body || {})
         await announceRequest(g)
         res.status(201).json(g)

@@ -27,6 +27,7 @@ import { offsiteStore } from '../services/offsiteStore.js'
 import { offsiteService, sameClusterWarning, normaliseConfig } from '../services/offsiteService.js'
 import { volumeBackupStore } from '../services/volumeBackupStore.js'
 import { volumeBackupService } from '../services/volumeBackupService.js'
+import { canSeeCluster, canOn, kubeLevelOn, LABEL_KEY, LABEL_VALUE } from '../services/accessControl.js'
 
 
 const router = express.Router()
@@ -71,6 +72,8 @@ async function loadOwnedCluster(req, res) {
     if (!canAccessResource(req.user, cluster)) {
         res.status(403).json({ error: 'Unauthorized access to this cluster' }); return null
     }
+    // a cluster this member has no access to (cluster rules) does not exist for them
+    if (!canSeeCluster(req.user, cluster)) { res.status(404).json({ error: 'Cluster not found' }); return null }
     return cluster
 }
 
@@ -101,11 +104,30 @@ router.get('/installations/active', requireAuth, (req, res) => {
 })
 
 // List saved clusters
+// Cluster labels (env=prod, team=payments): cluster access rules match on them.
+// Admins only — a label can change who may reach the cluster.
+router.put('/:id/labels', requirePermission('team:manage'), async (req, res) => {
+    try {
+        const cluster = await loadOwnedCluster(req, res); if (!cluster) return
+        const input = req.body?.labels
+        if (!input || typeof input !== 'object' || Array.isArray(input)) return res.status(400).json({ error: 'labels must be an object, e.g. { "env": "prod" }' })
+        const entries = Object.entries(input)
+        if (entries.length > 20) return res.status(400).json({ error: 'Up to 20 labels per cluster' })
+        const labels = {}
+        for (const [k, v] of entries) {
+            const key = String(k).trim(), value = String(v ?? '').trim()
+            if (!LABEL_KEY.test(key) || !LABEL_VALUE.test(value)) return res.status(400).json({ error: `Label "${key}=${value}": letters, numbers, ".", "_" and "-" (e.g. env=prod)` })
+            labels[key.toLowerCase()] = value.toLowerCase()
+        }
+        res.json({ labels: await clusterStore.setLabels(cluster.id, labels) })
+    } catch (error) { sendFailure(res, error) }
+})
+
 router.get('/list', async (req, res) => {
     try {
         const clusters = await installationManager.getSavedClusters()
         // Strict Isolation: Users only see clusters from their own Workspace (orgId)
-        const filtered = clusters.filter(c => canAccessResource(req.user, c))
+        const filtered = clusters.filter(c => canSeeCluster(req.user, c))
         res.json(filtered.map(c => redactForRole(req, c)))
     } catch (error) {
         console.error('List clusters error:', error)
@@ -146,7 +168,7 @@ export function vipProblem(vip, masterNodes, workerNodes) {
 }
 
 // Start cluster installation
-router.post('/install', requirePermission('cluster:create'), async (req, res) => {
+router.post('/install', requirePermission(req => req.body?.mode === 'scale' ? 'cluster:scale' : 'cluster:create'), async (req, res) => {
     try {
         const { clusterName, k8sVersion, networkPlugin, addons, mode, clusterId } = req.body
         // Scaling an existing cluster: its nodes come without passwords (never sent
@@ -284,7 +306,7 @@ router.get('/:id/health', async (req, res) => {
         const cluster = clusters.find(c => c.id === id)
 
         if (cluster) {
-            if (!canAccessResource(req.user, cluster)) {
+            if (!canSeeCluster(req.user, cluster)) {
                 return res.status(403).json({ error: 'Unauthorized access to this cluster' })
             }
         } else {
@@ -346,7 +368,7 @@ router.delete('/:id', requirePermission('cluster:delete'), async (req, res) => {
     if (!target) {
         return res.status(404).json({ error: 'Cluster not found' })
     }
-    if (!canAccessResource(req.user, target)) {
+    if (!canAccessResource(req.user, target) || (target.clusterName && clusters.includes(target) && !canSeeCluster(req.user, target))) {
         return res.status(403).json({ error: 'Unauthorized access to this cluster' })
     }
 

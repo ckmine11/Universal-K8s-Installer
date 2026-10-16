@@ -134,6 +134,20 @@ class ClusterStore {
         })
     }
 
+    // Labels (env=prod, team=payments) for cluster access rules — only the
+    // labels change; the stored node credentials are not touched
+    async setLabels(id, labels) {
+        return this.withLock(async () => {
+            const raw = JSON.parse(await fs.promises.readFile(CLUSTERS_FILE, 'utf8').catch(() => '[]'))
+            const c = raw.find(x => x.id === id)
+            if (!c) return null
+            if (Object.keys(labels).length) c.labels = labels; else delete c.labels
+            c.updatedAt = new Date().toISOString()
+            await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(raw, null, 2))
+            return c.labels || {}
+        })
+    }
+
     async deleteCluster(id) {
         return this.withLock(() => this._deleteCluster(id))
     }

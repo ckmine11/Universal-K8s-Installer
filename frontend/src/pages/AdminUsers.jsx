@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth, apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
@@ -6,8 +6,10 @@ import { PageTitle } from '../components/ui/PageHeader'
 import {
     Users, Shield, User, Trash2, Crown, RefreshCw, Loader2,
     ChevronRight, Lock, AlertTriangle, Check, Clock, Eye, Wrench,
-    KeyRound, Search, UserCheck, UserX, MoreVertical, X
+    KeyRound, Search, UserCheck, UserX, MoreVertical, X, Layers, Download, ShieldCheck
 } from 'lucide-react'
+import RolesPanel from '../components/team/RolesPanel'
+import ClusterAccessDialog from '../components/team/ClusterAccessDialog'
 import useBackdropClose from '../components/ui/useBackdropClose'
 
 // Role metadata — single source for labels/colors/descriptions on the client
@@ -20,8 +22,9 @@ const ROLE_META = {
 const ASSIGNABLE_ROLES = ['admin', 'operator', 'viewer']
 
 // ─── Role Badge ───────────────────────────────────────────────────
-function RoleBadge({ role }) {
-    const meta = ROLE_META[role] || ROLE_META.viewer
+const CUSTOM_META = { icon: ShieldCheck, color: 'text-sky-200 bg-sky-500/10 border-sky-400/25' }
+function RoleBadge({ role, name }) {
+    const meta = ROLE_META[role] || { ...CUSTOM_META, label: name || 'Custom role' }
     const Icon = meta.icon
     return (
         <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${meta.color}`}>
@@ -106,7 +109,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
 }
 
 // ─── Create User Modal ─────────────────────────────────────────────
-function CreateUserModal({ onClose, onSuccess }) {
+function CreateUserModal({ onClose, onSuccess, roleOptions }) {
     const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
     const [formData, setFormData] = useState({ username: '', email: '', password: '', role: 'viewer' })
@@ -156,11 +159,11 @@ function CreateUserModal({ onClose, onSuccess }) {
                     <input type="password" name="new-member-password" autoComplete="new-password" placeholder="Password (min 8 characters)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <div>
                         <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
-                            {ASSIGNABLE_ROLES.map(r => (
-                                <option key={r} value={r} className="bg-slate-950">{ROLE_META[r].label}</option>
+                            {roleOptions.map(r => (
+                                <option key={r.key} value={r.key} className="bg-slate-950">{r.name}{r.custom ? ' (custom)' : ''}</option>
                             ))}
                         </select>
-                        <p className="text-[11px] text-slate-500 mt-1.5 px-1">{ROLE_META[formData.role]?.desc}</p>
+                        <p className="text-[11px] text-slate-500 mt-1.5 px-1">{roleOptions.find(r => r.key === formData.role)?.description}</p>
                     </div>
 
                     <div className="flex gap-3 pt-2">
@@ -176,7 +179,7 @@ function CreateUserModal({ onClose, onSuccess }) {
 }
 
 // ─── User Card ─────────────────────────────────────────────────────
-function UserCard({ userItem, currentUser, onRefresh }) {
+function UserCard({ userItem, currentUser, onRefresh, roleOptions, onClusterAccess }) {
     const { toast } = useToast()
     const [menu, setMenu] = useState(false)
     const [deletingConfirm, setDeletingConfirm] = useState(false)
@@ -204,7 +207,7 @@ function UserCard({ userItem, currentUser, onRefresh }) {
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
-            toast({ title: 'Role Updated', message: `${userItem.username} is now ${ROLE_META[newRole]?.label || newRole}`, type: 'success' })
+            toast({ title: 'Role Updated', message: `${userItem.username} is now ${roleOptions.find(r => r.key === newRole)?.name || newRole}`, type: 'success' })
             onRefresh()
         } catch (err) {
             toast({ title: 'Error', message: err.message, type: 'error' })
@@ -262,7 +265,12 @@ function UserCard({ userItem, currentUser, onRefresh }) {
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                             <span className="font-black text-white">{userItem.username}</span>
-                            <RoleBadge role={userItem.role} />
+                            <RoleBadge role={userItem.role} name={userItem.roleName} />
+                            {!!userItem.clusterAccess?.length && (
+                                <span title="Has a different role on some clusters" className="inline-flex items-center gap-1 text-[10px] font-semibold text-sky-200 bg-sky-500/10 border border-sky-400/20 px-2 py-0.5 rounded-full">
+                                    <Layers className="w-3 h-3" /> {userItem.clusterAccess.length} cluster rule{userItem.clusterAccess.length > 1 ? 's' : ''}
+                                </span>
+                            )}
                             {userItem.isOwner && (
                                 <span title="Holds the plan and billing — other admins cannot change this account"
                                     className="text-[9px] font-black uppercase tracking-widest text-slate-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">Owner</span>
@@ -290,10 +298,11 @@ function UserCard({ userItem, currentUser, onRefresh }) {
                                 value={userItem.role}
                                 onChange={e => handleRoleChange(e.target.value)}
                                 disabled={changingRole}
-                                className="w-full py-2.5 pl-3 pr-8 rounded-xl text-[10px] font-black uppercase tracking-wider bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 outline-none transition-all appearance-none cursor-pointer disabled:opacity-50"
+                                className="w-full py-2.5 pl-3 pr-8 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 outline-none transition-all appearance-none cursor-pointer disabled:opacity-50"
+                                aria-label="Role"
                             >
-                                {ASSIGNABLE_ROLES.map(r => (
-                                    <option key={r} value={r} className="bg-slate-950">{ROLE_META[r].label}</option>
+                                {roleOptions.map(r => (
+                                    <option key={r.key} value={r.key} className="bg-slate-950">{r.name}{r.custom ? ' (custom)' : ''}</option>
                                 ))}
                             </select>
                             {changingRole
@@ -301,6 +310,15 @@ function UserCard({ userItem, currentUser, onRefresh }) {
                                 : <ChevronRight className="w-3 h-3 rotate-90 absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                             }
                         </div>
+
+                        {/* Cluster access: a different role on some clusters (not for admins — they have everything) */}
+                        {userItem.role !== 'admin' && (
+                            <button onClick={() => onClusterAccess(userItem)}
+                                className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-slate-400 hover:text-white transition-all"
+                                title="Cluster access — a different role on some clusters">
+                                <Layers className="w-3.5 h-3.5" />
+                            </button>
+                        )}
 
                         {/* Reset Password */}
                         <button
@@ -346,31 +364,20 @@ function UserCard({ userItem, currentUser, onRefresh }) {
 export default function AdminUsers() {
     const { user: currentUser } = useAuth()
     const { toast } = useToast()
-
-    // RBAC guard — only Org Admins / Super Admins may manage the team.
-    // Operators/Viewers who type /users directly get a clear access-denied screen.
-    if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-                <div className="p-5 bg-rose-500/10 border border-rose-500/20 rounded-3xl mb-6">
-                    <Lock className="w-10 h-10 text-rose-400" />
-                </div>
-                <h1 className="text-2xl font-black text-white mb-2">Access Restricted</h1>
-                <p className="text-slate-400 max-w-md mb-1">Team &amp; role management is available to workspace admins only.</p>
-                <p className="text-slate-600 text-sm mb-8">Your role: <span className="font-bold text-slate-400">{currentUser.role}</span></p>
-                <a href="/" className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all">Back to Dashboard</a>
-            </div>
-        )
-    }
     const [users, setUsers] = useState([])
     const [seats, setSeats] = useState({ used: 0, max: 1 })
     const [rbac, setRbac] = useState(null)
+    const [rolesMeta, setRolesMeta] = useState(null)
+    const [clusters, setClusters] = useState([])
     const [showMatrix, setShowMatrix] = useState(false)
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
     const [search, setSearch] = useState('')
     const [filterRole, setFilterRole] = useState('all')
     const [showCreateModal, setShowCreateModal] = useState(false)
+    const [accessFor, setAccessFor] = useState(null)
+    const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get('tab') === 'roles' ? 'roles' : 'members')
+    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'superadmin')
 
     const fetchUsers = useCallback(async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true)
@@ -378,7 +385,6 @@ export default function AdminUsers() {
             const res = await apiFetch('/api/admin/users')
             if (!res.ok) throw new Error('Failed to load users')
             const data = await res.json()
-            // New shape: { users, seats }. Fall back to array for safety.
             setUsers(Array.isArray(data) ? data : (data.users || []))
             if (data.seats) setSeats(data.seats)
         } catch (err) {
@@ -388,68 +394,103 @@ export default function AdminUsers() {
             setRefreshing(false)
         }
     }, [])
-
-    const fetchRbac = useCallback(async () => {
+    const fetchRoles = useCallback(async () => {
         try {
-            const res = await apiFetch('/api/rbac')
-            if (res.ok) setRbac(await res.json())
+            const [r, b, c] = await Promise.all([apiFetch('/api/roles'), apiFetch('/api/rbac'), apiFetch('/api/clusters/list')])
+            if (r.ok) setRolesMeta(await r.json())
+            if (b.ok) setRbac(await b.json())
+            if (c.ok) { const list = await c.json(); setClusters(Array.isArray(list) ? list.map(x => ({ id: x.id, clusterName: x.clusterName || x.id, labels: x.labels || {} })) : []) }
         } catch { /* non-critical */ }
     }, [])
+    const refreshAll = () => { fetchUsers(true); fetchRoles() }
 
-    useEffect(() => { fetchUsers(); fetchRbac() }, [fetchUsers, fetchRbac])
+    useEffect(() => { if (isAdmin) { fetchUsers(); fetchRoles() } }, [isAdmin])
+    useEffect(() => { const p = new URLSearchParams(window.location.search); p.set('tab', tab); window.history.replaceState(null, '', `${window.location.pathname}?${p}`) }, [tab])
+
+    // RBAC guard — only Org Admins / Super Admins may manage the team.
+    if (!isAdmin) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+                <div className="p-5 bg-rose-500/10 border border-rose-500/20 rounded-3xl mb-6">
+                    <Lock className="w-10 h-10 text-rose-400" />
+                </div>
+                <h1 className="text-2xl font-black text-white mb-2">Access Restricted</h1>
+                <p className="text-slate-400 max-w-md mb-1">Team &amp; role management is available to workspace admins only.</p>
+                <a href="/" className="mt-7 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all">Back to Dashboard</a>
+            </div>
+        )
+    }
+
+    // every role a member can have: built-in first, then the workspace's own
+    const roleOptions = [
+        ...(rolesMeta?.builtin || [{ key: 'admin', name: 'Org Admin' }, { key: 'operator', name: 'Operator' }, { key: 'viewer', name: 'Viewer' }])
+            .map(b => ({ key: b.key, name: b.name, description: ROLE_META[b.key]?.desc || b.description })),
+        ...(rolesMeta?.custom || []).map(r => ({ key: r.key, name: r.name, description: r.description, custom: true }))
+    ]
+
+    const exportReview = async () => {
+        try {
+            const r = await fetch('/api/admin/access-review?format=csv', { credentials: 'include' })
+            if (!r.ok) throw new Error('Could not build the access review')
+            const url = URL.createObjectURL(await r.blob())
+            const a = document.createElement('a'); a.href = url; a.download = `kubeez-access-review-${new Date().toISOString().slice(0, 10)}.csv`; a.click()
+            setTimeout(() => URL.revokeObjectURL(url), 1000)
+            toast({ title: 'Access review downloaded', message: 'Who has what, on which cluster — keep it with your audit evidence.', type: 'success' })
+        } catch (e) { toast({ title: 'Access review', message: e.message, type: 'error' }) }
+    }
 
     const seatsFull = seats.used >= seats.max
-
     const filtered = users.filter(u => {
         const matchSearch = u.username.toLowerCase().includes(search.toLowerCase())
-        const matchRole = filterRole === 'all' || u.role === filterRole
+        const matchRole = filterRole === 'all' || (filterRole === 'custom' ? u.role.startsWith('custom:') : u.role === filterRole)
         return matchSearch && matchRole
     })
-
     const adminCount = users.filter(u => u.role === 'admin').length
-    const operatorCount = users.filter(u => u.role === 'operator').length
-    const viewerCount = users.filter(u => u.role === 'viewer').length
+    const builtinOthers = users.filter(u => u.role === 'operator' || u.role === 'viewer').length
+    const customCount = users.filter(u => u.role.startsWith('custom:')).length
+    const withRules = users.filter(u => u.clusterAccess?.length).length
 
     return (
         <div className="max-w-7xl mx-auto">
             {/* Header */}
-            <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+            <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
                 <PageTitle icon={Users} eyebrow="Workspace" title="Team & Roles"
-                    description={<>Manage team members, roles, and access in your workspace</>} />
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setShowMatrix(true)}
-                        className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-black uppercase tracking-widest text-[10px] rounded-xl transition-all flex items-center gap-1.5"
-                    >
-                        <Shield className="w-3.5 h-3.5" /> Who can do what?
-                    </button>
+                    description={<>Who is in the workspace, what each role may do, and where</>} />
+                <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={() => setShowMatrix(true)} className="kz-btn-ghost !py-2"><Shield className="w-4 h-4" /> Who can do what?</button>
+                    <button onClick={exportReview} className="kz-btn-ghost !py-2" title="CSV: every member, every cluster, what they may do"><Download className="w-4 h-4" /> Access review</button>
                     <button
                         onClick={() => seatsFull ? toast({ title: 'Seat limit reached', message: `Your plan allows ${seats.max} member(s). Upgrade to add more.`, type: 'error' }) : setShowCreateModal(true)}
-                        className={`px-4 py-2.5 font-black uppercase tracking-widest text-[10px] rounded-xl transition-all shadow-lg ${seatsFull ? 'bg-white/5 text-slate-500 border border-white/10 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'}`}
+                        className={seatsFull ? 'kz-btn-ghost !py-2 opacity-60' : 'kz-btn-primary !py-2'}
                         title={seatsFull ? 'Seat limit reached — upgrade your plan' : 'Invite a team member'}
-                    >
-                        + Invite User
-                    </button>
-                    <button
-                        onClick={() => fetchUsers(true)}
-                        disabled={refreshing}
-                        className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all active:scale-95 text-slate-300"
-                    >
+                    >+ Invite user</button>
+                    <button onClick={refreshAll} disabled={refreshing} className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all active:scale-95 text-slate-300" aria-label="Refresh">
                         <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
             </div>
 
+            {/* Tabs */}
+            <div className="mb-7 inline-flex rounded-2xl border border-white/10 bg-black/25 p-1" role="tablist">
+                {[['members', 'Members', Users], ['roles', 'Roles', ShieldCheck]].map(([k, label, Icon]) => (
+                    <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+                        className={`flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold transition ${tab === k ? 'bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,.08)]' : 'text-slate-400 hover:text-white'}`}>
+                        <Icon className="w-4 h-4" /> {label}
+                        {k === 'roles' && !!rolesMeta?.custom?.length && <span className="rounded-full bg-blue-500/20 px-1.5 text-[10px] text-blue-200">{rolesMeta.custom.length}</span>}
+                    </button>
+                ))}
+            </div>
+
+            {tab === 'roles' ? (
+                rolesMeta ? <RolesPanel meta={rolesMeta} onChanged={refreshAll} /> : <div className="flex justify-center py-20"><Loader2 className="w-7 h-7 text-slate-500 animate-spin" /></div>
+            ) : (<>
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <div className="glass rounded-2xl border border-white/8 p-6">
-                    <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">Seats Used</p>
-                    <p className={`text-3xl font-black ${seatsFull ? 'text-amber-400' : 'text-white'}`}>{seats.used}<span className="text-lg text-slate-600">/{seats.max}</span></p>
-                </div>
                 {[
+                    { label: 'Seats used', value: <>{seats.used}<span className="text-lg text-slate-600">/{seats.max}</span></>, color: seatsFull ? 'text-amber-400' : 'text-white' },
                     { label: 'Admins', value: adminCount, color: 'text-amber-400' },
-                    { label: 'Operators', value: operatorCount, color: 'text-blue-400' },
-                    { label: 'Viewers', value: viewerCount, color: 'text-slate-300' },
+                    { label: 'Operators & viewers', value: builtinOthers, color: 'text-blue-300' },
+                    { label: 'Custom roles · cluster rules', value: <>{customCount}<span className="text-lg text-slate-600"> · {withRules}</span></>, color: 'text-sky-300' },
                 ].map(s => (
                     <div key={s.label} className="glass rounded-2xl border border-white/8 p-6">
                         <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">{s.label}</p>
@@ -459,8 +500,8 @@ export default function AdminUsers() {
             </div>
 
             {/* Search & Filter */}
-            <div className="flex items-center gap-4 mb-6">
-                <div className="relative flex-1">
+            <div className="flex flex-wrap items-center gap-4 mb-6">
+                <div className="relative flex-1 min-w-[220px]">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <input
                         type="search"
@@ -473,17 +514,10 @@ export default function AdminUsers() {
                         className="w-full pl-11 pr-4 py-3 bg-black/35 border border-white/5 focus:border-blue-500/40 rounded-2xl text-sm text-white placeholder-slate-600 outline-none transition-colors"
                     />
                 </div>
-                <div className="flex items-center gap-2">
-                    {['all', 'admin', 'operator', 'viewer'].map(role => (
-                        <button
-                            key={role}
-                            onClick={() => setFilterRole(role)}
-                            className={`px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                filterRole === role
-                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                                    : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'
-                            }`}
-                        >
+                <div className="flex flex-wrap items-center gap-2">
+                    {['all', 'admin', 'operator', 'viewer', 'custom'].map(role => (
+                        <button key={role} onClick={() => setFilterRole(role)}
+                            className={`px-4 py-2.5 rounded-2xl text-xs font-semibold capitalize transition-all ${filterRole === role ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'}`}>
                             {role}
                         </button>
                     ))}
@@ -493,44 +527,41 @@ export default function AdminUsers() {
             {/* Users Grid */}
             {loading ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-4">
-                    <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-                    <p className="text-xs text-slate-500 uppercase font-black tracking-widest">Loading users...</p>
+                    <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                    <p className="text-xs text-slate-500">Loading members…</p>
                 </div>
             ) : filtered.length === 0 ? (
                 <div className="glass rounded-3xl border border-white/5 p-16 text-center">
                     <div className="p-5 bg-white/5 rounded-2xl border border-white/5 inline-flex mb-5">
                         <UserX className="w-10 h-10 text-slate-600" />
                     </div>
-                    <p className="text-slate-400 font-bold mb-1">
-                        {search ? `No users found for "${search}"` : 'No users registered yet'}
-                    </p>
-                    <p className="text-xs text-slate-600">
-                        {search ? 'Try a different search term' : 'Users will appear here after registration'}
-                    </p>
+                    <p className="text-slate-400 font-bold mb-1">{search ? `No members found for "${search}"` : 'Nobody with this role yet'}</p>
+                    <p className="text-xs text-slate-600">{search ? 'Try a different search term' : 'Invite a member, or give someone this role'}</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     {filtered.map(u => (
-                        <UserCard
-                            key={u.id}
-                            userItem={u}
-                            currentUser={currentUser}
-                            onRefresh={() => fetchUsers(true)}
-                        />
+                        <UserCard key={u.id} userItem={u} currentUser={currentUser} roleOptions={roleOptions}
+                            onClusterAccess={(m) => rolesMeta && !rolesMeta.allowed
+                                ? toast({ title: 'Pro feature', message: 'Per-cluster access is part of Pro. On Free, everyone has their role on every cluster.', type: 'info' })
+                                : setAccessFor(m)}
+                            onRefresh={() => fetchUsers(true)} />
                     ))}
                 </div>
             )}
+            </>)}
 
             {showCreateModal && (
-                <CreateUserModal
+                <CreateUserModal roleOptions={roleOptions}
                     onClose={() => setShowCreateModal(false)}
-                    onSuccess={() => {
-                        setShowCreateModal(false)
-                        fetchUsers(true)
-                    }}
+                    onSuccess={() => { setShowCreateModal(false); fetchUsers(true) }}
                 />
             )}
-
+            {accessFor && (
+                <ClusterAccessDialog member={accessFor} roleOptions={roleOptions} clusters={clusters}
+                    onClose={() => setAccessFor(null)}
+                    onSaved={() => { setAccessFor(null); fetchUsers(true); fetchRoles() }} />
+            )}
             {showMatrix && rbac && (
                 <PermissionsMatrixModal rbac={rbac} onClose={() => setShowMatrix(false)} />
             )}
@@ -541,65 +572,51 @@ export default function AdminUsers() {
 // ─── Permissions Matrix (transparency) ────────────────────────────
 function PermissionsMatrixModal({ rbac, onClose }) {
     const backdrop = useBackdropClose(onClose)
-    const roles = ['admin', 'operator', 'viewer']
+    const builtin = ['admin', 'operator', 'viewer'].map(r => ({ key: r, name: ROLE_META[r].label, has: (k, item) => item.roles.includes(r) }))
+    const custom = (rbac.customRoles || []).map(c => ({ key: c.key, name: c.name, has: (k) => c.permissions.includes(k), custom: true }))
+    const cols = [...builtin, ...custom]
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" {...backdrop}>
-            <div className="glass rounded-3xl border border-white/10 w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                {/* Header */}
+            <div className="glass rounded-3xl border border-white/10 w-full max-w-5xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-7 pt-7 pb-4 border-b border-white/5">
                     <div className="flex items-center gap-3">
                         <Shield className="w-5 h-5 text-blue-400" />
                         <div>
                             <h3 className="text-lg font-black text-white">Who Can Do What</h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Exactly what each role is allowed to do in your workspace</p>
+                            <p className="text-xs text-slate-500 mt-0.5">What each role may do in your workspace. Cluster rules can change it on some clusters (see Members → Cluster access).</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors" aria-label="Close">
                         <X className="w-5 h-5 text-slate-400" />
                     </button>
                 </div>
-
-                {/* Role legend */}
-                <div className="px-7 py-4 grid grid-cols-3 gap-3 border-b border-white/5">
-                    {roles.map(r => {
-                        const meta = ROLE_META[r]; const Icon = meta.icon
-                        return (
-                            <div key={r} className={`rounded-xl border p-3 ${meta.color}`}>
-                                <div className="flex items-center gap-1.5 font-black text-xs uppercase tracking-wider"><Icon className="w-3.5 h-3.5" />{meta.label}</div>
-                                <p className="text-[10px] text-slate-400 mt-1 leading-snug">{meta.desc}</p>
-                            </div>
-                        )
-                    })}
-                </div>
-
-                {/* Matrix */}
-                <div className="overflow-y-auto px-7 py-4">
+                <div className="overflow-auto px-7 py-4">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-slate-500 text-[10px] uppercase tracking-widest">
-                                <th className="text-left font-black py-2">Capability</th>
-                                {roles.map(r => <th key={r} className="text-center font-black py-2 w-24">{ROLE_META[r].label}</th>)}
+                                <th className="text-left font-black py-2 min-w-[220px]">Capability</th>
+                                {cols.map(c => <th key={c.key} className={`text-center font-black py-2 px-2 min-w-[84px] ${c.custom ? 'text-sky-300/90' : ''}`}>{c.name}</th>)}
                             </tr>
                         </thead>
                         <tbody>
                             {rbac.matrix.map(group => (
-                                <>
-                                    <tr key={group.group}>
-                                        <td colSpan={4} className="pt-4 pb-1 text-[10px] font-black uppercase tracking-widest text-blue-400">{group.group}</td>
+                                <Fragment key={group.group}>
+                                    <tr>
+                                        <td colSpan={cols.length + 1} className="pt-4 pb-1 text-[10px] font-black uppercase tracking-widest text-blue-400">{group.group}</td>
                                     </tr>
                                     {group.items.map(item => (
                                         <tr key={item.key} className="border-t border-white/5">
                                             <td className="py-2.5 text-slate-300">{item.label}</td>
-                                            {roles.map(r => (
-                                                <td key={r} className="text-center">
-                                                    {item.roles.includes(r)
+                                            {cols.map(c => (
+                                                <td key={c.key} className="text-center">
+                                                    {c.has(item.key, item)
                                                         ? <Check className="w-4 h-4 text-emerald-400 mx-auto" />
                                                         : <X className="w-3.5 h-3.5 text-slate-700 mx-auto" />}
                                                 </td>
                                             ))}
                                         </tr>
                                     ))}
-                                </>
+                                </Fragment>
                             ))}
                         </tbody>
                     </table>

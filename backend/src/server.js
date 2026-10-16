@@ -61,6 +61,7 @@ import { authService } from './services/authService.js'
 import { mailConfigured } from './utils/mailer.js'
 import { requireAuth } from './middleware/authMiddleware.js'
 import { explorerHttp, explorerUpgrade, EXPLORER_PATH } from './services/explorerProxy.js'
+import { canSeeCluster, canOn } from './services/accessControl.js'
 
 // One HTTP 'upgrade' entry: KubeEZ Explorer WebSockets (pod terminal, log
 // streams) are tunnelled to the cluster; everything else is KubeEZ's own.
@@ -401,11 +402,11 @@ wss.on('connection', (ws, req) => {
     }
     else if (pathname.startsWith('/ws/shell/')) {
         // Interactive shell on one node: /ws/shell/<clusterId>?node=<ip>&cols=&rows=
-        if (!can(user.role, 'terminal:access')) return forbid()
         const clusterId = decodeURIComponent(pathname.split('/')[3] || '')
         installationManager.getSavedClusters().then(clusters => {
             const cluster = clusters.find(c => c.id === clusterId)
-            if (!cluster || !canAccessResource(user, cluster)) return ws.close(4004, 'Cluster not found')
+            if (!cluster || !canSeeCluster(user, cluster)) return ws.close(4004, 'Cluster not found')
+            if (!canOn(user, 'terminal:access', cluster)) return forbid()
             return openNodeShell({
                 ws, user, cluster: { ...cluster, masterNodes: (cluster.masterNodes || []).map(n => ({ ...n, ownerId: cluster.ownerId, orgId: cluster.orgId })) },
                 nodeIp: url.searchParams.get('node'), cols: Number(url.searchParams.get('cols')) || 120, rows: Number(url.searchParams.get('rows')) || 32,
@@ -415,7 +416,9 @@ wss.on('connection', (ws, req) => {
     }
     else if (pathname.startsWith('/ws/orbital')) {
         const id = pathname.split('/').pop()
-        if (!can(user.role, 'terminal:access')) {
+        // No terminal access anywhere → refused at once. Otherwise it is checked
+        // per cluster on every command (cluster rules may allow it on some clusters)
+        if (!canOn(user, 'terminal:access') && !(user.clusterAccess || []).length) {
             console.log(`WebSocket: Orbital Terminal rejected for ${user.username} (no terminal:access)`)
             return forbid()
         }
@@ -434,14 +437,15 @@ wss.on('connection', (ws, req) => {
 
                 // Re-check on every command: role may have changed, cluster may be gone
                 const current = authService.verifyToken(token)
-                if (!current || !can(current.role, 'terminal:access')) return ws.close(4003, 'Forbidden')
+                if (!current) return ws.close(4003, 'Forbidden')
 
                 // Nodes + credentials come ONLY from the server-side cluster record
                 const clusters = await installationManager.getSavedClusters()
                 const cluster = clusters.find(c => c.id === (data.clusterId || id))
-                if (!cluster || !canAccessResource(current, cluster)) {
+                if (!cluster || !canSeeCluster(current, cluster)) {
                     return send({ type: 'terminal-output', nodeIp: 'system', streamType: 'error', content: 'Unauthorized access to this cluster\n' })
                 }
+                if (!canOn(current, 'terminal:access', cluster)) return ws.close(4003, 'Forbidden')
 
                 // Just-in-time access: a current grant for THIS user and cluster (reason + time limit)
                 const grant = terminalAccess.activeGrant(current.id, cluster.id)

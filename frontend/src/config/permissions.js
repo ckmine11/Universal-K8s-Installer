@@ -35,9 +35,29 @@ export const PERMISSIONS = {
     'access:approve':    ['admin'],
 }
 
-/** Does a role have a given permission? superadmin always true. */
-export function can(role, permission) {
+// The signed-in member's real access (custom role + cluster rules), loaded
+// from /api/rbac/me by AuthContext. Without it the built-in matrix answers.
+let ACCESS = null
+export function setAccess(a) { ACCESS = a || null }
+export const currentAccess = () => ACCESS
+
+/**
+ * May this role do `permission` — on `clusterId` when given (cluster rules
+ * apply there), otherwise workspace-wide? superadmin always true.
+ */
+export function can(role, permission, clusterId) {
     if (role === 'superadmin') return true
+    if (ACCESS && ACCESS.role === role) {
+        const onCluster = clusterId && ACCESS.clusters?.[clusterId]
+        return (onCluster ? onCluster.permissions : ACCESS.permissions).includes(permission)
+    }
     const allowed = PERMISSIONS[permission]
     return Array.isArray(allowed) && allowed.includes(role)
+}
+
+/** Kubernetes level on a cluster (Explorer): none | view | edit | admin */
+export function kubeLevel(role, clusterId) {
+    if (role === 'superadmin' || role === 'admin') return 'admin'
+    const c = ACCESS?.clusters?.[clusterId]
+    return c ? c.kube : (ACCESS?.kube || (role === 'operator' ? 'edit' : 'view'))
 }

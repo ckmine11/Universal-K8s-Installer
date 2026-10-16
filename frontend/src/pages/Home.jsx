@@ -40,7 +40,7 @@ const ago = (iso) => {
 
 export default function Home({ onStartNew, onScaleExisting }) {
     const { toast } = useToast()
-    const { user } = useAuth()
+    const { user, access } = useAuth()   // access: re-render when it loads
     const navigate = useNavigate()
     const canDelete = can(user?.role, 'cluster:delete')
     const canCreate = can(user?.role, 'cluster:create')
@@ -98,7 +98,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
     }
 
     const handleDeleteCluster = async (id) => {
-        if (!canDelete) return toast({ title: 'Not allowed', message: 'Your role does not permit removing clusters.', type: 'error' })
+        if (!can(user?.role, 'cluster:delete', id)) return toast({ title: 'Not allowed', message: 'Your role does not permit removing clusters.', type: 'error' })
         if (!window.confirm('Remove this cluster from KubeEZ? The cluster itself keeps running.')) return
         try {
             const res = await apiFetch(`/api/clusters/${id}`, { method: 'DELETE' })
@@ -165,7 +165,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
                 )}
             </section>
 
-            {!canCreate && (
+            {user?.role === 'viewer' && (
                 <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
                     <Eye className="w-4 h-4 text-slate-400 shrink-0" />
                     You have <b className="text-white mx-1">read-only</b> access — you can watch clusters, health and incidents. Ask an Operator or Admin to make changes.
@@ -185,7 +185,8 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     </div>
                     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                         {savedClusters.map((c, i) => (
-                            <ClusterCard key={c.id} c={c} i={i} status={statusOf(c)} canCreate={canCreate} canDelete={canDelete}
+                            <ClusterCard key={c.id} c={c} i={i} status={statusOf(c)}
+                                canScale={can(user?.role, 'cluster:scale', c.id)} canAddons={can(user?.role, 'addon:install', c.id)} canDelete={can(user?.role, 'cluster:delete', c.id)}
                                 onOpen={() => navigate(`/cluster/${c.id}`)}
                                 onAddons={() => { setSelectedClusterId(c.id); setAddonSelection({}); setIsAddonModalOpen(true) }}
                                 onScale={() => onScaleExisting(c)}
@@ -247,7 +248,7 @@ function Stat({ icon: Icon, label, value, of, color, onClick }) {
     )
 }
 
-function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onScale, onDelete }) {
+function ClusterCard({ c, i, status, canScale, canAddons, canDelete, onOpen, onAddons, onScale, onDelete }) {
     const masters = c.masterNodes || [], workers = c.workerNodes || []
     const addons = Object.entries(c.addons || {}).filter(([, v]) => v).map(([k]) => ADDONS_LIST.find(a => a.key === k)?.name || k)
     return (
@@ -270,11 +271,11 @@ function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onS
                         {c.controlPlaneVip && <><span className="w-1 h-1 rounded-full bg-slate-600" /><span className="font-mono">VIP {c.controlPlaneVip}</span></>}
                     </div>
                 </div>
-                {(canCreate || canDelete) && (
+                {(canScale || canDelete) && (
                     <div onClick={e => e.stopPropagation()}>
                         <Popover width={176} button={(p) => <button {...p} className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" aria-label="Cluster actions"><MoreHorizontal className="w-4 h-4" /></button>}>
                             {(close) => <>
-                                {canCreate && <button role="menuitem" onClick={() => { close(); onScale() }} className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-white/5"><Scaling className="w-4 h-4" /> Add nodes</button>}
+                                {canScale && <button role="menuitem" onClick={() => { close(); onScale() }} className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-white/5"><Scaling className="w-4 h-4" /> Add nodes</button>}
                                 {canDelete && <button role="menuitem" onClick={() => { close(); onDelete() }} className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-300 hover:bg-red-500/10"><Trash2 className="w-4 h-4" /> Remove</button>}
                             </>}
                         </Popover>
@@ -304,7 +305,7 @@ function ClusterCard({ c, i, status, canCreate, canDelete, onOpen, onAddons, onS
             <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between gap-2">
                 <span className="text-[11px] text-slate-500">Added {ago(c.createdAt)}</span>
                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    {canCreate && <button onClick={onAddons} className="kz-btn-ghost !py-1.5 !px-3 !text-xs"><Package className="w-3.5 h-3.5" /> Add-ons</button>}
+                    {canAddons && <button onClick={onAddons} className="kz-btn-ghost !py-1.5 !px-3 !text-xs"><Package className="w-3.5 h-3.5" /> Add-ons</button>}
                     <button onClick={onOpen} className="kz-btn !py-1.5 !px-3 !text-xs text-blue-200 bg-blue-500/10 border border-blue-400/20 hover:bg-blue-500/20">Open <ArrowRight className="w-3.5 h-3.5" /></button>
                 </div>
             </div>

@@ -7,6 +7,7 @@ import { clusterStore } from '../services/clusterStore.js'
 import { canAccessResource } from '../utils/access.js'
 import { authService } from '../services/authService.js'
 import { isPaidPlan } from '../config/planFeatures.js'
+import { canSeeCluster, canOn, kubeLevelOn } from '../services/accessControl.js'
 
 // The add-on catalogue for customizing add-ons BEFORE a cluster exists (the
 // new-cluster wizard): the forms, and a preview of the values for the cluster
@@ -16,7 +17,7 @@ const router = express.Router()
 // Add-on updates on the clusters the caller can see (top bar "Updates")
 router.get('/updates', requirePermission('addon:view'), async (req, res) => {
     try {
-        const clusters = (await clusterStore.getClusters()).filter(c => canAccessResource(req.user, c))
+        const clusters = (await clusterStore.getClusters()).filter(c => canSeeCluster(req.user, c))
         const list = []
         for (const c of clusters) for (const u of availableUpdates(c)) list.push({ clusterId: c.id, clusterName: c.clusterName || c.id, ...u })
         res.json({ updates: list, lastCheck: addonVersionService.lastCheck() })

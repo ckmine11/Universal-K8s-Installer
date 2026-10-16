@@ -3,22 +3,34 @@ import { requireAuth, requirePermission } from '../middleware/authMiddleware.js'
 import { incidentDetector } from '../services/incidentDetector.js'
 import { healingPolicyStore } from '../services/healingPolicyStore.js'
 import { CATALOG, POLICIES } from '../config/incidentCatalog.js'
+import { clusterStore } from '../services/clusterStore.js'
+import { canSeeCluster, canOn } from '../services/accessControl.js'
 
 const router = express.Router()
 
 // Same workspace (orgId); legacy records without orgId match their owner;
 // the platform super admin sees everything.
-function visibleTo(user) {
+// Cluster rules apply too: incidents of a cluster a member may not see (or
+// whose incidents they may not view) are not shown to them.
+function visibleTo(user, hidden = new Set()) {
     return (item) =>
         user.role === 'superadmin' ||
-        (item.orgId && user.orgId && item.orgId === user.orgId) ||
-        (!item.orgId && item.ownerId === user.id)
+        (((item.orgId && user.orgId && item.orgId === user.orgId) ||
+          (!item.orgId && item.ownerId === user.id)) && !hidden.has(item.clusterId))
 }
+async function hiddenFor(user) {
+    if (user.role === 'superadmin' || user.role === 'admin') return new Set()
+    const clusters = await clusterStore.getClusters().catch(() => [])
+    return new Set(clusters.filter(c => !canSeeCluster(user, c) || !canOn(user, 'incident:view', c)).map(c => c.id))
+}
+// the act buttons are decided by the incident's own cluster
+const incidentCluster = (req, res, next) => { const inc = incidentDetector.find(req.params.id); if (inc?.clusterId) req.permissionClusterId = inc.clusterId; next() }
 const strip = ({ _key, orgId, ownerId, ...inc }) => inc
 
 // Recent incidents (newest first; kept 7 days after they were last seen)
-router.get('/', requireAuth, (req, res) => {
-    res.json(incidentDetector.getIncidents().filter(visibleTo(req.user)).map(strip))
+router.get('/', requireAuth, async (req, res) => {
+    const hidden = await hiddenFor(req.user)
+    res.json(incidentDetector.getIncidents().filter(visibleTo(req.user, hidden)).map(strip))
 })
 
 // What each problem type means, what KubeEZ does, and the workspace policy
@@ -27,16 +39,17 @@ router.get('/catalog', requireAuth, (req, res) => {
 })
 
 // Numbers for the page: open by severity, auto-fixed, fix rate, MTTR, top problems, per day
-router.get('/stats', requireAuth, (req, res) => {
+router.get('/stats', requireAuth, async (req, res) => {
     const days = Math.max(1, Math.min(7, parseInt(req.query.days, 10) || 7))
-    res.json(incidentDetector.getStats(visibleTo(req.user), days))
+    res.json(incidentDetector.getStats(visibleTo(req.user, await hiddenFor(req.user)), days))
 })
 
 // Which clusters are actually being watched, and whether the watcher is connected
-router.get('/monitoring', requireAuth, (req, res) => {
-    const clusters = incidentDetector.getMonitoring().filter(visibleTo(req.user))
+router.get('/monitoring', requireAuth, async (req, res) => {
+    const hidden = await hiddenFor(req.user)
+    const clusters = incidentDetector.getMonitoring().filter(visibleTo(req.user, hidden))
         .map(({ orgId, ownerId, ...c }) => c)
-    const skipped = incidentDetector.getSkipped().filter(visibleTo(req.user))
+    const skipped = incidentDetector.getSkipped().filter(visibleTo(req.user, hidden))
         .map(({ orgId, ownerId, ...c }) => c)
     res.json({ clusters, connected: clusters.filter(c => c.connected).length, skipped })
 })
@@ -48,9 +61,9 @@ router.put('/policy', requireAuth, requirePermission('healing:manage'), (req, re
 })
 
 // Maintenance: no checks, fixes or alerts for a cluster for some hours
-router.put('/maintenance/:clusterId', requireAuth, requirePermission('incident:act'), (req, res) => {
+router.put('/maintenance/:clusterId', requireAuth, requirePermission('incident:act'), async (req, res) => {
     const c = incidentDetector.getMonitoring().find(x => x.clusterId === req.params.clusterId)
-    if (!c || !visibleTo(req.user)(c)) return res.status(404).json({ error: 'Cluster not found' })
+    if (!c || !visibleTo(req.user, await hiddenFor(req.user))(c)) return res.status(404).json({ error: 'Cluster not found' })
     const hours = Math.max(0, Math.min(336, Number(req.body?.hours) || 0))
     res.json({ maintenance: healingPolicyStore.setMaintenance(c.orgId, c.clusterId, hours, req.user.username) })
 })
@@ -61,18 +74,18 @@ const own = (req, res) => {
     if (!inc || !visibleTo(req.user)(inc)) { res.status(404).json({ error: 'Incident not found' }); return null }
     return inc
 }
-router.post('/:id/ack', requireAuth, requirePermission('incident:act'), (req, res) => {
+router.post('/:id/ack', requireAuth, incidentCluster, requirePermission('incident:act'), (req, res) => {
     if (!own(req, res)) return
     res.json(strip(incidentDetector.acknowledge(req.params.id, req.user.username)))
 })
-router.post('/:id/run', requireAuth, requirePermission('incident:act'), async (req, res) => {
+router.post('/:id/run', requireAuth, incidentCluster, requirePermission('incident:act'), async (req, res) => {
     const inc = own(req, res); if (!inc) return
     const meta = CATALOG[inc.reason]
     if (!meta?.fixable) return res.status(400).json({ error: 'KubeEZ has no automatic fix for this problem — see the suggestion' })
     try { res.json(strip(await incidentDetector.runNow(req.params.id, req.user.username))) }
     catch (e) { res.status(e.status || 500).json({ error: e.message }) }
 })
-router.post('/:id/mute', requireAuth, requirePermission('incident:act'), (req, res) => {
+router.post('/:id/mute', requireAuth, incidentCluster, requirePermission('incident:act'), (req, res) => {
     if (!own(req, res)) return
     const hours = Math.max(0, Math.min(336, Number(req.body?.hours) || 0))
     res.json(strip(incidentDetector.mute(req.params.id, hours, req.user.username)))

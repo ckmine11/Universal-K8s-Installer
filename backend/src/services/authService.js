@@ -46,7 +46,7 @@ class AuthService {
             if (fs.existsSync(USERS_FILE)) {
                 const data = fs.readFileSync(USERS_FILE, 'utf8');
                 this.users = JSON.parse(data);
-                
+
                 // Quick migration: Ensure all existing users have an orgId
                 let modified = false;
                 this.users.forEach((u) => {
@@ -92,7 +92,7 @@ class AuthService {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        
+
         // Every new registration is a Tenant Admin with a unique orgId
         // BUT the very first user is the Global Super Admin
         const role = (setup && this.users.length === 0 && process.env.KUBEEZ_MODE !== 'saas') ? 'superadmin' : 'admin';
@@ -123,8 +123,9 @@ class AuthService {
         }
 
         // Validate role — only assignable workspace roles are allowed here
+        // (custom roles — 'custom:<id>' — are checked against the workspace's roles by the route)
         const allowedRoles = ['admin', 'operator', 'viewer'];
-        if (!allowedRoles.includes(role)) {
+        if (!allowedRoles.includes(role) && !/^custom:[a-f0-9]{12}$/.test(role)) {
             throw new Error(`Invalid role. Choose one of: ${allowedRoles.join(', ')}`);
         }
 
@@ -235,7 +236,8 @@ class AuthService {
                 username: user.username,
                 email: user.email,
                 role: user.role,
-                orgId: user.orgId
+                orgId: user.orgId,
+                clusterAccess: Array.isArray(user.clusterAccess) ? user.clusterAccess : []
             };
         } catch (error) {
             console.error('JWT Verification Failed:', error.message)

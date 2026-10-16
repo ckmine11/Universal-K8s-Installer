@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { setAccess } from '../config/permissions';
 
 const AuthContext = createContext();
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -29,6 +30,16 @@ export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSetupRequired, setIsSetupRequired] = useState(false);
+    // the member's real access (custom roles, cluster rules) — used by can()
+    const [access, setAccessState] = useState(null);
+    const refreshAccess = async () => {
+        try {
+            const r = await apiFetch(`${API_URL}/api/rbac/me`);
+            const a = r.ok ? await r.json() : null;
+            setAccess(a); setAccessState(a);
+        } catch (_) { /* keep the last known access */ }
+    };
+    useEffect(() => { if (isAuthenticated) refreshAccess(); else { setAccess(null); setAccessState(null); } }, [isAuthenticated, user?.role]);
 
     useEffect(() => {
         checkAuthStatus();
@@ -190,7 +201,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout, forgotPassword, verifyResetCode, resetPassword }}>
+        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout, forgotPassword, verifyResetCode, resetPassword, access, refreshAccess }}>
             {children}
         </AuthContext.Provider>
     );

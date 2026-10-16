@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
-import { can } from '../config/permissions'
+import { can, kubeLevel } from '../config/permissions'
+import ClusterLabels from '../components/ClusterLabels'
 import { MAX_K8S_MINOR } from '../config/versions'
 import Skeleton from '../components/Skeleton'
 import {
@@ -52,17 +53,19 @@ const ADDON_SECTIONS = [
 
 export default function ClusterDetails({ onScaleCluster }) {
     const { toast } = useToast()
-    const { user } = useAuth()
+    const { user, access } = useAuth()   // access: re-render when it loads
     const { id } = useParams()
     const navigate = useNavigate()
 
     // RBAC UI gating (backend enforces the real checks)
-    const canUpgrade = can(user?.role, 'cluster:upgrade')
-    const canScale = can(user?.role, 'cluster:scale')
-    const canResume = can(user?.role, 'cluster:resume')
-    const canManageAddons = can(user?.role, 'addon:install')
-    const canKubeconfig = can(user?.role, 'kubeconfig:download')
-    const canTerminal = can(user?.role, 'terminal:access')
+    // on THIS cluster — custom roles and cluster rules apply
+    const canUpgrade = can(user?.role, 'cluster:upgrade', id)
+    const canScale = can(user?.role, 'cluster:scale', id)
+    const canResume = can(user?.role, 'cluster:resume', id)
+    const canManageAddons = can(user?.role, 'addon:install', id)
+    const canKubeconfig = can(user?.role, 'kubeconfig:download', id)
+    const canTerminal = can(user?.role, 'terminal:access', id)
+    const isAdmin = ['admin', 'superadmin'].includes(user?.role)
     const [cluster, setCluster] = useState(null)
     const failedUpgrade = cluster?.status === 'failed' && cluster?.mode === 'upgrade'
     const [loading, setLoading] = useState(true)
@@ -270,6 +273,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                         <span>•</span>
                         <span>Created: {new Date(cluster.createdAt).toLocaleDateString()}</span>
                     </div>
+                    <ClusterLabels cluster={cluster} canEdit={isAdmin} onSaved={(labels) => setCluster(c => ({ ...c, labels }))} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     {canKubeconfig && (
@@ -576,7 +580,7 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* ── Explorer (Radar behind KubeEZ) ─────────────────────── */}
             {tab === 'explorer' && (
-                <ExplorerTab clusterId={id} installed={!!cluster.addons?.explorer} canInstall={can(user?.role, 'addon:install')} role={user?.role} />
+                <ExplorerTab clusterId={id} installed={!!cluster.addons?.explorer} canInstall={canManageAddons} level={kubeLevel(user?.role, id)} />
             )}
 
 

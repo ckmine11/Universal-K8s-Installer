@@ -1,7 +1,11 @@
 import express from 'express'
 import { authService } from '../services/authService.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
-import { ROLES, PERMISSION_GROUPS, PERMISSIONS, permissionsForRole } from '../config/permissions.js'
+import { ROLES, PERMISSION_GROUPS, PERMISSIONS, permissionsForRole, CLUSTER_PERMISSIONS, ADMIN_ONLY_PERMISSIONS, KUBE_LEVELS, BUILTIN_KUBE_LEVEL, ROLE_TEMPLATES } from '../config/permissions.js'
+import { roleStore, customRoleKey, customRoleId } from '../services/roleStore.js'
+import { accessOn, accessSummary, describeRole, cleanClusterRules, canSeeCluster } from '../services/accessControl.js'
+import { clusterStore } from '../services/clusterStore.js'
+import { isPaidPlan } from '../config/planFeatures.js'
 import bcrypt from 'bcryptjs'
 import { passwordProblem } from '../utils/passwordPolicy.js'
 import { memberAddedEmail, sendAccountEmailLater } from '../utils/accountEmails.js'
@@ -9,6 +13,11 @@ import { memberAddedEmail, sendAccountEmailLater } from '../utils/accountEmails.
 const router = express.Router()
 
 const ASSIGNABLE_ROLES = ['admin', 'operator', 'viewer']
+// a built-in role, or a custom role of this workspace
+const validRole = (orgId, role) => ASSIGNABLE_ROLES.includes(role) || (!!customRoleId(role) && !!roleStore.get(orgId, customRoleId(role)))
+// custom roles and cluster rules are part of the paid plans
+const customRolesAllowed = (req) => req.user.role === 'superadmin' || isPaidPlan(authService.getOrgPlan(req.user.orgId))
+const PLAN_ERROR = { error: 'Custom roles and per-cluster access are part of Pro. On Free, use Admin, Operator and Viewer.', upgrade: true }
 
 // Accounts another admin may not demote, delete or reset: the workspace owner
 // (holds the plan/billing) and the platform super admin. Returns an error or null.
@@ -32,9 +41,11 @@ const requireAdmin = (req, res, next) => {
 // ─── RBAC transparency: roles, permission matrix, and MY permissions ──
 // Any authenticated user can see exactly who can do what.
 router.get('/rbac', requireAuth, (req, res) => {
+    const custom = req.user.orgId ? roleStore.list(req.user.orgId) : []
     res.json({
         myRole: req.user.role,
-        myPermissions: permissionsForRole(req.user.role),
+        myPermissions: [...accessOn(req.user).permissions],
+        customRoles: custom.map(r => ({ key: customRoleKey(r.id), name: r.name, description: r.description, permissions: r.permissions, kube: r.kube })),
         roles: Object.values(ROLES),
         matrix: PERMISSION_GROUPS.map(g => ({
             group: g.group,
@@ -94,6 +105,9 @@ router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
             username: u.username,
             email: u.email,
             role: u.role,
+            roleName: describeRole(u.orgId, u.role).name,
+            roleMissing: !!describeRole(u.orgId, u.role).missing,
+            clusterAccess: Array.isArray(u.clusterAccess) ? u.clusterAccess : [],
             isOwner: u.id === ownerId,   // holds the plan — other admins cannot change this account
             createdAt: u.createdAt
         }))
@@ -114,9 +128,10 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         const problem = passwordProblem(password) ||
             (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username) ? 'Username must be 3-32 characters: letters, numbers, ".", "-" and "_"' : null)
         if (problem) return res.status(400).json({ error: problem })
-        if (role && !ASSIGNABLE_ROLES.includes(role)) {
-            return res.status(400).json({ error: `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` })
+        if (role && !validRole(req.user.orgId, role)) {
+            return res.status(400).json({ error: `Role must be Admin, Operator, Viewer or one of your custom roles` })
         }
+        if (customRoleId(role) && !customRolesAllowed(req)) return res.status(402).json(PLAN_ERROR)
 
         const newUser = await authService.createTeamMember(req.user.orgId, username, password, email, role || 'viewer')
         // Tell the new member (never the password — the admin hands that over)
@@ -131,9 +146,10 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
 router.put('/admin/users/:id/role', requireAuth, requireAdmin, async (req, res) => {
     try {
         const { role } = req.body
-        if (!ASSIGNABLE_ROLES.includes(role)) {
-            return res.status(400).json({ error: `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` })
+        if (!validRole(req.user.orgId, role)) {
+            return res.status(400).json({ error: `Role must be Admin, Operator, Viewer or one of your custom roles` })
         }
+        if (customRoleId(role) && !customRolesAllowed(req)) return res.status(402).json(PLAN_ERROR)
 
         const targetId = req.params.id
 
@@ -148,11 +164,13 @@ router.put('/admin/users/:id/role', requireAuth, requireAdmin, async (req, res) 
         if (blocked) return res.status(403).json({ error: blocked })
 
         authService.users[userIdx].role = role
+        // admins have full access everywhere — cluster rules would only confuse
+        if (role === 'admin') delete authService.users[userIdx].clusterAccess
         authService.saveUsers()
 
         res.json({
             success: true,
-            message: `Role updated to ${role}`,
+            message: `Role updated to ${describeRole(req.user.orgId, role).name}`,
             user: {
                 id: authService.users[userIdx].id,
                 username: authService.users[userIdx].username,
@@ -209,6 +227,117 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireAdmin, async 
     } catch (err) {
         res.status(500).json({ error: err.message })
     }
+})
+
+// ─── Custom roles & per-cluster access ─────────────────────────────
+const roleView = (orgId, r) => {
+    const members = authService.getUsersByOrgId(orgId)
+    const key = customRoleKey(r.id)
+    return {
+        ...r, key,
+        members: members.filter(u => u.role === key).map(u => u.username),
+        inClusterRules: members.filter(u => (u.clusterAccess || []).some(x => x.role === key)).map(u => u.username)
+    }
+}
+
+// Everything the role builder needs
+router.get('/roles', requireAuth, requireAdmin, (req, res) => {
+    const orgId = req.user.orgId
+    const members = authService.getUsersByOrgId(orgId)
+    res.json({
+        allowed: customRolesAllowed(req),
+        builtin: ASSIGNABLE_ROLES.map(k => ({
+            key: k, name: ROLES[k].label, description: ROLES[k].description, builtin: true,
+            permissions: permissionsForRole(k), kube: BUILTIN_KUBE_LEVEL[k],
+            members: members.filter(u => u.role === k).map(u => u.username)
+        })),
+        custom: roleStore.list(orgId).map(r => roleView(orgId, r)),
+        templates: ROLE_TEMPLATES,
+        groups: PERMISSION_GROUPS.map(g => ({
+            group: g.group,
+            items: g.items.map(it => ({ ...it, perCluster: CLUSTER_PERMISSIONS.includes(it.key), adminOnly: ADMIN_ONLY_PERMISSIONS.includes(it.key) }))
+        })),
+        kubeLevels: KUBE_LEVELS
+    })
+})
+
+router.post('/roles', requireAuth, requireAdmin, (req, res) => {
+    if (!customRolesAllowed(req)) return res.status(402).json(PLAN_ERROR)
+    try { res.json(roleView(req.user.orgId, roleStore.create(req.user.orgId, req.body, req.user.username))) }
+    catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+router.put('/roles/:id', requireAuth, requireAdmin, (req, res) => {
+    if (!customRolesAllowed(req)) return res.status(402).json(PLAN_ERROR)
+    try { res.json(roleView(req.user.orgId, roleStore.update(req.user.orgId, req.params.id, req.body, req.user.username))) }
+    catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+// A role that someone still has cannot be deleted — move them first
+router.delete('/roles/:id', requireAuth, requireAdmin, (req, res) => {
+    const role = roleStore.get(req.user.orgId, req.params.id)
+    if (!role) return res.status(404).json({ error: 'Role not found' })
+    const v = roleView(req.user.orgId, role)
+    const using = [...new Set([...v.members, ...v.inClusterRules])]
+    if (using.length) return res.status(409).json({ error: `Still used by ${using.join(', ')} — give them another role first.`, members: using })
+    roleStore.remove(req.user.orgId, req.params.id)
+    res.json({ success: true, message: `Role "${role.name}" deleted` })
+})
+
+// A member's cluster rules: a different role on some clusters (or no access)
+router.put('/admin/users/:id/cluster-access', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const target = authService.users.find(u => u.id === req.params.id && u.orgId === req.user.orgId)
+        if (!target) return res.status(404).json({ error: 'User not found in your organization' })
+        const blocked = protectedTarget(req.user, target)
+        if (blocked) return res.status(403).json({ error: blocked })
+        if (target.role === 'admin') return res.status(400).json({ error: 'Admins have full access to every cluster — change the role first to limit it.' })
+        const rules = req.body?.rules || []
+        if (rules.length && !customRolesAllowed(req)) return res.status(402).json(PLAN_ERROR)
+        const clusters = (await clusterStore.getClusters()).filter(c => c.orgId === req.user.orgId)
+        target.clusterAccess = cleanClusterRules(req.user.orgId, rules, clusters.map(c => c.id))
+        if (!target.clusterAccess.length) delete target.clusterAccess
+        authService.saveUsers()
+        res.json({ success: true, clusterAccess: target.clusterAccess || [] })
+    } catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+// What I may do — workspace-wide and on each of my clusters (for the UI)
+router.get('/rbac/me', requireAuth, async (req, res) => {
+    const clusters = (await clusterStore.getClusters().catch(() => [])).filter(c => req.user.role === 'superadmin' || c.orgId === req.user.orgId)
+    res.json(accessSummary(req.user, clusters))
+})
+
+// Access review: who can do what, on which cluster (for audits — ISO 27001 A.5.18)
+router.get('/admin/access-review', requireAuth, requireAdmin, async (req, res) => {
+    const orgId = req.user.orgId
+    const clusters = (await clusterStore.getClusters()).filter(c => c.orgId === orgId)
+    const rows = []
+    for (const u of authService.getUsersByOrgId(orgId)) {
+        const member = { ...u, clusterAccess: u.clusterAccess || [] }
+        const main = describeRole(orgId, u.role)
+        if (!clusters.length) rows.push({ member: u.username, email: u.email || '', mainRole: main.name, cluster: '—', access: main.name, via: 'main role', kube: main.kube, permissions: [...main.permissions].join(' ') })
+        for (const c of clusters) {
+            const a = accessOn(member, c)
+            const seen = canSeeCluster(member, c)
+            rows.push({
+                member: u.username, email: u.email || '', mainRole: main.name, cluster: c.clusterName || c.id,
+                access: seen ? a.role || main.name : 'No access',
+                via: a.via === 'admin' ? 'admin' : a.via === 'cluster' ? 'cluster rule' : a.via === 'label' ? 'label rule' : 'main role',
+                kube: seen ? a.kube : 'none',
+                permissions: seen ? [...a.permissions].filter(p => CLUSTER_PERMISSIONS.includes(p)).join(' ') : ''
+            })
+        }
+    }
+    if (req.query.format === 'csv') {
+        const esc = (v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v)
+        const head = ['member', 'email', 'mainRole', 'cluster', 'access', 'via', 'kube', 'permissions']
+        const csv = [head.join(','), ...rows.map(r => head.map(h => esc(r[h])).join(','))].join('\n')
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+        res.setHeader('Content-Disposition', `attachment; filename="kubeez-access-review-${new Date().toISOString().slice(0, 10)}.csv"`)
+        return res.send(csv)
+    }
+    res.json({ generatedAt: new Date().toISOString(), rows })
 })
 
 export default router

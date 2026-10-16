@@ -84,6 +84,7 @@ export const PERMISSION_GROUPS = [
         { key: 'cluster:create',  label: 'Create clusters' },
         { key: 'cluster:scale',   label: 'Scale (add/remove nodes)' },
         { key: 'cluster:upgrade', label: 'Upgrade Kubernetes version' },
+        { key: 'cluster:resume',  label: 'Resume a failed install' },
         { key: 'cluster:delete',  label: 'Delete clusters' }
     ]},
     { group: 'Add-ons & Access', items: [
@@ -132,3 +133,42 @@ export function permissionsForRole(role) {
     if (role === 'superadmin') return Object.keys(PERMISSIONS)
     return Object.keys(PERMISSIONS).filter(p => PERMISSIONS[p].includes(role))
 }
+
+// ─── Custom roles ─────────────────────────────────────────────────────────────
+// A workspace can build its own roles from the permissions above, and give a
+// member a different role on some clusters (per cluster or by cluster label).
+
+// Permissions that belong to ONE cluster — a per-cluster role decides these.
+// Everything else is workspace-wide and always comes from the member's main role.
+export const CLUSTER_PERMISSIONS = [
+    'cluster:view', 'cluster:scale', 'cluster:upgrade', 'cluster:delete', 'cluster:resume',
+    'addon:view', 'addon:credentials', 'addon:install',
+    'kubeconfig:download', 'terminal:access',
+    'incident:view', 'incident:act',
+    'compliance:view', 'compliance:manage',
+    'backup:manage'
+]
+
+// Never part of a custom role: running the workspace stays with Admins
+export const ADMIN_ONLY_PERMISSIONS = ['team:view', 'team:manage', 'billing:manage']
+
+// What the member may do INSIDE the cluster (KubeEZ Explorer → Kubernetes RBAC)
+export const KUBE_LEVELS = ['none', 'view', 'edit', 'admin']
+export const BUILTIN_KUBE_LEVEL = { admin: 'admin', operator: 'edit', viewer: 'view', superadmin: 'admin' }
+
+// Ready-made starting points for the role builder
+export const ROLE_TEMPLATES = [
+    { key: 'oncall', name: 'On-call engineer', description: 'Watches and fixes incidents, terminal with approval. Cannot delete or upgrade.',
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view'] },
+    { key: 'developer', name: 'Developer', description: 'Sees clusters and add-on addresses, works inside the cluster (Explorer). No credentials, no cluster changes.',
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'compliance:view'] },
+    { key: 'backup', name: 'Backup manager', description: 'Takes and restores backups. Nothing else changes.',
+      kube: 'view', permissions: ['cluster:view', 'addon:view', 'incident:view', 'backup:manage'] },
+    { key: 'auditor', name: 'Auditor', description: 'Read-only compliance: scores, reports, audit trail and terminal recordings. No secrets.',
+      kube: 'view', permissions: ['cluster:view', 'incident:view', 'compliance:view', 'audit:view'] },
+    { key: 'addons', name: 'Add-on manager', description: 'Installs, configures and updates add-ons, with their logins.',
+      kube: 'view', permissions: ['cluster:view', 'addon:view', 'addon:credentials', 'addon:install', 'incident:view'] }
+]
+
+// Permissions a custom role may contain (everything except the admin-only ones)
+export const ASSIGNABLE_PERMISSIONS = () => Object.keys(PERMISSIONS).filter(p => !ADMIN_ONLY_PERMISSIONS.includes(p))

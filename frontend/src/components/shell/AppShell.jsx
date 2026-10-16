@@ -5,6 +5,7 @@ import {
     LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
+import { can } from '../../config/permissions'
 import { useInstallationTracker } from '../../context/InstallationTrackerContext'
 import { LogoMark, LogoWord } from './Logo'
 import CommandPalette from './CommandPalette'
@@ -23,8 +24,9 @@ const ROLE_META = {
 export function navSections(user) {
     const role = user?.role
     const isAdmin = role === 'admin' || role === 'superadmin'
-    const canAgents = ['admin', 'operator', 'superadmin'].includes(role)
-    const canDeploy = ['admin', 'operator', 'superadmin'].includes(role)
+    // what the member may do decides the menu (custom roles included)
+    const canAgents = can(role, 'agent:view')
+    const canDeploy = can(role, 'cluster:create')
     return [
         {
             title: 'Overview', items: [
@@ -43,7 +45,7 @@ export function navSections(user) {
         {
             title: 'Workspace', items: [
                 isAdmin && { to: '/users', label: 'Team & Roles', icon: Users },
-                isAdmin && { to: '/alerts', label: 'Alerts', icon: Bell },
+                (isAdmin || can(role, 'alerts:manage')) && { to: '/alerts', label: 'Alerts', icon: Bell },
                 isAdmin && { to: '/settings', label: 'Settings', icon: Settings },
             ].filter(Boolean)
         },
@@ -66,7 +68,7 @@ const TITLES = [
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }
 
 export default function AppShell({ children }) {
-    const { user, logout } = useAuth()
+    const { user, logout, refreshAccess } = useAuth()
     const location = useLocation()
     const navigate = useNavigate()
     const { activeInstallations } = useInstallationTracker()
@@ -80,6 +82,8 @@ export default function AppShell({ children }) {
 
     useEffect(() => { try { localStorage.setItem('kz.sidebar', collapsed ? 'collapsed' : 'open') } catch { } }, [collapsed])
     useEffect(() => { setMobileOpen(false) }, [location.pathname, location.search])
+    // role or cluster rules may have changed meanwhile
+    useEffect(() => { refreshAccess?.() }, [location.pathname])
     useEffect(() => { document.title = `${title} · KubeEZ` }, [title])
 
     // ⌘K / Ctrl+K opens search from anywhere
@@ -191,7 +195,7 @@ export default function AppShell({ children }) {
                                 <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-black text-white flex items-center justify-center ring-2 ring-[#08080b]">{openIncidents > 9 ? '9+' : openIncidents}</span>
                             )}
                         </Link>
-                        {['admin', 'operator', 'superadmin'].includes(user?.role) && (
+                        {can(user?.role, 'cluster:create') && (
                             <Link to="/install" className="kz-btn-primary hidden sm:inline-flex !py-2"><Plus className="w-4 h-4" /> New cluster</Link>
                         )}
                     </div>
@@ -233,6 +237,7 @@ function SideLink({ item, compact, location }) {
 }
 
 function UserCard({ user, compact, onLogout }) {
+    const { access } = useAuth()
     const [open, setOpen] = useState(false)
     const [changePwd, setChangePwd] = useState(false)
     const ref = useRef(null)
@@ -242,7 +247,7 @@ function UserCard({ user, compact, onLogout }) {
         return () => document.removeEventListener('mousedown', onDoc)
     }, [])
     if (!user) return null
-    const meta = ROLE_META[user.role] || ROLE_META.viewer
+    const meta = ROLE_META[user.role] || { ...ROLE_META.viewer, label: access?.roleName || 'Custom role', icon: Wrench, tone: 'text-blue-200 bg-blue-500/10 border-blue-400/20' }
     const RoleIcon = meta.icon
     const initial = user.username?.charAt(0).toUpperCase()
     return (

@@ -143,7 +143,7 @@ const NAV = [
         { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
         { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
-        { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions' },
+        { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review' },
         { id: 'security', label: 'Security & Privacy', k: 'encryption data credentials' },
         { id: 'plans', label: 'Plans', k: 'free pro enterprise pricing' }
     ] },
@@ -616,6 +616,34 @@ export default function Docs() {
                             ['Viewer', 'Read-only: clusters, health, incidents, compliance scores and add-on addresses. Never passwords or tokens, no changes.']
                         ]} />
                         <P>The full list is under <B>Team & Roles → Who can do what?</B></P>
+
+                        <H4>Custom roles (Pro)</H4>
+                        <P>Make your own role when the three built-in ones don't fit, for example "On-call", "Developer", "Backup manager" or "Auditor".</P>
+                        <Steps items={[
+                            <><B>Team & Roles → Roles → New role.</B> Start from a template (On-call, Developer, Backup manager, Auditor, Add-on manager) or a copy of Operator / Viewer.</>,
+                            'Tick what the role may do. Items marked "per cluster" can differ from cluster to cluster (step 3).',
+                            <>Choose <B>Inside the cluster</B>: None, View, Edit or Full. That is what the KubeEZ Explorer lets the role do in the cluster itself.</>,
+                            <><B>Members</B> → the role menu on a member's card → pick the new role. It applies right away.</>
+                        ]} />
+                        <Note>Team and billing always stay with Admins, so a custom role can never take over the workspace. Changing a role updates everyone who has it. A role still in use cannot be deleted; move its members first.</Note>
+
+                        <H4>A different role on some clusters (Pro)</H4>
+                        <P>Example: Rahul is <B>Operator on staging</B>, <B>Viewer on production</B> and has <B>no access</B> to the finance cluster.</P>
+                        <Steps items={[
+                            <>Optional: give clusters <B>labels</B> on their page, e.g. <C>env=prod</C> or <C>team=payments</C> (admins). One label rule then covers every prod cluster, including new ones.</>,
+                            <><B>Members</B> → the <B>Cluster access</B> button (layers icon) on the member's card.</>,
+                            <>Add a rule <B>for one cluster</B> or <B>for a label</B>, and pick the role there, or <B>No access</B> to hide the cluster completely.</>,
+                            <>Check <B>Result on each cluster</B> at the bottom, then <B>Save access</B>.</>
+                        ]} />
+                        <Table head={['Rule', 'How it works']} rows={[
+                            ['Main role', 'Applies to every cluster that has no rule.'],
+                            ['Rule for one cluster', 'Wins over everything else for that cluster.'],
+                            ['Label rules', 'Apply to every cluster with that label. If several match, their permissions add up.'],
+                            ['No access', 'The cluster is hidden: not in the list, its incidents not shown, nothing can be done on it.'],
+                            ['Workspace items', 'Agents, alerts, audit trail and creating clusters always follow the main role.'],
+                            ['Admins', 'Always have full access to every cluster; rules do not apply to them.']
+                        ]} />
+                        <P><B>Access review:</B> Team & Roles → <B>Access review</B> downloads a CSV of every member, on every cluster, with what they may do and why. Keep it as audit evidence (ISO 27001 access reviews). Every role and access change is also in the audit trail.</P>
                     </Section>
 
                     <Section id="security" Icon={Lock} color="text-emerald-400" title="Security & Privacy"
@@ -639,7 +667,8 @@ export default function Docs() {
                             ['Volume backups', '—', '✓'],
                             ['Compliance PDF, monthly reports, fixes, CERT-In report', '—', '✓'],
                             ['Alerts', '1 channel, critical alerts', 'All channels and alert types, rules'],
-                            ['Advanced add-on settings (YAML)', '—', '✓']
+                            ['Advanced add-on settings (YAML)', '—', '✓'],
+                            ['Custom roles, per-cluster access, access review', 'Admin / Operator / Viewer', '✓']
                         ]} />
                         <P>Cluster, node and member limits depend on the plan. See <Link to="/pricing" className="text-blue-400 hover:underline">Plans</Link>.</P>
                     </Section>

@@ -6,6 +6,7 @@ import { installationManager } from '../services/installationManager.js'
 import { authService } from '../services/authService.js'
 import { isPaidPlan } from '../config/planFeatures.js'
 import { canAccessResource } from '../utils/access.js'
+import { canSeeCluster, canOn, kubeLevelOn } from '../services/accessControl.js'
 
 // Offsite (S3 / MinIO) backup target for the workspace.
 // Reading the status: any workspace member. Changing it: 'backup:manage' (admin).
@@ -25,7 +26,7 @@ async function loadCluster(req, res) {
     if (!id) { res.status(400).json({ error: 'clusterId is required (the connection is tested from that cluster\'s control-plane).' }); return null }
     const cluster = (await installationManager.getSavedClusters()).find(c => c.id === id)
     if (!cluster) { res.status(404).json({ error: 'Cluster not found' }); return null }
-    if (!canAccessResource(req.user, cluster)) { res.status(403).json({ error: 'Unauthorized access to this cluster' }); return null }
+    if (!canSeeCluster(req.user, cluster)) { res.status(403).json({ error: 'Unauthorized access to this cluster' }); return null }
     return cluster
 }
 
