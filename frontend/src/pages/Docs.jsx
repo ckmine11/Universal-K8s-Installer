@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell,
-    BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
-    Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse,
-    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass, ShieldCheck
+import {
+    Bell, BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
+    Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse, Search,
+    LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass, ShieldCheck, Rocket,
+    HelpCircle, Lock, Settings as SettingsIcon, X
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 // ── Small building blocks ────────────────────────────────────────────────────
 
@@ -27,8 +29,10 @@ function Code({ children }) {
 function Note({ kind = 'info', children }) {
     const style = kind === 'warn'
         ? 'border-amber-500/20 bg-amber-500/5 text-amber-200'
-        : 'border-blue-500/20 bg-blue-500/5 text-blue-200'
-    const Icon = kind === 'warn' ? AlertTriangle : Info
+        : kind === 'tip'
+            ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-200'
+            : 'border-blue-500/20 bg-blue-500/5 text-blue-200'
+    const Icon = kind === 'warn' ? AlertTriangle : kind === 'tip' ? CheckCircle2 : Info
     return (
         <div className={`flex items-start gap-3 rounded-2xl border p-4 text-sm leading-relaxed ${style}`}>
             <Icon className="w-4 h-4 mt-0.5 shrink-0" />
@@ -60,7 +64,7 @@ function Table({ head, rows }) {
                 <tbody>
                     {rows.map((r, i) => (
                         <tr key={i} className="border-t border-white/5 align-top">
-                            {r.map((c, j) => <td key={j} className={`px-4 py-2.5 ${j === 0 ? 'font-bold text-white' : 'text-slate-400'}`}>{c}</td>)}
+                            {r.map((c, j) => <td key={j} className={`px-4 py-2.5 ${j === 0 ? 'font-bold text-white whitespace-nowrap' : 'text-slate-400'}`}>{c}</td>)}
                         </tr>
                     ))}
                 </tbody>
@@ -71,64 +75,105 @@ function Table({ head, rows }) {
 
 function Section({ id, Icon, color, title, intro, children }) {
     return (
-        <section id={id} className="space-y-5 pt-14 border-t border-white/5 first:border-0 first:pt-0 scroll-mt-24">
+        <section id={id} className="space-y-5 pt-14 border-t border-white/5 scroll-mt-24">
             <h2 className="text-2xl font-black tracking-tight text-white flex items-center">
                 <Icon className={`w-6 h-6 mr-3 ${color}`} /> {title}
             </h2>
-            {intro && <p className="text-slate-400 text-sm max-w-3xl leading-relaxed">{intro}</p>}
+            {intro && <p className="text-slate-300 text-sm max-w-3xl leading-relaxed">{intro}</p>}
             {children}
         </section>
+    )
+}
+
+function Faq({ items }) {
+    return (
+        <div className="space-y-2">
+            {items.map(([q, a]) => (
+                <details key={q} className="group rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                    <summary className="cursor-pointer list-none flex items-center justify-between gap-3 text-sm font-bold text-white">
+                        {q}<Plus className="w-4 h-4 text-slate-500 shrink-0 transition-transform group-open:rotate-45" />
+                    </summary>
+                    <p className="text-sm text-slate-400 leading-relaxed mt-2">{a}</p>
+                </details>
+            ))}
+        </div>
     )
 }
 
 const H4 = ({ children }) => <h3 className="text-base font-black text-white pt-2">{children}</h3>
 const P = ({ children }) => <p className="text-sm text-slate-400 leading-relaxed max-w-3xl">{children}</p>
 const C = ({ children }) => <code className="text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded text-[12px]">{children}</code>
+const B = ({ children }) => <b className="text-white">{children}</b>
 
-// ── Navigation ──────────────────────────────────────────────────────────────
+// ── Navigation (keywords make the search find a topic by what people type) ──
 
 const NAV = [
     { title: 'Getting Started', items: [
-        { id: 'intro', label: 'What is KubeEZ' },
-        { id: 'console', label: 'The Console' },
-        { id: 'account', label: 'Sign-in & Password' },
-        { id: 'modes', label: 'SaaS vs Self-Hosted' },
-        { id: 'requirements', label: 'Node Requirements' },
-        { id: 'agents', label: 'Gateway Agent' }
+        { id: 'intro', label: 'What is KubeEZ', k: 'overview about' },
+        { id: 'quickstart', label: 'Quick Start', k: 'first cluster begin start' },
+        { id: 'console', label: 'Finding Your Way', k: 'sidebar menu search ctrl k navigation' },
+        { id: 'account', label: 'Sign-in & Password', k: 'login forgot reset change password email' },
+        { id: 'requirements', label: 'Server Requirements', k: 'os ubuntu debian rocky cpu ram disk ports ssh' },
+        { id: 'agents', label: 'Gateway Agent', k: 'private network tunnel saas firewall offline' }
     ] },
     { title: 'Clusters', items: [
-        { id: 'deploy', label: 'Deploy a Cluster' },
-        { id: 'cluster-page', label: 'The Cluster Page' },
-        { id: 'resume', label: 'Resume a Failed Install' },
-        { id: 'upgrade', label: 'Upgrade Kubernetes' },
-        { id: 'scale', label: 'Scale & Terminal' }
+        { id: 'deploy', label: 'Deploy a Cluster', k: 'install create new ha virtual ip control plane' },
+        { id: 'cluster-page', label: 'The Cluster Page', k: 'overview tabs' },
+        { id: 'access', label: 'kubectl & Terminal', k: 'kubeconfig shell ssh node command' },
+        { id: 'scale', label: 'Add Worker Nodes', k: 'scale join worker' },
+        { id: 'upgrade', label: 'Upgrade Kubernetes', k: 'version update' },
+        { id: 'resume', label: 'Resume a Failed Install', k: 'retry failed stopped' },
+        { id: 'remove', label: 'Remove a Cluster', k: 'delete' }
     ] },
     { title: 'Add-ons', items: [
-        { id: 'addons', label: 'Add-on Catalogue' },
-        { id: 'addon-settings', label: 'Add-on Settings' },
-        { id: 'addon-manage', label: 'Manage, Logs & Uninstall' },
-        { id: 's3', label: 'S3 Object Storage' },
-        { id: 'explorer', label: 'KubeEZ Explorer' }
+        { id: 'addons', label: 'Add-on Catalogue', k: 'ingress grafana prometheus longhorn argocd vault harbor jenkins ports' },
+        { id: 'addon-settings', label: 'Settings & Updates', k: 'customize version helm yaml update new version' },
+        { id: 'addon-manage', label: 'Health, Logs & Uninstall', k: 'repair reinstall logs failing' },
+        { id: 'explorer', label: 'KubeEZ Explorer', k: 'ui resources topology timeline helm' },
+        { id: 's3', label: 'S3 Object Storage', k: 'seaweedfs bucket' }
     ] },
     { title: 'Backups', items: [
-        { id: 'etcd', label: 'etcd Snapshots & Restore' },
-        { id: 'volume-backups', label: 'Volume Backups' },
-        { id: 'offsite', label: 'Offsite Backups' },
-        { id: 'recovery', label: 'Disaster Recovery' },
-        { id: 'config-backups', label: 'Config Backups' }
+        { id: 'etcd', label: 'Cluster Snapshots', k: 'etcd backup restore undo' },
+        { id: 'volume-backups', label: 'Volume Backups', k: 'velero data pvc' },
+        { id: 'offsite', label: 'Offsite Backups', k: 's3 r2 b2 wasabi minio encryption key' },
+        { id: 'recovery', label: 'Disaster Recovery', k: 'control plane lost rebuild' },
+        { id: 'config-backups', label: 'KubeEZ Config Backups', k: 'settings' }
     ] },
     { title: 'Operations', items: [
-        { id: 'healing', label: 'Auto-Healing & Incidents' },
-        { id: 'alerts', label: 'Alerts' },
-        { id: 'compliance', label: 'Compliance & Audit' },
-        { id: 'roles', label: 'Teams & Roles' },
-        { id: 'plans', label: 'Plans' },
-        { id: 'troubleshooting', label: 'Troubleshooting' }
+        { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
+        { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
+        { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
+        { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions' },
+        { id: 'security', label: 'Security & Privacy', k: 'encryption data credentials' },
+        { id: 'plans', label: 'Plans', k: 'free pro enterprise pricing' }
+    ] },
+    { title: 'Help', items: [
+        { id: 'troubleshooting', label: 'Troubleshooting', k: 'error problem not working' },
+        { id: 'faq', label: 'FAQ', k: 'questions' },
+        { id: 'server-setup', label: 'Server Setup', k: 'self-hosted smtp public url', selfHostedAdmin: true }
     ] }
 ]
 
 export default function Docs() {
+    const { user } = useAuth()
     const [active, setActive] = useState('intro')
+    const [query, setQuery] = useState('')
+    const [mode, setMode] = useState(null)
+    const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
+    // server-setup notes are for whoever runs the KubeEZ server (self-hosted), not for SaaS users
+    const showServerSetup = isAdmin && mode && mode !== 'saas'
+
+    useEffect(() => {
+        fetch('/api/config').then(r => r.ok ? r.json() : {}).then(c => setMode(c.mode || 'self-hosted')).catch(() => setMode(null))
+    }, [])
+
+    const nav = useMemo(() => {
+        const q = query.trim().toLowerCase()
+        return NAV.map(g => ({
+            ...g,
+            items: g.items.filter(i => (!i.selfHostedAdmin || showServerSetup) && (!q || `${i.label} ${i.k}`.toLowerCase().includes(q)))
+        })).filter(g => g.items.length)
+    }, [query, showServerSetup])
 
     // Highlight the section being read
     useEffect(() => {
@@ -138,12 +183,21 @@ export default function Docs() {
         }, { rootMargin: '-20% 0px -70% 0px' })
         document.querySelectorAll('section[id]').forEach(s => obs.observe(s))
         return () => obs.disconnect()
-    }, [])
+    }, [showServerSetup])
 
     const go = (id) => {
         setActive(id)
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
     }
+
+    const searchBox = (
+        <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search the docs…" aria-label="Search the docs"
+                className="w-full bg-black/35 border border-white/10 focus:border-blue-500/40 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 outline-none" />
+            {query && <button onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white" aria-label="Clear"><X className="w-3.5 h-3.5" /></button>}
+        </div>
+    )
 
     return (
         <div className="min-h-screen py-8 px-4 sm:px-6">
@@ -151,8 +205,10 @@ export default function Docs() {
 
                 {/* Sidebar (desktop) */}
                 <nav className="hidden lg:block lg:col-span-1">
-                    <div className="sticky top-24 space-y-7 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
-                        {NAV.map(group => (
+                    <div className="sticky top-24 space-y-6 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
+                        {searchBox}
+                        {nav.length === 0 && <p className="text-xs text-slate-500">No topic matches “{query}”.</p>}
+                        {nav.map(group => (
                             <div key={group.title}>
                                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">{group.title}</h3>
                                 <ul className="space-y-2.5">
@@ -173,16 +229,19 @@ export default function Docs() {
                 </nav>
 
                 {/* Topics (phones/tablets) */}
-                <div className="lg:hidden -mx-4 px-4 flex gap-2 overflow-x-auto pb-2">
-                    {NAV.flatMap(g => g.items).map(item => (
-                        <button key={item.id} onClick={() => go(item.id)}
-                            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border ${active === item.id ? 'bg-blue-600 border-blue-500 text-white' : 'border-white/10 text-slate-400'}`}>
-                            {item.label}
-                        </button>
-                    ))}
+                <div className="lg:hidden space-y-3">
+                    {searchBox}
+                    <div className="-mx-4 px-4 flex gap-2 overflow-x-auto pb-2">
+                        {nav.flatMap(g => g.items).map(item => (
+                            <button key={item.id} onClick={() => go(item.id)}
+                                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border ${active === item.id ? 'bg-blue-600 border-blue-500 text-white' : 'border-white/10 text-slate-400'}`}>
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
-                <div className="lg:col-span-3 space-y-14 pb-16">
+                <div className="lg:col-span-3 pb-16 min-w-0">
 
                     {/* ── Getting started ─────────────────────────────── */}
                     <section id="intro" className="space-y-6 scroll-mt-24">
@@ -191,22 +250,22 @@ export default function Docs() {
                             <div>
                                 <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-blue-300/80">Help</div>
                                 <h1 className="font-display text-[28px] font-bold text-white tracking-tight">KubeEZ Documentation</h1>
-                                <p className="text-sm text-slate-400 mt-1">Production Kubernetes on your own servers — without the ops work</p>
+                                <p className="text-sm text-slate-400 mt-1">Production Kubernetes on your own servers, without the ops work</p>
                             </div>
                         </div>
                         <P>
-                            KubeEZ installs, upgrades, backs up and operates Kubernetes clusters on servers you own (bare metal, VMs, any cloud).
-                            Everything runs from one console, every step streams a live log, and when something fails you get the exact reason and the fix.
+                            KubeEZ installs Kubernetes on servers you own (bare metal, VMs, any cloud) and then keeps it running for you:
+                            upgrades, add-ons, backups, auto-healing, alerts and compliance reports, all from one console.
+                            Every job shows a live log, and when something fails you see the reason and how to fix it.
                         </P>
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                             {[
-                                [Server, 'Deploy', 'Guided install with pre-flight checks on 8 Linux distros.'],
-                                [ArrowUpCircle, 'Upgrade', '1.27 → 1.37, one version at a time, snapshot first.'],
-                                [Puzzle, 'Add-ons', '9 add-ons — install, repair, uninstall, logs from the UI.'],
-                                [DatabaseBackup, 'Back up', 'Verified snapshots, previewed restores with undo, volume data, offsite copies, disaster recovery.'],
-                                [HeartPulse, 'Heal', 'Checks nodes, control plane, pods, workloads and storage every 1–2 min; fixes what it safely can, explains the rest.'],
-                                [Bell, 'Alert', 'Telegram, Slack, Teams, WhatsApp, email or a webhook — with quiet hours and rules.'],
-                                [Users, 'Teams', 'Admin / Operator / Viewer roles in isolated workspaces.']
+                                [Server, 'Deploy', 'A guided install with checks before anything changes. Single node or highly available.'],
+                                [ArrowUpCircle, 'Upgrade', 'One click per Kubernetes version, with a safety check and a snapshot first.'],
+                                [Puzzle, 'Add-ons', '25+ ready add-ons (monitoring, storage, GitOps, security, logging) with settings and updates.'],
+                                [DatabaseBackup, 'Back up', 'Cluster snapshots with preview and undo, volume data, encrypted offsite copies, disaster recovery.'],
+                                [HeartPulse, 'Heal', 'Watches every cluster around the clock, fixes common problems and explains the rest.'],
+                                [ShieldCheck, 'Comply', 'CERT-In, DPDP, ISO 27001 and CIS checks, audit trail and auditor-ready reports.']
                             ].map(([Icon, t, d]) => (
                                 <div key={t} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
                                     <div className="flex items-center gap-2 mb-1"><Icon className="w-4 h-4 text-blue-400" /><span className="text-sm font-black text-white">{t}</span></div>
@@ -216,396 +275,420 @@ export default function Docs() {
                         </div>
                     </section>
 
-                    <Section id="console" Icon={LayoutGrid} color="text-sky-400" title="The Console"
-                        intro="Everything is in the sidebar, grouped by what you want to do. On phones it opens from the ☰ button.">
-                        <Table head={['Sidebar', 'What is there']} rows={[
-                            ['Overview · Clusters', 'Your fleet: health, nodes, versions and add-ons of every cluster; open one for backups, upgrades and the Explorer.'],
-                            ['Overview · Incidents', 'What auto-healing found and did, statistics, watched clusters and maintenance mode. The bell in the top bar shows open incidents.'],
-                            ['Build · Deploy cluster / Gateway Agents', 'The install wizard, and the agents that reach servers in private networks.'],
-                            ['Workspace · Team & Roles / Alerts / Settings', 'Members and roles · alert channels and rules · config backups, plan and security (admins).'],
-                            ['Help · Docs / Plans', 'This guide, and what each plan includes.'],
-                            ['Platform · Admin Console', 'All workspaces, clusters and system health (platform owner only).']
+                    <Section id="quickstart" Icon={Rocket} color="text-blue-400" title="Quick Start"
+                        intro="Your first cluster takes about 15–30 minutes, depending on the servers and the add-ons you pick.">
+                        <Steps items={[
+                            <><B>Prepare the servers.</B> One server is enough to start; three control-planes give real high availability. Check the <button onClick={() => go('requirements')} className="text-blue-400 hover:underline">server requirements</button>.</>,
+                            <><B>Connect your network</B> (hosted KubeEZ only): open <B>Gateway Agents</B> and install the agent on any machine in the same network as the servers. It needs no open ports.</>,
+                            <><B>Deploy.</B> Click <B>Deploy cluster</B>, enter the servers&apos; IPs and SSH login, pick the Kubernetes version and add-ons, then start.</>,
+                            <><B>Use it.</B> Open the cluster: download the <B>Kubeconfig</B> for kubectl, browse everything in the <B>Explorer</B>, and find the add-on logins under <B>Add-ons → Access & logins</B>.</>,
+                            <><B>Stay safe.</B> Add an alert channel (<B>Alerts</B>), connect <B>Offsite Backup</B> in the cluster&apos;s Backups tab, and invite your team (<B>Team & Roles</B>).</>
                         ]} />
-                        <P>Press <C>Ctrl</C> + <C>K</C> (⌘K on a Mac) anywhere to search: type part of a cluster or page name and press Enter. Your account menu (sign out) is at the bottom of the sidebar.</P>
+                    </Section>
+
+                    <Section id="console" Icon={LayoutGrid} color="text-sky-400" title="Finding Your Way"
+                        intro="Everything is in the sidebar, grouped by what you want to do. On a phone, open it with the ☰ button.">
+                        <Table head={['Sidebar', 'What you find there']} rows={[
+                            ['Clusters', 'All your clusters with health, nodes, version and add-ons. Open one to manage it.'],
+                            ['Explorer', 'Opens the KubeEZ Explorer of a cluster: every resource, logs, topology and changes.'],
+                            ['Incidents', 'Problems auto-healing found, what it did, and what still needs you.'],
+                            ['Compliance', 'Compliance scores, findings, reports, audit trail and terminal access.'],
+                            ['Deploy cluster · Gateway Agents', 'The install wizard, and the agents that reach servers in private networks.'],
+                            ['Team & Roles · Alerts · Settings', 'Members and roles, alert channels and rules, plan and security settings (admins).'],
+                            ['Docs · Plans', 'This guide, and what each plan includes.']
+                        ]} />
+                        <P>Press <C>Ctrl</C> + <C>K</C> (<C>⌘K</C> on a Mac) anywhere to jump to a cluster or page. The <B>✦</B> button in the top bar lists new add-on versions, and the bell shows open incidents.</P>
                     </Section>
 
                     <Section id="account" Icon={Shield} color="text-emerald-400" title="Sign-in & Password"
-                        intro="Sign in with your username (any capital letters) or your email address.">
+                        intro="Sign in with your username or your email address.">
+                        <H4>Forgot your password</H4>
                         <Steps items={[
-                            <><b>Forgot password?</b> on the sign-in page → enter your email or username → a 6-digit code arrives by email (valid 15 minutes).</>,
-                            <><b>Verify the code</b> — 5 wrong tries and the code stops working; “Resend code” is available after a minute.</>,
-                            <><b>Choose a new password</b> (at least 8 characters). Every other session is signed out and you get a “password changed” email.</>
+                            <>On the sign-in page click <B>Forgot password?</B> and enter your email or username.</>,
+                            'Enter the 6-digit code from the email (it is valid for 15 minutes).',
+                            'Choose a new password of at least 8 characters. You are signed out everywhere else, and you get an email confirming the change.'
                         ]} />
-                        <P>New accounts get a welcome email; members added by an admin get an email with their username and role (never the password). After 10 wrong passwords an account is locked for 15 minutes.</P>
-                        <Note>Email needs the server&apos;s SMTP settings (<C>SMTP_HOST</C>, <C>SMTP_USER</C>, <C>SMTP_PASS</C>, <C>EMAIL_FROM</C>). Without them the sign-in page says that reset by email is not available: a workspace admin resets the password under Team &amp; Roles, or the server owner runs <C>node scripts/reset-password.js &lt;username&gt; &lt;new-password&gt;</C> in the backend container.</Note>
+                        <Note>No email? Ask a workspace admin: <B>Team & Roles</B> → the 🔑 button on your card sets a new password for you.</Note>
+                        <H4>Change your password</H4>
+                        <P>Admins: <B>Settings → Security → Change Password</B>. Your other sessions are signed out. Operators and viewers: ask a workspace admin to set a new password.</P>
+                        <P>After several wrong passwords in a row an account is locked for a short while, to stop password guessing.</P>
                     </Section>
 
-                    <Section id="modes" Icon={Cloud} color="text-purple-400" title="SaaS vs Self-Hosted"
-                        intro={<>KubeEZ runs in one of two modes, set with the <C>KUBEEZ_MODE</C> environment variable.</>}>
-                        <Table head={['', 'Self-Hosted', 'SaaS']} rows={[
-                            ['How KubeEZ reaches nodes', 'Direct SSH over your network / VPN', 'Through the Gateway Agent (outbound tunnel)'],
-                            ['Inbound ports on your network', 'SSH (22) from the KubeEZ server', 'None'],
-                            ['Activation', 'License key', 'Subscription plan'],
-                            ['Best for', 'Air-gapped or fully private setups', 'Managing many sites from one hosted console']
+                    <Section id="requirements" Icon={Cpu} color="text-orange-400" title="Server Requirements">
+                        <Table head={['', 'What you need']} rows={[
+                            ['Operating system', 'Ubuntu 22.04 / 24.04, Debian 12, Rocky Linux 9, AlmaLinux 9, Fedora, Amazon Linux 2023, RHEL 8 / 9. CentOS 7 / RHEL 7 work up to Kubernetes 1.34.'],
+                            ['Control plane', '2 vCPU and 4 GB RAM recommended.'],
+                            ['Workers', '2 vCPU and 2 GB RAM minimum. More for your apps and add-ons.'],
+                            ['Disk', '20 GB or more; upgrades need 2 GB free on /var.'],
+                            ['Internet', 'Outbound HTTPS to download Kubernetes and container images.'],
+                            ['Between servers', 'The servers must reach each other (ports 6443, 10250 and 30000–32767).'],
+                            ['Login', 'root, or a user with sudo, over SSH (port 22).']
                         ]} />
-                    </Section>
-
-                    <Section id="requirements" Icon={Cpu} color="text-orange-400" title="Node Requirements">
-                        <Table head={['', 'Requirement']} rows={[
-                            ['Operating system', 'Ubuntu 22.04 / 24.04, Debian 12, Rocky Linux 9, AlmaLinux 9, Fedora, Amazon Linux 2023 (all tested end-to-end), RHEL 8 / 9. Kubernetes 1.35+ needs cgroups v2 and a 5.x kernel — CentOS 7 / RHEL 7 are supported up to Kubernetes 1.34.'],
-                            ['CPU / memory', 'Control plane: 2 vCPU, 4 GB RAM recommended. Workers: 2 vCPU, 2 GB RAM minimum.'],
-                            ['Disk', '20 GB+ recommended; upgrades need at least 2 GB free on /var.'],
-                            ['Network', 'Outbound HTTPS to pkgs.k8s.io, registry.k8s.io and Docker Hub. Nodes must reach each other (6443, 10250, 30000–32767).'],
-                            ['Access', 'root or a sudo user. In Self-Hosted mode SSH (port 22) must be open.']
-                        ]} />
-                        <Note>If SSH is refused, run this one line on the node (Ubuntu/Debian):</Note>
+                        <Note>If KubeEZ says <B>SSH connection refused</B>, the server has no SSH service. On Ubuntu / Debian run:</Note>
                         <Code>{"sudo apt-get update && sudo apt-get install -y openssh-server && sudo systemctl enable --now ssh && { command -v ufw >/dev/null && sudo ufw allow ssh || true; }"}</Code>
                     </Section>
 
                     <Section id="agents" Icon={Activity} color="text-emerald-400" title="Gateway Agent"
-                        intro="In SaaS mode KubeEZ cannot SSH into private servers. A lightweight agent on your network opens an outbound, encrypted WebSocket tunnel instead — no inbound firewall rules.">
+                        intro="With hosted KubeEZ, your servers are usually in a private network that KubeEZ cannot reach. The Gateway Agent is a small program you run inside that network. It connects out to KubeEZ over an encrypted connection, so you open no firewall ports.">
                         <Steps items={[
-                            <>Open <b>Gateway Agents</b> in the sidebar and click <b>Generate Token</b>.</>,
-                            'Paste the generated one-line installer into a terminal on a machine in your network (Linux, macOS or Windows). It downloads a portable runtime if needed.',
-                            <>The agent appears as <b>Online</b>. Clusters in that workspace are now installed and managed through it.</>
+                            <>Open <B>Gateway Agents</B> and click <B>Generate Token</B>.</>,
+                            'Copy the one-line installer and run it on any machine in the network (Linux, macOS or Windows).',
+                            <>The agent shows as <B>Online</B>. Every cluster in the workspace is now managed through it.</>
                         ]} />
-                        <H4>Stays connected — no new token needed</H4>
                         <Table head={['Situation', 'What happens']} rows={[
-                            ['Network drop / KubeEZ restart', 'The agent reconnects by itself (2 s, 4 s … up to 60 s between tries). A link that dies silently is detected within 60 s.'],
-                            ['Agent crashes or the machine reboots', 'The installer sets it up as a service: systemd (Linux, root or sudo), launchd (macOS) or a Scheduled Task (Windows, starts at boot when run as Administrator). Without sudo on Linux it falls back to a user service or cron.'],
-                            ['Agent was removed from the machine', <>Gateway Agents → the agent → <b>Install / Reconnect</b> shows the same command again (same token). Running it twice is safe — it replaces the old copy.</>],
-                            ['Agent stays offline', 'An alert goes out after 2 minutes away (adjustable on Pro), and “back online” when it reconnects — also across a KubeEZ restart. Its clusters show as unreachable meanwhile.'],
-                            ['Agent deleted in KubeEZ', 'Its token stops working and the agent stops itself instead of retrying forever.']
+                            ['Network drop or restart', 'The agent reconnects by itself and runs as a service, so it comes back after a reboot.'],
+                            ['Agent offline', 'You get an alert, and another one when it is back. Its clusters show as unreachable meanwhile.'],
+                            ['Agent removed from the machine', <>Gateway Agents → the agent → <B>Install / Reconnect</B> shows the same command again. Running it twice is safe.</>],
+                            ['Agent deleted in KubeEZ', 'Its token stops working and the agent stops.']
                         ]} />
-                        <Code>{"sudo systemctl status kubeez-agent      # Linux service\njournalctl -u kubeez-agent -f            # live log"}</Code>
-                        <Note>Long operations (add-ons up to 30 min, upgrades up to 45 min) are given matching relay time-outs, so they are not cut off midway.</Note>
-                        <Note>The tunnel only runs over TLS (wss://) with the server certificate verified, and the agent sends its token in a header, never in a URL. A KubeEZ served without HTTPS (a lab) gets <C>--allow-insecure yes</C> in the install command and a warning on the page — put KubeEZ behind HTTPS before using the agent for real servers.</Note>
+                        <P>Check the agent on Linux:</P>
+                        <Code>{"sudo systemctl status kubeez-agent\njournalctl -u kubeez-agent -f"}</Code>
+                        <Note kind="tip">Self-hosted KubeEZ on the same network as your servers connects to them directly. You only need the agent for servers it cannot reach.</Note>
                     </Section>
 
                     {/* ── Clusters ────────────────────────────────────── */}
                     <Section id="deploy" Icon={Terminal} color="text-rose-400" title="Deploy a Cluster">
                         <Steps items={[
-                            <>Click <b>Deploy cluster</b> in the sidebar (or <b>New cluster</b> in the top bar).</>,
-                            'Add the control-plane and worker nodes (IP + SSH user/password or key; in SaaS mode the Gateway Agent must be online).',
-                            'Pick the Kubernetes version (1.27 – 1.37; 1.35 / 1.36 / 1.37 receive upstream security fixes), the network plugin (Flannel or Calico) and any add-ons.',
-                            <>High availability: with 2 or more control-planes, enter a <b>virtual IP</b> — a free address on their network. KubeEZ runs <b>kube-vip</b> on every control-plane; one holds the IP and another takes it over within seconds if that machine dies. kubectl, workers and KubeEZ use the virtual IP.</>,
-                            'Pre-flight checks verify connectivity, OS, CPU, memory and ports before anything is installed.',
-                            'Start. Every step streams a live log with a progress bar. On a failure you see the reason and the fix, with Auto-Fix & Resume where possible.'
+                            <>Click <B>Deploy cluster</B> in the sidebar (or <B>New cluster</B> in the top bar).</>,
+                            'Add the control-plane and worker servers: IP, SSH user and password or key. KubeEZ checks each one: connection, OS, CPU, memory and ports.',
+                            'Pick the Kubernetes version (1.27 – 1.37) and the network plugin (Flannel or Calico).',
+                            <>Choose add-ons. <B>Nginx Ingress</B> and the <B>KubeEZ Explorer</B> are selected for you; press <B>Customize</B> on an add-on to change its settings first.</>,
+                            'Review and start. Each step streams a live log. If something fails, you see why, with Auto-Fix & Resume where possible.'
                         ]} />
-                        <Note>Use 3 control-planes for real HA: etcd needs a majority, so 2 of 3 must be up (with 2 control-planes, losing either one stops the API). The virtual IP must be unused and outside your DHCP range; all control-planes must be in the same network (layer 2). Without a virtual IP the API address is the first control-plane&apos;s IP.</Note>
+                        <H4>High availability</H4>
+                        <P>With 2 or more control-planes, enter a <B>virtual IP</B>: a free address in their network. One control-plane holds it, and another takes it over within seconds if that server dies. kubectl, workers and KubeEZ all use the virtual IP.</P>
+                        <Note>Use <B>3 control-planes</B> for real high availability: the cluster keeps running while 2 of 3 are up. With 2, losing either one stops the cluster API. The virtual IP must be unused, outside your DHCP range, and in the same network as the control-planes.</Note>
                     </Section>
 
                     <Section id="cluster-page" Icon={LayoutGrid} color="text-sky-400" title="The Cluster Page"
-                        intro="Open a cluster from the dashboard. Actions (Kubeconfig, Terminal, Scale, Upgrade) are in the header; the rest is grouped in tabs: Overview, Explorer, Add-ons, Backups.">
+                        intro="Open a cluster from Clusters. The buttons at the top (Kubeconfig, Terminal, Scale, Upgrade) act on the whole cluster; the tabs below hold the details.">
                         <Table head={['Tab', 'What you find there']} rows={[
-                            ['Overview', 'Version, network plugin, nodes, API endpoint · 3D / list topology · live CPU, memory and disk.'],
-                            ['Add-ons', <><b>Access & logins</b>: URLs, usernames, passwords, web UIs. <b>Manage & logs</b>: health, pods, logs, Install / Repair / Reinstall / Uninstall.</>],
-                            ['Backups', 'etcd snapshots (Backup Now, verify, preview + restore, undo), disaster recovery, Offsite Backup settings and Volume Backups.'],
-                            ['Explorer', 'The KubeEZ Explorer: every resource, logs, topology, timeline, Helm, GitOps, audit — with your KubeEZ login.']
+                            ['Overview', 'Version, network plugin, nodes and API address, a health score, and live CPU, memory and disk.'],
+                            ['Explorer', 'Every resource in the cluster: YAML, logs, events, topology, timeline and Helm releases.'],
+                            ['Add-ons', <><B>Access & logins</B>: addresses, usernames and passwords of the add-ons. <B>Manage & logs</B>: health, logs, settings, updates, install and uninstall.</>],
+                            ['Backups', 'Cluster snapshots, restore, offsite backup, volume backups and disaster recovery.']
                         ]} />
-                        <P>The open tab is part of the address (e.g. <C>?tab=backups</C>), so refresh, the back button and shared links keep you in place. If a cluster failed, a banner at the top says what to do next with one-click buttons.</P>
+                        <P>If an install or upgrade failed, a banner at the top says what to do next, with a button for it.</P>
                     </Section>
 
-                    <Section id="resume" Icon={RotateCcw} color="text-sky-400" title="Resume a Failed Install"
-                        intro="If an installation stops (network drop, a node down, a cancelled run), you do not start over.">
+                    <Section id="access" Icon={Terminal} color="text-blue-400" title="kubectl & Terminal">
+                        <H4>kubectl from your computer</H4>
+                        <P>Click <B>Kubeconfig</B> on the cluster page and use the file with kubectl:</P>
+                        <Code>{"kubectl --kubeconfig ./kubeconfig get nodes"}</Code>
+                        <Note kind="warn">The kubeconfig gives full admin access to the cluster. Keep it like a password.</Note>
+                        <H4>A shell on a node, in the browser</H4>
                         <Steps items={[
-                            <>On the cluster page click <b>Resume Installation</b>.</>,
-                            'KubeEZ inspects the real cluster: container runtime, Kubernetes packages, control plane, network plugin (in any namespace), joined workers and each add-on.',
-                            'It resumes at the first unfinished step and skips everything already done — joined workers are never joined again, healthy add-ons are not reinstalled.'
+                            <>Click <B>Terminal</B> on the cluster page. You see the cluster&apos;s nodes.</>,
+                            <>Click <B>Connect</B> next to a node: its own shell opens in a tab. Open several nodes side by side, or use <B>Run on several nodes</B> to send one command to the nodes you tick.</>,
+                            <>Access is given for a limited time. <B>Admins</B> get in at once (60 minutes). <B>Operators</B> give a reason and a duration (15 minutes – 2 hours), and an admin approves it under <B>Compliance → Access</B>.</>
                         ]} />
-                        <Note>A failed add-on no longer marks the whole cluster as failed — repair it from <b>Add-ons → Manage & logs</b> instead.</Note>
+                        <Note>Every terminal session is recorded (what was typed and shown), and admins can replay it. Viewers cannot open the terminal.</Note>
+                    </Section>
+
+                    <Section id="scale" Icon={Plus} color="text-blue-400" title="Add Worker Nodes"
+                        intro="Click Scale on the cluster page, add the new servers (IP and SSH login) and start. KubeEZ prepares them and joins them to the running cluster; nothing that already runs is touched.">
                     </Section>
 
                     <Section id="upgrade" Icon={ArrowUpCircle} color="text-emerald-400" title="Upgrade Kubernetes"
-                        intro="Click Upgrade in the cluster header. Kubernetes only supports one minor version per step (e.g. 1.36 → 1.37), so that is what KubeEZ offers.">
+                        intro="Click Upgrade on the cluster page. Kubernetes moves one version at a time (for example 1.36 → 1.37), so KubeEZ offers the next version.">
                         <Steps items={[
-                            <>With the <b>KubeEZ Explorer</b> add-on, an <b>upgrade safety check</b> runs as soon as you pick the version: APIs removed in the target release, kubelet/kube-proxy skew, disruption budgets that would block draining, release-specific changes. <b>Blockers stop the upgrade</b> — only a workspace admin can continue anyway.</>,
-                            'Pre-flight checks: version path, package availability, registry access, free disk, API health.',
-                            'An automatic etcd snapshot is taken first (kept 45 days) — your way back if anything goes wrong.',
-                            'The control plane is upgraded, then kubelet and kubectl on every node. Known issues are repaired automatically (old kubelet flags, sandbox image, containerd 2.x for 1.36+, stale kubeadm-config after a restore).',
-                            'Transient problems (time-outs, API not answering yet) are retried once automatically.'
+                            <><B>Safety check</B> (with the KubeEZ Explorer): finds what would break in the new version, such as removed APIs or settings that block draining. Blockers stop the upgrade; only an admin can continue anyway.</>,
+                            'Checks: version path, packages, free disk and API health.',
+                            <>An automatic <B>snapshot</B> is taken first, so you can go back.</>,
+                            'The control plane is upgraded first, then every node. Known problems are fixed on the way, and short hiccups are retried.'
                         ]} />
-                        <Note kind="warn">If an upgrade fails, the screen shows the exact reason and whether the cluster was changed. Usually it still runs the old version — click <b>Retry upgrade</b>. If the cluster is broken, restore the <b>Before upgrade (automatic)</b> snapshot from the Backups tab.</Note>
+                        <Note kind="warn">If an upgrade fails, the screen says why and whether the cluster changed. Usually it still runs the old version: click <B>Retry upgrade</B>. If the cluster is broken, restore the <B>Before upgrade (automatic)</B> snapshot in the Backups tab.</Note>
                     </Section>
 
-                    <Section id="scale" Icon={Plus} color="text-blue-400" title="Scale & Terminal">
-                        <P><b className="text-white">Scale</b> adds worker nodes to a running cluster with a fresh join token. <b className="text-white">Terminal</b> lists the nodes — <b className="text-white">Connect</b> opens that node's own interactive shell in a tab (several nodes side by side; <b className="text-white">Run on several nodes</b> sends one command to the ones you tick). Access is <b className="text-white">just in time</b>: admins get in at once (60 min), operators give a reason and a time limit (15 min – 2 h) and an admin approves (Compliance → Access, plus an alert). Every session is <b className="text-white">recorded</b> (commands and output) and every command lands in the audit trail. <b className="text-white">Kubeconfig</b> downloads admin access for kubectl.</P>
+                    <Section id="resume" Icon={RotateCcw} color="text-sky-400" title="Resume a Failed Install"
+                        intro="If an install stops (network drop, a server down, cancelled), you do not start over.">
+                        <Steps items={[
+                            <>On the cluster page click <B>Resume Installation</B>.</>,
+                            'KubeEZ checks what is already done on the servers.',
+                            'It continues from the first unfinished step. Joined workers and healthy add-ons are left as they are.'
+                        ]} />
+                        <Note>A failed add-on does not fail the cluster. Fix it from <B>Add-ons → Manage & logs</B> with <B>Repair</B>.</Note>
+                    </Section>
+
+                    <Section id="remove" Icon={X} color="text-rose-400" title="Remove a Cluster"
+                        intro="On Clusters, open the ⋯ menu on the cluster's card and click Remove. This removes the cluster from KubeEZ only. The cluster keeps running on your servers, and you can still use it with kubectl.">
                     </Section>
 
                     {/* ── Add-ons ─────────────────────────────────────── */}
                     <Section id="addons" Icon={Puzzle} color="text-fuchsia-400" title="Add-on Catalogue"
-                        intro="Install add-ons during deployment or later from Add-ons → Manage & logs → Install. Web UIs are exposed on these ports of any node IP.">
-                        <Table head={['Add-on', 'What it does', 'Access']} rows={[
-                            ['Nginx Ingress', 'HTTP/HTTPS routing for Ingress resources (the ingress-nginx project was retired upstream in March 2026 — 1.15 is its last release)', 'NodePorts or a MetalLB IP, in Access & logins'],
-                            ['Prometheus + Grafana', 'kube-prometheus-stack: Prometheus, Grafana with ready dashboards (and the KubeEZ overview), node and Kubernetes metrics, optional Alertmanager', 'Grafana :30000 (own password) · Prometheus :30090'],
-                            ['Kubernetes Dashboard', 'Official web UI v2.7 (24-hour login token shown in KubeEZ). The upstream project is archived — the KubeEZ Explorer is the maintained alternative', 'https :30643'],
-                            ['cert-manager', 'Automatic TLS certificates; a self-signed ClusterIssuer is ready', 'in-cluster'],
-                            ['Longhorn', 'Replicated block storage; becomes the default StorageClass', 'UI :30080'],
-                            ['ArgoCD', 'GitOps delivery', 'https :30443'],
-                            ['S3 Object Storage (SeaweedFS)', 'S3-compatible storage with a ready "backups" bucket + web admin UI', 'S3 :30833 · Web UI :30834'],
-                            ['KubeEZ Explorer', 'Full Kubernetes UI, audit, upgrade safety check', 'Explorer tab — no port, through KubeEZ'],
-                            ['Velero', 'Volume data backups (set up under Backups)', 'Backups → Volume data'],
-                            ['Metrics Server (Free)', 'CPU / memory per pod and node — "kubectl top" and pod autoscaling (HPA)', 'Live usage in Access & logins'],
-                            ['MetalLB', 'Real IPs for LoadBalancer Services from a free range of your network (Layer 2 or BGP); optionally gives Nginx Ingress one', 'The IPs, shown in Access & logins'],
-                            ['Loki logs', 'Logs of every pod (Fluent Bit on every node), kept N days, searchable in Grafana', 'Grafana → Explore → Loki'],
-                            ['Sealed Secrets', 'Encrypt Secrets so they can live in Git — only this cluster opens them', '"Seal a secret" in Manage & logs'],
-                            ['Kyverno policies', 'No "latest" images, requests / limits required, no privileged pods, no host namespaces — report or block', 'Results in Access & logins'],
-                            ['NFS storage', 'Volumes on your NFS server (StorageClass nfs-client, shared ReadWriteMany volumes). The server is checked with a real mount; the NFS client is installed on every node', 'Server, volumes in Access & logins'],
-                            ['Volume snapshots', 'VolumeSnapshot support (snapshot controller) and a Longhorn snapshot class; snapshot types installed earlier are taken over', 'kubectl get volumesnapshots'],
-                            ['Elasticsearch + Kibana', 'Elastic Stack through the official ECK operator: 1 or 3 nodes, storage, Kibana. The stack version is the add-on version', 'Kibana :30561 (user elastic)'],
-                            ['Fluentd', 'Log router: receives from Fluent Bit (aggregator) or reads every node (collector), sends to Elasticsearch', 'fluentd.fluentd.svc:24224'],
-                            ['Fluent Bit', 'Log collector on every node → Elasticsearch, Fluentd or another Elasticsearch / OpenSearch', 'Target shown in Access & logins'],
-                            ['Harbor registry', 'Your own registry with projects, users and Trivy scans. KubeEZ makes its certificate (10 years) and every node of the cluster trusts it, so pods use its images directly', 'https :30003 (user admin)'],
-                            ['Flux CD', 'GitOps; optionally syncs one repository (branch, folder, interval, prune). Removing the sync never deletes what was deployed', 'Sync status in Access & logins'],
-                            ['Jenkins', 'CI/CD; pipelines run as pods in the cluster (Kubernetes agents); extra plugins from the form', ':30808 (user admin)'],
-                            ['HashiCorp Vault', 'Secrets with the Vault Agent injector; KubeEZ initializes and unseals it (again after restarts), enables Kubernetes login and a key/value store', 'UI :30820/ui (root token)'],
-                            ['OPA Gatekeeper', 'The same four rules as Kyverno, written in Rego — report, warn or block; add your own ConstraintTemplates', 'Violations in Access & logins'],
-                            ['Falco', 'Runtime security on every node (Modern eBPF): shells in containers, sensitive files read…', 'UI :30282 (user admin)'],
-                            ['Trivy Operator', 'Continuous scans: image vulnerabilities, misconfigurations, RBAC, secrets in images', 'Counts in Access & logins']
+                        intro="Install add-ons while deploying a cluster, or later from Add-ons → Manage & logs → Install. Web UIs open on the listed port of any node's IP. Logins are under Add-ons → Access & logins.">
+                        <Table head={['Add-on', 'What it does', 'Where to open it']} rows={[
+                            ['KubeEZ Explorer', 'Full Kubernetes UI inside KubeEZ, upgrade safety check, health score', 'Explorer tab / sidebar'],
+                            ['Nginx Ingress', 'Routes HTTP / HTTPS traffic to your apps', 'Access & logins'],
+                            ['Prometheus + Grafana', 'Metrics and ready dashboards, optional Alertmanager', 'Grafana :30000 · Prometheus :30090'],
+                            ['Metrics Server', 'CPU and memory per pod and node (kubectl top, autoscaling)', 'Access & logins'],
+                            ['Kubernetes Dashboard', 'The official Kubernetes web UI (the Explorer is the modern option)', 'https :30643'],
+                            ['cert-manager', 'Automatic TLS certificates', 'In the cluster'],
+                            ['Longhorn', 'Replicated storage for volumes; becomes the default storage', 'UI :30080'],
+                            ['NFS storage', 'Volumes on your NFS server, also shared between pods', 'Access & logins'],
+                            ['Volume snapshots', 'Snapshots of volumes (VolumeSnapshot)', 'kubectl'],
+                            ['S3 Object Storage', 'S3-compatible storage with a "backups" bucket and a web UI', 'S3 :30833 · UI :30834'],
+                            ['Velero', 'Backups of volume data', 'Backups tab'],
+                            ['MetalLB', 'Real IPs from your network for LoadBalancer services', 'Access & logins'],
+                            ['ArgoCD', 'GitOps deployments', 'https :30443'],
+                            ['Flux CD', 'GitOps; can sync one repository for you', 'Access & logins'],
+                            ['Jenkins', 'CI/CD; pipelines run as pods in the cluster', ':30808'],
+                            ['Harbor', 'Your own image registry with vulnerability scans; every node trusts it', 'https :30003'],
+                            ['Loki logs', 'Logs of every pod, searchable in Grafana', 'Grafana → Explore'],
+                            ['Elasticsearch + Kibana', 'Elastic Stack for logs and search', 'Kibana :30561'],
+                            ['Fluent Bit · Fluentd', 'Collect and route logs to Elasticsearch or another target', 'Access & logins'],
+                            ['HashiCorp Vault', 'Secrets management with injection into pods; KubeEZ unseals it for you', 'UI :30820/ui'],
+                            ['Sealed Secrets', 'Encrypted secrets you can keep in Git', 'Manage & logs'],
+                            ['Kyverno · OPA Gatekeeper', 'Policies: no "latest" images, limits required, no privileged pods; report or block', 'Access & logins'],
+                            ['Falco', 'Runtime threat detection on every node', 'UI :30282'],
+                            ['Trivy Operator', 'Continuous scans for vulnerabilities and misconfigurations', 'Access & logins']
                         ]} />
-                        <P>Logins and tokens are shown under <b className="text-white">Access & logins</b> — no server login needed. Viewers see the URLs but never the credentials.</P>
+                        <Note>Viewers see the add-on addresses but never passwords or tokens.</Note>
+                        <Note kind="tip">Add-ons that keep data (Elasticsearch, Harbor, Jenkins, Vault) need real storage in production. Install <B>Longhorn</B> or <B>NFS storage</B> first.</Note>
                     </Section>
 
-                    <Section id="addon-settings" Icon={Puzzle} color="text-fuchsia-400" title="Add-on Settings"
-                        intro="Every add-on is installed with Helm and can be customized — when you create the cluster (Customize on the add-on), when you install it later, and at any time after.">
-                        <Table head={['', 'What you can do']} rows={[
-                            ['Settings form', 'The few settings that matter, with safe defaults: node ports, replicas, storage and size, retention, the Grafana / Alertmanager options, Let\'s Encrypt email, Longhorn copies per volume, MetalLB\'s IP range, Kyverno\'s rules… Wrong values are refused with the reason (a port outside 30000–32767, an IP range containing a node, a volume made smaller).'],
-                            ['Before the cluster exists', <>In the new-cluster wizard, select an add-on and press <b>Customize</b>: the same form, advanced YAML and preview. Checked when you start, used during the install.</>],
-                            ['Change later', <><b>Settings</b> in Manage & logs → change → <b>Preview</b> (exactly what changes) → <b>Apply</b>. Runs as a job with a live log. If the add-on does not come up healthy, Helm puts back the version that worked and KubeEZ keeps the old settings.</>],
-                            ['History', 'Every change: who, when, which version and settings, and whether it worked.'],
-                            ['Version', 'The versions KubeEZ has checked, newest first; versions that need a newer Kubernetes are greyed out. Longhorn, cert-manager and ArgoCD move one release line at a time, as those projects require — KubeEZ checks the running version on the node before changing anything. An Update badge appears when a newer version is available.'],
-                            ['New versions', <>Every 12 hours KubeEZ reads the add-ons' Helm chart repositories and finds newer releases (newer release lines and newer patches; versions your Kubernetes cannot run are left out). You are told once per version — an <b>Update</b> badge on the add-on, the <b>✦ updates</b> menu in the top bar, and the <b>New add-on version available</b> alert on your channels. Nothing is updated on its own: open <b>Settings</b>, pick the version (<b>Select</b> picks the next one) and <b>Apply</b>. Versions marked <b>new, not yet tested by KubeEZ</b> come straight from the project — read their release notes first. <b>Check for updates</b> in Manage & logs looks right away.</>],
-                            ['Installed before', <>Add-ons installed by an older KubeEZ show <b>Not Helm-managed yet</b>. The first Apply takes them over in place at the version that runs (preselected): same names, ports and data. ArgoCD and Velero restart their pods once; Prometheus + Grafana are replaced by kube-prometheus-stack on the same ports (collected metrics are not carried over). If a takeover fails, nothing is removed.</>],
-                            ['Advanced (Pro)', 'Any Helm value of the chart as YAML, merged over the form. The few keys KubeEZ needs to find, check and repair the add-on stay fixed — the preview says when one of yours was ignored.']
+                    <Section id="addon-settings" Icon={Puzzle} color="text-fuchsia-400" title="Settings & Updates"
+                        intro="Every add-on can be customized: in the wizard (Customize), when you install it, or at any time later.">
+                        <Table head={['', 'How it works']} rows={[
+                            ['Settings', 'A short form with safe defaults (ports, replicas, storage size, retention…). Wrong values are refused with the reason.'],
+                            ['Change', <><B>Settings</B> in Manage & logs → change → <B>Preview</B> (shows exactly what changes) → <B>Apply</B>. If the add-on does not come up healthy, the previous working version is put back.</>],
+                            ['New versions', <>KubeEZ looks for new add-on versions twice a day. You see an <B>Update</B> badge, the <B>✦</B> menu, and an alert. Nothing updates by itself: open <B>Settings</B>, pick the version and <B>Apply</B>.</>],
+                            ['History', 'Every change: who, when, which version, and whether it worked.'],
+                            ['Advanced (Pro)', 'Any Helm value as YAML, on top of the form.']
                         ]} />
-                        <Note>Kyverno is installed so that it can never block the cluster: if Kyverno itself is down, requests are let through, and system namespaces (kube-system, the add-ons) are never checked. Start with <b>Report only</b>, fix what the results show, then switch to <b>Block</b>.</Note>
-                        <Note>Sealed Secrets keys live in the cluster and are part of the etcd backups — restoring a backup keeps old sealed secrets readable. Uninstalling the add-on deletes the keys.</Note>
-                        <Note>Storage for add-ons that keep data (Elasticsearch, Harbor, Jenkins, Vault): <b>auto</b> uses Longhorn if installed, else NFS storage, else the node itself (lost when the pod is recreated — the install log warns). Vault always needs a real volume. Install Longhorn or NFS storage first for production.</Note>
-                        <Note>Vault's unseal key is kept in the Secret vault/kubeez-vault-keys so KubeEZ can unseal it after a restart (shown to admins under Access). For production, configure a cloud KMS seal in the advanced YAML, or turn automatic unsealing off and keep the key yourself.</Note>
+                        <Note kind="tip">For Kyverno and Gatekeeper, start with <B>Report only</B>, fix what the results show, then switch to <B>Block</B>.</Note>
                     </Section>
 
-                    <Section id="addon-manage" Icon={Puzzle} color="text-fuchsia-400" title="Manage, Logs & Uninstall"
-                        intro="Add-ons → Manage & logs lists every add-on with its live health (Healthy, Starting, Failing, Not installed). Click the line under a name to see its pods, readiness, restarts and why a container is stuck.">
-                        <Table head={['Action', 'What happens']} rows={[
-                            ['Logs', 'Pod logs (all containers), the log of the run that crashed, and recent events. Auto-refresh available.'],
-                            ['Repair', 'Runs the installer again. Fixes missing or broken parts — keeps data, settings and credentials.'],
-                            ['Reinstall', 'Removes the add-on completely, then installs it fresh (new settings and credentials).'],
-                            ['Uninstall', 'Removes the namespace and everything the add-on created in the cluster (CRDs, roles, webhooks).'],
-                            ['Install', 'Shown for add-ons that are not installed.']
+                    <Section id="addon-manage" Icon={Puzzle} color="text-fuchsia-400" title="Health, Logs & Uninstall"
+                        intro="Add-ons → Manage & logs shows every add-on's live health (Healthy, Starting, Failing, Not installed). Click an add-on to see its pods and why a pod is stuck.">
+                        <Table head={['Button', 'What it does']} rows={[
+                            ['Logs', 'Pod logs, the log of a crashed container, and recent events.'],
+                            ['Repair', 'Installs again over the existing add-on: fixes broken parts and keeps data, settings and logins.'],
+                            ['Reinstall', 'Removes the add-on completely and installs it fresh, with new logins.'],
+                            ['Uninstall', 'Removes the add-on and everything it created in the cluster.']
                         ]} />
-                        <Note kind="warn">Uninstalling SeaweedFS or Longhorn deletes data, so you type the add-on name to confirm. Longhorn is refused while any volume still uses it, and runs Longhorn&apos;s official uninstaller.</Note>
-                        <P>Every action runs as a job with a live log, and only one job runs per cluster at a time.</P>
+                        <Note kind="warn">Uninstalling storage add-ons (Longhorn, S3 Object Storage) deletes their data, so you type the name to confirm. Longhorn cannot be removed while a volume still uses it.</Note>
                     </Section>
 
                     <Section id="explorer" Icon={Compass} color="text-cyan-400" title="KubeEZ Explorer"
-                        intro="A full Kubernetes UI inside KubeEZ. Install it from Add-ons, then open the Explorer tab of the cluster.">
+                        intro="A complete Kubernetes UI inside KubeEZ. It is installed on new clusters by default; open it from Explorer in the sidebar or the Explorer tab of a cluster.">
                         <Table head={['View', 'What you get']} rows={[
-                            ['Resources', 'Every object and CRD — YAML, events, logs, problem filters (CrashLoopBackOff, ImagePullBackOff…)'],
-                            ['Topology & Timeline', 'How workloads, services and ingresses connect; what changed and when, with diffs'],
-                            ['Helm & GitOps', 'Releases, values, revision diffs, rollback; Argo CD / Flux sync and drift'],
-                            ['Checks', '31-check best-practice audit and the upgrade impact report for the next version']
+                            ['Resources', 'Every object, with YAML, events and logs, and filters for problems (crash loops, image pull errors…)'],
+                            ['Topology & Timeline', 'How apps, services and ingresses connect, and what changed when'],
+                            ['Helm & GitOps', 'Releases, values and rollback; Argo CD / Flux sync status'],
+                            ['Checks', 'Best-practice audit and the impact report for the next Kubernetes version']
                         ]} />
-                        <Steps items={[
-                            <>The Explorer runs <b>inside the cluster</b> behind a ClusterIP — no port is opened. KubeEZ is its only door: requests go through the same tunnel as everything else (SSH or Gateway Agent).</>,
-                            <><b>No second login.</b> KubeEZ passes your identity; Kubernetes RBAC decides: Viewer → view (read-only), Operator → edit, Admin → cluster-admin. Buttons you may not use don't work for you.</>,
-                            <>KubeEZ also uses it for the <b>upgrade safety check</b>, the <b>cluster health score</b> on Overview, and <b>Investigate in Explorer</b> links on incidents and restore previews.</>
-                        ]} />
-                        <Note>Clusters behind a Gateway Agent need an agent from this version or newer (it relays the Explorer's live connections) — reinstall it from the Gateway Agents page with the same command. About 200 MB of memory per cluster.</Note>
+                        <P><B>No extra login and no open port:</B> you use it with your KubeEZ account, and your role decides what you can do (Viewer: read-only, Operator: edit, Admin: everything).</P>
+                        <P>Not installed on an older cluster? Open its Explorer tab and click <B>Install</B>. It uses about 200 MB of memory.</P>
                     </Section>
 
-                    <Section id="s3" Icon={Cloud} color="text-cyan-400" title="S3 Object Storage (SeaweedFS)">
+                    <Section id="s3" Icon={Cloud} color="text-cyan-400" title="S3 Object Storage">
                         <Table head={['Port', 'Use it for']} rows={[
-                            [':30833 — S3 endpoint', 'Apps, aws CLI, rclone, S3 Browser — and as the Offsite Backup target of OTHER clusters. Needs the access key and secret key.'],
-                            [':30834 — Web UI', 'Browse files and buckets in a browser. Login: user admin + the Web UI password from Access & logins.']
+                            [':30833 (S3)', 'Apps, aws CLI, rclone, and as the offsite backup target of another cluster. Needs the access key and secret key.'],
+                            [':30834 (Web UI)', 'Browse buckets and files in the browser. Login is in Access & logins.']
                         ]} />
-                        <Note>Opening the S3 endpoint (:30833) in a browser shows <b>AccessDenied</b> — that is correct: browsers send no keys. Use the Web UI (:30834) to browse.</Note>
-                        <Code>{"AWS_ACCESS_KEY_ID='<access key>' AWS_SECRET_ACCESS_KEY='<secret key>' aws --endpoint-url http://<node-ip>:30833 --region us-east-1 s3 ls s3://backups/"}</Code>
-                        <P>Installs that predate the web UI get it with <b className="text-white">Repair</b> — S3 keys and data stay the same.</P>
+                        <Note>Opening :30833 in a browser shows <B>AccessDenied</B>. That is normal: it is the S3 API. Use the Web UI on :30834.</Note>
+                        <Code>{"aws --endpoint-url http://<node-ip>:30833 --region us-east-1 s3 ls s3://backups/"}</Code>
                     </Section>
 
                     {/* ── Backups ─────────────────────────────────────── */}
-                    <Section id="etcd" Icon={DatabaseBackup} color="text-cyan-400" title="etcd Snapshots & Restore"
-                        intro="etcd holds the whole cluster state (deployments, services, secrets…). Snapshots live on the control-plane node in /var/lib/etcd-backup.">
+                    <Section id="etcd" Icon={DatabaseBackup} color="text-cyan-400" title="Cluster Snapshots"
+                        intro="A snapshot saves the whole cluster state (apps, services, settings, secrets) so you can go back to it. Find them in the cluster's Backups tab.">
                         <Table head={['', '']} rows={[
-                            ['When', <><b>Backup Now</b> (manual), automatically <b>before every upgrade</b> and <b>before every restore</b> (your undo point).</>],
-                            ['Verified', 'Every snapshot is checked with etcd’s own integrity check and gets a SHA-256 checksum. “Verify” re-checks a snapshot any time.'],
-                            ['Retention', '45 days; the newest snapshot is always kept. Old restore leftovers on the node are cleaned up (newest 2 kept).'],
-                            ['HA clusters', 'Supported: the other control-planes are stopped first and re-join the restored etcd one by one.']
+                            ['When', <><B>Backup Now</B>, plus automatically before every upgrade and every restore.</>],
+                            ['Checked', 'Every snapshot is verified when it is taken; Verify checks it again any time.'],
+                            ['Kept', '45 days. The newest one is always kept.']
                         ]} />
-                        <P>A restore runs in the background with a live log — you can close the page and come back.</P>
+                        <H4>Restore</H4>
                         <Steps items={[
-                            <><b>Preview</b> — KubeEZ reads the snapshot (with a throw-away etcd, nothing is touched) and lists what will be <b>removed</b> (created after the snapshot), what <b>comes back</b> (deleted after it) and what is <b>reverted</b> (edited after it). Volumes created or deleted since are flagged.</>,
-                            <><b>Confirm</b> by typing the cluster name.</>,
-                            'Checks first: checksum + integrity and free disk space. A damaged snapshot is refused before anything stops.',
-                            <>A <b>safety snapshot</b> of the current state is taken, then the control plane is stopped, the snapshot restored (with etcd’s revision moved forward so every controller re-reads the restored state) and the control plane started again.</>,
-                            <>If the control plane does not come back, KubeEZ <b>rolls back automatically</b> to the data from before the restore.</>,
-                            <>Done: kubelets on every node are refreshed (<b>Refresh workers</b> retries ones that were offline) and <b>Undo this restore</b> brings back the state from right before it.</>
+                            <><B>Preview</B>: see what will be removed, what comes back, and what is changed back. Nothing is touched yet.</>,
+                            <><B>Confirm</B> by typing the cluster name.</>,
+                            'KubeEZ takes a safety snapshot of the current state, then restores. You can close the page; the log keeps running.',
+                            <>If the cluster does not come back, it is rolled back automatically. When it is done, <B>Undo this restore</B> returns to the state from just before.</>
                         ]} />
-                        <Note kind="warn">A restore rolls the cluster <b>state</b> back — not the Kubernetes version (binaries stay) and not the files inside volumes (see Volume Backups). Everything created after the snapshot is gone; the preview shows what.</Note>
+                        <Note kind="warn">A restore brings back the cluster <B>state</B>, not the files inside volumes (use Volume Backups for those) and not the Kubernetes version.</Note>
                     </Section>
 
-                    <Section id="volume-backups" Icon={HardDrive} color="text-violet-400" title="Volume Backups (Velero)"
-                        intro="etcd snapshots never contain the data inside persistent volumes. Volume Backups copy those files — databases, uploads — together with the namespace’s objects to S3-compatible storage, using Velero.">
+                    <Section id="volume-backups" Icon={HardDrive} color="text-violet-400" title="Volume Backups"
+                        intro="Snapshots do not include the data inside volumes, such as databases and uploads. Volume Backups copy that data, together with the namespace's objects, to S3-compatible storage (with Velero).">
                         <Steps items={[
-                            <>Backups tab → <b>Volume Backups</b>: use the workspace’s offsite storage or enter separate storage (recommended: a key that can only reach one bucket — Velero runs inside the cluster, so the key is stored there).</>,
-                            <><b>Save &amp; install Velero</b> — installs Velero and a small agent on every node, then checks it can reach the storage.</>,
-                            <><b>Back up</b> chosen namespaces (or everything) any time, and turn on <b>automatic backups</b> (daily at 02:00 by default, kept 30 days).</>
+                            <>Backups tab → <B>Volume Backups</B>: use the offsite storage or enter separate storage.</>,
+                            <><B>Save &amp; install Velero</B>. KubeEZ installs it and checks it can reach the storage.</>,
+                            <><B>Back up</B> chosen namespaces any time, and turn on <B>automatic backups</B> (daily by default, kept 30 days).</>
                         ]} />
-                        <Table head={['Restore mode', 'What happens']} rows={[
-                            ['Bring back what is missing', 'Deleted apps come back with their volume data; existing objects are not touched.'],
-                            ['Restore as a copy', 'Into new namespaces <name>-restored-<time> next to the original — compare or recover single files.'],
-                            ['Replace', 'Deletes the chosen namespaces, then restores them from the backup (typed confirmation). Data written since the backup is lost.']
+                        <Table head={['Restore option', 'What happens']} rows={[
+                            ['Bring back what is missing', 'Deleted apps come back with their data; nothing existing is touched.'],
+                            ['Restore as a copy', 'Into new namespaces next to the original, to compare or pick single files.'],
+                            ['Replace', 'Deletes the chosen namespaces and restores them from the backup (typed confirmation).']
                         ]} />
-                        <Note>Volume data is copied at file level from running pods, so it works with any storage (Longhorn, local, NFS…). Uninstalling Velero keeps the backups in the bucket.</Note>
                     </Section>
 
                     <Section id="offsite" Icon={Cloud} color="text-indigo-400" title="Offsite Backups"
-                        intro="A copy of every snapshot outside the cluster survives losing the control-plane disk. Connect it in Backups → Offsite Backup.">
+                        intro="A copy of every snapshot outside the cluster, so it survives losing the server. Connect it in Backups → Offsite Backup.">
                         <Table head={['Storage', 'Endpoint', 'Region']} rows={[
-                            ['AWS S3', 'filled in automatically', 'your bucket region, e.g. ap-south-1'],
-                            ['MinIO / SeaweedFS (on-prem)', 'http(s)://<server>:<port> — address only, no bucket', 'us-east-1'],
+                            ['AWS S3', 'filled in for you', 'your bucket region, e.g. ap-south-1'],
+                            ['MinIO / S3 Object Storage', 'http(s)://<server>:<port>', 'us-east-1'],
                             ['Cloudflare R2', 'https://<account-id>.r2.cloudflarestorage.com', 'auto'],
-                            ['Backblaze B2 / Wasabi', 'https://s3.<region>.backblazeb2.com / s3.<region>.wasabisys.com', 'the provider region']
+                            ['Backblaze B2 / Wasabi', 'the provider S3 address', 'the provider region']
                         ]} />
                         <Steps items={[
-                            'Create a bucket and an access key allowed to Put, Get, List and Delete in it.',
-                            'Enter endpoint, bucket and keys → Test connection → Test & Connect.',
-                            <><b>Download the recovery key</b> shown once. Bundles are encrypted with it (AES-256) — without it a backup cannot be opened if KubeEZ itself is lost.</>,
-                            'New snapshots are copied automatically (after Backup Now, each upgrade and each restore); use Sync now any time.'
+                            'Create a bucket and an access key that can read, write, list and delete in it.',
+                            <>Enter endpoint, bucket and keys → <B>Test & Connect</B>.</>,
+                            <><B>Download the recovery key</B>. Backups are encrypted with it (AES-256). Without it, a backup cannot be opened if KubeEZ itself is lost, so keep it somewhere safe.</>,
+                            <>New snapshots are copied automatically; <B>Sync now</B> copies any time.</>
                         ]} />
-                        <Note><b>Encryption key:</b> bring your own (32+ random characters, e.g. <C>openssl rand -hex 32</C>) or rotate to a newly generated one under Offsite → Encryption key. New bundles use the new key; earlier keys are kept so older backups still restore. Keep a copy offline.</Note>
-                        <Note>The upload runs from the cluster&apos;s control-plane, so it must reach the storage. Your keys stay encrypted in KubeEZ — the node only receives short-lived signed links.</Note>
-                        <Note kind="warn">Storage on a node of the same cluster is not offsite — KubeEZ warns about it. Use another cluster, another server or a cloud bucket.</Note>
-                        <P>Decrypt a bundle by hand:</P>
+                        <Note>You can use your own encryption key, or switch to a new one, under <B>Offsite → Encryption key</B>. Older backups still open.</Note>
+                        <Note kind="warn">Storage on a server of the same cluster is not offsite. Use another cluster, another server or a cloud bucket.</Note>
+                        <P>Open a backup by hand with the recovery key:</P>
                         <Code>{"openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:<RECOVERY-KEY> -in <file>.tar.gz.enc | tar xz"}</Code>
                     </Section>
 
                     <Section id="recovery" Icon={LifeBuoy} color="text-sky-400" title="Disaster Recovery"
-                        intro="When the control-plane MACHINE is lost (disk failure, deleted VM), KubeEZ rebuilds it from an encrypted offsite backup — the cluster keeps its identity, so workers, kubeconfigs and service-account tokens stay valid.">
+                        intro="If the control-plane server itself is lost (dead disk, deleted VM), KubeEZ rebuilds it from an offsite backup. The cluster keeps its identity, so workers and kubeconfigs keep working.">
                         <Steps items={[
-                            <>Bring up a fresh Linux machine with the <b>same IP</b> and the same SSH login as the lost control-plane.</>,
-                            <>Backups tab → <b>Control-plane machine lost? → Recover</b>, pick an offsite backup, type the cluster name.</>,
-                            'KubeEZ prepares the machine, downloads and decrypts the bundle on it, installs the Kubernetes version the backup was taken on, puts the certificate authorities back, restores etcd and lets kubeadm rebuild the control plane around it.',
-                            'Workers reconnect by themselves; still-running control-planes of an HA cluster are re-joined.'
+                            <>Start a fresh Linux server with the <B>same IP</B> and SSH login as the lost one.</>,
+                            <>Backups tab → <B>Control-plane machine lost? → Recover</B>, pick a backup and type the cluster name.</>,
+                            'KubeEZ installs Kubernetes on it and restores the cluster from the backup. Workers reconnect by themselves.'
                         ]} />
-                        <Note>A snapshot whose local copy is gone (pruned, disk replaced) shows as <b>offsite only</b> — <b>Download from offsite</b> brings it back to the control-plane, then preview and restore it like any other.</Note>
                     </Section>
 
-                    <Section id="config-backups" Icon={Shield} color="text-amber-400" title="Config Backups"
-                        intro="Settings → Config Backups saves KubeEZ's own records (clusters, node connections, settings) daily, encrypted, with one-click restore of your workspace's data.">
+                    <Section id="config-backups" Icon={Shield} color="text-amber-400" title="KubeEZ Config Backups"
+                        intro="Settings → Config Backups saves your workspace's KubeEZ records (clusters, connections, settings) every day, encrypted, with one-click restore (Pro).">
                     </Section>
 
                     {/* ── Operations ──────────────────────────────────── */}
                     <Section id="healing" Icon={HeartPulse} color="text-rose-400" title="Auto-Healing & Incidents"
-                        intro="Every running cluster is checked every 1–2 minutes. Known problems are fixed automatically; the rest are diagnosed, with evidence and what to check.">
-                        <Table head={['Detected', 'What KubeEZ does']} rows={[
-                            ['Cluster unreachable (no SSH / agent connection for 5 min)', 'Critical incident and alert; it clears by itself when the connection is back. Nothing on it is checked or healed meanwhile.'],
-                            ['Node down (NotReady)', 'Saves the kubelet log, restarts containerd + kubelet, then checks the node is Ready again.'],
-                            ['Disk / memory / process pressure', 'Frees space (old images, exited containers, journals; oversized logs are emptied, never deleted), drops caches, clears zombie processes.'],
-                            ['Control plane down (API, scheduler, controller-manager, etcd)', 'Saves the component log and restarts kubelet on that control-plane, then checks the API answers.'],
-                            ['Control-plane disk filling up (90 % / 95 %)', 'Same cleanup on the control-plane — etcd stops when the disk is full.'],
-                            ['Disk will be full soon (forecast)', 'From the disk growth of the last hours: a warning when a node’s disk is full within 24 h, critical within 3 h — and the cleanup runs before it is full.'],
-                            ['Memory or CPU above 90 % for 15 minutes', 'Alerts with the pods using most and the top processes on the node (critical above 95 %).'],
-                            ['Certificates expiring (< 30 days)', 'Alerts. One click (“Run fix now”) renews them on every control-plane and restarts the components.'],
-                            ['etcd unhealthy', 'Alerts with the etcd log and disk usage.'],
-                            ['Pod crash loop', 'Saves the last log lines, then deletes the pod so its controller starts a fresh one (a pod without a controller is left alone).'],
-                            ['Out of memory, image pull failure, pod stuck pending', 'Diagnoses: memory limits, the registry error, the scheduler’s reason.'],
-                            ['Workload below its replicas, volume claim pending, job failed (> 5 min)', 'Diagnoses: workload conditions, claim events and storage classes, job logs.']
+                        intro="KubeEZ checks every running cluster every 1–2 minutes. Common problems are fixed automatically; for the rest you get the evidence and what to check. Everything is listed under Incidents.">
+                        <Table head={['Problem', 'What KubeEZ does']} rows={[
+                            ['Node down', 'Restarts the container runtime and kubelet, then checks the node is back.'],
+                            ['Disk or memory full', 'Frees space safely (old images, stopped containers, old logs) and alerts before a disk is full.'],
+                            ['Control plane down', 'Restarts it and checks the cluster API answers again.'],
+                            ['Certificates expiring', 'Alerts 30 days ahead; Run fix now renews them.'],
+                            ['Pod crash loop', 'Saves the last logs, then lets its controller start a fresh pod.'],
+                            ['Out of memory, image pull error, pending pods', 'Explains the cause: memory limit, registry error, or why it cannot be scheduled.'],
+                            ['Cluster unreachable', 'Raises a critical incident, which clears itself when the connection is back.']
                         ]} />
-                        <P><b className="text-white">Root cause:</b> when a node is down, pod and workload problems on it are listed under it and not “fixed” separately. <b className="text-white">Each incident</b> has a timeline (detected → each fix attempt → result), the evidence collected and a suggestion. A fix is tried at most 3 times, then it needs a person; a closed incident that comes back opens a new one. History is kept 7 days, with fix success rate and mean time to recover.</P>
-                        <P><b className="text-white">Control:</b> admins choose per problem type <i>Fix automatically</i>, <i>Alert only</i> or <i>Off</i> (Policies). Operators can acknowledge, run a fix now, mute an incident for 24 h, or put a cluster in maintenance (no checks, fixes or alerts for 1–24 h — <b className="text-white">Resume now</b> ends it early). Watching pauses by itself while an install, upgrade or scale runs on the cluster.</P>
-                        <P><b className="text-white">Node usage:</b> each watched cluster shows CPU, memory and disk of every node (from the kubelet, every 2 minutes) and “disk full in ~X h” when a disk is filling up.</P>
-                    </Section>
-
-                    <Section id="compliance" Icon={ShieldCheck} color="text-emerald-400" title="Compliance & Audit"
-                        intro="Compliance in the sidebar: a live scan of a cluster mapped to CERT-In Directions 2022, the DPDP Act 2023 & Rules 2025, ISO/IEC 27001:2022 Annex A and the CIS Kubernetes Benchmark. A scan only reads (SSH to every node); it takes 1–5 minutes.">
-                        <Table head={['', 'What it does']} rows={[
-                            ['What is checked', '29 controls: time sync with NIC / NPL, API audit log and 180-day / 1-year log retention, central pod logs, the KubeEZ audit trail, alert channels, incidents within 6 hours, runtime threat detection, etcd snapshots, encrypted offsite copies, restore tests, volume backups, Secret encryption at rest, HTTPS, certificate expiry, accounts, cluster-admins, SSH hardening, image vulnerabilities, OS security updates, supported version, the CIS benchmark (kube-bench), admission policies, privileged pods, network policies, secrets management.'],
-                            ['Score', 'Every control is Pass, Partial, Fail, To confirm or N/A, weighted by severity (high 3, medium 2, low 1). One score overall and one per framework, with the history of every scan.'],
-                            ['Attestations', 'What a scan cannot see is confirmed by an admin: CERT-In point of contact, logs and backups kept in India, incident response plan, DPDP contact, access review. Valid one year.'],
-                            ['Fixes', <>Each finding says how to fix it. <b>Fix: set NIC / NPL time servers</b> configures chrony / timesyncd on every node (Pro). The PDF contains a ready audit policy and Secret encryption config.</>],
-                            ['Report (Pro)', 'A PDF for auditors and client questionnaires: cover with scores, executive summary, framework scorecards, every control with evidence, references and fix, node evidence, CIS failures, attestations, ready-made fixes. Sealed with SHA-256 + a KubeEZ signature — "Verify seal" shows whether it was changed. The evidence is also available as JSON.'],
-                            ['Monthly (Pro)', 'Every 30 days each cluster is scanned, the PDF is emailed to the admins, and an alert ("a control got worse") goes to your channels when something regressed.'],
-                            ['CERT-In report (Pro)', 'From an incident: a pre-filled CERT-In incident report (type from Annexure I, times in IST, affected systems, evidence, actions taken) with the 6-hour deadline shown.'],
-                            ['Audit trail', 'Every change made through KubeEZ (who, role, IP, cluster, result), sign-ins and failed sign-ins, restores and verifications, terminal access and every terminal command — kept 400 days, chained with SHA-256 so a changed or deleted line is detected. Filter and export as CSV (admins).'],
-                            ['Access', 'Terminal access requests to approve or deny, who has access right now (end it at once), and the recorded terminal sessions to replay or download (admins).'],
-                            ['Add-on image scan', 'Off, Warn or Block: before an add-on is installed or updated, every image of its chart is scanned with Trivy on the control-plane; Block refuses images with critical vulnerabilities that have a fix.']
-                        ]} />
-                        <Note>The mapping to CERT-In, DPDP and ISO 27001 is an aid for audits — it is not legal advice or a certification.</Note>
+                        <P>Each incident shows a timeline (found, each fix attempt, result), the evidence and a suggestion. A fix is tried up to 3 times, then it needs a person.</P>
+                        <P><B>You decide:</B> admins choose per problem type <i>Fix automatically</i>, <i>Alert only</i> or <i>Off</i>. Operators can acknowledge, run a fix, mute an incident for 24 h, or put a cluster in <B>maintenance</B> (no checks or alerts for 1–24 h).</P>
                     </Section>
 
                     <Section id="alerts" Icon={Bell} color="text-amber-400" title="Alerts"
-                        intro="Get told when something needs you — on Telegram, Slack, Microsoft Teams, WhatsApp, email or your own webhook. Alerts in the sidebar (workspace admins).">
+                        intro="Be told when something needs you: on Telegram, Slack, Microsoft Teams, WhatsApp, email or your own webhook. Set them up under Alerts (admins).">
                         <Table head={['Channel', 'What you need']} rows={[
-                            ['Telegram', <>A bot from <b>@BotFather</b> (its token) and the chat ID — add the bot to the group first.</>],
-                            ['Slack', <>An <b>Incoming Webhook</b> URL (<C>https://hooks.slack.com/…</C>).</>],
-                            ['Microsoft Teams', <>A <b>Workflows</b> webhook: in the channel, ⋯ → Workflows → &quot;Post to a channel when a webhook request is received&quot;.</>],
-                            ['WhatsApp', 'A Twilio account: Account SID, Auth Token, the WhatsApp sender and the number to alert.'],
-                            ['Email', 'One or more addresses — sent with the server’s SMTP settings.'],
-                            ['Webhook', 'Any URL: KubeEZ POSTs a JSON event (type, severity, cluster, title, text, link; for incidents also incidentId and action links).']
+                            ['Telegram', <>A bot from <B>@BotFather</B> (its token) and the chat ID. Add the bot to the group first.</>],
+                            ['Slack', <>An <B>Incoming Webhook</B> URL.</>],
+                            ['Microsoft Teams', <>A <B>Workflows</B> webhook: in the channel, ⋯ → Workflows → &quot;Post to a channel when a webhook request is received&quot;.</>],
+                            ['WhatsApp', 'A Twilio account: Account SID, Auth Token, sender and the number to alert.'],
+                            ['Email', 'One or more email addresses.'],
+                            ['Webhook', 'Any https URL; KubeEZ sends a JSON event.']
                         ]} />
-                        <Table head={['Alert', 'When']} rows={[
-                            ['New incident / cleared', 'Auto-healing finds a problem (node, control plane or cluster down are critical) and when it is fixed or gone.'],
-                            ['Backup failed', 'An etcd snapshot, its offsite copy or the daily configuration backup failed.'],
-                            ['Restore / recovery finished', 'An etcd restore or disaster recovery finished — or failed.'],
-                            ['Upgrade finished / failed', 'A Kubernetes upgrade completed or stopped.'],
-                            ['Cluster ready, nodes added, add-on installed / removed', 'A job finished — with what was done.'],
-                            ['Install, scale or add-on job failed', 'With the reason.'],
-                            ['Gateway Agent offline / back online', 'After 2 minutes away (adjustable), and when it reconnects.']
+                        <Table head={['You are told when', '']} rows={[
+                            ['Incidents', 'A problem is found, and when it is fixed.'],
+                            ['Backups', 'A snapshot, offsite copy or config backup failed; a restore finished.'],
+                            ['Jobs', 'A cluster is ready, nodes were added, an add-on was installed, an upgrade finished, or a job failed (with the reason).'],
+                            ['Gateway Agent', 'An agent went offline, and when it is back.'],
+                            ['Add-ons & compliance', 'A new add-on version is out; a compliance control got worse; someone asks for terminal access.']
                         ]} />
-                        <P>Each channel has a <b className="text-white">Test</b> button and shows its last delivery. Rules: turn single alert types off, <b className="text-white">quiet hours</b> in your time zone (critical alerts still go out; the others arrive as <b className="text-white">one summary</b> when quiet hours end), a <b className="text-white">cooldown</b> so the same alert is not repeated, and how long a Gateway Agent may be away before it is reported. <b className="text-white">Recent alerts</b> lists every alert — also the ones not sent, with the reason. Tokens and webhook URLs are encrypted and never shown again after saving.</P>
-                        <P><b className="text-white">Act from the alert:</b> incident alerts on Telegram have buttons — <i>Acknowledge</i>, <i>Mute 1 h</i> and, when KubeEZ can fix it, <i>Fix now</i> (only from the chat the channel posts to). Slack, Teams, email, WhatsApp and webhooks get the same as links; a link opens a short confirmation page (link previews never act) and works for 24 hours.</P>
-                        <P><b className="text-white">Routing:</b> each channel can receive only some clusters and from a minimum severity — e.g. production criticals to on-call, everything else to a team chat. Alerts without a cluster (Gateway Agent, config backups) go to every channel. <b className="text-white">Escalation:</b> a critical incident or offline Gateway Agent nobody acknowledges, mutes or fixes within 5–240 minutes is sent once more, marked ESCALATED, to the channels you choose.</P>
-                        <Note><b>Free plan:</b> one channel (Telegram, email or webhook), critical alerts and their recovery (node, control plane or cluster down, Gateway Agent offline / back online, failed backups / restores / upgrades / installs), fixed rules and 20 alert emails a day. <b>Pro:</b> every channel and alert type, quiet hours, per-event rules, the cooldown, routing and escalation.</Note>
-                        <Note>Set <C>KUBEEZ_PUBLIC_URL</C> on the server so alerts link straight to the cluster. Email needs <C>SMTP_HOST</C>, <C>SMTP_USER</C> and <C>SMTP_PASS</C>. In SaaS mode webhooks must use https and cannot reach private addresses.</Note>
+                        <P>Each channel has a <B>Test</B> button. On Pro you can also set quiet hours (critical alerts still go out), turn single alert types off, send only some clusters or severities to a channel, and <B>escalate</B> critical incidents nobody acknowledged. Telegram alerts have buttons (Acknowledge, Mute, Fix now); other channels get the same as links.</P>
                     </Section>
 
-                    <Section id="roles" Icon={Users} color="text-blue-400" title="Teams & Roles"
-                        intro="Each workspace is isolated: members only see their workspace's clusters. Invite members from Team & Roles in the sidebar.">
+                    <Section id="compliance" Icon={ShieldCheck} color="text-emerald-400" title="Compliance & Audit"
+                        intro="A live check of a cluster against CERT-In Directions 2022, the DPDP Act 2023 & Rules 2025, ISO/IEC 27001:2022 and the CIS Kubernetes Benchmark. A scan only reads, and takes 1–5 minutes.">
+                        <Table head={['', 'What it gives you']} rows={[
+                            ['Controls', '30 checks: time sync, audit logs and retention, backups and restore tests, encryption, certificates, accounts and admins, SSH hardening, image vulnerabilities, OS updates, CIS benchmark, policies and more.'],
+                            ['Score', 'A score overall and per framework, with each finding marked Pass, Partial, Fail, To confirm or N/A, and the history of every scan.'],
+                            ['Fix', 'Every finding says how to fix it; some have a one-click fix (Pro).'],
+                            ['Attestations', 'What a scan cannot see (incident response plan, contacts, data location…) is confirmed by an admin, valid one year.'],
+                            ['Report (Pro)', 'A sealed PDF for auditors and client questionnaires, with evidence and fixes. Verify seal shows whether it was changed.'],
+                            ['Monthly (Pro)', 'Each cluster is scanned every month and the report is emailed to admins.'],
+                            ['CERT-In report (Pro)', 'A pre-filled CERT-In incident report from any incident, with the 6-hour deadline shown.'],
+                            ['Audit trail', 'Every change made in KubeEZ, sign-ins and terminal commands: who, when, from where. Kept 400 days and protected against changes. Export as CSV (admins).'],
+                            ['Access', 'Approve terminal access, see who has it now, and replay recorded sessions (admins).']
+                        ]} />
+                        <Note>The mapping to CERT-In, DPDP and ISO 27001 helps with audits. It is not legal advice or a certification.</Note>
+                    </Section>
+
+                    <Section id="roles" Icon={Users} color="text-blue-400" title="Team & Roles"
+                        intro="Each workspace is separate: members only see its clusters. Admins invite members, change roles and reset passwords under Team & Roles.">
                         <Table head={['Role', 'Can do']} rows={[
-                            ['Org Admin', 'Everything in the workspace: clusters, add-ons, backups, team, billing.'],
-                            ['Operator', 'Create, scale, upgrade and manage clusters, add-ons and backups; act on incidents (fix now, mute, maintenance) — not team, billing, alert channels or healing policies.'],
-                            ['Viewer', 'Read-only: clusters, health, incidents, which add-ons run and their URLs — never credentials or tokens, no changes.']
+                            ['Admin', 'Everything in the workspace: clusters, add-ons, backups, team, alerts, compliance, billing.'],
+                            ['Operator', 'Deploy, scale, upgrade and manage clusters and add-ons; act on incidents; use the terminal with an admin’s approval. Not team, billing, alerts or backups settings.'],
+                            ['Viewer', 'Read-only: clusters, health, incidents, compliance scores and add-on addresses. Never passwords or tokens, no changes.']
+                        ]} />
+                        <P>The full list is under <B>Team & Roles → Who can do what?</B></P>
+                    </Section>
+
+                    <Section id="security" Icon={Lock} color="text-emerald-400" title="Security & Privacy"
+                        intro="How KubeEZ protects your clusters and your data.">
+                        <Table head={['', '']} rows={[
+                            ['Your credentials', 'Server passwords and keys, alert tokens and storage keys are stored encrypted and never shown again after saving.'],
+                            ['Network', 'The Gateway Agent connects out over an encrypted connection; you open no ports. The Explorer is reached only through KubeEZ.'],
+                            ['Access', 'Roles per workspace; viewers never see secrets; terminal access is time-limited and recorded.'],
+                            ['Accountability', 'An audit trail of every change and sign-in, protected against edits, kept 400 days.'],
+                            ['Backups', 'Offsite backups are encrypted with a key you hold.']
                         ]} />
                     </Section>
 
                     <Section id="plans" Icon={CheckCircle2} color="text-emerald-400" title="Plans">
                         <Table head={['', 'Free', 'Pro / Enterprise']} rows={[
                             ['Deploy, upgrade, scale, resume', '✓', '✓'],
-                            ['Add-ons', 'Kubernetes Dashboard', 'All add-ons'],
-                            ['etcd snapshots & restore', '—', '✓'],
-                            ['Restore preview, undo, automatic rollback', '—', '✓'],
-                            ['Offsite backups & disaster recovery', '—', '✓'],
-                            ['Volume backups (Velero)', '—', '✓'],
-                            ['KubeEZ Explorer, upgrade safety check, health score', '—', '✓'],
-                            ['Daily config backups', '—', '✓'],
                             ['Auto-healing & incidents', '✓', '✓'],
-                            ['Alerts', '1 channel · critical alerts', 'All channels and alert types, rules'],
-                            ['Alert emails per day', '20', '200']
+                            ['Compliance scan & audit trail', '✓', '✓'],
+                            ['Add-ons', 'Kubernetes Dashboard, Metrics Server', 'All add-ons, incl. the KubeEZ Explorer'],
+                            ['Cluster snapshots, restore, offsite backup, disaster recovery', '—', '✓'],
+                            ['Volume backups', '—', '✓'],
+                            ['Compliance PDF, monthly reports, fixes, CERT-In report', '—', '✓'],
+                            ['Alerts', '1 channel, critical alerts', 'All channels and alert types, rules'],
+                            ['Advanced add-on settings (YAML)', '—', '✓']
                         ]} />
-                        <P>Cluster and node limits depend on the plan — see <Link to="/pricing" className="text-blue-400 hover:underline">Pricing</Link>.</P>
+                        <P>Cluster, node and member limits depend on the plan. See <Link to="/pricing" className="text-blue-400 hover:underline">Plans</Link>.</P>
                     </Section>
 
+                    {/* ── Help ────────────────────────────────────────── */}
                     <Section id="troubleshooting" Icon={LifeBuoy} color="text-amber-400" title="Troubleshooting"
-                        intro="Failures show a reason and a fix on screen. The most common ones:">
-                        <Table head={['You see', 'What it means / what to do']} rows={[
-                            ['SSH Connection Refused', 'No SSH server on the node — run the one-line fix from Node Requirements.'],
-                            ['AccessDenied at :30833 in a browser', 'Normal — it is the S3 API. Use the Web UI at :30834.'],
-                            ['Offsite test: "not an S3 API"', 'The address is a web page or the wrong port — for KubeEZ S3 use :30833.'],
-                            ['Offsite test: bucket does not exist', 'Create the bucket first (KubeEZ S3 creates "backups").'],
-                            ['Upgrade: API server did not answer', 'Retried automatically; if it persists check kube-apiserver with crictl on the master.'],
-                            ['Upgrade: kubeadm-config is older than the control plane', 'Happens after restoring a pre-upgrade snapshot — KubeEZ corrects it automatically; just retry.'],
-                            ['Restore: “The snapshot is damaged”', 'Its checksum or etcd’s integrity check failed — nothing was changed. Pick another snapshot (or download its offsite copy).'],
-                            ['Restore: “rolled the cluster back automatically”', 'The control plane did not start on the restored data; the cluster runs on its previous data. The failed attempt is kept in /var/lib/etcd-failed-restore-<time> for diagnosis.'],
-                            ['Recovery: “does not have the IP …”', 'The replacement machine must use the lost control-plane’s IP so the workers can find it.'],
-                            ['Volume Backups: storage unavailable', 'Velero cannot reach the bucket — check endpoint, bucket and keys, save, then Repair Velero in Add-ons.'],
-                            ['Forgot password: no email arrives', 'Email reset needs the server’s SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS — Gmail: an App Password). Without them the login page says so; a workspace admin can reset the password under Team & Roles, or the server owner runs: node scripts/reset-password.js <username> <new-password>.'],
-                            ['Explorer: “Gateway Agent is too old”', 'Reinstall the agent from the Gateway Agents page (same command) — the new agent relays the Explorer.'],
-                            ['Upgrade: “safety check found blockers”', 'Open the full report (link in the dialog), fix the listed resources, retry. Admins can upgrade anyway.'],
-                            ['Add-on Failing / Starting for long', 'Add-ons → Manage & logs → Logs shows why (image pull, storage pending, crash). Fix, then Repair.'],
-                            ['Install stopped midway', 'Resume Installation — finished steps are skipped.']
+                        intro="When something fails, KubeEZ shows the reason and a fix on screen. The most common cases:">
+                        <Table head={['You see', 'What to do']} rows={[
+                            ['SSH connection refused', <>The server has no SSH service. Run the one-line fix under <button onClick={() => go('requirements')} className="text-blue-400 hover:underline">Server Requirements</button>.</>],
+                            ['Gateway Agent offline', 'Check the machine is on and online, then run the install command again from Gateway Agents.'],
+                            ['Install stopped midway', 'Click Resume Installation. Finished steps are skipped.'],
+                            ['Add-on Failing or Starting for long', 'Add-ons → Manage & logs → Logs shows why (image pull, storage pending, crash). Fix it, then Repair.'],
+                            ['Upgrade: "safety check found blockers"', 'Open the report, fix the listed resources, and retry.'],
+                            ['Upgrade failed', 'The cluster usually still runs the old version: Retry upgrade. Otherwise restore the Before upgrade snapshot.'],
+                            ['Restore: "The snapshot is damaged"', 'Nothing was changed. Pick another snapshot, or download its offsite copy.'],
+                            ['Recovery: "does not have the IP …"', 'The new server must use the lost control-plane’s IP.'],
+                            ['Offsite test fails', 'Check the endpoint (address only, no bucket), that the bucket exists, and the keys.'],
+                            ['AccessDenied on :30833', 'Normal: that is the S3 API. Use the Web UI on :30834.'],
+                            ['Explorer does not open', 'Install it from the cluster’s Explorer tab. Behind a Gateway Agent, reinstall the agent with the same command.'],
+                            ['No password reset email', 'Ask a workspace admin to reset it under Team & Roles.']
+                        ]} />
+                        <Note>Still stuck? Send the error message and the last lines of the job log to your KubeEZ support contact.</Note>
+                    </Section>
+
+                    <Section id="faq" Icon={HelpCircle} color="text-sky-400" title="FAQ">
+                        <Faq items={[
+                            ['If KubeEZ is down, do my clusters stop?', 'No. Your clusters run on your servers and keep running. Only management from KubeEZ (and its alerts) waits until it is back.'],
+                            ['Can I keep using kubectl, Helm and my own tools?', 'Yes. Download the Kubeconfig on the cluster page. KubeEZ uses standard Kubernetes (kubeadm), so the clusters are not locked to KubeEZ.'],
+                            ['Does removing a cluster from KubeEZ delete it?', 'No. It only removes it from KubeEZ; the cluster keeps running.'],
+                            ['Do I need to open firewall ports?', 'Not with the Gateway Agent: it connects out. The servers of a cluster must still reach each other.'],
+                            ['Are add-ons updated automatically?', 'No. KubeEZ tells you about new versions; you choose when to update, with a preview first.'],
+                            ['Which Kubernetes versions are supported?', '1.27 to 1.37. Upgrades go one version at a time.'],
+                            ['Can I uninstall the Explorer?', 'Yes, from Add-ons → Manage & logs. The rest of KubeEZ keeps working; the upgrade safety check and health score need it.'],
+                            ['Who can see passwords of add-ons?', 'Admins and operators. Viewers see addresses only.']
                         ]} />
                     </Section>
+
+                    {showServerSetup && (
+                        <Section id="server-setup" Icon={SettingsIcon} color="text-slate-300" title="Server Setup (self-hosted)"
+                            intro="For whoever runs the KubeEZ server. Set these in the server's environment and restart KubeEZ.">
+                            <Table head={['Setting', 'What it is for']} rows={[
+                                [<C key="s">SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM</C>, 'Emails: password reset, welcome, alert and report emails. For Gmail use an App Password.'],
+                                [<C key="u">KUBEEZ_PUBLIC_URL</C>, 'The address people open KubeEZ at, so links in alerts and emails go to the right place.'],
+                                ['HTTPS', 'Put KubeEZ behind HTTPS before using Gateway Agents for real servers.']
+                            ]} />
+                            <P>Reset a password from the server when nobody can sign in (in the backend container):</P>
+                            <Code>{"node scripts/reset-password.js <username> <new-password>"}</Code>
+                        </Section>
+                    )}
                 </div>
             </div>
         </div>

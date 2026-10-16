@@ -173,14 +173,14 @@ export default function AppShell({ children }) {
                     <h1 className="hidden sm:block font-display text-base font-semibold text-white truncate">{title}</h1>
 
                     <button onClick={() => setPaletteOpen(true)}
-                        className="ml-auto sm:ml-6 flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] px-3 py-2 text-sm text-slate-400 transition w-full max-w-xs"
+                        className="ml-auto sm:ml-6 flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] px-3 py-2 text-sm text-slate-400 transition w-full max-w-xs min-w-0"
                         aria-label="Search">
                         <Search className="w-4 h-4" />
                         <span className="flex-1 text-left truncate">Search clusters, pages…</span>
                         <span className="hidden md:flex items-center gap-1"><span className="kz-kbd">Ctrl</span><span className="kz-kbd">K</span></span>
                     </button>
 
-                    <div className="flex items-center gap-2 sm:ml-auto">
+                    <div className="flex items-center gap-2 sm:ml-auto shrink-0">
                         <UpdatesMenu />
                         <Link to="/incidents" className="relative p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition" aria-label={`Incidents${openIncidents ? ` (${openIncidents} open)` : ''}`}>
                             <Bell className="w-5 h-5" />
