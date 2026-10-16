@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { KeyRound, Loader2, X } from 'lucide-react'
-import { apiFetch } from '../../context/AuthContext'
+import { apiFetch, useAuth } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
 
 // Change your own password — for every role (account menu). The reply sets the
 // new session cookie, so this browser stays signed in; other sessions end.
 export default function ChangePasswordDialog({ onClose }) {
+    const { user } = useAuth()
     const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
     const [form, setForm] = useState({ current: '', next: '', confirm: '' })
@@ -51,6 +52,7 @@ export default function ChangePasswordDialog({ onClose }) {
                     <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" aria-label="Close"><X className="w-4 h-4" /></button>
                 </div>
                 <div className="space-y-3">
+                    <input type="text" name="username" autoComplete="username" value={user?.username || ''} readOnly hidden aria-hidden="true" tabIndex={-1} />
                     <input type="password" autoComplete="current-password" placeholder="Current password" value={form.current} onChange={set('current')} className={input} autoFocus />
                     <input type="password" autoComplete="new-password" placeholder="New password (min 8 characters)" value={form.next} onChange={set('next')} className={input} />
                     <input type="password" autoComplete="new-password" placeholder="Confirm new password" value={form.confirm} onChange={set('confirm')} className={input} />

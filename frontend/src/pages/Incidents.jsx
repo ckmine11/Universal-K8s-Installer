@@ -232,7 +232,7 @@ export default function Incidents() {
                     )}
                     <div className="relative ml-auto w-full sm:w-64">
                         <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search incidents…" className="kz-input !py-2 !pl-9 !text-xs" />
+                        <input type="search" name="incident-search" autoComplete="off" spellCheck={false} value={q} onChange={e => setQ(e.target.value)} placeholder="Search incidents…" className="kz-input !py-2 !pl-9 !text-xs" />
                     </div>
                 </div>
 

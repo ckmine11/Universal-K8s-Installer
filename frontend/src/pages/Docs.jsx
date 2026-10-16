@@ -193,7 +193,7 @@ export default function Docs() {
     const searchBox = (
         <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search the docs…" aria-label="Search the docs"
+            <input type="search" name="docs-search" autoComplete="off" spellCheck={false} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search the docs…" aria-label="Search the docs"
                 className="w-full bg-black/35 border border-white/10 focus:border-blue-500/40 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 outline-none" />
             {query && <button onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white" aria-label="Clear"><X className="w-3.5 h-3.5" /></button>}
         </div>

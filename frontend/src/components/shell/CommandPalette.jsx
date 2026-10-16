@@ -55,7 +55,7 @@ export default function CommandPalette({ open, onClose, sections, onLogout }) {
             <div className="relative w-full max-w-xl kz-card overflow-hidden kz-rise" onKeyDown={onKey}>
                 <div className="flex items-center gap-3 px-4 border-b border-white/[0.07]">
                     <Search className="w-5 h-5 text-blue-300" />
-                    <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Search clusters, pages, actions…"
+                    <input ref={inputRef} type="search" name="command-search" autoComplete="off" spellCheck={false} value={q} onChange={e => setQ(e.target.value)} placeholder="Search clusters, pages, actions…"
                         className="flex-1 !bg-transparent !border-0 !shadow-none py-4 text-base text-white placeholder:text-slate-500 outline-none" />
                     <span className="kz-kbd">Esc</span>
                 </div>

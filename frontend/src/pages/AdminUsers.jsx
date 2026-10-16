@@ -74,8 +74,11 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
                     </div>
                 </div>
                 <div className="space-y-4">
+                    <input type="text" name="username" autoComplete="username" value={user.username} readOnly hidden aria-hidden="true" tabIndex={-1} />
                     <input
                         type="password"
+                        name="new-password"
+                        autoComplete="new-password"
                         placeholder="New password (min 8 characters)"
                         value={password}
                         onChange={e => setPassword(e.target.value)}
@@ -148,9 +151,9 @@ function CreateUserModal({ onClose, onSuccess }) {
                     </div>
                 </div>
                 <div className="space-y-3">
-                    <input type="text" placeholder="Username" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
-                    <input type="email" placeholder="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
-                    <input type="password" placeholder="Password (min 8 characters)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                    <input type="text" name="new-member-username" autoComplete="off" spellCheck={false} placeholder="Username" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                    <input type="email" name="new-member-email" autoComplete="off" placeholder="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                    <input type="password" name="new-member-password" autoComplete="new-password" placeholder="Password (min 8 characters)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
                     <div>
                         <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
                             {ASSIGNABLE_ROLES.map(r => (
@@ -460,7 +463,10 @@ export default function AdminUsers() {
                 <div className="relative flex-1">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <input
-                        type="text"
+                        type="search"
+                        name="team-search"
+                        autoComplete="off"
+                        spellCheck={false}
                         placeholder="Search by username..."
                         value={search}
                         onChange={e => setSearch(e.target.value)}
