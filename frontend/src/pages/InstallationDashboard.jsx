@@ -9,6 +9,7 @@ import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
 import { addonIcon } from '../config/addonIcons'
 import { K8S_VERSIONS } from '../config/versions'
 import ClusterTopology3D from '../components/ClusterTopology3D'
+import AiExplain from '../components/ai/AiExplain'
 import {
     CheckCircle2,
     XCircle,
@@ -35,6 +36,7 @@ import {
 export default function InstallationDashboard({ installationId, onGoHome, onScaleCluster }) {
     const { toast } = useToast()
     const { user } = useAuth()
+    const canAi = can(user?.role, 'ai:use')
     const canCancel = can(user?.role, 'cluster:delete')
     const canResume = can(user?.role, 'cluster:resume')
     const navigate = useNavigate()
@@ -482,7 +484,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
             {/* Smart Error Rescue Modal */}
             {status === 'failed' && errorState && !errorDismissed && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-[#16161b] border border-red-500/30 rounded-3xl max-w-2xl w-full p-8 shadow-2xl relative overflow-hidden">
+                    <div className="bg-[#16161b] border border-red-500/30 rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-8 shadow-2xl relative">
                         {/* Background Pulse */}
                         <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/10 rounded-full blur-[80px] pointer-events-none animate-pulse"></div>
 
@@ -506,10 +508,13 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                 <div className="p-6 bg-blue-500/10 rounded-2xl border border-blue-500/20 flex items-start space-x-4">
                                     <Zap className="w-6 h-6 text-blue-400 mt-1 shrink-0" />
                                     <div>
-                                        <h3 className="text-sm font-black uppercase text-blue-400 tracking-widest mb-1">AI Suggested Fix</h3>
+                                        <h3 className="text-sm font-black uppercase text-blue-400 tracking-widest mb-1">Suggested Fix</h3>
                                         <p className="text-blue-100">{errorState.suggestedFix}</p>
                                     </div>
                                 </div>
+
+                                {canAi && <AiExplain url={`/api/ai/explain/install/${installationId}`} label="Explain this failure with AI"
+                                    hint="KubeEZ AI reads the whole log, finds the first real error and shows the lines that prove it." />}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -954,6 +959,11 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                     </button>
                 </div>
             </div>
+
+            {status === 'failed' && canAi && (!errorState || errorDismissed) && (
+                <div className="mb-6"><AiExplain url={`/api/ai/explain/install/${installationId}`} label="Explain this failure with AI"
+                    hint="KubeEZ AI reads the whole log, finds the first real error and shows the lines that prove it." /></div>
+            )}
 
             {/* Real-time Logs */}
             <div className="glass rounded-2xl p-6">

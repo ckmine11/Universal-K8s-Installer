@@ -141,7 +141,7 @@ const NAV = [
     ] },
     { title: 'Operations', items: [
         { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
-        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch' },
+        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch explain doctor incident what changed rollback undo dry-run' },
         { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
         { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review namespace approval two-person temporary elevation kubeconfig' },
@@ -688,6 +688,20 @@ export default function Docs() {
                             ['Who may use it', <>Permission <C>ai:use</C> (all built-in roles) and <C>ai:manage</C> for the settings (admins; can be given in a custom role).</>],
                             ['Records', 'Every question is in Settings → AI → Activity (masked) and in the audit trail. API keys are stored encrypted and never shown again.']
                         ]} />
+                        <H4>Explain a failure (Install Doctor)</H4>
+                        <P>When an install, upgrade or add-on job fails, click <B>Explain this failure with AI</B> on its page. KubeEZ AI reads the whole log, finds the first real error, and shows the exact log lines that prove it, then the steps to fix it. Lines the model quotes that are not really in the log are removed, and the answer says how sure it is.</P>
+                        <H4>Explain an incident</H4>
+                        <P>Open an incident → <B>Explain with AI</B>. It looks at the incident’s evidence, fresh data from the cluster (pod events and logs, workload status, node conditions) and <B>what changed</B> in the 3 hours before, then says why it happens, with proof. If a recent change caused it, it names that change.</P>
+                        <H4>What changed?</H4>
+                        <P>Cluster page → <B>Changes</B>: one timeline of KubeEZ’s own actions (upgrades, add-ons, restores) and the changes inside Kubernetes: new rollouts with the old → new image, Helm releases, ConfigMaps and Secrets that were edited (names only; KubeEZ never reads Secret values), new nodes and namespaces. Choose 1 hour to 7 days; <B>Summarize with AI</B> gives the short version. It works without AI too.</P>
+                        <H4>Fixes with preview and undo</H4>
+                        <P>For an incident, KubeEZ AI may suggest one fix from a short, fixed list: <B>restart</B>, <B>roll back</B> to the previous version, <B>scale</B>, or <B>delete a pod</B> that its controller recreates. It never runs free-form commands.</P>
+                        <Steps items={[
+                            <><B>Preview (dry-run)</B> shows the current state, exactly what changes (e.g. image 2.0 → 1.9), the result of a server-side dry-run on the cluster, and how to undo it. Nothing changes yet.</>,
+                            <><B>Apply</B> runs it, after checking the state and the dry-run again. If two-person approval protects <B>Run a fix suggested by KubeEZ AI</B> (Approvals), a second admin approves first.</>,
+                            <><B>Undo</B> (on the incident, or Cluster → Changes, for 24 hours) scales back or rolls forward again. A restart or a deleted pod needs no undo.</>
+                        ]} />
+                        <Note>Who can apply fixes: members with <C>incident:act</C> on that cluster, only in their namespaces. The kill switch or <B>Suggest only</B> (Settings → AI) stops all of them. Every fix and undo is in the audit trail.</Note>
                         <Note>The server model has a daily allowance per workspace (Settings → AI). Your own engines — the add-on, Ollama or your API keys — have no KubeEZ limit.</Note>
                     </Section>
 

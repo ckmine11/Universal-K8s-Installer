@@ -18,6 +18,7 @@
 #   e2e.sh velero [distro]                    volume backups: Velero install, file data backup + restore
 #   e2e.sh explorer [distro]                  KubeEZ Explorer (Radar) behind KubeEZ's proxy: RBAC, checks, uninstall
 #   e2e.sh access [distro]                    namespace-level access: RoleBindings, scoped kubeconfig, elevation
+#   e2e.sh ai-ops [distro]                    KubeEZ AI: What changed?, fixes with dry-run + undo, incident evidence
 #   e2e.sh restore-upgrade [distro]           restore a pre-upgrade snapshot, then upgrade again
 #   e2e.sh addons [distro]                    add-on status/logs/web UI/repair/uninstall (needs Node)
 #   e2e.sh takeover [distro]                  add-ons installed the old way taken over by Helm (data kept)
@@ -380,6 +381,19 @@ cmd_access() {
     return $rc
 }
 
+# KubeEZ AI phase 2: What changed?, safe fixes (dry-run, apply, undo), incident evidence
+# e2e.sh ai-ops [distro]
+cmd_ai_ops() {
+    local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
+    image "$distro"; start_node "$node" "$distro"
+    docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    local rc
+    NODE_CONTAINER="$node" node "$E2E/ai-ops-check.mjs"
+    rc=$?
+    [ -z "${KEEP:-}" ] && cmd_clean
+    return $rc
+}
+
 # Helm add-ons with settings on a real node, through KubeEZ's own path.
 # e2e.sh helm-addons [distro]   (ONLY=metallb,kyverno for a subset)
 cmd_helm_addons() {
@@ -458,6 +472,7 @@ case "${1:-}" in
     ha-vip)  shift; cmd_ha_vip "$@" ;;
     explorer) shift; cmd_explorer "$@" ;;
     access) shift; cmd_access "$@" ;;
+    ai-ops) shift; cmd_ai_ops "$@" ;;
     addons)  shift; cmd_addons "$@" ;;
     helm-addons) shift; cmd_helm_addons "$@" ;;
     platform-addons) shift; cmd_platform_addons "$@" ;;

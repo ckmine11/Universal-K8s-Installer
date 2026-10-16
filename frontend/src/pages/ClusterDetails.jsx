@@ -28,8 +28,7 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package
-} from 'lucide-react'
+    Package, History } from 'lucide-react'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
@@ -39,13 +38,15 @@ import BackupsTab from '../components/backups/BackupsTab'
 import ExplorerTab from '../components/explorer/ExplorerTab'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
+import WhatChanged from '../components/ai/WhatChanged'
 
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
-    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
+    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database },
+    { key: 'changes', label: 'Changes', hint: 'what changed, AI fixes', Icon: History }
 ]
 const ADDON_SECTIONS = [
     { key: 'access', label: 'Access & logins' },
@@ -579,6 +580,9 @@ export default function ClusterDetails({ onScaleCluster }) {
             {tab === 'backups' && (
                 <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={canUpgrade} explorer={!!cluster.addons?.explorer} />
             )}
+
+            {/* ── What changed? ───────────────────────────────────────── */}
+            {tab === 'changes' && <WhatChanged clusterId={id} />}
 
             {/* ── Explorer (Radar behind KubeEZ) ─────────────────────── */}
             {tab === 'explorer' && (

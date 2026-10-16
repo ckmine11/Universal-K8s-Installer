@@ -12,6 +12,7 @@ import { explorerResourceLink, explorerPages } from '../components/explorer/expl
 import PageHeader from '../components/ui/PageHeader'
 import Popover from '../components/ui/Popover'
 import useBackdropClose from '../components/ui/useBackdropClose'
+import AiExplain from '../components/ai/AiExplain'
 
 const CLOSED = new Set(['resolved', 'cleared'])
 const SEV = {
@@ -41,6 +42,7 @@ export default function Incidents() {
     const { user } = useAuth()
     const { toast } = useToast()
     const canAct = can(user?.role, 'incident:act')
+    const canAi = can(user?.role, 'ai:use')
     const canManage = can(user?.role, 'healing:manage')
     const [incidents, setIncidents] = useState([])
     const [monitor, setMonitor] = useState(null)
@@ -256,7 +258,7 @@ export default function Incidents() {
             {current && createPortal(
                 <IncidentDrawer inc={current} meta={cat[current.reason]} label={labelOf(current.reason)} sev={sevOf(current, cat)}
                     kids={incidents.filter(i => i.causedBy === current.id)} cause={incidents.find(i => i.id === current.causedBy)}
-                    labelOf={labelOf} canAct={canAct} explorer={investigate(current)} onOpen={setOpenId}
+                    labelOf={labelOf} canAct={canAct} canAi={canAi} explorer={investigate(current)} onOpen={setOpenId}
                     onClose={() => setOpenId(null)}
                     onAck={() => act(`/api/incidents/${current.id}/ack`, null, 'Acknowledged')}
                     onRun={() => act(`/api/incidents/${current.id}/run`, null, 'Fix started — follow it in the timeline')}
@@ -409,7 +411,7 @@ function MaintenanceMenu({ c, onSet }) {
     )
 }
 
-function IncidentDrawer({ inc, meta, label, sev, kids, cause, labelOf, canAct, explorer, onOpen, onClose, onAck, onRun, onMute }) {
+function IncidentDrawer({ inc, meta, label, sev, kids, cause, labelOf, canAct, canAi, explorer, onOpen, onClose, onAck, onRun, onMute }) {
     const backdrop = useBackdropClose(onClose)
     const s = SEV[sev] || SEV.warning
     const closed = CLOSED.has(inc.status)
@@ -436,6 +438,9 @@ function IncidentDrawer({ inc, meta, label, sev, kids, cause, labelOf, canAct, e
                         <div className="mt-3"><StatusLine inc={inc} /></div>
                         <p className="mt-3 text-[11px] text-slate-500">First seen {new Date(inc.timestamp).toLocaleString()} · last {ago(inc.lastSeen)}{inc.count > 1 ? ` · seen ${inc.count}×` : ''}</p>
                     </div>
+
+                    {canAi && <AiExplain key={inc.id} url={`/api/ai/explain/incident/${inc.id}`} clusterId={inc.clusterId} incidentId={inc.id}
+                        hint="Why it happens, the proof from logs and events, what changed just before — and a fix you can preview and undo." />}
 
                     {cause && (
                         <button onClick={() => onOpen(cause.id)} className="w-full text-left rounded-2xl border border-amber-400/25 bg-amber-500/5 p-4 text-sm text-amber-100">
