@@ -9,6 +9,7 @@ import { writeFileAtomic } from '../utils/atomicWrite.js'
 import { notifier } from './notifier.js'
 import { CATALOG, label } from '../config/incidentCatalog.js'
 import { RESOURCE_REASONS, HISTORY_MAX, parseResources, analyzeResources, resourceView } from './resourceForecast.js'
+import { redact } from './ai/redact.js'
 
 const alertTarget = (inc) => inc.namespace ? `${inc.namespace}/${inc.target}` : inc.target
 
@@ -339,7 +340,11 @@ class IncidentDetector {
 
     // ── Persistence: incidents survive a KubeEZ restart ─────────────────────
     _load() {
-        try { return JSON.parse(fs.readFileSync(INCIDENTS_FILE, 'utf8')) } catch { return [] }
+        let list
+        try { list = JSON.parse(fs.readFileSync(INCIDENTS_FILE, 'utf8')) } catch { return [] }
+        // evidence saved before secrets were masked: mask it now
+        for (const i of Array.isArray(list) ? list : []) if (i.evidence?.length) i.evidence = i.evidence.map(e => e?.text ? { ...e, text: redact(e.text).text } : e)
+        return Array.isArray(list) ? list : []
     }
     _save() {
         clearTimeout(this._saveTimer)
@@ -717,7 +722,8 @@ class IncidentDetector {
     addEvidence(incidentId, title, text) {
         const inc = this.incidents.find(i => i.id === incidentId)
         if (!inc || !text) return
-        inc.evidence = [{ title, text: String(text).slice(-4000), at: new Date().toISOString() }, ...(inc.evidence || []).filter(e => e.title !== title)].slice(0, 5)
+        // logs and describe output can hold passwords and tokens — everyone who may view incidents sees this
+        inc.evidence = [{ title, text: redact(String(text).slice(-4000)).text, at: new Date().toISOString() }, ...(inc.evidence || []).filter(e => e.title !== title)].slice(0, 5)
         this._save()
     }
 

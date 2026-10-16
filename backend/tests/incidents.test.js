@@ -67,3 +67,14 @@ test('monitoring status lists watched clusters and whether they are connected', 
     incidentDetector.stopWatching('c1')
     assert.equal(incidentDetector.getMonitoring().length, 0)
 })
+
+test('evidence is shown with secrets masked (logs and describe output can hold them)', () => {
+    const inc = { id: 'ev-1', reason: 'CrashLoopBackOff', clusterId: 'c1', status: 'unresolved', timeline: [] }
+    incidentDetector.incidents.unshift(inc)
+    incidentDetector.addEvidence('ev-1', 'Container log', 'connecting to db password=Sup3rS3cret\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz\nFATAL: connection refused')
+    const text = incidentDetector.find('ev-1').evidence[0].text
+    assert.equal(text.includes('Sup3rS3cret'), false)
+    assert.equal(text.includes('abcdefghijklmnopqrstuvwxyz'), false)
+    assert.match(text, /FATAL: connection refused/, 'the useful part stays')
+    incidentDetector.incidents = incidentDetector.incidents.filter(i => i.id !== 'ev-1')
+})
