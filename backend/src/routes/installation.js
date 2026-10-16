@@ -27,7 +27,9 @@ import { offsiteStore } from '../services/offsiteStore.js'
 import { offsiteService, sameClusterWarning, normaliseConfig } from '../services/offsiteService.js'
 import { volumeBackupStore } from '../services/volumeBackupStore.js'
 import { volumeBackupService } from '../services/volumeBackupService.js'
-import { canSeeCluster, canOn, kubeLevelOn, LABEL_KEY, LABEL_VALUE } from '../services/accessControl.js'
+import { canSeeCluster, canOn, kubeLevelOn, accessOn, LABEL_KEY, LABEL_VALUE } from '../services/accessControl.js'
+import { scopedKubeconfig } from '../services/namespaceAccess.js'
+import { requireApproval } from '../services/approvals.js'
 
 
 const router = express.Router()
@@ -332,11 +334,23 @@ router.get('/:id/kubeconfig', requirePermission('kubeconfig:download'), async (r
         const cluster = await loadOwnedCluster(req, res)
         if (!cluster) return
 
-        const kubeconfig = await installationManager.getKubeconfig(cluster.id)
+        // Cluster-admin on this cluster → the admin kubeconfig. Anyone else gets a
+        // kubeconfig limited to their role (and namespaces): a 24-hour token of
+        // their own service account — never more than the role allows.
+        const access = accessOn(req.user, cluster)
+        if (access.kube === 'none') return res.status(403).json({ error: 'Your role has no Kubernetes access on this cluster.' })
+        let kubeconfig = await installationManager.getKubeconfig(cluster.id)
+        let scoped = false
+        if (access.kube !== 'admin' || access.namespaces?.length) {
+            const member = authService.getUserById(req.user.id)
+            kubeconfig = await scopedKubeconfig(cluster, { ...member, clusterAccess: member?.clusterAccess || [] }, kubeconfig)
+            scoped = true
+        }
 
         // Send as file download
         res.setHeader('Content-Type', 'application/x-yaml')
-        res.setHeader('Content-Disposition', `attachment; filename="kubeconfig-${cluster.id}.yaml"`)
+        res.setHeader('X-KubeEZ-Kubeconfig', scoped ? `limited:${access.kube}${access.namespaces?.length ? ':' + access.namespaces.join(',') : ''}` : 'admin')
+        res.setHeader('Content-Disposition', `attachment; filename="kubeconfig-${cluster.id}${scoped ? '-' + access.kube : ''}.yaml"`)
         res.send(kubeconfig)
     } catch (error) {
         console.error('Kubeconfig fetch error:', error)
@@ -360,7 +374,7 @@ router.post('/:id/cancel', requirePermission('cluster:delete'), (req, res) => {
 })
 
 // Delete a saved cluster (or an in-progress installation that isn't saved yet)
-router.delete('/:id', requirePermission('cluster:delete'), async (req, res) => {
+router.delete('/:id', requirePermission('cluster:delete'), requireApproval('cluster:delete'), async (req, res) => {
     const { id } = req.params
     const clusters = await installationManager.getSavedClusters()
     const target = clusters.find(c => c.id === id) || installationManager.getStatus(id)
@@ -536,7 +550,7 @@ router.get('/:id/addons/:key/logs', requireAuth, requirePermission('addon:instal
 
 // Uninstall (remove) or reinstall (remove, then install fresh) one add-on —
 // runs as a job with live logs, like an install
-router.post('/:id/addons/:key/:action(uninstall|reinstall)', requireAuth, requirePermission('addon:install'), async (req, res) => {
+router.post('/:id/addons/:key/:action(uninstall|reinstall)', requireAuth, requirePermission('addon:install'), requireApproval('addon:uninstall'), async (req, res) => {
     try {
         const { key, action } = req.params
         const existingCluster = await loadOwnedCluster(req, res)
@@ -868,7 +882,7 @@ router.get('/:id/etcd/preview', requireAuth, async (req, res) => {
 
 // Restore etcd from a snapshot (DESTRUCTIVE → operator/admin). Works for HA
 // clusters too. source=offsite fetches the encrypted bundle first.
-router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade'), requireApproval('etcd:restore'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -931,7 +945,7 @@ router.post('/:id/etcd/offsite/fetch', requireAuth, requirePermission('cluster:u
 })
 
 // Rebuild a LOST control-plane machine from an offsite backup (disaster recovery)
-router.post('/:id/etcd/recover', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/etcd/recover', requireAuth, requirePermission('cluster:upgrade'), requireApproval('etcd:recover'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -1076,7 +1090,7 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
 })
 
 // Upgrade Cluster Version
-router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), requireApproval('cluster:upgrade'), async (req, res) => {
     try {
         const { targetVersion } = req.body
 
@@ -1246,7 +1260,7 @@ router.delete('/:id/volume-backups/backups/:name', requireAuth, requirePermissio
 
 // Restore (missing only / side-by-side copy / replace). Replace deletes the
 // namespaces first → typed cluster-name confirmation.
-router.post('/:id/volume-backups/restores', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/volume-backups/restores', requireAuth, requirePermission('cluster:upgrade'), requireApproval('volume:restore'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return

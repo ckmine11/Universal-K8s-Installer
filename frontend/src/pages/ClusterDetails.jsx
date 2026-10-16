@@ -4,6 +4,7 @@ import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { can, kubeLevel } from '../config/permissions'
 import ClusterLabels from '../components/ClusterLabels'
+import ElevationBar from '../components/ElevationBar'
 import { MAX_K8S_MINOR } from '../config/versions'
 import Skeleton from '../components/Skeleton'
 import {
@@ -274,6 +275,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                         <span>Created: {new Date(cluster.createdAt).toLocaleDateString()}</span>
                     </div>
                     <ClusterLabels cluster={cluster} canEdit={isAdmin} onSaved={(labels) => setCluster(c => ({ ...c, labels }))} />
+                    <ElevationBar clusterId={cluster.id} clusterName={cluster.clusterName} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     {canKubeconfig && (

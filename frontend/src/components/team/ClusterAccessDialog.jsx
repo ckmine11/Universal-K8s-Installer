@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Loader2, Plus, Trash2, Server, Tag, Layers, ArrowRight, EyeOff } from 'lucide-react'
+import { X, Loader2, Plus, Trash2, Server, Tag, Layers, ArrowRight, EyeOff, Boxes } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
@@ -13,7 +13,7 @@ const OK = /^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/i
 export default function ClusterAccessDialog({ member, roleOptions, clusters, onClose, onSaved }) {
     const { toast } = useToast()
     const backdrop = useBackdropClose(onClose)
-    const [rules, setRules] = useState(() => (member.clusterAccess || []).map((r, i) => ({ ...r, _k: i })))
+    const [rules, setRules] = useState(() => (member.clusterAccess || []).map((r, i) => ({ ...r, _k: i, nsText: (r.namespaces || []).join(', ') })))
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState('')
     const nameOf = (key) => key === 'none' ? 'No access' : roleOptions.find(r => r.key === key)?.name || key
@@ -28,11 +28,12 @@ export default function ClusterAccessDialog({ member, roleOptions, clusters, onC
     // the same rule as the server: exact cluster rule → label rules → main role
     const preview = useMemo(() => clusters.map(c => {
         const exact = rules.find(r => r.type === 'cluster' && r.clusterId === c.id)
-        if (exact) return { c, access: nameOf(exact.role), via: 'this cluster', none: exact.role === 'none' }
+        if (exact) return { c, access: nameOf(exact.role) + (exact.role !== 'none' && exact.nsText?.trim() ? ` · ${exact.nsText.trim()}` : ''), via: 'this cluster', none: exact.role === 'none' }
         const byLabel = rules.filter(r => r.type === 'label' && (c.labels || {})[String(r.key).toLowerCase()] === String(r.value).toLowerCase())
         if (byLabel.length) {
             const real = byLabel.filter(r => r.role !== 'none')
-            return { c, access: real.length ? real.map(r => nameOf(r.role)).join(' + ') : 'No access', via: byLabel.map(r => `${r.key}=${r.value}`).join(', '), none: !real.length }
+            const limited = real.length && real.every(r => r.nsText?.trim())
+            return { c, access: (real.length ? real.map(r => nameOf(r.role)).join(' + ') : 'No access') + (limited ? ` · ${[...new Set(real.flatMap(r => r.nsText.split(',').map(x => x.trim()).filter(Boolean)))].join(', ')}` : ''), via: byLabel.map(r => `${r.key}=${r.value}`).join(', '), none: !real.length }
         }
         return { c, access: member.roleName, via: 'main role', none: false }
     }), [rules, clusters, member])
@@ -42,7 +43,8 @@ export default function ClusterAccessDialog({ member, roleOptions, clusters, onC
         for (const r of rules) if (r.type === 'label' && (!OK.test(r.key) || !OK.test(r.value))) return setError(`Label rule "${r.key}=${r.value}": letters, numbers, ".", "_" and "-" only`)
         setBusy(true)
         try {
-            const body = { rules: rules.map(({ _k, ...r }) => r.type === 'cluster' ? { type: 'cluster', clusterId: r.clusterId, role: r.role } : { type: 'label', key: r.key.trim(), value: r.value.trim(), role: r.role }) }
+            const nsOf = (r) => r.role !== 'none' && r.nsText?.trim() ? { namespaces: r.nsText.split(',').map(x => x.trim()).filter(Boolean) } : {}
+            const body = { rules: rules.map(({ _k, ...r }) => r.type === 'cluster' ? { type: 'cluster', clusterId: r.clusterId, role: r.role, ...nsOf(r) } : { type: 'label', key: r.key.trim(), value: r.value.trim(), role: r.role, ...nsOf(r) }) }
             const res = await apiFetch(`/api/admin/users/${member.id}/cluster-access`, { method: 'PUT', body: JSON.stringify(body) })
             const d = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(d.error || 'Could not save')
@@ -92,6 +94,20 @@ export default function ClusterAccessDialog({ member, roleOptions, clusters, onC
                                     <option value="none" className="bg-slate-950">No access (hidden)</option>
                                 </select>
                                 <button onClick={() => remove(r._k)} className="ml-auto p-2 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/10" aria-label="Remove rule"><Trash2 className="w-4 h-4" /></button>
+                                {r.role !== 'none' && (
+                                    <div className="basis-full flex flex-wrap items-center gap-2 pl-6">
+                                        <Boxes className="w-4 h-4 text-slate-500" />
+                                        <select aria-label="Namespaces" className={`${select} !py-1.5 !text-xs`} value={r.nsText !== undefined && r.nsMode !== 'all' && (r.nsText.trim() || r.nsMode === 'some') ? 'some' : 'all'}
+                                            onChange={e => update(r._k, e.target.value === 'all' ? { nsMode: 'all', nsText: '' } : { nsMode: 'some', nsText: r.nsText || '' })}>
+                                            <option value="all" className="bg-slate-950">All namespaces</option>
+                                            <option value="some" className="bg-slate-950">Only these namespaces…</option>
+                                        </select>
+                                        {(r.nsMode === 'some' || r.nsText?.trim()) && (
+                                            <input aria-label="Namespace list" className={`${select} !py-1.5 !text-xs font-mono flex-1 min-w-[200px]`} value={r.nsText || ''} placeholder="payments-*, web" autoComplete="off" spellCheck={false}
+                                                onChange={e => update(r._k, { nsText: e.target.value, nsMode: 'some' })} />
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                         <datalist id="kz-label-keys">{labelKeys.map(k => <option key={k} value={k} />)}</datalist>
@@ -115,7 +131,7 @@ export default function ClusterAccessDialog({ member, roleOptions, clusters, onC
                                 </div>
                             ))}
                         </div>
-                        <p className="mt-2 text-[11px] text-slate-500">A rule for one cluster wins over label rules; several matching label rules add up. Workspace things (agents, alerts, audit) always follow the main role.</p>
+                        <p className="mt-2 text-[11px] text-slate-500">A rule for one cluster wins over label rules; several matching label rules add up. Workspace things (agents, alerts, audit) always follow the main role. “Only these namespaces” is enforced by Kubernetes itself — in the Explorer and in a downloaded kubeconfig; <span className="font-mono">payments-*</span> covers every namespace starting with payments-.</p>
                     </div>
                 </div>
 

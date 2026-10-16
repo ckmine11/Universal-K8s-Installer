@@ -212,6 +212,6 @@ describe('custom roles on the API', () => {
         assert.equal(rows.find(x => x.cluster === 'prod').via, 'label rule')
         const csv = await fetch(`${srv.url}/api/admin/access-review?format=csv`, { headers: { Authorization: `Bearer ${owner.token}` } })
         assert.match(csv.headers.get('content-type'), /text\/csv/)
-        assert.match(await csv.text(), /^member,email,mainRole,cluster,access,via,kube,permissions/)
+        assert.match(await csv.text(), /^member,email,mainRole,cluster,access,via,kube,namespaces,temporaryUntil,permissions/)
     })
 })

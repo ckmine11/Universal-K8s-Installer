@@ -6,6 +6,7 @@ import { roleStore, customRoleKey, customRoleId } from '../services/roleStore.js
 import { accessOn, accessSummary, describeRole, cleanClusterRules, canSeeCluster } from '../services/accessControl.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { isPaidPlan } from '../config/planFeatures.js'
+import { scheduleOrg } from '../services/namespaceAccess.js'
 import bcrypt from 'bcryptjs'
 import { passwordProblem } from '../utils/passwordPolicy.js'
 import { memberAddedEmail, sendAccountEmailLater } from '../utils/accountEmails.js'
@@ -167,6 +168,7 @@ router.put('/admin/users/:id/role', requireAuth, requireAdmin, async (req, res) 
         // admins have full access everywhere — cluster rules would only confuse
         if (role === 'admin') delete authService.users[userIdx].clusterAccess
         authService.saveUsers()
+        scheduleOrg(req.user.orgId)
 
         res.json({
             success: true,
@@ -201,7 +203,7 @@ router.delete('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
         const deletedUsername = authService.users[userIdx].username
         authService.users.splice(userIdx, 1)
         authService.saveUsers()
-
+        scheduleOrg(req.user.orgId)   // their RoleBindings / service account are removed
         res.json({ success: true, message: `User "${deletedUsername}" has been deleted` })
     } catch (err) {
         res.status(500).json({ error: err.message })
@@ -269,7 +271,7 @@ router.post('/roles', requireAuth, requireAdmin, (req, res) => {
 
 router.put('/roles/:id', requireAuth, requireAdmin, (req, res) => {
     if (!customRolesAllowed(req)) return res.status(402).json(PLAN_ERROR)
-    try { res.json(roleView(req.user.orgId, roleStore.update(req.user.orgId, req.params.id, req.body, req.user.username))) }
+    try { const out = roleView(req.user.orgId, roleStore.update(req.user.orgId, req.params.id, req.body, req.user.username)); scheduleOrg(req.user.orgId); res.json(out) }
     catch (e) { res.status(e.status || 500).json({ error: e.message }) }
 })
 
@@ -298,6 +300,7 @@ router.put('/admin/users/:id/cluster-access', requireAuth, requireAdmin, async (
         target.clusterAccess = cleanClusterRules(req.user.orgId, rules, clusters.map(c => c.id))
         if (!target.clusterAccess.length) delete target.clusterAccess
         authService.saveUsers()
+        scheduleOrg(req.user.orgId)   // namespace limits → Kubernetes RBAC
         res.json({ success: true, clusterAccess: target.clusterAccess || [] })
     } catch (e) { res.status(e.status || 500).json({ error: e.message }) }
 })
@@ -316,22 +319,24 @@ router.get('/admin/access-review', requireAuth, requireAdmin, async (req, res) =
     for (const u of authService.getUsersByOrgId(orgId)) {
         const member = { ...u, clusterAccess: u.clusterAccess || [] }
         const main = describeRole(orgId, u.role)
-        if (!clusters.length) rows.push({ member: u.username, email: u.email || '', mainRole: main.name, cluster: '—', access: main.name, via: 'main role', kube: main.kube, permissions: [...main.permissions].join(' ') })
+        if (!clusters.length) rows.push({ member: u.username, email: u.email || '', mainRole: main.name, cluster: '—', access: main.name, via: 'main role', kube: main.kube, namespaces: 'all', temporaryUntil: '', permissions: [...main.permissions].join(' ') })
         for (const c of clusters) {
             const a = accessOn(member, c)
             const seen = canSeeCluster(member, c)
             rows.push({
                 member: u.username, email: u.email || '', mainRole: main.name, cluster: c.clusterName || c.id,
                 access: seen ? a.role || main.name : 'No access',
-                via: a.via === 'admin' ? 'admin' : a.via === 'cluster' ? 'cluster rule' : a.via === 'label' ? 'label rule' : 'main role',
+                via: a.via === 'admin' ? 'admin' : a.via === 'cluster' ? 'cluster rule' : a.via === 'label' ? 'label rule' : a.via === 'elevation' ? 'temporary access' : 'main role',
                 kube: seen ? a.kube : 'none',
+                namespaces: seen ? (a.namespaces?.join(' ') || 'all') : '',
+                temporaryUntil: a.elevatedUntil || '',
                 permissions: seen ? [...a.permissions].filter(p => CLUSTER_PERMISSIONS.includes(p)).join(' ') : ''
             })
         }
     }
     if (req.query.format === 'csv') {
         const esc = (v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v)
-        const head = ['member', 'email', 'mainRole', 'cluster', 'access', 'via', 'kube', 'permissions']
+        const head = ['member', 'email', 'mainRole', 'cluster', 'access', 'via', 'kube', 'namespaces', 'temporaryUntil', 'permissions']
         const csv = [head.join(','), ...rows.map(r => head.map(h => esc(r[h])).join(','))].join('\n')
         res.setHeader('Content-Type', 'text/csv; charset=utf-8')
         res.setHeader('Content-Disposition', `attachment; filename="kubeez-access-review-${new Date().toISOString().slice(0, 10)}.csv"`)

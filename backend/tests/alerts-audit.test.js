@@ -177,6 +177,14 @@ test('terminal access: an operator waiting for approval is announced to the admi
     assert.ok(await arrived('access_request', /ravi .*30 minutes.*check disk on node 2/))
 })
 
+test('temporary access: a member asking for a role is announced to the approvers', async () => {
+    const { createRequest } = await import('../src/services/approvals.js')
+    authService.users.push({ id: 'u-el', username: 'meena', role: 'viewer', orgId: ORG })
+    const r = await createRequest({ id: 'u-el', username: 'meena', role: 'viewer', orgId: ORG }, { kind: 'elevation', clusterId: cluster.id, role: 'operator', minutes: 30, reason: 'restart the payments deployment' }, [cluster])
+    assert.equal(r.status, 'pending')
+    assert.ok(await arrived('approval_request', /meena .*Operator.*30 minutes.*restart the payments deployment/))
+})
+
 test('every alert type in the list was delivered at least once', () => {
     const seen = new Set(got.map(m => m.type))
     for (const type of Object.keys(EVENTS)) assert.ok(seen.has(type), `${type} (${EVENTS[type].label}) never arrived`)

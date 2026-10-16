@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
-    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound
+    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
@@ -12,6 +12,7 @@ import CommandPalette from './CommandPalette'
 import UpdatesMenu from './UpdatesMenu'
 import AuroraBackground from './AuroraBackground'
 import ChangePasswordDialog from './ChangePasswordDialog'
+import ApprovalGate from './ApprovalGate'
 
 const ROLE_META = {
     superadmin: { label: 'Super Admin', icon: Crown, tone: 'text-violet-300 bg-violet-500/10 border-violet-400/20' },
@@ -21,7 +22,7 @@ const ROLE_META = {
 }
 
 // Navigation, grouped; `show` gates by role (the API enforces it too)
-export function navSections(user) {
+export function navSections(user, approvalsWaiting = 0) {
     const role = user?.role
     const isAdmin = role === 'admin' || role === 'superadmin'
     // what the member may do decides the menu (custom roles included)
@@ -45,6 +46,7 @@ export function navSections(user) {
         {
             title: 'Workspace', items: [
                 isAdmin && { to: '/users', label: 'Team & Roles', icon: Users },
+                { to: '/approvals', label: 'Approvals', icon: UserCheck, badge: approvalsWaiting },
                 (isAdmin || can(role, 'alerts:manage')) && { to: '/alerts', label: 'Alerts', icon: Bell },
                 isAdmin && { to: '/settings', label: 'Settings', icon: Settings },
             ].filter(Boolean)
@@ -61,7 +63,7 @@ export function navSections(user) {
 
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
-    [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'],
+    [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'], [/^\/approvals/, 'Approvals'],
     [/^\/settings/, 'Settings'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 
@@ -77,7 +79,8 @@ export default function AppShell({ children }) {
     const [paletteOpen, setPaletteOpen] = useState(false)
     const [openIncidents, setOpenIncidents] = useState(0)
     const running = activeInstallations.filter(i => i.status === 'running')
-    const sections = navSections(user)
+    const [approvalsWaiting, setApprovalsWaiting] = useState(0)
+    const sections = navSections(user, approvalsWaiting)
     const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] || 'KubeEZ'
 
     useEffect(() => { try { localStorage.setItem('kz.sidebar', collapsed ? 'collapsed' : 'open') } catch { } }, [collapsed])
@@ -94,6 +97,21 @@ export default function AppShell({ children }) {
         window.addEventListener('keydown', onKey)
         return () => window.removeEventListener('keydown', onKey)
     }, [])
+
+    // Requests waiting for me (approvers) → badge on Approvals
+    useEffect(() => {
+        let stop = false
+        const load = async () => {
+            try {
+                const r = await apiFetch('/api/approvals')
+                const d = r.ok ? await r.json() : null
+                if (!stop && d) setApprovalsWaiting(d.canApprove ? (d.requests || []).filter(x => x.status === 'pending' && x.requestedBy?.id !== user?.id).length : 0)
+            } catch { }
+        }
+        load()
+        const t = setInterval(load, 30000)
+        return () => { stop = true; clearInterval(t) }
+    }, [user?.id, location.pathname])
 
     // Open incidents → badge on the bell
     useEffect(() => {
@@ -206,6 +224,7 @@ export default function AppShell({ children }) {
                 </main>
             </div>
 
+            <ApprovalGate />
             <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} sections={sections} onLogout={logout} />
         </div>
     )
@@ -229,6 +248,7 @@ function SideLink({ item, compact, location }) {
                         {active && <span className="absolute -left-[10px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-blue-400 shadow-[0_0_12px_2px_rgba(128,105,251,.7)]" />}
                         <Icon className={`w-[18px] h-[18px] shrink-0 transition-colors ${active ? 'text-blue-300 drop-shadow-[0_0_8px_rgba(128,105,251,.6)]' : 'text-slate-500 group-hover:text-slate-300'}`} />
                         {!compact && <span className="truncate">{item.label}</span>}
+                        {!!item.badge && <span className={`${compact ? 'absolute top-1 right-1' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-[10px] font-bold text-white flex items-center justify-center`}>{item.badge > 9 ? '9+' : item.badge}</span>}
                     </>
                 }}
             </NavLink>

@@ -32,7 +32,8 @@ export const EVENTS = {
     agent_offline: { label: 'Gateway Agent offline / back online', default: true },
     addon_update: { label: 'New add-on version available (once per version)', default: true },
     compliance_regression: { label: 'Compliance: a control got worse (after a scan)', default: true },
-    access_request: { label: 'Terminal access requested (needs an admin)', default: true }
+    access_request: { label: 'Terminal access requested (needs an admin)', default: true },
+    approval_request: { label: 'Approval or temporary access requested (needs a second admin)', default: true }
 }
 
 export const DEFAULT_RULES = {

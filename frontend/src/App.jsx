@@ -23,6 +23,7 @@ import Incidents from './pages/Incidents'
 import Alerts from './pages/Alerts'
 import Compliance from './pages/Compliance'
 import Explorer from './pages/Explorer'
+import Approvals from './pages/Approvals'
 // the public landing page (heavier: globe, motion) — only for visitors who are not signed in
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 
@@ -130,6 +131,7 @@ function AuthenticatedApp() {
                     <Route path="/alerts" element={<Alerts />} />
                     <Route path="/compliance" element={<Compliance />} />
                     <Route path="/explorer" element={<Explorer />} />
+                    <Route path="/approvals" element={<Approvals />} />
                     <Route path="/login" element={<Navigate to="/" replace />} />
                     <Route
                         path="/agents"

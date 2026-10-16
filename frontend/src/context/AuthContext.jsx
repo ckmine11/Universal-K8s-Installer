@@ -13,6 +13,14 @@ export async function apiFetch(url, options = {}) {
         headers: { 'Content-Type': 'application/json', ...options.headers }
     });
 
+    // 428 = this action needs a second person's approval (two-person rule):
+    // the approval dialog asks for it, waits, and runs the request again once
+    // approved — the caller just gets the final answer.
+    if (res.status === 428 && !options.skipApprovalGate && typeof window.__kubeezApprovalGate === 'function') {
+        const info = await res.clone().json().catch(() => null);
+        if (info?.approvalRequired) return window.__kubeezApprovalGate({ url, options, info, response: res });
+    }
+
     // Only auto-logout on 401 (auth failure). 402 = limit/upgrade, 403 = permission —
     // those are real API responses the caller must handle, not session expiry.
     if (res.status === 401) {

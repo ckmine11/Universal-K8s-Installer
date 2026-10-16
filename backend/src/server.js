@@ -78,6 +78,8 @@ import { requestLogger, errorLogger } from './middleware/logger.js'
 import { auditLog, auditTrail } from './services/auditLog.js'
 import complianceRoutes from './routes/compliance.js'
 import terminalRoutes from './routes/terminal.js'
+import approvalRoutes from './routes/approvals.js'
+import { startApprovalSweeper } from './services/approvals.js'
 import { terminalAccess, terminalRecorder } from './services/terminalAccess.js'
 import { openNodeShell } from './services/nodeShell.js'
 import { startComplianceSchedule } from './services/complianceService.js'
@@ -294,6 +296,7 @@ app.use('/api/addon-catalog', requireAuth, addonCatalogRoutes)   // add-on forms
 app.use('/api/alert-actions', alertActionsRoutes)   // signed links in alerts — public, see the route
 app.use('/api/compliance', requireAuth, complianceRoutes)   // Compliance Center + audit trail
 app.use('/api/terminal', requireAuth, terminalRoutes)       // just-in-time terminal access + recordings
+app.use('/api/approvals', requireAuth, approvalRoutes)      // two-person approval + temporary elevation
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 
@@ -516,6 +519,7 @@ server.listen(PORT, () => {
     auditLog.start()              // audit trail retention (daily)
     setInterval(() => terminalRecorder.prune(), 24 * 3600e3).unref?.()   // terminal recordings, same retention
     startComplianceSchedule()     // monthly compliance reports (Pro)
+    startApprovalSweeper()        // temporary access that ran out → RBAC re-synced
 
     console.log(`
 ╔═══════════════════════════════════════════════════════╗

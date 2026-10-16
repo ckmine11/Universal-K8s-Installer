@@ -143,7 +143,7 @@ const NAV = [
         { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
         { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
-        { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review' },
+        { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review namespace approval two-person temporary elevation kubeconfig' },
         { id: 'security', label: 'Security & Privacy', k: 'encryption data credentials' },
         { id: 'plans', label: 'Plans', k: 'free pro enterprise pricing' }
     ] },
@@ -643,6 +643,22 @@ export default function Docs() {
                             ['Workspace items', 'Agents, alerts, audit trail and creating clusters always follow the main role.'],
                             ['Admins', 'Always have full access to every cluster; rules do not apply to them.']
                         ]} />
+                        <H4>Only some namespaces (Pro)</H4>
+                        <P>In a cluster rule, choose <B>Only these namespaces…</B> and list them, e.g. <C>payments-*, web</C> (<C>payments-*</C> = every namespace starting with payments-). Kubernetes itself enforces it: in the Explorer the member sees and changes only those namespaces, and a downloaded kubeconfig works only there. New namespaces that match are picked up within minutes.</P>
+                        <Note><B>Kubeconfig downloads follow the role:</B> cluster-admins get the admin kubeconfig; everyone else gets a kubeconfig of their own (a 24-hour token) that can do exactly what their role allows on that cluster.</Note>
+
+                        <H4>Two-person approval (Pro)</H4>
+                        <P>Protect dangerous actions so that one person cannot do them alone, for admins too. On <B>Approvals</B>, tick the actions: remove a cluster, upgrade Kubernetes, restore an etcd snapshot, rebuild a control-plane, uninstall or reinstall an add-on, restore volume backups. It needs at least two people who can approve.</P>
+                        <Steps items={[
+                            'Someone starts a protected action as usual. A dialog asks why; they send the request.',
+                            <>The approvers get an alert. On <B>Approvals</B>, another person approves or denies it, optionally with a comment. Nobody can approve their own request.</>,
+                            'Once approved, the action runs by itself (or within the next hour when it is started again). The approval fits exactly that request and works once.'
+                        ]} />
+
+                        <H4>Temporary access (Pro)</H4>
+                        <P>A member who needs more rights for a while (e.g. during an incident) asks on the cluster's page: <B>Request temporary access</B> → role, 15 minutes to 8 hours, and why. After an approver says yes, the role applies on that cluster until the time runs out. The cluster page shows it with a countdown, and <B>End now</B> stops it early. Temporary Admin is not possible.</P>
+                        <Note>Every request, approval, denial, use and end goes into the audit trail. The access review shows temporary access too.</Note>
+
                         <P><B>Access review:</B> Team & Roles → <B>Access review</B> downloads a CSV of every member, on every cluster, with what they may do and why. Keep it as audit evidence (ISO 27001 access reviews). Every role and access change is also in the audit trail.</P>
                     </Section>
 
@@ -668,7 +684,8 @@ export default function Docs() {
                             ['Compliance PDF, monthly reports, fixes, CERT-In report', '—', '✓'],
                             ['Alerts', '1 channel, critical alerts', 'All channels and alert types, rules'],
                             ['Advanced add-on settings (YAML)', '—', '✓'],
-                            ['Custom roles, per-cluster access, access review', 'Admin / Operator / Viewer', '✓']
+                            ['Custom roles, per-cluster and namespace access, access review', 'Admin / Operator / Viewer', '✓'],
+                            ['Two-person approval, temporary access', '—', '✓']
                         ]} />
                         <P>Cluster, node and member limits depend on the plan. See <Link to="/pricing" className="text-blue-400 hover:underline">Plans</Link>.</P>
                     </Section>
