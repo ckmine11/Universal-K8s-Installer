@@ -105,6 +105,9 @@ const nowIn = (tz) => { try { return new Intl.DateTimeFormat(undefined, { timeZo
 
 export default function AlertsPanel() {
     const [data, setData] = useState(null)
+    // server-setup tips are for whoever runs the server (self-hosted), not hosted customers
+    const [selfHosted, setSelfHosted] = useState(false)
+    useEffect(() => { fetch('/api/config').then(r => r.ok ? r.json() : {}).then(c => setSelfHosted(c.mode !== 'saas')).catch(() => { }) }, [])
     const [error, setError] = useState(null)
     const [form, setForm] = useState(null)          // { id?, type, name, config, enabled }
     const [busy, setBusy] = useState(null)
@@ -218,7 +221,7 @@ export default function AlertsPanel() {
                         <button onClick={() => setNotice(null)} aria-label="Dismiss"><X className="w-3.5 h-3.5" /></button>
                     </div>
                 )}
-                {!data.linksConfigured && <p className="mb-3 text-[11px] text-slate-500">Tip: set KUBEEZ_PUBLIC_URL on the server so alerts link straight to the cluster in KubeEZ.</p>}
+                {!data.linksConfigured && selfHosted && <p className="mb-3 text-[11px] text-slate-500">Tip: set KUBEEZ_PUBLIC_URL on the server so alerts link straight to the cluster in KubeEZ.</p>}
 
                 {!data.channels.length ? (
                     <div className="py-10 text-center rounded-xl border border-dashed border-white/10">

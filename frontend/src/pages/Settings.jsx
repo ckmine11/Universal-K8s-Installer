@@ -45,11 +45,11 @@ export default function Settings() {
     const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'licensing')
     useEffect(() => { const t = searchParams.get('tab'); if (t && t !== activeTab) setActiveTab(t); if (!t && user) setActiveTab('licensing') }, [searchParams])
     const selectTab = (t) => { setActiveTab(t); setSearchParams({ tab: t }, { replace: true }) }
-    
+
     // Health state
     const [healthData, setHealthData] = useState(null)
     const [healthLoading, setHealthLoading] = useState(true)
-    
+
     // Backup state
     const [backupData, setBackupData] = useState(null)
     const [backupLoading, setBackupLoading] = useState(true)
@@ -631,7 +631,7 @@ export default function Settings() {
                                     <RefreshCw className="w-4 h-4" />
                                 </button>
                             </div>
-                            
+
                             {backupLoading ? (
                                 <div className="flex flex-col items-center justify-center py-20 gap-4">
                                     <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -705,7 +705,7 @@ export default function Settings() {
                                     <div className="glass rounded-[32px] p-8 border border-white/8 relative overflow-hidden flex flex-col justify-between bg-slate-950/80 backdrop-blur-3xl shadow-2xl group hover:border-white/15 transition-all duration-500">
                                         {/* Premium Ambient Glow */}
                                         <div className="absolute top-0 right-0 w-[150%] h-[150%] bg-gradient-to-br from-blue-500/10 via-transparent to-transparent -translate-y-1/2 translate-x-1/4 rounded-full pointer-events-none group-hover:from-blue-500/20 transition-all duration-700"></div>
-                                        
+
                                         <div className="relative z-10">
                                             <div className="flex items-center justify-between mb-8">
                                                 <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-white flex items-center gap-3">
@@ -803,18 +803,18 @@ export default function Settings() {
                                                                     toast({ title: 'Upgrade unavailable', message: err.message, type: 'error' });
                                                                 }
                                                             }}
-                                                            className="w-full py-4 bg-gradient-to-br from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 border border-amber-500/30 text-black font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)] hover:shadow-[0_0_30px_rgba(245,158,11,0.4)] flex flex-col items-center justify-center gap-1 active:scale-95"
+                                                            className="kz-btn-light w-full !py-3.5 !rounded-2xl flex-col !gap-0.5"
                                                         >
                                                             <span>Upgrade to Pro</span>
-                                                            <span className="text-[9px] opacity-80 normal-case tracking-normal font-medium">$49/mo · 10 Clusters · 50 Nodes · 5 Members</span>
+                                                            <span className="text-[11px] text-[#4a4658] font-medium">$49/mo · 10 clusters · 50 nodes · 5 members</span>
                                                         </button>
                                                         {/* ENTERPRISE */}
                                                         <a
                                                             href="mailto:sales@k8scluster.space"
-                                                            className="w-full py-4 bg-white/5 hover:bg-white/10 border border-blue-500/30 text-blue-400 font-black text-[10px] uppercase tracking-[0.15em] rounded-2xl transition-all flex flex-col items-center justify-center gap-1 active:scale-95"
+                                                            className="kz-btn-ghost w-full !py-3.5 !rounded-2xl flex-col !gap-0.5"
                                                         >
                                                             <span>Enterprise</span>
-                                                            <span className="text-[9px] opacity-80 normal-case tracking-normal font-medium">Custom · Unlimited · Contact Sales</span>
+                                                            <span className="text-[11px] text-slate-400 font-medium">Custom · unlimited · contact sales</span>
                                                         </a>
                                                     </div>
                                                 )}
@@ -834,13 +834,13 @@ export default function Settings() {
                                     {/* Quotas and Utilization */}
                                     <div className="glass rounded-[32px] p-8 border border-white/8 flex flex-col justify-between bg-slate-950/80 backdrop-blur-3xl shadow-2xl group hover:border-white/15 transition-all duration-500 relative overflow-hidden">
                                         <div className="absolute top-0 right-0 w-[150%] h-[150%] bg-gradient-to-bl from-purple-500/10 via-transparent to-transparent -translate-y-1/2 translate-x-1/4 rounded-full pointer-events-none group-hover:from-purple-500/20 transition-all duration-700"></div>
-                                        
+
                                         <div className="relative z-10">
                                             <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-white mb-10 flex items-center gap-3">
                                                 <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.8)]"></div>
                                                 Resource Allocation Limits
                                             </h3>
-                                            
+
                                             <div className="space-y-10">
                                                 {/* Cluster utilization bar */}
                                                 <div>

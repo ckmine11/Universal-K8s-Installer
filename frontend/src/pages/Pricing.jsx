@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { BorderBeam } from '@/components/lightswind/border-beam'
 import { CheckCircle2, Zap, Shield, ArrowRight, X, Loader2, Mail, ChevronDown } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 
@@ -116,15 +117,16 @@ export default function Pricing() {
                 </div>
 
                 {/* PRO — highlighted */}
-                <div className="glass rounded-[32px] p-8 border border-amber-500/40 bg-amber-500/5 flex flex-col relative shadow-2xl shadow-amber-500/10 md:-mt-4">
+                <div className="glass rounded-[32px] p-8 border border-blue-400/30 bg-blue-500/[0.05] flex flex-col relative shadow-[0_40px_100px_-40px_rgba(128,105,251,.6)] md:-mt-4">
+                    <BorderBeam size={200} duration={9} colorFrom="#b6a8ff" colorTo="#38bdf8" />
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                        <span className="px-4 py-1.5 bg-amber-500 text-black text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg whitespace-nowrap">
+                        <span className="px-4 py-1.5 bg-gradient-to-r from-blue-400 to-sky-400 text-[#0b0b0f] text-[10px] font-bold uppercase tracking-widest rounded-full shadow-lg whitespace-nowrap">
                             Most Popular
                         </span>
                     </div>
 
                     <div className="mb-8 mt-2">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-widest mb-5">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/30 text-blue-200 text-xs font-bold uppercase tracking-widest mb-5">
                             <Zap className="w-3 h-3" /> Pro
                         </div>
 
@@ -144,14 +146,14 @@ export default function Pricing() {
 
                     <div className="space-y-3 mb-6 flex-1">
                         <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Everything in Free, plus:</p>
-                        <Feature color="text-amber-400" text="10 Clusters" />
-                        <Feature color="text-amber-400" text="Up to 50 Nodes" />
-                        <Feature color="text-amber-400" text="5 Team Members & RBAC" />
-                        <Feature color="text-amber-400" text="All alerts on every channel — Slack, Teams, WhatsApp — with quiet hours and rules" />
-                        <Feature color="text-amber-400" text="Alert routing per cluster, escalation when nobody responds" />
-                        <Feature color="text-amber-400" text="Daily config backups — restore in 1 click" />
-                        <Feature color="text-amber-400" text="All Add-ons (Ingress, Monitoring, ArgoCD, Longhorn, Cert-Manager)" />
-                        <Feature color="text-amber-400" text="Support response within 24 hours" />
+                        <Feature color="text-blue-300" text="10 Clusters" />
+                        <Feature color="text-blue-300" text="Up to 50 Nodes" />
+                        <Feature color="text-blue-300" text="5 Team Members & RBAC" />
+                        <Feature color="text-blue-300" text="All alerts on every channel — Slack, Teams, WhatsApp — with quiet hours and rules" />
+                        <Feature color="text-blue-300" text="Alert routing per cluster, escalation when nobody responds" />
+                        <Feature color="text-blue-300" text="Daily config backups — restore in 1 click" />
+                        <Feature color="text-blue-300" text="All Add-ons (Ingress, Monitoring, ArgoCD, Longhorn, Cert-Manager)" />
+                        <Feature color="text-blue-300" text="Support response within 24 hours" />
                     </div>
 
                     {/* Savings callout */}
@@ -170,7 +172,7 @@ export default function Pricing() {
                         <button
                             onClick={() => handleUpgrade('pro')}
                             disabled={loading}
-                            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/25 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                            className="kz-btn-light w-full !py-3.5 !rounded-2xl"
                         >
                             {loading
                                 ? <Loader2 className="w-4 h-4 animate-spin" />

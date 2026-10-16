@@ -65,6 +65,7 @@ export default {
                 serif: ['"Instrument Serif"', 'Georgia', 'serif'],
                 mono: ['"Geist Mono"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
             },
+            opacity: { 3: '0.03', 8: '0.08' },
             boxShadow: {
                 glow: '0 0 0 1px rgba(128,105,251,.28), 0 10px 40px -10px rgba(128,105,251,.45)',
                 'glow-violet': '0 0 0 1px rgba(128,105,251,.28), 0 10px 40px -10px rgba(128,105,251,.45)',

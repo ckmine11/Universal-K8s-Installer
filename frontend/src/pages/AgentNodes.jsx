@@ -52,25 +52,28 @@ function CopyButton({ text, className = '' }) {
 // ─── Prerequisite Info Banner ─────────────────────────────────────
 function PrerequisiteBanner() {
     return (
-        <div className="glass rounded-3xl border border-amber-500/20 bg-amber-500/5 p-6 mb-8">
-            <div className="flex items-start gap-4">
-                <div className="p-2.5 bg-amber-500/15 rounded-2xl border border-amber-500/20 shrink-0 mt-0.5">
-                    <Info className="w-5 h-5 text-amber-400" />
+        <div className="kz-card relative overflow-hidden rounded-3xl p-6 mb-8">
+            <div className="absolute -top-24 -left-10 w-80 h-48 rounded-full bg-[radial-gradient(closest-side,rgba(128,105,251,.22),transparent)] blur-2xl pointer-events-none" />
+            <div className="relative flex items-start gap-4">
+                <div className="p-2.5 rounded-2xl border border-white/10 bg-[#15151c] shadow-[inset_0_1px_0_rgba(255,255,255,.08)] shrink-0 mt-0.5">
+                    <Info className="w-5 h-5 text-blue-300" />
                 </div>
                 <div>
-                    <h3 className="text-sm font-black text-amber-300 uppercase tracking-wider mb-2">
-                        Prerequisite for Deploying Local Clusters via SaaS (Gateway Agent)
+                    <h3 className="text-[15px] font-semibold text-white mb-1.5">
+                        Your servers are in a private network? Start here.
                     </h3>
-                    <p className="text-xs text-amber-200/70 leading-relaxed mb-3">
-                        Since KubeEZ is hosted on the SaaS cloud, your local servers are not directly reachable. <strong className="text-amber-300">To deploy a local cluster, you must install a "Gateway Agent" on your Windows, Mac, or Linux PC.</strong> This acts as a secure SSH tunnel bridging KubeEZ and your internal Linux VMs.
+                    <p className="text-sm text-slate-400 leading-relaxed mb-4">
+                        Hosted KubeEZ cannot reach private servers on its own. Run the <strong className="text-white">Gateway Agent</strong> on any Linux, macOS or Windows machine in that network — it connects out over an encrypted tunnel, so you open no ports.
                     </p>
                     <div className="flex flex-wrap gap-x-6 gap-y-1.5">
                         {[
-                            '✅ Generate a Gateway Token (below)',
-                            '✅ Run the generated terminal command on your PC',
-                            '✅ Deploy your cluster once the Agent is "Online"'
+                            'Generate a token below',
+                            'Run the command on a machine in that network',
+                            'Deploy once the agent is Online'
                         ].map((step, i) => (
-                            <span key={i} className="text-[11px] font-bold text-amber-300/80">{step}</span>
+                            <span key={i} className="flex items-center gap-2 text-xs font-medium text-slate-300">
+                                <span className="w-5 h-5 rounded-full bg-blue-500/15 border border-blue-400/25 text-blue-200 text-[10px] font-semibold flex items-center justify-center">{i + 1}</span>{step}
+                            </span>
                         ))}
                     </div>
                 </div>

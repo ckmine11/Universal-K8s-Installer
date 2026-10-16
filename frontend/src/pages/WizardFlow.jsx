@@ -34,7 +34,7 @@ import {
     Database,
     GitBranch,
     Sparkles
-, Compass } from 'lucide-react'
+, Compass, Wifi, ArrowRight } from 'lucide-react'
 import NodeVerificationCard from '../components/NodeVerificationCard'
 import AddonSettingsDialog from '../components/AddonSettingsDialog'
 import DeploymentPlan from '../components/DeploymentPlan'
@@ -53,7 +53,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
     const [customizeKey, setCustomizeKey] = useState(null)
     const [formData, setFormData] = useState({
         clusterName: mode === 'scale' ? 'Existing Cluster' : '',
-        k8sVersion: '1.28.0',
+        k8sVersion: (K8S_VERSIONS.find(v => v.badge === 'Stable') || K8S_VERSIONS[0]).value,
         networkPlugin: 'flannel',
         masterNodes: [{ ip: '', username: 'root', password: '', sshKey: '', verified: false, verificationResult: null }],
         workerNodes: [],
@@ -78,7 +78,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                 k8sVersion: initialData.k8sVersion || formData.k8sVersion,
                 networkPlugin: initialData.networkPlugin || formData.networkPlugin,
                 addons: initialData.addons || formData.addons,
-                // Ensure nodes are marked as not verified initially in the wizard view, 
+                // Ensure nodes are marked as not verified initially in the wizard view,
                 // but keep their data. If no masters found, initialize with one empty node.
                 masterNodes: (initialData.masterNodes && initialData.masterNodes.length > 0)
                     ? initialData.masterNodes.map(n => ({
@@ -337,7 +337,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
             })
             setIsInstalling(false)
         }
-        // Do NOT set isInstalling(false) on success, because we are navigating away 
+        // Do NOT set isInstalling(false) on success, because we are navigating away
         // and we don't want the button to re-enable before unmount.
     }
 
@@ -345,37 +345,29 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
     if (isSaasMode && agentCheckDone && !hasOnlineAgent) {
         return (
             <div className="max-w-2xl mx-auto py-16 px-4">
-                <div className="glass rounded-[40px] border border-amber-500/20 bg-amber-500/5 p-10 text-center">
-                    <div className="inline-flex p-5 bg-amber-500/10 border border-amber-500/20 rounded-3xl mb-6">
-                        <AlertTriangle className="w-12 h-12 text-amber-400" />
+                <div className="kz-card relative overflow-hidden rounded-[32px] p-10 text-center">
+                    <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[460px] h-[260px] rounded-full bg-[radial-gradient(closest-side,rgba(128,105,251,.3),transparent)] blur-2xl pointer-events-none" />
+                    <div className="relative inline-flex p-4 rounded-2xl border border-white/10 bg-[#15151c] shadow-[inset_0_1px_0_rgba(255,255,255,.08),0_12px_30px_-12px_rgba(128,105,251,.7)] mb-6">
+                        <Wifi className="w-9 h-9 text-blue-300" />
                     </div>
-                    <h2 className="text-2xl font-black text-white uppercase tracking-wide mb-3">Gateway Agent Required</h2>
-                    <p className="text-slate-300 leading-relaxed mb-2">
-                        To deploy a local cluster in SaaS mode, <strong className="text-amber-300">you must first install a Gateway Agent</strong>.
+                    <h2 className="relative text-[28px] font-semibold tracking-[-0.03em] gradient-text mb-3">Connect your network first</h2>
+                    <p className="relative text-slate-300 leading-relaxed mb-2">
+                        KubeEZ reaches your servers through a <strong className="text-white">Gateway Agent</strong> — a small program on any machine in their network.
                     </p>
-                    <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                        The agent establishes a secure connection between your local server and the KubeEZ SaaS backend. 
-                        Without the agent, we cannot reach your private servers.
+                    <p className="relative text-slate-400 text-sm leading-relaxed mb-8">
+                        It connects out over an encrypted tunnel, so you open no firewall ports. It takes about a minute.
                     </p>
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <button
-                            onClick={() => navigate('/agents')}
-                            className="px-8 py-4 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-amber-600/20 active:scale-95 transition-all"
-                        >
-                            → Set up the Gateway Agent
+                    <div className="relative flex flex-col sm:flex-row gap-3 justify-center">
+                        <button onClick={() => navigate('/agents')} className="kz-btn-primary !px-6 !py-3">
+                            Set up the Gateway Agent <ArrowRight className="w-4 h-4" />
                         </button>
-                        <button
-                            onClick={onCancel}
-                            className="px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/5 text-slate-300 font-black text-xs uppercase tracking-wider rounded-2xl transition-all active:scale-95"
-                        >
-                            Cancel
-                        </button>
+                        <button onClick={onCancel} className="kz-btn-ghost !px-6 !py-3">Cancel</button>
                     </div>
-                    <div className="mt-8 p-4 bg-black/20 rounded-2xl border border-white/5 text-left">
-                        <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3">Setup Steps:</p>
+                    <div className="relative mt-8 p-5 bg-black/25 rounded-2xl border border-white/[0.06] text-left">
+                        <p className="kz-label">Setup steps</p>
                         <ol className="space-y-2">
                             {[
-                                'Open Tunnels → Generate a Token',
+                                'Open Gateway Agents → Generate Token',
                                 'Run the install command on your local server (as root)',
                                 'Once the agent shows "Online", return here to create your cluster'
                             ].map((step, i) => (
@@ -447,15 +439,15 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                     {currentStep === 1 && (
                         <div className="animate-in">
                             <div className="mb-10">
-                                <h2 className="text-4xl font-black mb-2 tracking-tight">Cluster Parameters</h2>
-                                <p className="text-slate-400">Define the core identity and runtime for your infrastructure.</p>
+                                <h2 className="text-4xl font-black mb-2 tracking-tight">Name &amp; version</h2>
+                                <p className="text-slate-400">Give the cluster a name and pick the Kubernetes version and network plugin.</p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="space-y-2">
-                                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Cluster Identifier</label>
+                                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Cluster name</label>
                                     <input
                                         type="text"
-                                        placeholder="e.g. production-omega"
+                                        placeholder="e.g. prod-mumbai"
                                         className="w-full px-6 py-4 rounded-2xl font-medium"
                                         value={formData.clusterName}
                                         onChange={(e) => setFormData({ ...formData, clusterName: e.target.value })}
@@ -463,7 +455,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">K8s Runtime Version</label>
+                                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Kubernetes version</label>
                                     <select
                                         className="w-full px-6 py-4 rounded-2xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-blue-500 transition-all font-medium appearance-none"
                                         value={formData.k8sVersion}
@@ -477,7 +469,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                     </select>
                                 </div>
                                 <div className="md:col-span-2 space-y-2">
-                                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Networking Fabric Overlay</label>
+                                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Network plugin</label>
                                     <div className="grid grid-cols-2 gap-4">
                                         {['flannel', 'calico'].map(plugin => (
                                             <button
@@ -490,7 +482,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                     }`}
                                             >
                                                 <div className={`w-2 h-2 rounded-full ${formData.networkPlugin === plugin ? 'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]' : 'bg-slate-600'}`}></div>
-                                                <span className="capitalize">{plugin} CNI Fabric</span>
+                                                <span className="capitalize">{plugin}</span><span className="ml-1.5 text-[11px] font-medium normal-case text-slate-500">{plugin === 'calico' ? '· network policies' : '· simple, works everywhere'}</span>
                                             </button>
                                         ))}
                                     </div>
@@ -524,7 +516,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                     <p className="text-xs text-amber-200/80 leading-relaxed mb-3">
                                         In SaaS mode KubeEZ never connects into private networks directly — servers on a LAN or private IP are reached only through your Gateway Agent (an outbound tunnel you run on your network).
                                     </p>
-                                    <button 
+                                    <button
                                         onClick={(e) => { e.preventDefault(); window.location.href = '/agents'; }}
                                         className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/20 transition-all"
                                     >

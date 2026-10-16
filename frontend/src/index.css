@@ -309,3 +309,17 @@ h1.uppercase, h2.uppercase, h3.uppercase { text-transform: none; letter-spacing:
 h1.font-black, h2.font-black, h3.font-black, h4.font-black { font-weight: 650; }
 /* "font-black" labels in the older pages read too heavy in Geist */
 .font-black { font-weight: 700; }
+
+/* Buttons from the older pages are set in tiny heavy capitals ("CANCEL",
+   "RUN SCAN"). In this theme a button reads as a sentence: normal case,
+   no wide tracking, at least 12px. Small uppercase labels and badges
+   (spans, not buttons) keep their style. */
+button.uppercase, a.uppercase[class*="py-"] {
+  text-transform: none;
+  letter-spacing: -0.005em;
+}
+button.uppercase[class*="text-[9px]"], button.uppercase[class*="text-[10px]"], button.uppercase[class*="text-[11px]"],
+a.uppercase[class*="py-"][class*="text-[9px]"], a.uppercase[class*="py-"][class*="text-[10px]"], a.uppercase[class*="py-"][class*="text-[11px]"] {
+  font-size: 12.5px;
+}
+button.uppercase.font-black, a.uppercase[class*="py-"].font-black { font-weight: 600; }
