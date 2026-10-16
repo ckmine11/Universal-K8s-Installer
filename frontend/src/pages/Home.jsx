@@ -15,6 +15,7 @@ import {
     Database, GitBranch, Sparkles, Lock, Eye, HeartPulse, Compass, ArrowRight, Wifi, Bell, BookOpen, ShieldAlert,
     Layers, Activity, X, Scaling, MoreHorizontal, Rocket
 } from 'lucide-react'
+import useBackdropClose from '../components/ui/useBackdropClose'
 
 
 // What a cluster's saved status means for the user
@@ -364,10 +365,11 @@ function Orbit() {
 }
 
 function AddonDialog({ cluster, selection, setSelection, isFreePlan, busy, toast, onClose, onSubmit }) {
+    const backdrop = useBackdropClose(onClose)
     const count = Object.values(selection).filter(Boolean).length
     return (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" role="dialog" aria-modal="true">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" {...backdrop} />
             <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col kz-card overflow-hidden kz-rise">
                 <div className="flex items-center gap-4 p-6 border-b border-white/[0.07]">
                     <span className="w-11 h-11 rounded-2xl bg-aurora-gradient flex items-center justify-center shadow-glow"><Sparkles className="w-5 h-5 text-white" /></span>

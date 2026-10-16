@@ -7,6 +7,7 @@ import { ADDONS_LIST } from '../config/addons'
 import { addonIcon } from '../config/addonIcons'
 import AddonSettingsDialog from './AddonSettingsDialog'
 import SealSecretDialog from './SealSecretDialog'
+import useBackdropClose from './ui/useBackdropClose'
 import {
     Network, LayoutDashboard, BarChart3, Shield, Database, GitBranch, Package,
     RefreshCw, Loader2, ScrollText, Wrench, Trash2, Download, X, ChevronDown, RotateCcw,
@@ -44,6 +45,7 @@ function fmtAge(iso) {
 }
 
 function LogsModal({ clusterId, addon, onClose }) {
+    const backdrop = useBackdropClose(onClose)
     const [pod, setPod] = useState('')
     const [tail, setTail] = useState(200)
     const [data, setData] = useState(null)
@@ -76,7 +78,7 @@ function LogsModal({ clusterId, addon, onClose }) {
     useEffect(() => { if (follow) bottom.current?.scrollIntoView() }, [data])
 
     return createPortal(
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" {...backdrop}>
             <div className="glass w-full max-w-5xl max-h-[88vh] flex flex-col rounded-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                 <div className="flex flex-wrap items-center gap-3 p-4 border-b border-white/5">
                     <ScrollText className="w-5 h-5 text-blue-400" />
@@ -133,12 +135,13 @@ function LogsModal({ clusterId, addon, onClose }) {
 }
 
 function UninstallModal({ addon, action, onCancel, onConfirm, busy }) {
+    const backdrop = useBackdropClose(onCancel)
     const [typed, setTyped] = useState('')
     const ok = !addon.keepsData || typed.trim() === addon.key
     const reinstall = action === 'reinstall'
     const ActionIcon = reinstall ? RotateCcw : Trash2
     return createPortal(
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onCancel}>
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" {...backdrop}>
             <div className="glass w-full max-w-md rounded-2xl border border-red-500/20 p-6" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/20"><ActionIcon className="w-5 h-5 text-red-400" /></div>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../context/AuthContext'
 import { X, Loader2, Lock, Plus, Trash2, Copy, Check, Download } from 'lucide-react'
+import useBackdropClose from './ui/useBackdropClose'
 
 // Encrypt a Secret with the cluster's Sealed Secrets key. The values go to
 // the cluster once (over KubeEZ's SSH / agent tunnel) and are not stored; the
@@ -9,6 +10,7 @@ import { X, Loader2, Lock, Plus, Trash2, Copy, Check, Download } from 'lucide-re
 const inputCls = 'w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500/50'
 
 export default function SealSecretDialog({ clusterId, onClose }) {
+    const backdrop = useBackdropClose(onClose)
     const [name, setName] = useState('')
     const [namespace, setNamespace] = useState('default')
     const [scope, setScope] = useState('strict')
@@ -38,7 +40,7 @@ export default function SealSecretDialog({ clusterId, onClose }) {
     }
 
     return createPortal(
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" {...backdrop}>
             <div className="glass w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl border border-white/10" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Seal a secret">
                 <div className="flex items-start gap-3 p-5 border-b border-white/5">
                     <Lock className="w-5 h-5 text-fuchsia-300 mt-0.5" />

@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom'
 import { KeyRound, Loader2, X } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
+import useBackdropClose from '../ui/useBackdropClose'
 
 // Change your own password — for every role (account menu). The reply sets the
 // new session cookie, so this browser stays signed in; other sessions end.
 export default function ChangePasswordDialog({ onClose }) {
+    const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
     const [form, setForm] = useState({ current: '', next: '', confirm: '' })
     const [error, setError] = useState('')
@@ -38,7 +40,7 @@ export default function ChangePasswordDialog({ onClose }) {
 
     const input = 'w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors'
     return createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" {...backdrop}>
             <form onSubmit={submit} onClick={e => e.stopPropagation()} className="glass rounded-3xl border border-white/10 p-8 w-full max-w-sm" role="dialog" aria-label="Change password">
                 <div className="flex items-center gap-3 mb-6">
                     <div className="p-2.5 bg-blue-500/15 rounded-2xl border border-blue-500/20"><KeyRound className="w-5 h-5 text-blue-300" /></div>

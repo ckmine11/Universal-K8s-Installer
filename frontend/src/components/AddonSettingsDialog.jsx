@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../context/AuthContext'
 import { X, Loader2, Settings2, FileCode2, History, Eye, CheckCircle2, XCircle, Lock, Sparkles, AlertTriangle, Play } from 'lucide-react'
+import useBackdropClose from './ui/useBackdropClose'
 
 // Settings of a Helm add-on: simple form (everyone), advanced Helm values
 // (Pro), version, a preview of what changes, then Apply = a job with live logs.
@@ -38,6 +39,7 @@ function Field({ f, value, onChange }) {
 
 // draft: { schema, advancedAllowed, cluster, initial } — the new-cluster wizard (no cluster yet; onSave gets the settings)
 export default function AddonSettingsDialog({ clusterId, addonKey, installed, runningApp, takeover, draft, onClose, onStarted, onSave }) {
+    const backdrop = useBackdropClose(onClose)
     const [data, setData] = useState(null)
     const [error, setError] = useState(null)
     const [tab, setTab] = useState('settings')
@@ -113,7 +115,7 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, ru
     )
 
     return createPortal(
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" {...backdrop}>
             <div className="glass w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-white/10" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${s?.label || 'Add-on'} settings`}>
                 <div className="flex items-start gap-3 p-5 border-b border-white/5">
                     <Settings2 className="w-5 h-5 text-sky-400 mt-0.5" />

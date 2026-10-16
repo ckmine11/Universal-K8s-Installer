@@ -8,6 +8,7 @@ import {
     ChevronRight, Lock, AlertTriangle, Check, Clock, Eye, Wrench,
     KeyRound, Search, UserCheck, UserX, MoreVertical, X
 } from 'lucide-react'
+import useBackdropClose from '../components/ui/useBackdropClose'
 
 // Role metadata — single source for labels/colors/descriptions on the client
 const ROLE_META = {
@@ -32,6 +33,7 @@ function RoleBadge({ role }) {
 
 // ─── Reset Password Modal ─────────────────────────────────────────
 function ResetPasswordModal({ user, onClose, onSuccess }) {
+    const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
@@ -60,7 +62,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
 
     // a portal: the page's animated / blurred containers must not move or clip the dialog
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" {...backdrop}>
             <div className="glass rounded-3xl border border-white/10 p-8 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3 mb-6">
                     <div className="p-2.5 bg-amber-500/15 rounded-2xl border border-amber-500/20">
@@ -102,6 +104,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
 
 // ─── Create User Modal ─────────────────────────────────────────────
 function CreateUserModal({ onClose, onSuccess }) {
+    const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
     const [formData, setFormData] = useState({ username: '', email: '', password: '', role: 'viewer' })
     const [loading, setLoading] = useState(false)
@@ -133,7 +136,7 @@ function CreateUserModal({ onClose, onSuccess }) {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" {...backdrop}>
             <div className="glass rounded-3xl border border-white/10 p-8 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3 mb-6">
                     <div className="p-2.5 bg-blue-500/15 rounded-2xl border border-blue-500/20">
@@ -531,9 +534,10 @@ export default function AdminUsers() {
 
 // ─── Permissions Matrix (transparency) ────────────────────────────
 function PermissionsMatrixModal({ rbac, onClose }) {
+    const backdrop = useBackdropClose(onClose)
     const roles = ['admin', 'operator', 'viewer']
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" {...backdrop}>
             <div className="glass rounded-3xl border border-white/10 w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-7 pt-7 pb-4 border-b border-white/5">

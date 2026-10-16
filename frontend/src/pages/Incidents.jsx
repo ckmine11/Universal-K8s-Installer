@@ -11,6 +11,7 @@ import {
 import { explorerResourceLink, explorerPages } from '../components/explorer/explorerLinks'
 import PageHeader from '../components/ui/PageHeader'
 import Popover from '../components/ui/Popover'
+import useBackdropClose from '../components/ui/useBackdropClose'
 
 const CLOSED = new Set(['resolved', 'cleared'])
 const SEV = {
@@ -409,6 +410,7 @@ function MaintenanceMenu({ c, onSet }) {
 }
 
 function IncidentDrawer({ inc, meta, label, sev, kids, cause, labelOf, canAct, explorer, onOpen, onClose, onAck, onRun, onMute }) {
+    const backdrop = useBackdropClose(onClose)
     const s = SEV[sev] || SEV.warning
     const closed = CLOSED.has(inc.status)
     useEffect(() => {
@@ -417,7 +419,7 @@ function IncidentDrawer({ inc, meta, label, sev, kids, cause, labelOf, canAct, e
     }, [onClose])
     return (
         <div className="fixed inset-0 z-[90] flex justify-end" role="dialog" aria-modal="true" aria-label={label}>
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" {...backdrop} />
             <aside className="relative w-full max-w-xl h-full overflow-y-auto bg-[#0b0b0f]/95 border-l border-white/10 backdrop-blur-2xl kz-rise">
                 <div className="sticky top-0 z-10 flex items-start gap-3 p-5 border-b border-white/[0.07] bg-[#0b0b0f]/95 backdrop-blur-xl">
                     <div className="min-w-0 flex-1">
@@ -513,6 +515,7 @@ function Block({ icon: Icon, title, children }) {
 }
 
 function PolicyDialog({ catalog, onClose, onSaved }) {
+    const backdrop = useBackdropClose(onClose)
     const [p, setP] = useState(catalog.policies)
     const [busy, setBusy] = useState(false)
     const groups = {}
@@ -528,7 +531,7 @@ function PolicyDialog({ catalog, onClose, onSaved }) {
     const opt = { auto: 'Fix automatically', notify: 'Alert only', off: 'Off' }
     return (
         <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Auto-healing policies">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" {...backdrop} />
             <div className="relative w-full max-w-2xl max-h-[88vh] flex flex-col kz-card overflow-hidden kz-rise">
                 <div className="flex items-center gap-3 p-5 border-b border-white/[0.07]">
                     <SlidersHorizontal className="w-5 h-5 text-blue-300" />
