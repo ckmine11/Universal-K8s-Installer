@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
-    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass
+    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { useInstallationTracker } from '../../context/InstallationTrackerContext'
@@ -10,6 +10,7 @@ import { LogoMark, LogoWord } from './Logo'
 import CommandPalette from './CommandPalette'
 import UpdatesMenu from './UpdatesMenu'
 import AuroraBackground from './AuroraBackground'
+import ChangePasswordDialog from './ChangePasswordDialog'
 
 const ROLE_META = {
     superadmin: { label: 'Super Admin', icon: Crown, tone: 'text-violet-300 bg-violet-500/10 border-violet-400/20' },
@@ -231,6 +232,7 @@ function SideLink({ item, compact, location }) {
 
 function UserCard({ user, compact, onLogout }) {
     const [open, setOpen] = useState(false)
+    const [changePwd, setChangePwd] = useState(false)
     const ref = useRef(null)
     useEffect(() => {
         const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
@@ -243,6 +245,7 @@ function UserCard({ user, compact, onLogout }) {
     const initial = user.username?.charAt(0).toUpperCase()
     return (
         <div className="relative" ref={ref}>
+            {changePwd && <ChangePasswordDialog onClose={() => setChangePwd(false)} />}
             {open && (
                 <div className="absolute bottom-full left-0 mb-2 w-64 kz-card p-2 kz-rise z-50">
                     <div className="px-3 py-3">
@@ -251,6 +254,9 @@ function UserCard({ user, compact, onLogout }) {
                         <span className={`mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg border ${meta.tone}`}><RoleIcon className="w-3 h-3" />{meta.label}</span>
                     </div>
                     <div className="kz-divider my-1" />
+                    <button onClick={() => { setOpen(false); setChangePwd(true) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-200 hover:bg-white/5">
+                        <KeyRound className="w-4 h-4" /> Change password
+                    </button>
                     <button onClick={() => { setOpen(false); onLogout() }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-red-500/10">
                         <LogOut className="w-4 h-4" /> Sign out
                     </button>

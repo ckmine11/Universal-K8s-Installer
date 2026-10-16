@@ -310,7 +310,7 @@ export default function Docs() {
                         ]} />
                         <Note>No email? Ask a workspace admin: <B>Team & Roles</B> → the 🔑 button on your card sets a new password for you.</Note>
                         <H4>Change your password</H4>
-                        <P>Admins: <B>Settings → Security → Change Password</B>. Your other sessions are signed out. Operators and viewers: ask a workspace admin to set a new password.</P>
+                        <P>Click your name at the bottom of the sidebar → <B>Change password</B>. You stay signed in here; your other sessions are signed out.</P>
                         <P>After several wrong passwords in a row an account is locked for a short while, to stop password guessing.</P>
                     </Section>
 
