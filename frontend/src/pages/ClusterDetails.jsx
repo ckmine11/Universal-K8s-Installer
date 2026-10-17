@@ -28,7 +28,7 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package, History } from 'lucide-react'
+    Package, History, Coins, Wand2 } from 'lucide-react'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
@@ -40,6 +40,8 @@ import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
 import WhatChanged from '../components/ai/WhatChanged'
 import RiskCard from '../components/ai/RiskCard'
+import YamlStudio from '../components/ai/YamlStudio'
+import Advisor from '../components/ai/Advisor'
 
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
@@ -47,7 +49,9 @@ const TABS = [
     { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
     { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database },
-    { key: 'changes', label: 'Changes', hint: 'what changed, AI fixes', Icon: History }
+    { key: 'changes', label: 'Changes', hint: 'what changed, AI fixes', Icon: History },
+    { key: 'advisor', label: 'Advisor', hint: 'security & cost', Icon: Coins },
+    { key: 'create', label: 'Create', hint: 'describe → YAML', Icon: Wand2 }
 ]
 const ADDON_SECTIONS = [
     { key: 'access', label: 'Access & logins' },
@@ -585,6 +589,8 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* ── What changed? ───────────────────────────────────────── */}
             {tab === 'changes' && <WhatChanged clusterId={id} />}
+            {tab === 'advisor' && <Advisor clusterId={id} />}
+            {tab === 'create' && <YamlStudio clusterId={id} canEdit={['edit', 'admin'].includes(kubeLevel(user?.role, id))} />}
 
             {/* ── Explorer (Radar behind KubeEZ) ─────────────────────── */}
             {tab === 'explorer' && (

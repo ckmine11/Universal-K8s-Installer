@@ -8,6 +8,7 @@ import { canSeeCluster } from '../services/accessControl.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { auditLog } from '../services/auditLog.js'
 import { latestByEngine, feedbackStats } from '../services/ai/quality.js'
+import { notificationStore } from '../services/notificationStore.js'
 
 // KubeEZ AI: engines (providers), routing per task, safety switches, a test
 // box and the activity log. Mounted at /api/ai behind requireAuth.
@@ -71,11 +72,37 @@ router.get('/', requirePermission('ai:use'), async (req, res) => {
     })
     res.json({
         enabled: s.enabled, autonomy: s.autonomy, actionsEnabled: s.actionsEnabled, maskEmails: s.maskEmails, maskIps: s.maskIps,
-        dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), language: s.language,
+        dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), language: s.language, costRates: s.costRates,
         engines, routes: s.routes, effectiveRoutes: Object.fromEntries(Object.keys(TASKS).map(t => [t, routeFor(req.user.orgId, t).map(p => p.id)])),
         tasks: TASKS, kinds: KINDS, autonomyLevels: AUTONOMY, server: server ? { model: server.model } : null,
-        clusters: (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => ({ id: c.id, name: c.clusterName, hasAi: !!c.addons?.['kubeez-ai'] }))
+        clusters: (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => ({ id: c.id, name: c.clusterName, hasAi: !!c.addons?.['kubeez-ai'] })),
+        chatops: chatopsChannels(req.user.orgId)
     })
+})
+
+// ChatOps: the workspace's Telegram and Slack alert channels, and whether people may ask KubeEZ there
+const publicUrl = () => (process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/+$/, '')
+function chatopsChannels(orgId) {
+    return notificationStore.channels(orgId).filter(c => ['telegram', 'slack'].includes(c.type)).map(c => {
+        const cfg = aiStore.chatops(orgId, c.id)
+        return {
+            id: c.id, type: c.type, name: c.name, enabled: cfg.enabled, hasSecret: !!cfg.slackSecret,
+            slashUrl: c.type === 'slack' && /^https:\/\//.test(publicUrl()) ? `${publicUrl()}/api/chatops/slack/${c.id}` : null
+        }
+    })
+}
+router.put('/chatops/:channelId', requirePermission('ai:manage'), (req, res) => {
+    try {
+        const ch = notificationStore.channels(req.user.orgId).find(c => c.id === req.params.channelId && ['telegram', 'slack'].includes(c.type))
+        if (!ch) return res.status(404).json({ error: 'Telegram or Slack channel not found' })
+        const b = req.body || {}
+        const secret = b.slackSigningSecret === undefined ? undefined : String(b.slackSigningSecret).trim()
+        if (secret && !/^[a-f0-9]{32}$/i.test(secret)) throw bad('The Slack signing secret is 32 letters and numbers (Slack app → Basic Information → App Credentials)')
+        if (ch.type === 'slack' && b.enabled && !secret && !aiStore.chatops(req.user.orgId, ch.id).slackSecret) throw bad('Slack needs the app\'s signing secret first')
+        aiStore.setChatops(req.user.orgId, ch.id, { enabled: b.enabled, slackSecret: secret })
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.chatops', detail: `ChatOps ${b.enabled ? 'on' : b.enabled === false ? 'off' : 'changed'} for ${ch.name} (${ch.type})` })
+        res.json(chatopsChannels(req.user.orgId).find(c => c.id === ch.id))
+    } catch (e) { fail(res, e) }
 })
 
 router.put('/settings', requirePermission('ai:manage'), (req, res) => {
@@ -90,6 +117,12 @@ router.put('/settings', requirePermission('ai:manage'), (req, res) => {
         if (b.autonomy !== undefined) { if (!AUTONOMY.includes(b.autonomy)) throw bad('Autonomy: suggest, approve or auto'); patch.autonomy = b.autonomy }
         if (b.language !== undefined) { if (!['en', 'hi', 'hinglish'].includes(b.language)) throw bad('Language: en, hi or hinglish'); patch.language = b.language }
         if (b.dailyLimit !== undefined) { const n = Number(b.dailyLimit); if (!Number.isInteger(n) || n < 0 || n > 10000) throw bad('Daily limit: 0 – 10000'); patch.dailyLimit = n }
+        if (b.costRates !== undefined) {
+            const r = b.costRates || {}
+            const n = (v, label) => { const x = Number(v); if (!Number.isFinite(x) || x < 0 || x > 1e6) throw bad(`${label}: a number from 0`); return x }
+            if (!['₹', '$', '€', '£'].includes(r.currency)) throw bad('Currency: ₹, $, € or £')
+            patch.costRates = { cpu: n(r.cpu, 'Price per CPU core a month'), memGb: n(r.memGb, 'Price per GiB of memory a month'), currency: r.currency }
+        }
         if (b.routes !== undefined) {
             const ids = new Set([...s.providers.map(p => p.id), 'server'])
             const routes = {}
@@ -102,7 +135,8 @@ router.put('/settings', requirePermission('ai:manage'), (req, res) => {
         }
         const out = aiStore.save(req.user.orgId, patch)
         if (patch.actionsEnabled === false) auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.actions_stopped', detail: 'Kill switch: AI actions stopped' })
-        res.json({ ...out, providers: out.providers.map(p => aiStore.view(p)) })
+        const { chatops: _secrets, ...safe } = out   // never send the (encrypted) Slack secrets
+        res.json({ ...safe, providers: out.providers.map(p => aiStore.view(p)) })
     } catch (e) { fail(res, e) }
 })
 

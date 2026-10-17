@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BookOpenCheck, GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
+import { MessageCircle, Coins, BookOpenCheck, GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
 import QualityPanel from './QualityPanel'
 import RunbooksPanel from './RunbooksPanel'
+import ChatOpsPanel from './ChatOpsPanel'
 import Feedback from './Feedback'
 
 // Settings → AI: the engines (models) KubeEZ AI may use, which engine does
@@ -424,6 +425,18 @@ export default function AiSettings() {
                     <QualityPanel settings={data} onRoutesSaved={load} />
                 </Section>
             )}
+
+            <Section icon={MessageCircle} title="ChatOps" hint="Ask KubeEZ from your Telegram or Slack alert channel — answers come in the language you ask in.">
+                <ChatOpsPanel channels={data.chatops || []} onChanged={load} />
+            </Section>
+
+            <Section icon={Coins} title="Cost prices" hint="What a CPU core and a GiB of memory cost you a month — the Advisor uses them to estimate savings.">
+                <div className="flex flex-wrap items-end gap-3">
+                    <div><label className="kz-label" htmlFor="rate-cur">Currency</label><select id="rate-cur" className="kz-input !w-24" value={data.costRates?.currency || '₹'} onChange={e => saveSettings({ costRates: { ...data.costRates, currency: e.target.value } }, 'Saved')}>{['₹', '$', '€', '£'].map(c => <option key={c}>{c}</option>)}</select></div>
+                    <div><label className="kz-label" htmlFor="rate-cpu">Per CPU core / month</label><input id="rate-cpu" type="number" min={0} className="kz-input !w-40" defaultValue={data.costRates?.cpu} onBlur={e => Number(e.target.value) !== data.costRates?.cpu && saveSettings({ costRates: { ...data.costRates, cpu: Number(e.target.value) } }, 'Saved')} /></div>
+                    <div><label className="kz-label" htmlFor="rate-mem">Per GiB memory / month</label><input id="rate-mem" type="number" min={0} className="kz-input !w-40" defaultValue={data.costRates?.memGb} onBlur={e => Number(e.target.value) !== data.costRates?.memGb && saveSettings({ costRates: { ...data.costRates, memGb: Number(e.target.value) } }, 'Saved')} /></div>
+                </div>
+            </Section>
 
             <Section icon={BookOpenCheck} title="Runbooks" hint="Fixes KubeEZ learned: what really made a problem go away on a workload. They are offered first next time; proven restarts can run by themselves.">
                 <RunbooksPanel autonomy={data.autonomy} />

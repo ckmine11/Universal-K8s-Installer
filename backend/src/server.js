@@ -30,6 +30,7 @@ import offsiteRoutes from './routes/offsite.js'
 import notificationsRoutes from './routes/notifications.js'
 import addonCatalogRoutes from './routes/addonCatalog.js'
 import alertActionsRoutes from './routes/alertActions.js'
+import chatopsRoutes from './routes/chatops.js'
 import { notifier } from './services/notifier.js'
 import { telegramPoller } from './services/alertActions.js'
 import { addonVersionService } from './services/addonVersions.js'
@@ -121,6 +122,8 @@ app.use(cookieParser())
 
 // Stripe routes MUST be before express.json() because webhook needs raw body
 app.use('/api/stripe', stripeRoutes)
+// ChatOps from Slack — signed with the channel's secret over the raw body (before express.json)
+app.use('/api/chatops', chatopsRoutes)
 
 app.use(express.json())
 app.use(requestLogger) // Structured logging

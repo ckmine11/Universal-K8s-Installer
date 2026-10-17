@@ -12,7 +12,7 @@ const FILE = path.join(DATA_DIR, 'ai.json')
 const TRACES = path.join(DATA_DIR, 'ai-traces.json')
 export const TASKS = { explain: 'Explain failures & incidents', chat: 'Questions & chat', summarize: 'Summaries & reports' }
 export const AUTONOMY = ['suggest', 'approve', 'auto']
-const DEFAULTS = { enabled: true, providers: [], routes: {}, autonomy: 'approve', actionsEnabled: true, maskEmails: false, maskIps: false, dailyLimit: 50, language: 'en' }
+const DEFAULTS = { enabled: true, providers: [], routes: {}, autonomy: 'approve', actionsEnabled: true, maskEmails: false, maskIps: false, dailyLimit: 50, language: 'en', chatops: {}, costRates: { cpu: 1100, memGb: 250, currency: '₹' } }
 
 let cache = null
 const load = () => { if (!cache) { try { cache = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { cache = {} } cache.orgs ||= {}; cache.usage ||= {} } return cache }
@@ -27,6 +27,17 @@ export const aiStore = {
     save(orgId, patch) { const all = load(); all.orgs[orgId || '_'] = { ...this.get(orgId), ...patch }; save(); return this.get(orgId) },
 
     /** a provider as the UI sees it: never the key */
+    /** ChatOps per alert channel: { enabled, slackSecret (encrypted) } */
+    chatops(orgId, channelId) { const c = this.get(orgId).chatops?.[channelId]; return c ? { enabled: !!c.enabled, slackSecret: c.slackSecret ? (() => { try { return decrypt(c.slackSecret) } catch { return null } })() : null } : { enabled: false, slackSecret: null } },
+    setChatops(orgId, channelId, { enabled, slackSecret }) {
+        const all = { ...(this.get(orgId).chatops || {}) }
+        const cur = all[channelId] || {}
+        all[channelId] = { ...cur, ...(enabled !== undefined ? { enabled: !!enabled } : {}), ...(slackSecret ? { slackSecret: encrypt(slackSecret) } : {}) }
+        if (slackSecret === '') delete all[channelId].slackSecret
+        this.save(orgId, { chatops: all })
+        return this.chatops(orgId, channelId)
+    },
+
     view(p) { const { key, ...rest } = p; return { ...rest, hasKey: !!key } },
     keyOf(p) { try { return p.key ? decrypt(p.key) : null } catch { return null } },
 

@@ -99,7 +99,7 @@ export async function ask(user, opts) {
         'You are KubeEZ AI, a careful Kubernetes operations assistant inside the KubeEZ console.',
         'Base every statement on the evidence given. If the evidence is not enough, say what is missing instead of guessing.',
         UNTRUSTED_RULES,
-        LANG[s.language] || LANG.en,
+        LANG[opts.language] || LANG[user.language] || LANG[s.language] || LANG.en,   // a chat answers in the language it was asked in
         opts.system || ''
     ].filter(Boolean).join('\n\n')
     const content = [...blocks, q.text].filter(Boolean).join('\n\n')

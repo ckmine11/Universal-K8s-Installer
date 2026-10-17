@@ -141,7 +141,7 @@ const NAV = [
     ] },
     { title: 'Operations', items: [
         { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
-        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch explain doctor incident what changed rollback undo dry-run quality test exam compare feedback risk score prediction memory leak specialist runbook' },
+        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch explain doctor incident what changed rollback undo dry-run quality test exam compare feedback risk score prediction memory leak specialist runbook chatops telegram slack hinglish yaml generate create advisor security cost savings' },
         { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
         { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review namespace approval two-person temporary elevation kubeconfig' },
@@ -715,6 +715,21 @@ export default function Docs() {
                         <H4>Learned runbooks</H4>
                         <P>When a fix applied from an explanation makes the problem go away within 2 hours, KubeEZ remembers it for that problem on that workload; an undo, or the problem still there 45 minutes later, counts against it. Next time, the explanation shows <B>Worked before</B> with the fix ready to preview. Settings → AI → <B>Runbooks</B> lists them.</P>
                         <Note>A runbook can run <B>by itself</B> only when all of this is true: an admin switched it on, it is a restart or a pod deletion, it worked at least twice and 80 % of the time, “When AI suggests a fix” is <B>Auto for low-risk</B>, AI actions are not stopped, AI fixes do not need a second person, the cluster is not in maintenance, KubeEZ’s own automatic fix does not handle that problem, and it did not run in the last 30 minutes (3 times a day at most). It is dry-run first, you get an alert, and it can be undone.</Note>
+                        <H4>ChatOps — ask from Telegram or Slack</H4>
+                        <P>Settings → AI → <B>ChatOps</B>: switch it on for a Telegram or Slack alert channel, then ask in that chat — in English, हिन्दी or Hinglish; the answer comes in the same language.</P>
+                        <Table head={['You write', 'KubeEZ answers']} rows={[
+                            [<C>sab theek hai?</C>, 'Every cluster with its risk score and the open problems, numbered'],
+                            [<C>kya problem hai</C>, 'The open problems, numbered'],
+                            [<C>2 kyu hua</C>, 'Why problem 2 happens, with the steps (the same explanation as on the Incidents page)'],
+                            [<C>fix 2</C>, 'The suggested fix with its dry-run — and a link to apply it in KubeEZ'],
+                            [<C>prod pe kya badla 6h</C>, 'What changed on prod in the last 6 hours, summarised'],
+                            ['any question', 'Answered from your clusters\u2019 facts (e.g. “what is a DaemonSet?”, “which cluster is oldest?”)']
+                        ]} />
+                        <Note>Chat is read-only: nothing in a cluster changes from a chat message. Only the channel\u2019s own chat is answered; in Telegram groups start with <C>/ask</C> or reply to the bot. Slack: create a <C>/kubeez</C> slash command with the URL shown in Settings and paste the app\u2019s signing secret (needs KubeEZ on a public https address). 20 questions an hour per chat; every question is in the audit trail.</Note>
+                        <H4>Create from a description (text → YAML)</H4>
+                        <P>Cluster → <B>Create</B>: describe what you want (“nginx 1.27, 2 replicas, a service on port 80”). KubeEZ AI writes the YAML; KubeEZ checks it — only namespaced kinds (no RBAC, CRDs or nodes), no privileged containers or host access, pinned images, CPU/memory set — then dry-runs it on the cluster and shows the diff. <B>Apply</B> needs Kubernetes edit access in that namespace (two-person approval can protect it); <B>Undo</B> (24 hours) deletes what was created and puts back what was changed.</P>
+                        <H4>Advisor — security and cost</H4>
+                        <P>Cluster → <B>Advisor</B> looks at every workload. <B>Security</B>: privileged or host access, dangerous capabilities, passwords in plain env vars, running as root, unpinned images, no memory limit, services open to the outside, namespaces without a NetworkPolicy — worst first, each with its fix (system and add-on namespaces are listed apart). <B>Cost</B>: what each workload asks for compared with what it uses now, with a suggested request, idle workloads, and the possible saving per month at your prices (Settings → AI → Cost prices). <B>What to fix first</B> asks AI for the five most valuable steps.</P>
                         <H4>Quality: test and compare engines</H4>
                         <P>Settings → AI → <B>Quality</B> gives every engine the same exam: 16 real-looking failures (out of memory, a wrong image tag, a missing registry login, a failed kubeadm preflight, an expired certificate…) with the same prompts, masking and checks as the real features. Each answer is scored on the right cause (50), proof that is really in the data (20), a usable answer with steps (20) and nothing wrong or unsafe (10). Three traps check that an engine ignores orders hidden in a log, admits when there is too little data, and never repeats a password.</P>
                         <Steps items={[

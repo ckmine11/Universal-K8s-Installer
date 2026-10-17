@@ -156,6 +156,70 @@ ok(auto.ran, `runbook ran (${auto.why || auto.rec?.title})`)
 ok(K(`-n shop get deploy web -o jsonpath='{.spec.template.metadata.annotations.kubectl\\.kubernetes\\.io/restartedAt}'`).out !== restartedBefore, 'the deployment really restarted')
 ok(await waitFor(rolledOut), 'healthy after the automatic restart')
 
+console.log('== phase 5: the advisor on a real cluster')
+const { ADVISOR_SCRIPT, analyze } = await import('../../backend/src/services/ai/advisor.js')
+const adv = analyze((await ssh.execCommand(ADVISOR_SCRIPT)).stdout, {})
+ok(/==END==/.test((await ssh.execCommand(ADVISOR_SCRIPT)).stdout), 'the advisor script runs')
+ok(adv.security.findings.some(f => f.namespace === 'shop' && f.key === 'netpol'), 'no NetworkPolicy in shop is found')
+ok(adv.security.findings.some(f => f.workload === 'Deployment/web' && f.key === 'no-limit'), 'web has no memory limit → found')
+ok(adv.security.findings.some(f => f.scope === 'system'), 'system workloads kept apart')
+ok(adv.cost.nodes.total.cpu > 0 && adv.cost.nodes.used.cpu > 0, `node usage read (used ${adv.cost.nodes.used.cpu.toFixed(2)} of ${adv.cost.nodes.total.cpu} cores)`)
+ok(adv.cost.workloads.some(w => w.workload === 'Deployment/web' && w.advice.kind === 'no-requests'), 'web without requests → cost advice')
+
+console.log('== phase 5: text → YAML on the real cluster (dry-run, diff, apply, undo)')
+const { parseManifests, checkManifests, previewManifests, applyManifests, undoManifests } = await import('../../backend/src/services/ai/manifests.js')
+K('-n shop create configmap site --from-literal=title=old')
+const yamlText = `apiVersion: apps/v1
+kind: Deployment
+metadata: { name: hello }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: hello } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: hello } }
+    spec:
+      containers:
+      - name: hello
+        image: nginx:1.28-alpine
+        ports: [{ containerPort: 80 }]
+        resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 64Mi } }
+        readinessProbe: { httpGet: { path: /, port: 80 } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: hello }
+spec: { selector: { app.kubernetes.io/name: hello }, ports: [{ port: 80 }] }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: site }
+data: { title: new }
+`
+const chk = checkManifests(parseManifests(yamlText), { namespace: 'shop' })
+ok(!chk.blocked && chk.objects.length === 3, `checked: ${chk.problems.map(p => p.text).join('; ') || 'no problems'}`)
+const prev = await previewManifests(ssh, chk.yaml, chk.objects)
+ok(prev.ok && /created \(server dry run\)|configured \(server dry run\)/.test(prev.dryRun), `server dry-run: ${prev.dryRun.split('\n')[0]}`)
+ok(/title: new/.test(prev.diff) && /title: old/.test(prev.diff), 'the diff shows the ConfigMap change')
+ok(K('-n shop get deploy hello').code !== 0, 'the preview created nothing')
+const applied = await applyManifests(ssh, chk, { orgId: C.orgId, cluster: C, user: USER, description: 'hello' })
+ok(applied.created.join() === 'Deployment/hello,Service/hello' && applied.changed.join() === 'ConfigMap/site', `applied: created ${applied.created}, changed ${applied.changed}`)
+ok(await waitFor(() => K('-n shop rollout status deploy/hello --timeout=60s').code === 0), 'hello is running')
+ok(K(`-n shop get cm site -o jsonpath='{.data.title}'`).out === 'new', 'the ConfigMap changed')
+await undoManifests(ssh, applied, USER)
+ok(await waitFor(() => K('-n shop get deploy hello').code !== 0 && K('-n shop get svc hello').code !== 0), 'undo deleted what was created')
+ok(K(`-n shop get cm site -o jsonpath='{.data.title}'`).out === 'old', 'undo put the old ConfigMap back')
+
+console.log('== phase 5: ChatOps answers from the real cluster')
+fs.writeFileSync(path.join(DATA, 'clusters.json'), JSON.stringify([{ id: C.id, clusterName: 'shopcluster', orgId: C.orgId, ownerId: C.ownerId, k8sVersion: '1.35.0', status: 'completed', masterNodes: [{ ip: '127.0.0.1', username: 'root' }], workerNodes: [] }]))
+const { automationEngine } = await import('../../backend/src/services/automationEngine.js')
+automationEngine.connectSSH = async () => ssh
+const { handleChat } = await import('../../backend/src/services/ai/chatops.js')
+aiStore.save(C.orgId, { enabled: false })   // facts only — no model here
+const chg = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'shopcluster pe kya badla 1h' })
+ok(/shopcluster — \d+ change/.test(chg.reply) && /Deployment web rolled out/.test(chg.reply), `"kya badla" answered from the cluster:\n${chg.reply.split('\n').slice(0, 4).join('\n')}`)
+const st = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'sab theek hai?' })
+ok(/shopcluster — risk \d+\/100/.test(st.reply), `"sab theek hai?" → ${st.reply.split('\n')[0]}`)
+
 fs.rmSync(DATA, { recursive: true, force: true })
 console.log(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS')
 process.exit(fails ? 1 : 0)

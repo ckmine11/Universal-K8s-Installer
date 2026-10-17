@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto'
 import express from 'express'
 import { requirePermission } from '../middleware/authMiddleware.js'
-import { canSeeCluster, canOn, accessOn, nsMatches } from '../services/accessControl.js'
+import { canSeeCluster, canOn, accessOn, nsMatches, kubeLevelOn } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { installationManager } from '../services/installationManager.js'
@@ -9,12 +9,16 @@ import { incidentDetector } from '../services/incidentDetector.js'
 import { CATALOG } from '../config/incidentCatalog.js'
 import { auditLog } from '../services/auditLog.js'
 import { requireApproval } from '../services/approvals.js'
-import { AiUnavailable, actionPolicy } from '../services/ai/engine.js'
+import { AiUnavailable, actionPolicy, ask } from '../services/ai/engine.js'
+import { aiStore } from '../services/ai/aiStore.js'
 import { explainInstall, explainIncident, summarizeChanges, collectIncidentData, resolveWorkload } from '../services/ai/doctor.js'
 import { suggest as suggestRunbook, onUndone, runbooksOf, setAuto, remove as removeRunbook } from '../services/ai/runbooks.js'
 import { collectChanges } from '../services/ai/changes.js'
+import { explainIncidentFull, explainKey } from '../services/ai/incidentExplain.js'
 import { planAction, applyAction, undoAction, actionLog, view, cleanSpec, ACTION_TYPES } from '../services/ai/actions.js'
 import { riskScore, newestSnapshot, cachedSnapshot } from '../services/ai/risk.js'
+import { ADVISOR_SCRIPT, analyze as analyzeAdvisor, advisorText } from '../services/ai/advisor.js'
+import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView } from '../services/ai/manifests.js'
 import { offsiteStore } from '../services/offsiteStore.js'
 import { complianceStore } from '../services/complianceService.js'
 
@@ -101,19 +105,36 @@ router.post('/explain/incident/:id', requirePermission('ai:use'), async (req, re
     const mine = inc && (req.user.role === 'superadmin' || (inc.orgId && inc.orgId === req.user.orgId) || (!inc.orgId && inc.ownerId === req.user.id))
     if (!inc || !mine || !cluster || !canSeeCluster(req.user, cluster) || !canOn(req.user, 'incident:view', cluster)) return res.status(404).json({ error: 'Incident not found' })
     const canAct = canOn(req.user, 'incident:act', cluster)
-    await runJob(req, res, `inc:${inc.id}:${inc.lastSeen}:${inc.status}`, async () => {
-        // fresh cluster data and the changes before it, side by side — best effort, never blocks the answer
-        const t0 = Date.parse(inc.timestamp)
-        const [freshR, changes] = await Promise.all([
-            withTimeout(onCluster(cluster, (ssh) => collectIncidentData(ssh, inc)), 35000, 'the cluster did not answer in time').then(v => ({ v }), e => ({ e })),
-            withTimeout(collectChanges(cluster, { from: t0 - 3 * 3600e3, to: Math.max(Date.parse(inc.lastSeen || inc.timestamp), t0) + 60e3 }), 45000, 'timeout').then(c => c.items, () => [])
-        ])
-        const fresh = freshR.v || { data: [], workload: null }
-        const related = inc.causedBy ? incidentDetector.find(inc.causedBy) : null
-        const runbook = suggestRunbook(cluster.orgId, inc.reason, fresh.workload)
-        const out = await explainIncident(req.user, { incident: inc, catalog: CATALOG[inc.reason], cluster, fresh, changes, related, runbook })
-        return { ...out, runbook, changes: changes.slice(0, 15), freshError: freshR.e?.message || null }
-    }, { fresh: !!req.body?.fresh, decorate: (v) => ({ ...v, canAct }) })
+    await runJob(req, res, explainKey(inc), () => explainIncidentFull(req.user, inc, cluster, { fresh: !!req.body?.fresh }),
+        { fresh: !!req.body?.fresh, decorate: (v) => ({ ...v, canAct }) })
+})
+
+// ── Text → YAML (generating runs as a job; nothing touches a cluster here) ──
+router.post('/generate-yaml', requirePermission('ai:use'), async (req, res) => {
+    const cluster = await visibleCluster(req, res, req.body?.clusterId)
+    if (!cluster) return
+    const namespace = String(req.body?.namespace || 'default')
+    const description = String(req.body?.description || '').slice(0, 2000)
+    const context = `Kubernetes ${cluster.k8sVersion}; installed add-ons: ${Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}`
+    await runJob(req, res, `yaml:${req.user.id}:${cluster.id}:${namespace}:${Buffer.from(description).toString('base64').slice(0, 200)}`,
+        () => generateManifests(req.user, { description, namespace, context }), { fresh: true })
+})
+// the user's own edits are checked the same way (no AI)
+router.post('/check-yaml', (req, res) => {
+    try { res.json(checkManifests(parseManifests(req.body?.yaml), { namespace: String(req.body?.namespace || 'default') })) } catch (e) { fail(res, e) }
+})
+
+// ── Advisor: the AI summary of the security and cost findings ──
+router.post('/advisor/:clusterId/summary', requirePermission('ai:use'), async (req, res) => {
+    const cluster = await visibleCluster(req, res, req.params.clusterId)
+    if (!cluster) return
+    await runJob(req, res, `adv:${req.user.id}:${cluster.id}:${Math.floor(Date.now() / 300e3)}`, async () => {
+        const a = await advisorFor(req, cluster, false)
+        const r = await ask(req.user, { task: 'summarize', purpose: 'advisor', maxTokens: 600, clusterId: cluster.id, clusterName: cluster.clusterName,
+            system: 'You are a Kubernetes security and cost advisor. From the findings, give the 5 most important things to do first, most valuable first: one line each, what and why, naming the workload. High security risks before cost. Only use the findings given.',
+            data: [{ label: 'findings', text: advisorText(a) }], question: 'What should we fix first?' })
+        return { summary: r.text, engine: { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } }
+    })
 })
 
 // ── Learned runbooks ──
@@ -184,6 +205,80 @@ actionsRouter.get('/:id/risk', requirePermission('cluster:view'), async (req, re
     const c = req.permissionCluster
     if (!c || !canSeeCluster(req.user, c)) return res.status(404).json({ error: 'Cluster not found' })
     try { res.json(await riskOf(c, { deep: req.query.quick !== '1' })) } catch (e) { fail(res, e) }
+})
+
+// ── Advisor facts (read-only, cached 5 minutes) ──
+const advCache = new Map()
+async function advisorFor(req, cluster, refresh) {
+    const hit = advCache.get(cluster.id)
+    let a = !refresh && hit && Date.now() - hit.at < 5 * 60e3 ? hit.value : null
+    if (!a) {
+        const out = await withTimeout(onCluster(cluster, async (ssh) => (await ssh.execCommand(ADVISOR_SCRIPT)).stdout || ''), 90000, 'The cluster did not answer in time')
+        if (!/==END==/.test(out)) throw Object.assign(new Error('Could not read the cluster'), { status: 502 })
+        a = analyzeAdvisor(out, { rates: aiStore.get(cluster.orgId).costRates })
+        advCache.set(cluster.id, { at: Date.now(), value: a })
+    }
+    // members limited to some namespaces see only those
+    const nss = accessOn(req.user, cluster).namespaces
+    if (!nss) return a
+    const mine = (ns) => nsMatches(nss, ns)
+    return { ...a, security: { ...a.security, findings: a.security.findings.filter(f => mine(f.namespace)) }, cost: { ...a.cost, workloads: a.cost.workloads.filter(w => mine(w.namespace)), nodes: null, savings: null }, limited: true }
+}
+actionsRouter.get('/:id/advisor', requirePermission('cluster:view'), async (req, res) => {
+    const cluster = req.permissionCluster
+    if (!cluster || !canSeeCluster(req.user, cluster)) return res.status(404).json({ error: 'Cluster not found' })
+    try { res.json(await advisorFor(req, cluster, req.query.refresh === '1')) } catch (e) { fail(res, e) }
+})
+
+// ── Text → YAML on a cluster: preview (dry-run + diff), apply, undo ──
+function checkWrite(req, res) {
+    const cluster = req.permissionCluster
+    if (!cluster || !canSeeCluster(req.user, cluster)) { res.status(404).json({ error: 'Cluster not found' }); return null }
+    if (!['edit', 'admin'].includes(kubeLevelOn(req.user, cluster))) { res.status(403).json({ error: 'Your role may not change things inside this cluster (needs Kubernetes edit access)' }); return null }
+    let checked
+    const namespace = String(req.body?.namespace || 'default')
+    try { checked = checkManifests(parseManifests(req.body?.yaml), { namespace }) } catch (e) { res.status(e.status || 400).json({ error: e.message }); return null }
+    if (checked.blocked) { res.status(400).json({ error: 'Some objects are not allowed — fix the problems marked as blocking', problems: checked.problems }); return null }
+    const nss = accessOn(req.user, cluster).namespaces
+    if (nss && !nsMatches(nss, namespace)) { res.status(403).json({ error: `You may only change: ${nss.join(', ')}` }); return null }
+    const policy = actionPolicy(req.user.orgId, { risk: 'medium' })
+    if (policy === 'blocked') { res.status(403).json({ error: 'AI actions are stopped in this workspace (Settings → AI → kill switch).', code: 'AI_ACTIONS_STOPPED' }); return null }
+    if (policy === 'suggest') { res.status(403).json({ error: 'KubeEZ AI is set to "Suggest only" — copy the YAML and apply it yourself.', code: 'AI_SUGGEST_ONLY' }); return null }
+    return { cluster, checked, namespace }
+}
+actionsRouter.get('/:id/ai-manifests', requirePermission('cluster:view'), (req, res) => {
+    if (!req.permissionCluster) return res.status(404).json({ error: 'Cluster not found' })
+    res.json({ applied: manifestLog.list(req.user.orgId, req.permissionCluster.id).slice(0, 30).map(manifestView) })
+})
+actionsRouter.post('/:id/ai-manifests/preview', requirePermission('cluster:view'), async (req, res) => {
+    const ok = checkWrite(req, res); if (!ok) return
+    try { res.json({ ...ok.checked, ...(await withTimeout(onCluster(ok.cluster, (ssh) => previewManifests(ssh, ok.checked.yaml, ok.checked.objects)), 60000, 'The cluster did not answer in time')) }) }
+    catch (e) { fail(res, e) }
+})
+actionsRouter.post('/:id/ai-manifests', requirePermission('cluster:view'), requireApproval('ai:apply'), async (req, res) => {
+    const ok = checkWrite(req, res); if (!ok) return
+    try {
+        const rec = await withTimeout(onCluster(ok.cluster, async (ssh) => {
+            const p = await previewManifests(ssh, ok.checked.yaml, ok.checked.objects)
+            if (!p.ok) throw Object.assign(new Error(`The dry-run failed, nothing was changed: ${p.dryRun.slice(0, 300)}`), { status: 400 })
+            return applyManifests(ssh, ok.checked, { orgId: req.user.orgId, cluster: ok.cluster, user: req.user, description: req.body?.description })
+        }), 90000, 'The cluster did not answer in time — check the cluster before trying again')
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.manifests_applied', target: { clusterId: ok.cluster.id, clusterName: ok.cluster.clusterName }, detail: `${ok.namespace}: created ${rec.created.join(', ') || '—'}; changed ${rec.changed.join(', ') || '—'}` })
+        res.json(manifestView(rec))
+    } catch (e) { fail(res, e) }
+})
+actionsRouter.post('/:id/ai-manifests/:mid/undo', requirePermission('cluster:view'), async (req, res) => {
+    const cluster = req.permissionCluster
+    const rec = manifestLog.get(req.params.mid)
+    if (!cluster || !rec || rec.orgId !== req.user.orgId || rec.clusterId !== cluster.id) return res.status(404).json({ error: 'Not found' })
+    if (!['edit', 'admin'].includes(kubeLevelOn(req.user, cluster))) return res.status(403).json({ error: 'Your role may not change things inside this cluster' })
+    const nss = accessOn(req.user, cluster).namespaces
+    if (nss && !rec.objects.every(o => nsMatches(nss, o.namespace))) return res.status(403).json({ error: `You may only change: ${nss.join(', ')}` })
+    try {
+        const done = await withTimeout(onCluster(cluster, (ssh) => undoManifests(ssh, rec, req.user)), 90000, 'The cluster did not answer in time')
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.manifests_undone', target: { clusterId: cluster.id, clusterName: cluster.clusterName }, detail: done.undoOutput.slice(0, 400) })
+        res.json(manifestView(done))
+    } catch (e) { fail(res, e) }
 })
 
 // ── Safe fixes: preview (dry-run), apply, undo ──
