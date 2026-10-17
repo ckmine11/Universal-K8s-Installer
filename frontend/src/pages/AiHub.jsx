@@ -8,6 +8,7 @@ import { aiJob } from '../components/ai/aiJob'
 import YamlStudio from '../components/ai/YamlStudio'
 import Advisor from '../components/ai/Advisor'
 import WhatChanged from '../components/ai/WhatChanged'
+import FixPreview, { actionLabel } from '../components/ai/FixPreview'
 
 // The AI section of the sidebar: Ask AI (chat about your clusters, in English,
 // Hindi or Hinglish) and the per-cluster AI tools with a cluster picker.
@@ -16,7 +17,7 @@ const TOOLS = {
     advisor: { title: 'Advisor', icon: Coins, description: 'Security and cost advice for every workload of a cluster.' },
     changes: { title: 'What changed', icon: History, description: 'Everything that changed on a cluster — by KubeEZ and inside Kubernetes.' }
 }
-const SUGGESTIONS = ['sab theek hai?', 'kitne namespace hain?', 'kaunse pod fail ho rahe hain?', 'nodes dikhao', 'kya problem hai', 'why 1', 'what changed in the last 6h', 'What is a DaemonSet?']
+const SUGGESTIONS = ['sab theek hai?', 'kitne namespace hain?', 'kaunse pod fail ho rahe hain?', 'crash wala pod check karo', 'nodes dikhao', 'kya problem hai', 'why 1', 'what changed in the last 6h', 'What is a DaemonSet?']
 const STORE = 'kz.ai.chat'
 
 // links in answers become clickable; nothing else is interpreted
@@ -38,7 +39,7 @@ function AskAi() {
         setText(''); setBusy(true)
         setMsgs(m => [...m, { who: 'me', text: question }])
         const { ok, data } = await aiJob('/api/ai/chat', { text: question })
-        setMsgs(m => [...m, { who: 'ai', text: ok ? data.reply : `⚠ ${data.error}`, direct: ok && !!data.direct }])
+        setMsgs(m => [...m, { who: 'ai', text: ok ? data.reply : `⚠ ${data.error}`, direct: ok && !!data.direct, fix: ok ? data.fix || null : null }])
         setBusy(false)
     }
 
@@ -49,7 +50,7 @@ function AskAi() {
                     <div className="text-center py-10">
                         <Bot className="w-10 h-10 mx-auto text-violet-300" />
                         <p className="mt-3 text-sm text-slate-300">Ask about your clusters — in English, हिन्दी or Hinglish. The answer comes in the same language.</p>
-                        <p className="mt-1 text-xs text-slate-500">Only about the clusters you may see. Nothing changes from here — fixes are previewed and applied on the incident.</p>
+                        <p className="mt-1 text-xs text-slate-500">Ask anything about what runs in your clusters, or say “web-2 ka log check karo” — KubeEZ reads its logs and events and tells you the problem and how to fix it. Only about what you may see; a fix runs only after you preview (dry-run) and apply it.</p>
                     </div>
                 )}
                 {msgs.map((m, i) => (
@@ -57,6 +58,9 @@ function AskAi() {
                         <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${m.who === 'me' ? 'bg-blue-500/20 text-white' : 'bg-white/[0.04] border border-white/[0.07] text-slate-200'}`}>
                             <Linkified text={m.text} />
                             {m.direct && <div className="mt-1.5 text-[10px] uppercase tracking-wide text-emerald-300/80">Live from the cluster · exact</div>}
+                            {m.fix && <div className="mt-3 whitespace-normal">{m.fix.canAct
+                                ? <FixPreview clusterId={m.fix.clusterId} spec={m.fix.spec} />
+                                : <p className="text-[11px] text-slate-500">Suggested fix: {actionLabel(m.fix.spec)} — someone who may act on incidents can apply it.</p>}</div>}
                         </div>
                     </div>
                 ))}
@@ -66,7 +70,7 @@ function AskAi() {
             <div className="border-t border-white/[0.07] p-3 space-y-2">
                 <div className="flex flex-wrap gap-1.5">{SUGGESTIONS.map(x => <button key={x} onClick={() => send(x)} disabled={busy} className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-slate-400 hover:text-white hover:border-white/20">{x}</button>)}</div>
                 <form onSubmit={e => { e.preventDefault(); send() }} className="flex gap-2">
-                    <input className="kz-input flex-1" value={text} onChange={e => setText(e.target.value)} maxLength={2000} placeholder="e.g. prod pe kya badla aaj?  ·  why is problem 2 happening?" aria-label="Ask KubeEZ AI" autoFocus />
+                    <input className="kz-input flex-1" value={text} onChange={e => setText(e.target.value)} maxLength={2000} placeholder="e.g. web-2 ka log check karo  ·  kitne namespace hain?  ·  prod pe kya badla aaj?" aria-label="Ask KubeEZ AI" autoFocus />
                     <button type="submit" disabled={busy || !text.trim()} className="kz-btn-primary">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
                     {msgs.length > 0 && <button type="button" onClick={() => setMsgs([])} className="kz-btn-ghost !text-xs">Clear</button>}
                 </form>

@@ -275,6 +275,15 @@ ok(/shop\/web — \d+\/\d+ ready/.test(depA.reply), `"shop me deployments" → $
 const verA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'kubernetes version kya hai' })
 ok(/^shopcluster: Kubernetes v1\.\d+\.\d+/.test(verA.reply), `"version" → ${verA.reply}`)
 
+console.log('== Ask AI: "check the logs of this pod" — real logs, describe and events → problem, cause, fix')
+t0 = Date.now()
+const look = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'crasher ka log check karo' })
+ok(/^🔎 shopcluster: shop\/crasher-[a-z0-9-]+ — (CrashLoopBackOff|Error)/.test(look.reply), `found the app's pod: ${look.reply.split('\n')[0]} (${Date.now() - t0} ms)`)
+ok(/› FATAL: cannot connect to postgres at db:5432/.test(look.reply) && /Aakhri log lines:\n {2}FATAL: cannot connect to postgres/.test(look.reply), 'the real crash log is the proof, and is shown')
+ok(/Problem: The app cannot reach something it depends on: "cannot connect to postgres at db:5432"/.test(look.reply) && /Aise theek karo:\n1\. /.test(look.reply), `KubeEZ's own diagnosis and fix steps (AI off):\n${look.reply.split('\n').slice(2, 7).join('\n')}`)
+const guess = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'crash wala pod check karo' })
+ok(/shop\/crasher-/.test(guess.reply.split('\n')[0]), `"crash wala pod check karo" picks the crashing pod: ${guess.reply.split('\n')[0]}`)
+
 fs.rmSync(DATA, { recursive: true, force: true })
 console.log(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS')
 process.exit(fails ? 1 : 0)

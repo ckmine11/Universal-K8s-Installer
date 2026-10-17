@@ -9,7 +9,7 @@ const CAP = 'head -c 3000000'
 export const SNAPSHOT_SCRIPT = [
     `echo '==NS=='; ${K} get ns -o jsonpath='{range .items[*]}{.metadata.name}${T}{.status.phase}${T}{.metadata.creationTimestamp}${N}{end}' 2>/dev/null`,
     `echo '==NODES=='; ${K} get nodes -o jsonpath='{range .items[*]}{.metadata.name}${T}{.status.conditions[?(@.type=="Ready")].status}${T}{.status.nodeInfo.kubeletVersion}${T}{.status.capacity.cpu}${T}{.status.capacity.memory}${T}{.metadata.labels}${T}{.status.addresses[?(@.type=="InternalIP")].address}${T}{.spec.unschedulable}${N}{end}' 2>/dev/null`,
-    `echo '==PODS=='; ${K} get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}${T}{.metadata.name}${T}{.status.phase}${T}{range .status.containerStatuses[*]}{.ready}{","}{end}${T}{range .status.containerStatuses[*]}{.restartCount}{","}{end}${T}{range .status.containerStatuses[*]}{.state.waiting.reason}{.state.terminated.reason}{","}{end}${T}{.spec.nodeName}${T}{.metadata.ownerReferences[0].kind}${T}{range .spec.containers[*]}{.image}{" "}{end}${N}{end}' 2>/dev/null | ${CAP}`,
+    `echo '==PODS=='; ${K} get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}${T}{.metadata.name}${T}{.status.phase}${T}{range .status.containerStatuses[*]}{.ready}{","}{end}${T}{range .status.containerStatuses[*]}{.restartCount}{","}{end}${T}{range .status.containerStatuses[*]}{.state.waiting.reason}{.state.terminated.reason}{","}{end}${T}{.spec.nodeName}${T}{.metadata.ownerReferences[0].kind}${T}{range .spec.containers[*]}{.image}{" "}{end}${T}{.metadata.ownerReferences[0].name}${N}{end}' 2>/dev/null | ${CAP}`,
     `echo '==DEPLOY=='; ${K} get deploy -A -o jsonpath='{range .items[*]}{.metadata.namespace}${T}{.metadata.name}${T}{.spec.replicas}${T}{.status.readyReplicas}${N}{end}' 2>/dev/null`,
     `echo '==STS=='; ${K} get sts -A -o jsonpath='{range .items[*]}{.metadata.namespace}${T}{.metadata.name}${T}{.spec.replicas}${T}{.status.readyReplicas}${N}{end}' 2>/dev/null`,
     `echo '==DS=='; ${K} get ds -A -o jsonpath='{range .items[*]}{.metadata.namespace}${T}{.metadata.name}${T}{.status.desiredNumberScheduled}${T}{.status.numberReady}${N}{end}' 2>/dev/null`,
@@ -29,9 +29,9 @@ const GiB = (q) => { const m = /^(\d+)(Ki|Mi|Gi)?$/.exec(String(q || '')); if (!
 export function parseSnapshot(out) {
     const s = {}
     for (const part of String(out || '').split(/^==(?=[A-Z]+==)/m)) { const m = /^([A-Z]+)==\n?/.exec(part); if (m) s[m[1]] = part.slice(m[0].length).trim() }
-    const pods = rows(s.PODS).map(([ns, name, phase, ready, restarts, reasons, node, owner, images]) => {
+    const pods = rows(s.PODS).map(([ns, name, phase, ready, restarts, reasons, node, owner, images, ownerName]) => {
         const r = list(ready), why = list(reasons).find(x => x && !['Completed'].includes(x)) || null
-        return { ns, name, phase, ready: r.length ? r.filter(x => x === 'true').length : 0, containers: r.length, restarts: list(restarts).reduce((a, x) => a + (Number(x) || 0), 0), reason: why, node: node || null, owner: owner || null, images: String(images || '').trim().split(/\s+/).filter(Boolean) }
+        return { ns, name, phase, ready: r.length ? r.filter(x => x === 'true').length : 0, containers: r.length, restarts: list(restarts).reduce((a, x) => a + (Number(x) || 0), 0), reason: why, node: node || null, owner: owner || null, ownerName: ownerName || null, images: String(images || '').trim().split(/\s+/).filter(Boolean) }
     })
     return {
         at: new Date().toISOString(),
@@ -75,6 +75,8 @@ export async function snapshotOf(cluster, { fresh = false } = {}) {
     return promise
 }
 export function _resetSnapshots() { cache.clear() }
+/** The last snapshot if there is one (no cluster call) — to tell whether a question names something in it. */
+export function peekSnapshot(clusterId) { const hit = cache.get(clusterId); return hit?.snap && Date.now() - hit.at < 15 * 60e3 ? hit.snap : null }
 export function _setSnapshot(clusterId, snap) { cache.set(clusterId, { at: Date.now(), snap }) }
 
 // ── what was asked ──
