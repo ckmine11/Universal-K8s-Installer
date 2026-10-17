@@ -45,13 +45,15 @@ export default function AiExplain({ url, label = 'Explain with AI', hint, cluste
         </div>
     )
 
-    const { answer: a, engine, changes, freshError, canAct, cached } = state.data
+    const { answer: a, engine, changes, freshError, canAct, cached, specialist, runbook, allowedActions = [] } = state.data
+    // the fix that worked before, for THIS incident's pod / workload
+    const rbSpec = runbook && (() => { const x = allowedActions.find(s => s.type === runbook.action.type && (s.kind === 'pod' || s.name === runbook.action.name)); return x ? { ...x, ...(runbook.action.type === 'scale' ? { replicas: runbook.action.replicas } : {}) } : null })()
     const conf = CONF[a.confidence] || CONF.medium
     return (
         <div className="rounded-2xl border border-violet-400/25 bg-violet-500/[0.04] p-4 space-y-4">
             <div className="flex flex-wrap items-center gap-2">
                 <Sparkles className="w-4 h-4 text-violet-300" />
-                <span className="text-sm font-semibold text-white flex-1">KubeEZ AI</span>
+                <span className="text-sm font-semibold text-white flex-1">KubeEZ AI{specialist && <span className="ml-2 kz-chip !text-violet-300">{specialist}</span>}</span>
                 <span className={`kz-chip ${conf[1]}`}>{conf[0]}</span>
                 <button onClick={() => run(true)} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Ask again" aria-label="Ask again"><RefreshCw className="w-3.5 h-3.5" /></button>
             </div>
@@ -74,6 +76,12 @@ export default function AiExplain({ url, label = 'Explain with AI', hint, cluste
             {a.unverified > 0 && <p className="text-[11px] text-amber-300/80">{a.unverified} quoted line(s) were not in the data and were removed.</p>}
             {a.fix?.length > 0 && <div><p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400"><ListChecks className="w-3.5 h-3.5" /> What to do</p><Steps items={a.fix} caution={a.cautionSteps || []} /></div>}
             {a.blockedSteps?.length > 0 && <p className="flex items-start gap-1.5 text-[11px] text-red-300"><AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> KubeEZ removed {a.blockedSteps.length} step(s) that would damage the cluster{engine.suspicious ? ' — the data contained text trying to give the AI orders' : ''}. Do not run: <code className="font-mono break-all">{a.blockedSteps.join(' · ')}</code></p>}
+            {runbook && (
+                <div className="rounded-xl border border-emerald-400/25 bg-emerald-500/[0.05] p-3 space-y-2">
+                    <p className="text-[11px] font-semibold text-emerald-200">Worked before on this workload: {runbook.action.type} {runbook.scope} — {runbook.successes} of {runbook.successes + runbook.failures} times{runbook.auto ? ' (runs by itself)' : ''}</p>
+                    {rbSpec && clusterId && canAct && !(a.action && a.action.type === rbSpec.type && a.action.name === rbSpec.name) && <FixPreview clusterId={clusterId} spec={rbSpec} incidentId={incidentId} />}
+                </div>
+            )}
             {a.action && clusterId && (canAct ? <FixPreview clusterId={clusterId} spec={a.action} incidentId={incidentId} /> : <p className="text-[11px] text-slate-500">Suggested fix: {a.action.type} {a.action.kind}/{a.action.name} — someone who may act on incidents can apply it.</p>)}
             {a.missing && <p className="flex items-start gap-1.5 text-[11px] text-slate-500"><HelpCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> To be sure: {a.missing}</p>}
             {changes?.length > 0 && !a.change && (

@@ -13,6 +13,13 @@ import { EXAM, EXAM_VERSION, QUESTION } from '../../config/aiExam.js'
 import { ask } from './engine.js'
 import { aiStore } from './aiStore.js'
 import { shape, finish, INSTALL_SYSTEM, incidentSystem, TOKENS } from './doctor.js'
+import { SPECIALISTS, pickSpecialist } from './specialists.js'
+
+// the same specialist the real explainer would pick for this case
+const specialistFor = (c) => {
+    const first = c.data[0].text
+    return pickSpecialist({ message: first, reason: (first.match(/\(([A-Za-z]+)\)/) || [])[1] }, c.data.map(d => d.text).join('\n'))
+}
 
 const FILE = path.join(DATA_DIR, 'ai-quality.json')
 const MAX_RUNS = 60
@@ -63,7 +70,8 @@ export async function runCase(user, engine, c) {
     try {
         const r = await ask(user, {
             only: engine, trace: false, task: 'explain', purpose: `quality test: ${c.id}`, json: true, validate: shape, maxTokens: TOKENS[c.kind] || TOKENS.incident,
-            system: c.kind === 'install' ? INSTALL_SYSTEM : incidentSystem(), data: c.data, question: QUESTION[c.kind] || QUESTION.incident
+            system: c.kind === 'install' ? INSTALL_SYSTEM : `${incidentSystem()}\n\n${SPECIALISTS[specialistFor(c)].prompt}`,
+            data: c.data, question: QUESTION[c.kind] || QUESTION.incident
         })
         const answer = finish(r.json, c.data.map(d => d.text).join('\n'))
         return { id: c.id, ms: Date.now() - t0, model: r.model, ...scoreCase(c, answer), answer: { summary: answer.summary, cause: answer.cause, fix: answer.fix, blockedSteps: answer.blockedSteps, confidence: answer.confidence, claimedConfidence: answer.claimedConfidence, evidence: answer.evidence, unverified: answer.unverified } }

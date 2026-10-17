@@ -39,6 +39,7 @@ import ExplorerTab from '../components/explorer/ExplorerTab'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
 import WhatChanged from '../components/ai/WhatChanged'
+import RiskCard from '../components/ai/RiskCard'
 
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
@@ -351,6 +352,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                     <div className="mb-6">
                         <HealthScoreCard clusterId={id} installed={!!cluster.addons?.explorer} onOpenExplorer={() => setTab('explorer')} />
                     </div>
+                    <div className="mb-6"><RiskCard clusterId={id} /></div>
                     {/* Quick Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                         <div className="glass p-6 rounded-2xl border border-white/5 relative overflow-hidden">

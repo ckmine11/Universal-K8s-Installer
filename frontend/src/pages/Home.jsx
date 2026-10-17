@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { RISK_TONE } from '../components/ai/RiskCard'
 import { createPortal } from 'react-dom'
 import { useNavigate, Link } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
@@ -46,6 +47,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
     const canCreate = can(user?.role, 'cluster:create')
     const [savedClusters, setSavedClusters] = useState([])
     const [incidents, setIncidents] = useState([])
+    const [risk, setRisk] = useState({})        // clusterId → { score, level, top }
     const [loading, setLoading] = useState(true)
     const [isFreePlan, setIsFreePlan] = useState(false)
 
@@ -82,6 +84,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
             .then(sub => { if (sub) setIsFreePlan(!sub.plan || String(sub.plan).toUpperCase() === 'FREE') })
             .catch(() => { })
         apiFetch('/api/incidents').then(r => r.ok ? r.json() : []).then(l => setIncidents(Array.isArray(l) ? l : [])).catch(() => { })
+        apiFetch('/api/clusters/risk-summary').then(r => r.ok ? r.json() : {}).then(setRisk).catch(() => { })
     }, [])
 
     const fetchSavedClusters = async () => {
@@ -185,7 +188,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     </div>
                     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                         {savedClusters.map((c, i) => (
-                            <ClusterCard key={c.id} c={c} i={i} status={statusOf(c)}
+                            <ClusterCard key={c.id} c={c} i={i} status={statusOf(c)} risk={risk[c.id]}
                                 canScale={can(user?.role, 'cluster:scale', c.id)} canAddons={can(user?.role, 'addon:install', c.id)} canDelete={can(user?.role, 'cluster:delete', c.id)}
                                 onOpen={() => navigate(`/cluster/${c.id}`)}
                                 onAddons={() => { setSelectedClusterId(c.id); setAddonSelection({}); setIsAddonModalOpen(true) }}
@@ -248,7 +251,7 @@ function Stat({ icon: Icon, label, value, of, color, onClick }) {
     )
 }
 
-function ClusterCard({ c, i, status, canScale, canAddons, canDelete, onOpen, onAddons, onScale, onDelete }) {
+function ClusterCard({ c, i, status, risk, canScale, canAddons, canDelete, onOpen, onAddons, onScale, onDelete }) {
     const masters = c.masterNodes || [], workers = c.workerNodes || []
     const addons = Object.entries(c.addons || {}).filter(([, v]) => v).map(([k]) => ADDONS_LIST.find(a => a.key === k)?.name || k)
     return (
@@ -263,6 +266,7 @@ function ClusterCard({ c, i, status, canScale, canAddons, canDelete, onOpen, onA
                     <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-display text-lg font-semibold text-white truncate">{c.clusterName}</h4>
                         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${status.tone}`}>{status.label}</span>
+                        {risk && <span title={risk.top ? `Biggest risk: ${risk.top}` : 'No known risk'} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${RISK_TONE[risk.level]?.chip || ''}`}>{RISK_TONE[risk.level]?.label} · {risk.score}</span>}
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-xs text-slate-400 flex-wrap">
                         <span className="font-mono">v{c.k8sVersion}</span>

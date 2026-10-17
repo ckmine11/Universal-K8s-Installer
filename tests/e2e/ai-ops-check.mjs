@@ -100,6 +100,62 @@ ok(ex.answer.evidence.length === 1 && /postgres/.test(ex.answer.evidence[0]) && 
 ok(ex.answer.action?.type === 'restart' && ex.answer.action.name === 'crasher', 'suggested fix is for this workload')
 model.close()
 
+console.log('== phase 4: predictions read real data')
+const { podFacts, containerMemory } = await import('../../backend/src/services/predict.js')
+K(`-n shop create deployment leaky --image=busybox:1.36 -- sh -c 'x=; i=0; while [ $i -lt 40 ]; do x="$x$(head -c 1048576 /dev/zero | tr "\\\\0" a)"; i=$((i+1)); sleep 2; done; sleep 3600'`)
+K(`-n shop set resources deploy/leaky --limits=memory=256Mi`)
+ok(await waitFor(() => K(`-n shop get pod -l app=leaky -o jsonpath='{.items[0].status.phase}'`).out === 'Running'), 'leaky is running')
+await sleep(20000)
+const facts = podFacts(JSON.parse(K('get pods -A -o json').stdout))
+const leakyKey = [...facts.limits.keys()].find(k => k.startsWith('shop/leaky-'))
+ok(leakyKey && facts.limits.get(leakyKey).limit === 256 * 1024 ** 2 && /^ReplicaSet\//.test(facts.limits.get(leakyKey).ownerHint), `memory limit read from the real pod (${leakyKey})`)
+const nodeName = K(`get nodes -o jsonpath='{.items[0].metadata.name}'`).out
+const mem = containerMemory(`==NODE ${nodeName}\n${K(`get --raw /api/v1/nodes/${nodeName}/proxy/stats/summary`).stdout}\n==END`)
+ok(mem.get(leakyKey) > 5 * 1024 ** 2, `per-container memory from the real kubelet (${Math.round((mem.get(leakyKey) || 0) / 1024 ** 2)} MB)`)
+ok(facts.restarts.has(leakyKey.split('/').slice(0, 2).join('/')), 'restart counts read')
+
+console.log('== phase 4: specialists collect real evidence')
+K(`-n shop apply -f - <<'EOF'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: orphan }
+spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 1Gi } }, storageClassName: does-not-exist }
+EOF`)
+const pvcInc = { id: 'p1', reason: 'PVCPending', category: 'storage', target: 'orphan', namespace: 'shop', message: 'PersistentVolumeClaim shop/orphan Pending' }
+const pvcData = await collectIncidentData(ssh, pvcInc)
+ok(pvcData.specialist === 'storage', `storage specialist picked (${pvcData.specialist})`)
+ok(pvcData.data.some(d => /storage: claims/.test(d.label) && /orphan/.test(d.text)), `the claims were read (${pvcData.data.map(d => d.label).join(', ')})`)
+const netInc = { id: 'n1', reason: 'CrashLoopBackOff', category: 'pod', target: cpod, namespace: 'shop', owner: `ReplicaSet/${rs}`, message: 'x', evidence: [{ title: 'log', text: 'dial tcp: lookup orders-db on 10.96.0.10:53: no such host' }] }
+const netData = await collectIncidentData(ssh, netInc)
+ok(netData.specialist === 'network' && netData.data.some(d => /coredns/i.test(d.text)), 'networking specialist reads CoreDNS and Services')
+
+console.log('== phase 4: risk score reads the real snapshot')
+const { newestSnapshot, riskScore } = await import('../../backend/src/services/ai/risk.js')
+dx('mkdir -p /var/lib/etcd-backup && touch /var/lib/etcd-backup/manual-test.db')
+const snap = await newestSnapshot({ ...C, id: 'c-ai-snap' }, async () => ssh)
+ok(snap.newestAt && Date.now() - Date.parse(snap.newestAt) < 10 * 60e3, `newest snapshot found (${snap.newestAt})`)
+const risk = riskScore({ cluster: { ...C, k8sVersion: '1.35.0' }, incidents: [], monitoring: { watched: true, connected: true }, snapshot: snap, offsite: false, compliance: null })
+ok(risk.factors.some(f => f.key === 'single-cp') && !risk.factors.some(f => f.key === 'no-backup'), `risk ${risk.score} (${risk.level}): ${risk.factors.map(f => f.key).join(', ')}`)
+
+console.log('== phase 4: an automatic runbook runs for real')
+const runbooks = await import('../../backend/src/services/ai/runbooks.js')
+const { actionLog } = await import('../../backend/src/services/ai/actions.js')
+const wl = { kind: 'deployment', name: 'web', namespace: 'shop' }
+for (let i = 0; i < 3; i++) {
+    actionLog.all().unshift({ id: `seed${i}`, orgId: C.orgId, clusterId: C.id, clusterName: C.clusterName, spec: { type: 'restart', ...wl }, incidentId: `old${i}`, by: 'boss', at: new Date().toISOString(), status: 'applied', undo: { possible: false }, workload: wl })
+    runbooks.onIncidentClosed({ id: `old${i}`, orgId: C.orgId, clusterId: C.id, reason: 'MemoryLeakSuspected' })
+}
+const book = runbooks.runbooksOf(C.orgId).find(x => x.scope === 'shop/deployment/web')
+runbooks.setAuto(C.orgId, book.id, true)
+aiStore.save(C.orgId, { autonomy: 'auto', actionsEnabled: true, enabled: true })
+const restartedBefore = K(`-n shop get deploy web -o jsonpath='{.spec.template.metadata.annotations.kubectl\\.kubernetes\\.io/restartedAt}'`).out
+const auto = await runbooks.maybeAutoRun(C, { id: 'leak1', reason: 'MemoryLeakSuspected', target: 'web-x', namespace: 'shop' }, {
+    resolveWorkload: async () => wl, onCluster: (fn) => fn(ssh), approvalsOn: () => false, maintenance: () => false, builtinAuto: () => false
+})
+ok(auto.ran, `runbook ran (${auto.why || auto.rec?.title})`)
+ok(K(`-n shop get deploy web -o jsonpath='{.spec.template.metadata.annotations.kubectl\\.kubernetes\\.io/restartedAt}'`).out !== restartedBefore, 'the deployment really restarted')
+ok(await waitFor(rolledOut), 'healthy after the automatic restart')
+
 fs.rmSync(DATA, { recursive: true, force: true })
 console.log(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS')
 process.exit(fails ? 1 : 0)

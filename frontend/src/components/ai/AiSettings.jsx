@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
+import { BookOpenCheck, GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
 import QualityPanel from './QualityPanel'
+import RunbooksPanel from './RunbooksPanel'
 import Feedback from './Feedback'
 
 // Settings → AI: the engines (models) KubeEZ AI may use, which engine does
@@ -423,6 +424,10 @@ export default function AiSettings() {
                     <QualityPanel settings={data} onRoutesSaved={load} />
                 </Section>
             )}
+
+            <Section icon={BookOpenCheck} title="Runbooks" hint="Fixes KubeEZ learned: what really made a problem go away on a workload. They are offered first next time; proven restarts can run by themselves.">
+                <RunbooksPanel autonomy={data.autonomy} />
+            </Section>
 
             <Section icon={Send} title="Try it" hint="Ask anything — it goes through the same routing, masking and fallbacks as the real features.">
                 <TryIt />

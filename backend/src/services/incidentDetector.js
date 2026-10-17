@@ -10,6 +10,7 @@ import { notifier } from './notifier.js'
 import { CATALOG, label } from '../config/incidentCatalog.js'
 import { RESOURCE_REASONS, HISTORY_MAX, parseResources, analyzeResources, resourceView } from './resourceForecast.js'
 import { redact } from './ai/redact.js'
+import { podFacts, containerMemory, recordMemory, memoryFindings, recordRestarts, restartFindings } from './predict.js'
 
 const alertTarget = (inc) => inc.namespace ? `${inc.namespace}/${inc.target}` : inc.target
 
@@ -44,6 +45,7 @@ const UNREACHABLE_AFTER_MS = Number(process.env.KUBEEZ_UNREACHABLE_ALERT_MS) || 
 const POD_REASONS  = new Set(['CrashLoopBackOff', 'ImagePullBackOff', 'OOMKilled', 'PodPendingTooLong'])
 // A closed incident is not reused; the same problem coming back opens a new one
 const CLOSED = new Set(['resolved', 'cleared'])
+const LEAK_REASON = new Set(['MemoryLeakSuspected']), RESTARTS_REASON = new Set(['RestartsRising'])
 
 const cname = (c) => c.clusterName || c.name || 'cluster'
 const RESYNC_MS = 60 * 1000
@@ -281,6 +283,8 @@ class IncidentDetector {
         this.lastCheck = new Map()   // clusterId -> last successful health check
         this.unreachableSince = new Map()   // clusterId -> first failed connection
         this.resources = new Map()   // clusterId -> { nodeName: { ip, samples[] } } (memory only)
+        this.predict = new Map()     // clusterId -> { limits, restarts, memSeries, restartHistory } (memory only)
+        this.listeners = { create: [], close: [] }   // runbooks learn from closed incidents, may act on new ones
         this.incidents = this._load()
     }
 
@@ -521,6 +525,18 @@ class IncidentDetector {
         if (!r || r.code !== 0 || !r.stdout?.trim()) return
         let data; try { data = JSON.parse(r.stdout) } catch { return }
         this._apply(this.watched.get(clusterId), analyzePods(data), POD_REASONS)
+        // predictions: memory limits for the leak forecast, restarts that keep coming
+        const p = this._predictState(clusterId)
+        const facts = podFacts(data)
+        p.limits = facts.limits
+        recordRestarts(p.restartHistory, facts.restarts)
+        this._apply(this.watched.get(clusterId), restartFindings(p.restartHistory, facts.restarts), RESTARTS_REASON)
+    }
+
+    _predictState(clusterId) {
+        let p = this.predict.get(clusterId)
+        if (!p) { p = { limits: new Map(), memSeries: new Map(), restartHistory: new Map() }; this.predict.set(clusterId, p) }
+        return p
     }
 
     async _pollHealth(clusterId) {
@@ -554,6 +570,19 @@ class IncidentDetector {
         this.resources.set(clusterId, hist)
         const isOpen = (reason, node) => this.incidents.some(i => i.clusterId === clusterId && i.reason === reason && i.target === node && !CLOSED.has(i.status))
         this._apply(this.watched.get(clusterId), analyzeResources(hist, { now, isOpen }), RESOURCE_REASONS)
+        // a container heading for its memory limit (limits come from the pod poll)
+        const p = this._predictState(clusterId)
+        if (p.limits.size) {
+            recordMemory(p.memSeries, containerMemory(r.stdout), p.limits, now)
+            const leakOpen = (pod, ns) => this.incidents.some(i => i.clusterId === clusterId && i.reason === 'MemoryLeakSuspected' && i.target === pod && i.namespace === ns && !CLOSED.has(i.status))
+            this._apply(this.watched.get(clusterId), memoryFindings(p.memSeries, p.limits, { now, isOpen: leakOpen }), LEAK_REASON)
+        }
+    }
+
+    /** on('create', (cluster, incident) => …) / on('close', (incident) => …) — never breaks detection */
+    on(event, fn) { this.listeners[event]?.push(fn) }
+    _emit(event, ...args) {
+        for (const fn of this.listeners[event] || []) Promise.resolve().then(() => fn(...args)).catch(e => console.error(`[AutoHealing] ${event} listener failed: ${e.message}`))
     }
 
     // An open incident whose problem is no longer reported has gone away
@@ -568,6 +597,7 @@ class IncidentDetector {
             inc.updatedAt = inc.closedAt = new Date().toISOString()
             this._tl(inc, inc.status, inc.details)
             changed = true
+            this._emit('close', inc)
             if (!inc.causedBy) notifier.emit(inc.orgId, {
                 type: 'incident_resolved', severity: 'success', recovery: inc.severity === 'critical', key: `resolved|${inc._key}`,
                 title: `${fixedByUs ? 'Fixed' : 'Cleared'}: ${label(inc.reason)} — ${alertTarget(inc)}`,
@@ -677,6 +707,7 @@ class IncidentDetector {
             .filter(i => now - new Date(i.lastSeen || i.timestamp).getTime() < INCIDENT_TTL_MS)
             .slice(0, MAX_INCIDENTS)
         if (!cause) this._dispatch(cluster, incident)
+        if (!cause && !mute) this._emit('create', cluster, incident)
         this._save()
         return key
     }
@@ -713,7 +744,7 @@ class IncidentDetector {
         inc.status = status
         inc.details = details
         inc.updatedAt = new Date().toISOString()
-        if (CLOSED.has(status)) inc.closedAt = inc.updatedAt
+        if (CLOSED.has(status)) { inc.closedAt = inc.updatedAt; this._emit('close', inc) }
         this._tl(inc, status, details)
         this._save()
     }
@@ -759,6 +790,7 @@ class IncidentDetector {
 
     stopWatching(clusterId) {
         this._cleanup(clusterId)
+        this.predict.delete(clusterId)
         this.reconnect.delete(clusterId)
         this.watched.delete(clusterId)
         console.log(`[AutoHealing] Stopped watching cluster ${clusterId}`)

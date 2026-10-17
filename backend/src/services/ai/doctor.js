@@ -9,6 +9,7 @@
 import { ask } from './engine.js'
 import { ACTION_TYPES } from './actions.js'
 import { changesText } from './changes.js'
+import { SPECIALISTS, pickSpecialist } from './specialists.js'
 
 const CONFIDENCE = ['high', 'medium', 'low']
 // a good answer needs ~250–350 tokens; a tight budget stops a rambling small model sooner
@@ -142,7 +143,7 @@ export async function explainInstall(user, inst) {
 const K8S_NAME = /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/
 
 /** The workload an incident is about (Deployment for a pod of a ReplicaSet, …) — resolved on the cluster. */
-async function resolveWorkload(ssh, inc) {
+export async function resolveWorkload(ssh, inc) {
     const ns = inc.namespace
     if (!ns || !K8S_NAME.test(ns)) return null
     const m = /^(deployment|statefulset|daemonset)\/([a-z0-9.-]+)$/.exec(String(inc.target || ''))
@@ -174,7 +175,10 @@ export async function collectIncidentData(ssh, inc) {
     }
     if (workload) await run(`${workload.kind} status`, `${K} describe ${workload.kind} ${workload.name} -n ${workload.namespace} 2>&1 | sed -n '/Replicas:/p;/Pod Template:/,/Volumes:/p;/Conditions:/,$p' | tail -50`)
     if (inc.nodeName && K8S_NAME.test(inc.nodeName)) await run('node conditions', `${K} describe node ${inc.nodeName} 2>&1 | sed -n '/Conditions:/,/Addresses:/p;/Allocated resources:/,/Events:/p' | head -45`)
-    return { data: out, workload }
+    // the right expert looks further (what the logs say decides, e.g. "no such host" → networking)
+    const specialist = pickSpecialist(inc, [...(inc.evidence || []).map(e => e.text), ...out.map(d => d.text)].join('\n'))
+    await SPECIALISTS[specialist].collect(async (label, cmd) => run(`${SPECIALISTS[specialist].label.split(' ')[0].toLowerCase()}: ${label}`, cmd), inc, workload).catch(() => { })
+    return { data: out, workload, specialist }
 }
 
 /** The fixes the AI may suggest for this incident (and only these targets). */
@@ -204,7 +208,7 @@ export function pickAction(raw, allowed) {
     return { ...a }
 }
 
-export async function explainIncident(user, { incident: inc, catalog, cluster, fresh, changes, related }) {
+export async function explainIncident(user, { incident: inc, catalog, cluster, fresh, changes, related, runbook = null }) {
     const facts = [
         `Incident: ${catalog?.label || inc.reason} (${inc.reason}), severity ${inc.severity}, status ${inc.status}`,
         `Target: ${inc.namespace ? `${inc.namespace}/` : ''}${inc.target}${inc.owner ? ` (owner ${inc.owner})` : ''}${inc.nodeName ? ` on node ${inc.nodeName}` : ''}`,
@@ -216,25 +220,27 @@ export async function explainIncident(user, { incident: inc, catalog, cluster, f
         (inc.timeline || []).length && `Timeline:\n${inc.timeline.slice(-8).map(t => `${t.at} ${t.kind}${t.by ? ` (${t.by})` : ''}: ${t.text}`).join('\n')}`
     ].filter(Boolean).join('\n')
     const allowed = allowedActions(inc, fresh.workload)
+    const specialist = fresh.specialist || pickSpecialist(inc, (inc.evidence || []).map(e => e.text).join('\n'))
     const data = [
         { label: 'incident', text: facts },
         ...(inc.evidence || []).map(e => ({ label: `evidence: ${e.title}`, text: e.text })),
         ...fresh.data,
-        { label: 'what changed in the 3 hours before', text: changes?.length ? changesText(changes, 40) : 'No changes recorded in that time.' }
+        { label: 'what changed in the 3 hours before', text: changes?.length ? changesText(changes, 40) : 'No changes recorded in that time.' },
+        ...(runbook ? [{ label: 'what fixed this problem on this workload before', text: `${runbook.action.type} ${runbook.action.kind}/${runbook.action.name} — worked ${runbook.successes} of ${runbook.successes + runbook.failures} times, last ${runbook.lastAt}` }] : [])
     ]
     const actionRules = allowed.length
         ? `You may suggest ONE fix KubeEZ can run (a person previews and approves it), only if the evidence supports it, as "action": {"type": "${[...new Set(allowed.map(a => a.type))].join(' | ')}", "target": "${[...new Set(allowed.map(a => `${a.kind}/${a.name}`))].join(' | ')}", "replicas": number for scale}. Prefer rollback when a recent rollout caused it, restart for a stuck or leaking process. Use "action": null when the fix is a config change a person must make (memory limit, image name, missing secret…).`
         : 'Do not suggest an action ("action": null).'
     const r = await ask(user, {
         task: 'explain', purpose: 'incident explainer', json: true, validate: shape, maxTokens: TOKENS.incident, clusterId: cluster.id, clusterName: cluster.clusterName,
-        system: incidentSystem(actionRules),
+        system: `${incidentSystem(actionRules)}\n\n${SPECIALISTS[specialist].prompt}`,
         data, question: 'Why is this happening, and what should I do?'
     })
     const source = data.map(d => d.text).join('\n')
     const change = r.json.change && norm(source).includes(norm(r.json.change)) ? String(r.json.change).slice(0, 300) : null
     return {
         answer: finish(r.json, source, { change, action: pickAction(r.json.action, allowed) }),
-        allowedActions: allowed,
+        allowedActions: allowed, specialist: SPECIALISTS[specialist].label,
         engine: { provider: r.provider, model: r.model, ms: r.ms, masked: r.masked, suspicious: r.suspicious, traceId: r.traceId }
     }
 }

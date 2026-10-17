@@ -141,7 +141,7 @@ const NAV = [
     ] },
     { title: 'Operations', items: [
         { id: 'healing', label: 'Auto-Healing & Incidents', k: 'node down crash fix maintenance' },
-        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch explain doctor incident what changed rollback undo dry-run quality test exam compare feedback' },
+        { id: 'ai', label: 'KubeEZ AI', k: 'ai model ollama llm openai gemini claude groq engine fallback mask kill switch explain doctor incident what changed rollback undo dry-run quality test exam compare feedback risk score prediction memory leak specialist runbook' },
         { id: 'alerts', label: 'Alerts', k: 'telegram slack teams whatsapp email webhook quiet hours' },
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
         { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review namespace approval two-person temporary elevation kubeconfig' },
@@ -702,6 +702,19 @@ export default function Docs() {
                             <><B>Undo</B> (on the incident, or Cluster → Changes, for 24 hours) scales back or rolls forward again. A restart or a deleted pod needs no undo.</>
                         ]} />
                         <Note>Who can apply fixes: members with <C>incident:act</C> on that cluster, only in their namespaces. The kill switch or <B>Suggest only</B> (Settings → AI) stops all of them. Every fix and undo is in the audit trail.</Note>
+                        <H4>Risk score</H4>
+                        <P>Every cluster has a risk score (cluster list and cluster page): 100 means no known risk. Each point taken off is a named reason with its fix — open or predicted problems, KubeEZ unable to reach it, no or old etcd snapshot, no offsite backup, a Kubernetes version leaving support, a single control-plane, a low compliance score. It needs no AI.</P>
+                        <H4>Problems seen coming</H4>
+                        <Table head={['', '']} rows={[
+                            ['Running out of memory soon', 'A container\u2019s memory climbs steadily toward its limit — KubeEZ warns with the time left (e.g. “out of memory in ~2 h”) before the OOM kill. A rolling restart buys time.'],
+                            ['Restarting again and again', 'A pod restarts 5+ times an hour without being in a crash loop yet (a failing probe, an occasional crash).'],
+                            ['Disk filling, certificates expiring', 'As before: the disk-fill forecast and certificate expiry warnings.']
+                        ]} />
+                        <H4>Specialists</H4>
+                        <P>“Explain with AI” thinks like the right expert — control-plane, storage, networking, node or application — chosen from the problem and what the logs say (e.g. “no such host” → networking). Each specialist reads the extra evidence its area needs (read-only) and follows its own checklist.</P>
+                        <H4>Learned runbooks</H4>
+                        <P>When a fix applied from an explanation makes the problem go away within 2 hours, KubeEZ remembers it for that problem on that workload; an undo, or the problem still there 45 minutes later, counts against it. Next time, the explanation shows <B>Worked before</B> with the fix ready to preview. Settings → AI → <B>Runbooks</B> lists them.</P>
+                        <Note>A runbook can run <B>by itself</B> only when all of this is true: an admin switched it on, it is a restart or a pod deletion, it worked at least twice and 80 % of the time, “When AI suggests a fix” is <B>Auto for low-risk</B>, AI actions are not stopped, AI fixes do not need a second person, the cluster is not in maintenance, KubeEZ’s own automatic fix does not handle that problem, and it did not run in the last 30 minutes (3 times a day at most). It is dry-run first, you get an alert, and it can be undone.</Note>
                         <H4>Quality: test and compare engines</H4>
                         <P>Settings → AI → <B>Quality</B> gives every engine the same exam: 16 real-looking failures (out of memory, a wrong image tag, a missing registry login, a failed kubeadm preflight, an expired certificate…) with the same prompts, masking and checks as the real features. Each answer is scored on the right cause (50), proof that is really in the data (20), a usable answer with steps (20) and nothing wrong or unsafe (10). Three traps check that an engine ignores orders hidden in a log, admits when there is too little data, and never repeats a password.</P>
                         <Steps items={[

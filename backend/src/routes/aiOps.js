@@ -10,9 +10,13 @@ import { CATALOG } from '../config/incidentCatalog.js'
 import { auditLog } from '../services/auditLog.js'
 import { requireApproval } from '../services/approvals.js'
 import { AiUnavailable, actionPolicy } from '../services/ai/engine.js'
-import { explainInstall, explainIncident, summarizeChanges, collectIncidentData } from '../services/ai/doctor.js'
+import { explainInstall, explainIncident, summarizeChanges, collectIncidentData, resolveWorkload } from '../services/ai/doctor.js'
+import { suggest as suggestRunbook, onUndone, runbooksOf, setAuto, remove as removeRunbook } from '../services/ai/runbooks.js'
 import { collectChanges } from '../services/ai/changes.js'
 import { planAction, applyAction, undoAction, actionLog, view, cleanSpec, ACTION_TYPES } from '../services/ai/actions.js'
+import { riskScore, newestSnapshot, cachedSnapshot } from '../services/ai/risk.js'
+import { offsiteStore } from '../services/offsiteStore.js'
+import { complianceStore } from '../services/complianceService.js'
 
 // KubeEZ AI operations: Install Doctor, incident explainer, "What changed?"
 // (mounted at /api/ai), and the safe fixes with dry-run and undo
@@ -106,10 +110,22 @@ router.post('/explain/incident/:id', requirePermission('ai:use'), async (req, re
         ])
         const fresh = freshR.v || { data: [], workload: null }
         const related = inc.causedBy ? incidentDetector.find(inc.causedBy) : null
-        const out = await explainIncident(req.user, { incident: inc, catalog: CATALOG[inc.reason], cluster, fresh, changes, related })
-        return { ...out, changes: changes.slice(0, 15), freshError: freshR.e?.message || null }
+        const runbook = suggestRunbook(cluster.orgId, inc.reason, fresh.workload)
+        const out = await explainIncident(req.user, { incident: inc, catalog: CATALOG[inc.reason], cluster, fresh, changes, related, runbook })
+        return { ...out, runbook, changes: changes.slice(0, 15), freshError: freshR.e?.message || null }
     }, { fresh: !!req.body?.fresh, decorate: (v) => ({ ...v, canAct }) })
 })
+
+// ── Learned runbooks ──
+router.get('/runbooks', requirePermission('ai:manage'), (req, res) => res.json({ runbooks: runbooksOf(req.user.orgId) }))
+router.put('/runbooks/:id', requirePermission('ai:manage'), (req, res) => {
+    try {
+        const rb = setAuto(req.user.orgId, req.params.id, !!req.body?.auto)
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: rb.auto ? 'ai.runbook_auto_on' : 'ai.runbook_auto_off', target: rb.clusterId ? { clusterId: rb.clusterId, clusterName: rb.clusterName } : null, detail: `${rb.reason} on ${rb.scope}: ${rb.action.type}` })
+        res.json(rb)
+    } catch (e) { fail(res, e) }
+})
+router.delete('/runbooks/:id', requirePermission('ai:manage'), (req, res) => { removeRunbook(req.user.orgId, req.params.id); res.json({ success: true }) })
 
 // ── What changed? (facts — no AI needed) ──
 const HOURS = [1, 3, 6, 24, 72, 168]
@@ -134,6 +150,40 @@ router.post('/changes/:clusterId/summary', requirePermission('ai:use'), async (r
         const items = nss ? r.items.filter(i => !i.ns || nsMatches(nss, i.ns)) : r.items
         return summarizeChanges(req.user, cluster, { ...r, items })
     })
+})
+
+// ── Risk score (facts, no AI) ──
+async function sshTo(cluster) {
+    const { automationEngine } = await import('../services/automationEngine.js')
+    const master = cluster.masterNodes?.[0]
+    if (!master) throw new Error('No control-plane node saved for this cluster')
+    return automationEngine.connectSSH({ ...master, ownerId: cluster.ownerId, orgId: cluster.orgId })
+}
+async function riskOf(cluster, { deep }) {
+    const m = incidentDetector.getMonitoring().find(x => x.clusterId === cluster.id)
+    const latest = complianceStore.reports(cluster.id)[0]
+    return riskScore({
+        cluster,
+        incidents: incidentDetector.getIncidents().filter(i => i.clusterId === cluster.id && !['resolved', 'cleared'].includes(i.status) && !i.causedBy),
+        monitoring: m ? { watched: true, connected: m.connected } : { watched: false },
+        maintenanceUntil: m?.maintenance?.until || null,
+        snapshot: deep ? await withTimeout(newestSnapshot(cluster, sshTo), 20000, 'timeout').catch(e => ({ newestAt: null, error: `Could not check: ${e.message}` })) : cachedSnapshot(cluster.id),
+        offsite: !!offsiteStore.getConnected(cluster.orgId),
+        compliance: latest ? { score: latest.score, at: latest.at } : null
+    })
+}
+// every cluster the member can see — quick (no cluster calls), for lists
+actionsRouter.get('/risk-summary', async (req, res) => {
+    const clusters = (await clusterStore.getClusters().catch(() => [])).filter(c => canAccessResource(req.user, c) && canSeeCluster(req.user, c))
+    const out = {}
+    for (const c of clusters) { const r = await riskOf(c, { deep: false }); out[c.id] = { score: r.score, level: r.level, top: r.factors[0]?.label || null } }
+    res.json(out)
+})
+// one cluster — with its backups checked
+actionsRouter.get('/:id/risk', requirePermission('cluster:view'), async (req, res) => {
+    const c = req.permissionCluster
+    if (!c || !canSeeCluster(req.user, c)) return res.status(404).json({ error: 'Cluster not found' })
+    try { res.json(await riskOf(c, { deep: req.query.quick !== '1' })) } catch (e) { fail(res, e) }
 })
 
 // ── Safe fixes: preview (dry-run), apply, undo ──
@@ -167,7 +217,13 @@ actionsRouter.post('/:id/ai-actions', requirePermission('incident:act'), require
     const incidentId = typeof req.body?.incidentId === 'string' ? req.body.incidentId.slice(0, 40) : null
     const reason = String(req.body?.reason || '').slice(0, 300) || null
     try {
-        const rec = await withTimeout(onCluster(ok.cluster, (ssh) => applyAction(ssh, ok.spec, { orgId: req.user.orgId, cluster: ok.cluster, user: req.user, incidentId, reason })), 90000, 'The cluster did not answer in time — check the cluster before trying again')
+        const rec = await withTimeout(onCluster(ok.cluster, async (ssh) => {
+            const r = await applyAction(ssh, ok.spec, { orgId: req.user.orgId, cluster: ok.cluster, user: req.user, incidentId, reason })
+            // which workload it was for — what a learned runbook is about
+            const forInc = incidentId && incidentDetector.find(incidentId)
+            if (forInc && forInc.clusterId === ok.cluster.id) { r.workload = await resolveWorkload(ssh, forInc).catch(() => null); actionLog._persist() }
+            return r
+        }), 90000, 'The cluster did not answer in time — check the cluster before trying again')
         auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.action_applied', target: { clusterId: ok.cluster.id, clusterName: ok.cluster.clusterName }, detail: `${rec.title} — ${rec.change}${reason ? ` (${reason})` : ''}` })
         const inc = incidentId && incidentDetector.find(incidentId)
         if (inc && inc.clusterId === ok.cluster.id) { incidentDetector._tl(inc, 'action', `${rec.title} — applied from the AI explanation`, req.user.username); incidentDetector._save() }
@@ -183,6 +239,7 @@ actionsRouter.post('/:id/ai-actions/:actionId/undo', requirePermission('incident
     if (nss && !nsMatches(nss, rec.spec.namespace)) return res.status(403).json({ error: `You may only act in: ${nss.join(', ')}` })
     try {
         const done = await withTimeout(onCluster(cluster, (ssh) => undoAction(ssh, rec, req.user)), 90000, 'The cluster did not answer in time')
+        onUndone(done, done.incidentId ? incidentDetector.find(done.incidentId)?.reason : null)
         auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.action_undone', target: { clusterId: cluster.id, clusterName: cluster.clusterName }, detail: `Undo: ${done.title}` })
         res.json(view(done))
     } catch (e) { fail(res, e) }

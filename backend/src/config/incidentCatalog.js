@@ -80,6 +80,14 @@ export const CATALOG = {
         label: 'Out of memory', category: 'pod', severity: 'warning', fixable: false, policy: 'notify',
         suggestion: 'The container used more memory than its limit. Raise `resources.limits.memory` or reduce its usage.'
     },
+    MemoryLeakSuspected: {
+        label: 'Running out of memory soon', category: 'pod', severity: 'warning', fixable: false, policy: 'notify',
+        suggestion: 'Its memory has been climbing steadily toward the limit — a leak or a growing cache. A rolling restart buys time (KubeEZ AI can suggest it); the lasting fix is in the app or a higher `resources.limits.memory`.'
+    },
+    RestartsRising: {
+        label: 'Restarting again and again', category: 'pod', severity: 'warning', fixable: false, policy: 'notify',
+        suggestion: 'It keeps restarting but is not yet in a crash loop: a failing liveness probe, an occasional crash or an OOM kill. The previous container log and the pod events show which.'
+    },
     ImagePullBackOff: {
         label: 'Image pull failed', category: 'pod', severity: 'warning', fixable: false, policy: 'notify',
         suggestion: 'Check the image name and tag, that the registry is reachable from the nodes, and the imagePullSecrets for private registries.'

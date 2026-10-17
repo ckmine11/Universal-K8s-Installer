@@ -131,6 +131,8 @@ const persist = () => { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAt
 export const actionLog = {
     list: (orgId, clusterId) => load().filter(a => a.orgId === orgId && (!clusterId || a.clusterId === clusterId)),
     get: (id) => load().find(a => a.id === id),
+    all: () => load(),
+    _persist: () => persist(),
     _reset() { cache = null }
 }
 const canUndo = (a) => a.status === 'applied' && a.undo?.possible && Date.now() - Date.parse(a.at) < UNDO_HOURS * 3600e3

@@ -528,6 +528,7 @@ server.listen(PORT, () => {
     startComplianceSchedule()     // monthly compliance reports (Pro)
     startApprovalSweeper()        // temporary access that ran out → RBAC re-synced
     import('./services/ai/providers.js').then(m => m.ensureServerModel()).catch(() => { })   // KubeEZ AI server model (background)
+    import('./services/ai/runbookHooks.js').then(m => m.startRunbooks()).catch(e => console.warn('[KubeEZ AI] runbooks not started:', e.message))   // learned runbooks
 
     console.log(`
 ╔═══════════════════════════════════════════════════════╗

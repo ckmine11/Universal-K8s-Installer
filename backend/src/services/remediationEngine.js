@@ -373,6 +373,27 @@ const PLAYBOOKS = {
             })
         }
     },
+    MemoryLeakSuspected: {
+        async diagnose(engine, cluster, node, incident, evidence) {
+            return onMaster(engine, cluster, async (ssh) => {
+                const lim = await ssh.execCommand(`${KUBECTL} get pod ${podRef(incident)} -o jsonpath='{range .spec.containers[*]}{.name}: limit {.resources.limits.memory}, request {.resources.requests.memory}{"\\n"}{end}{range .status.containerStatuses[*]}{.name}: restarted {.restartCount}x, started {.state.running.startedAt}{"\\n"}{end}' 2>/dev/null`)
+                await evidence(incident, 'Memory settings and uptime', out(lim))
+                return `${incident.message}. A rolling restart buys time; raise the limit or fix the leak for good.`
+            })
+        }
+    },
+    RestartsRising: {
+        async diagnose(engine, cluster, node, incident, evidence) {
+            return onMaster(engine, cluster, async (ssh) => {
+                const prev = await ssh.execCommand(`${KUBECTL} logs ${podRef(incident)} --all-containers --previous --tail=40 2>&1 | tail -40`)
+                const ev = await ssh.execCommand(`${KUBECTL} describe pod ${podRef(incident)} 2>/dev/null | sed -n '/Last State:/,/Ready:/p;/Events:/,$p' | tail -20`)
+                await evidence(incident, 'Previous container log', out(prev))
+                await evidence(incident, 'Last state and events', out(ev))
+                const why = (out(ev).match(/(OOMKilled|Liveness probe failed[^\n]*|Error[^\n]*exit code[^\n]*)/i) || [])[0]
+                return `${incident.message}${why ? ` — ${why.slice(0, 160)}` : ''}.`
+            })
+        }
+    },
     ImagePullBackOff: {
         async diagnose(engine, cluster, node, incident, evidence) {
             return onMaster(engine, cluster, async (ssh) => {
