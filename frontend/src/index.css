@@ -263,6 +263,13 @@ input:focus, textarea:focus, select:focus {
   outline: none;
 }
 input[type="checkbox"], input[type="radio"] { accent-color: #8069fb; box-shadow: none; }
+/* Dropdown lists: the browser draws the opened list itself — with the field's
+   see-through background it came out white with white text. A solid dark list
+   with light text everywhere (every <select> in the app). */
+select { color-scheme: dark; color: #f1f5f9; }
+select option, select optgroup { background-color: #16161d; color: #e2e8f0; }
+select option:checked { background-color: #3b2f7a; color: #ffffff; }
+select option:disabled { color: #64748b; }
 :focus-visible { outline: 2px solid rgba(154, 135, 255, 0.8); outline-offset: 2px; }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
