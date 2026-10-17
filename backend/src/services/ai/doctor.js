@@ -10,6 +10,7 @@ import { ask } from './engine.js'
 import { ACTION_TYPES } from './actions.js'
 import { changesText } from './changes.js'
 import { SPECIALISTS, pickSpecialist } from './specialists.js'
+import { examplesFor, examplesText } from './learning.js'
 
 const CONFIDENCE = ['high', 'medium', 'low']
 // a good answer needs ~250–350 tokens; a tight budget stops a rambling small model sooner
@@ -127,13 +128,17 @@ export function installFacts(inst) {
     return { facts, log }
 }
 
+const installKind = (inst) => `install: ${inst.diagnosis?.reason || inst.mode || 'install'}`
+const installExamples = (orgId, inst) => { const ex = examplesFor(orgId, installKind(inst)); return ex.length ? [{ label: 'worked examples the team confirmed (for style and depth — the facts above decide)', text: examplesText(ex) }] : [] }
+
 export async function explainInstall(user, inst) {
     const { facts, log } = installFacts(inst)
     const r = await ask(user, {
         task: 'explain', purpose: 'install doctor', json: true, validate: shape, maxTokens: TOKENS.install,
         clusterId: inst.originalClusterId || inst.id, clusterName: inst.clusterName,
         system: INSTALL_SYSTEM,
-        data: [{ label: 'job facts', text: facts }, { label: 'job log', text: log }],
+        data: [{ label: 'job facts', text: facts }, { label: 'job log', text: log }, ...installExamples(user.orgId, inst)],
+        meta: { reason: installKind(inst), input: facts },
         question: 'Why did this job fail, and how do I fix it?'
     })
     return { answer: finish(r.json, `${facts}\n${log}`), engine: { provider: r.provider, model: r.model, ms: r.ms, masked: r.masked, suspicious: r.suspicious, traceId: r.traceId } }
@@ -226,6 +231,7 @@ export async function explainIncident(user, { incident: inc, catalog, cluster, f
         ...(inc.evidence || []).map(e => ({ label: `evidence: ${e.title}`, text: e.text })),
         ...fresh.data,
         { label: 'what changed in the 3 hours before', text: changes?.length ? changesText(changes, 40) : 'No changes recorded in that time.' },
+        ...(examplesFor(cluster.orgId, inc.reason).length ? [{ label: 'worked examples the team confirmed for this kind of problem (for style and depth — the facts above decide)', text: examplesText(examplesFor(cluster.orgId, inc.reason)) }] : []),
         ...(runbook ? [{ label: 'what fixed this problem on this workload before', text: `${runbook.action.type} ${runbook.action.kind}/${runbook.action.name} — worked ${runbook.successes} of ${runbook.successes + runbook.failures} times, last ${runbook.lastAt}` }] : [])
     ]
     const actionRules = allowed.length
@@ -234,7 +240,8 @@ export async function explainIncident(user, { incident: inc, catalog, cluster, f
     const r = await ask(user, {
         task: 'explain', purpose: 'incident explainer', json: true, validate: shape, maxTokens: TOKENS.incident, clusterId: cluster.id, clusterName: cluster.clusterName,
         system: `${incidentSystem(actionRules)}\n\n${SPECIALISTS[specialist].prompt}`,
-        data, question: 'Why is this happening, and what should I do?'
+        data, question: 'Why is this happening, and what should I do?',
+        meta: { reason: inc.reason, specialist, input: facts }
     })
     const source = data.map(d => d.text).join('\n')
     const change = r.json.change && norm(source).includes(norm(r.json.change)) ? String(r.json.change).slice(0, 300) : null

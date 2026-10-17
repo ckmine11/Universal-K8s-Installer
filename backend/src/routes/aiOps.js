@@ -17,6 +17,9 @@ import { collectChanges } from '../services/ai/changes.js'
 import { explainIncidentFull, explainKey } from '../services/ai/incidentExplain.js'
 import { planAction, applyAction, undoAction, actionLog, view, cleanSpec, ACTION_TYPES } from '../services/ai/actions.js'
 import { riskScore, newestSnapshot, cachedSnapshot } from '../services/ai/risk.js'
+import { fleetText } from '../services/ai/fleet.js'
+import { riskOf, fleetFor, advisorFor } from '../services/ai/insights.js'
+import { addonSettingsStore } from '../services/addonSettings.js'
 import { ADVISOR_SCRIPT, analyze as analyzeAdvisor, advisorText } from '../services/ai/advisor.js'
 import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView } from '../services/ai/manifests.js'
 import { offsiteStore } from '../services/offsiteStore.js'
@@ -129,10 +132,21 @@ router.post('/advisor/:clusterId/summary', requirePermission('ai:use'), async (r
     const cluster = await visibleCluster(req, res, req.params.clusterId)
     if (!cluster) return
     await runJob(req, res, `adv:${req.user.id}:${cluster.id}:${Math.floor(Date.now() / 300e3)}`, async () => {
-        const a = await advisorFor(req, cluster, false)
+        const a = await advisorFor(req.user, cluster, false)
         const r = await ask(req.user, { task: 'summarize', purpose: 'advisor', maxTokens: 600, clusterId: cluster.id, clusterName: cluster.clusterName,
             system: 'You are a Kubernetes security and cost advisor. From the findings, give the 5 most important things to do first, most valuable first: one line each, what and why, naming the workload. High security risks before cost. Only use the findings given.',
             data: [{ label: 'findings', text: advisorText(a) }], question: 'What should we fix first?' })
+        return { summary: r.text, engine: { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } }
+    })
+})
+
+// ── Fleet: the AI summary ──
+router.post('/fleet/summary', requirePermission('ai:use'), async (req, res) => {
+    await runJob(req, res, `fleet:${req.user.id}:${Math.floor(Date.now() / 300e3)}`, async () => {
+        const f = await fleetFor(req.user)
+        const r = await ask(req.user, { task: 'summarize', purpose: 'fleet', maxTokens: 600,
+            system: 'You look after a fleet of Kubernetes clusters. From the facts, say in at most 6 short bullet points what needs attention across the fleet, most urgent first: clusters at risk and why, problems shared by several clusters (one root cause?), Kubernetes versions to upgrade, add-ons on different versions. Only use the facts.',
+            data: [{ label: 'fleet facts', text: fleetText(f) }], question: 'What needs attention across the fleet?' })
         return { summary: r.text, engine: { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } }
     })
 })
@@ -174,25 +188,8 @@ router.post('/changes/:clusterId/summary', requirePermission('ai:use'), async (r
 })
 
 // ── Risk score (facts, no AI) ──
-async function sshTo(cluster) {
-    const { automationEngine } = await import('../services/automationEngine.js')
-    const master = cluster.masterNodes?.[0]
-    if (!master) throw new Error('No control-plane node saved for this cluster')
-    return automationEngine.connectSSH({ ...master, ownerId: cluster.ownerId, orgId: cluster.orgId })
-}
-async function riskOf(cluster, { deep }) {
-    const m = incidentDetector.getMonitoring().find(x => x.clusterId === cluster.id)
-    const latest = complianceStore.reports(cluster.id)[0]
-    return riskScore({
-        cluster,
-        incidents: incidentDetector.getIncidents().filter(i => i.clusterId === cluster.id && !['resolved', 'cleared'].includes(i.status) && !i.causedBy),
-        monitoring: m ? { watched: true, connected: m.connected } : { watched: false },
-        maintenanceUntil: m?.maintenance?.until || null,
-        snapshot: deep ? await withTimeout(newestSnapshot(cluster, sshTo), 20000, 'timeout').catch(e => ({ newestAt: null, error: `Could not check: ${e.message}` })) : cachedSnapshot(cluster.id),
-        offsite: !!offsiteStore.getConnected(cluster.orgId),
-        compliance: latest ? { score: latest.score, at: latest.at } : null
-    })
-}
+actionsRouter.get('/fleet', async (req, res) => { try { res.json(await fleetFor(req.user)) } catch (e) { fail(res, e) } })
+
 // every cluster the member can see — quick (no cluster calls), for lists
 actionsRouter.get('/risk-summary', async (req, res) => {
     const clusters = (await clusterStore.getClusters().catch(() => [])).filter(c => canAccessResource(req.user, c) && canSeeCluster(req.user, c))
@@ -208,26 +205,10 @@ actionsRouter.get('/:id/risk', requirePermission('cluster:view'), async (req, re
 })
 
 // ── Advisor facts (read-only, cached 5 minutes) ──
-const advCache = new Map()
-async function advisorFor(req, cluster, refresh) {
-    const hit = advCache.get(cluster.id)
-    let a = !refresh && hit && Date.now() - hit.at < 5 * 60e3 ? hit.value : null
-    if (!a) {
-        const out = await withTimeout(onCluster(cluster, async (ssh) => (await ssh.execCommand(ADVISOR_SCRIPT)).stdout || ''), 90000, 'The cluster did not answer in time')
-        if (!/==END==/.test(out)) throw Object.assign(new Error('Could not read the cluster'), { status: 502 })
-        a = analyzeAdvisor(out, { rates: aiStore.get(cluster.orgId).costRates })
-        advCache.set(cluster.id, { at: Date.now(), value: a })
-    }
-    // members limited to some namespaces see only those
-    const nss = accessOn(req.user, cluster).namespaces
-    if (!nss) return a
-    const mine = (ns) => nsMatches(nss, ns)
-    return { ...a, security: { ...a.security, findings: a.security.findings.filter(f => mine(f.namespace)) }, cost: { ...a.cost, workloads: a.cost.workloads.filter(w => mine(w.namespace)), nodes: null, savings: null }, limited: true }
-}
 actionsRouter.get('/:id/advisor', requirePermission('cluster:view'), async (req, res) => {
     const cluster = req.permissionCluster
     if (!cluster || !canSeeCluster(req.user, cluster)) return res.status(404).json({ error: 'Cluster not found' })
-    try { res.json(await advisorFor(req, cluster, req.query.refresh === '1')) } catch (e) { fail(res, e) }
+    try { res.json(await advisorFor(req.user, cluster, req.query.refresh === '1')) } catch (e) { fail(res, e) }
 })
 
 // ── Text → YAML on a cluster: preview (dry-run + diff), apply, undo ──

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
-    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck
+    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
@@ -33,6 +33,7 @@ export function navSections(user, approvalsWaiting = 0) {
             title: 'Overview', items: [
                 { to: '/', label: 'Clusters', icon: LayoutDashboard, end: true },
                 { to: '/explorer', label: 'Explorer', icon: Compass },
+                { to: '/fleet', label: 'Fleet', icon: Globe2 },
                 { to: '/incidents', label: 'Incidents', icon: ShieldAlert },
                 { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
             ]

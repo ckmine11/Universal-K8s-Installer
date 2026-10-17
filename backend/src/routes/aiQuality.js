@@ -4,6 +4,8 @@ import { aiStore } from '../services/ai/aiStore.js'
 import { serverAvailable } from '../services/ai/engine.js'
 import { serverModel } from '../services/ai/providers.js'
 import { auditLog } from '../services/auditLog.js'
+import { buildAiBom } from '../services/ai/aibom.js'
+import { examplesOf, removeExample, datasetJsonl } from '../services/ai/learning.js'
 import { EXAM, EXAM_VERSION, startExam, cancelExam, isRunning, runsOf, runView, latestByEngine, recommend, giveFeedback, feedbackStats, REASONS } from '../services/ai/quality.js'
 
 // KubeEZ AI quality (mounted at /api/ai): the exam, the comparison, feedback.
@@ -59,6 +61,32 @@ router.post('/feedback', requirePermission('ai:use'), (req, res) => {
         if (!/^[0-9a-f]{12}$/.test(traceId)) throw Object.assign(new Error('Which answer?'), { status: 400 })
         res.json(giveFeedback(req.user, traceId, req.body || {}))
     } catch (e) { fail(res, e) }
+})
+
+// ── AI-BOM: what KubeEZ AI is made of (CycloneDX for download) ──
+router.get('/bom', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const bom = await buildAiBom(req.user.orgId)
+        if (req.query.format === 'cyclonedx') {
+            auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.bom_downloaded', detail: `${bom.models.length} model(s), ${bom.prompts.length} prompts` })
+            return res.set('Content-Disposition', `attachment; filename="kubeez-ai-bom-${bom.generatedAt.slice(0, 10)}.cdx.json"`).type('application/vnd.cyclonedx+json').send(JSON.stringify(bom.cyclonedx, null, 2))
+        }
+        const { cyclonedx, ...view } = bom
+        res.json(view)
+    } catch (e) { fail(res, e) }
+})
+
+// ── Learning: worked examples from 👍 answers, and the dataset for fine-tuning ──
+router.get('/learning', requirePermission('ai:manage'), (req, res) => res.json({ examples: examplesOf(req.user.orgId) }))
+router.delete('/learning/:id', requirePermission('ai:manage'), (req, res) => {
+    if (!removeExample(req.user.orgId, req.params.id)) return res.status(404).json({ error: 'Example not found' })
+    auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.example_removed', detail: req.params.id })
+    res.json({ success: true })
+})
+router.get('/learning/dataset', requirePermission('ai:manage'), (req, res) => {
+    const body = datasetJsonl(req.user.orgId)
+    auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.dataset_downloaded', detail: `${body.split('\n').filter(Boolean).length} rated answer(s)` })
+    res.set('Content-Disposition', 'attachment; filename="kubeez-ai-dataset.jsonl"').type('application/x-ndjson').send(body)
 })
 
 export default router

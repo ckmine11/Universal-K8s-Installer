@@ -31,6 +31,7 @@ import notificationsRoutes from './routes/notifications.js'
 import addonCatalogRoutes from './routes/addonCatalog.js'
 import alertActionsRoutes from './routes/alertActions.js'
 import chatopsRoutes from './routes/chatops.js'
+import { mcpEndpoint, mcpTokenRoutes } from './routes/mcp.js'
 import { notifier } from './services/notifier.js'
 import { telegramPoller } from './services/alertActions.js'
 import { addonVersionService } from './services/addonVersions.js'
@@ -304,6 +305,8 @@ app.use('/api/compliance', requireAuth, complianceRoutes)   // Compliance Center
 app.use('/api/terminal', requireAuth, terminalRoutes)       // just-in-time terminal access + recordings
 app.use('/api/approvals', requireAuth, approvalRoutes)      // two-person approval + temporary elevation
 app.use('/api/ai', requireAuth, aiRoutes)                    // KubeEZ AI: engines, routing, safety, activity
+app.use('/api/ai/mcp/tokens', requireAuth, mcpTokenRoutes)   // personal tokens for MCP clients
+app.use('/api/mcp', mcpEndpoint)                             // MCP server (Bearer kzm_… token)
 app.use('/api/ai', requireAuth, aiQualityRoutes)             // quality test, model comparison, feedback
 app.use('/api/ai', requireAuth, aiOpsRoutes)                 // Install Doctor, incident explainer, What changed?
 app.use('/api/clusters', requireAuth, aiActionsRoutes)       // safe fixes with dry-run and undo

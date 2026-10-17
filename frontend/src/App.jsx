@@ -20,6 +20,7 @@ import AdminConsole from './pages/AdminConsole'
 import Pricing from './pages/Pricing'
 import VendorPortal from './pages/VendorPortal'
 import Incidents from './pages/Incidents'
+import Fleet from './pages/Fleet'
 import Alerts from './pages/Alerts'
 import Compliance from './pages/Compliance'
 import Explorer from './pages/Explorer'
@@ -141,6 +142,7 @@ function AuthenticatedApp() {
                         path="/incidents"
                         element={<Incidents />}
                     />
+                    <Route path="/fleet" element={<Fleet />} />
                     <Route
                         path="/pricing"
                         element={<Pricing />}

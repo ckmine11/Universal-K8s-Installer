@@ -151,7 +151,9 @@ export async function ask(user, opts) {
         ok: !!result, ms, provider: result?.provider || null, providerId: result?.providerId || null, model: result?.model || null, attempts,
         masked, maskedKinds: kinds, suspicious: hits.length > 0, injectionHits: [...new Set(hits)].slice(0, 5),
         promptHash: createHash('sha256').update(system + content).digest('hex').slice(0, 16),
-        question: q.text.slice(0, 500), answer: result ? String(result.text).slice(0, 2000) : null
+        question: q.text.slice(0, 500), answer: result ? String(result.text).slice(0, 2000) : null,
+        // what it was about (masked) — a 👍 answer can become a worked example (learning.js)
+        meta: opts.meta ? { ...opts.meta, input: opts.meta.input ? redact(String(opts.meta.input).slice(0, 2000), { maskEmails: s.maskEmails, maskIps: s.maskIps }).text : null } : null
     }
     if (opts.trace !== false) aiStore.addTrace(orgId, trace)
     if (opts.trace !== false) auditLog.record({ orgId, actor: user, action: 'ai.ask', ok: !!result, target: opts.clusterId ? { clusterId: opts.clusterId, clusterName: opts.clusterName } : null,

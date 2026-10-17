@@ -11,6 +11,7 @@ import { DATA_DIR } from '../../utils/paths.js'
 import { writeFileAtomicSync } from '../../utils/atomicWrite.js'
 import { EXAM, EXAM_VERSION, QUESTION } from '../../config/aiExam.js'
 import { ask } from './engine.js'
+import { learnFromTrace } from './learning.js'
 import { aiStore } from './aiStore.js'
 import { shape, finish, INSTALL_SYSTEM, incidentSystem, TOKENS } from './doctor.js'
 import { SPECIALISTS, pickSpecialist } from './specialists.js'
@@ -169,6 +170,8 @@ export function giveFeedback(user, traceId, { rating, reason, comment }) {
     if (!t) throw Object.assign(new Error('That answer is no longer in the activity log'), { status: 404 })
     t.feedback = { rating, reason: rating === 'down' ? (reason || 'other') : null, comment: String(comment || '').slice(0, 300) || null, by: user.username, at: new Date().toISOString() }
     aiStore.saveTraces()
+    // a confirmed explanation becomes a worked example for the next one
+    if (rating === 'up') learnFromTrace(user.orgId, t, user.username)
     return t.feedback
 }
 /** Helpful rate per engine from the rated answers (last 300 calls). */

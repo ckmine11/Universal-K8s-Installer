@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { MessageCircle, Coins, BookOpenCheck, GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
+import { Plug, FileBadge, Brain, MessageCircle, Coins, BookOpenCheck, GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
 import QualityPanel from './QualityPanel'
 import RunbooksPanel from './RunbooksPanel'
 import ChatOpsPanel from './ChatOpsPanel'
+import { McpPanel, AiBomPanel, LearningPanel } from './Phase6Panels'
 import Feedback from './Feedback'
 
 // Settings → AI: the engines (models) KubeEZ AI may use, which engine does
@@ -440,6 +441,18 @@ export default function AiSettings() {
 
             <Section icon={BookOpenCheck} title="Runbooks" hint="Fixes KubeEZ learned: what really made a problem go away on a workload. They are offered first next time; proven restarts can run by themselves.">
                 <RunbooksPanel autonomy={data.autonomy} />
+            </Section>
+
+            <Section icon={Brain} title="Learning" hint="KubeEZ AI gets better from your 👍 — without training a model.">
+                <LearningPanel />
+            </Section>
+
+            <Section icon={Plug} title="MCP — use KubeEZ from your AI assistant" hint="Personal tokens for Claude Code, Claude Desktop, Cursor and other MCP clients.">
+                <McpPanel />
+            </Section>
+
+            <Section icon={FileBadge} title="AI-BOM" hint="The bill of materials of KubeEZ AI: models with digests, prompts, where data goes, safety controls.">
+                <AiBomPanel />
             </Section>
 
             <Section icon={Send} title="Try it" hint="Ask anything — it goes through the same routing, masking and fallbacks as the real features.">

@@ -19,6 +19,7 @@ const kubeezAi = {
         { key: 'model', type: 'select', label: 'Model', default: 'qwen2.5:3b', options: AI_MODELS, help: 'Bigger is smarter but needs more memory and is slower on CPU.' },
         { key: 'memoryMi', type: 'number', label: 'Memory limit', unit: 'MiB', default: 4096, min: 1536, max: 65536, help: 'At least the model size plus ~1 GB.' },
         { key: 'cpu', type: 'select', label: 'CPU limit', default: '2', options: [['1', '1 core'], ['2', '2 cores'], ['4', '4 cores'], ['8', '8 cores']] },
+        { key: 'download', type: 'bool', label: 'Download the model now', default: true, help: 'Off for networks without internet: import the model afterwards with ai-offline.sh import-cluster (see Docs → KubeEZ AI).' },
         { key: 'gpu', type: 'bool', label: 'Use an NVIDIA GPU', default: false, help: 'Needs a node with an NVIDIA GPU and its device plugin. Much faster.' },
         storageField('Where the model files are kept', { help: 'Models can always be downloaded again; Longhorn or NFS keep them when the pod moves.' }),
         { key: 'sizeGi', type: 'number', label: 'Volume size', unit: 'GiB', default: 10, min: 5, max: 500 }
@@ -30,6 +31,7 @@ const kubeezAi = {
             memoryMi: int(s.memoryMi ?? 4096, { min: 1536, max: 65536, label: 'Memory limit (MiB)' }),
             cpu: oneOf(String(s.cpu || '2'), ['1', '2', '4', '8'], 'CPU limit'),
             gpu: s.gpu === true || s.gpu === 'true',
+            download: !(s.download === false || s.download === 'false'),
             storage: resolveStorage(s.storage, ctx),
             sizeGi: int(s.sizeGi ?? 10, { min: 5, max: 500, label: 'Volume size (GiB)' })
         }
@@ -40,7 +42,7 @@ const kubeezAi = {
             fullnameOverride: 'kubeez-ai',
             ollama: {
                 gpu: s.gpu ? { enabled: true, type: 'nvidia', number: 1 } : { enabled: false },
-                models: { pull: [s.model] }
+                models: { pull: s.download ? [s.model] : [] }
             },
             service: { type: 'ClusterIP', port: 11434 },
             extraEnv: [{ name: 'OLLAMA_NUM_PARALLEL', value: '1' }, { name: 'OLLAMA_KEEP_ALIVE', value: '10m' }, { name: 'OLLAMA_MAX_LOADED_MODELS', value: '1' }],
@@ -53,6 +55,7 @@ const kubeezAi = {
     post: (s) => ({
         manifests: [],
         script: [
+            ...(s.download ? [] : [`log "✓ KubeEZ AI is running without a model (offline). Import ${s.model}: ./ai-offline.sh import-cluster kubeez-ai-<model>.tar"`, 'exit 0']),
             `MODEL='${s.model}'`,
             'IP=$(kubectl -n kubeez-ai get svc kubeez-ai -o jsonpath=\'{.spec.clusterIP}\' 2>/dev/null); OK=""',
             'for _ in $(seq 1 120); do curl -s -m 5 "http://$IP:11434/api/tags" 2>/dev/null | grep -q "\\"$MODEL" && { OK=1; break; }; sleep 5; done',
