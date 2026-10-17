@@ -18,6 +18,7 @@ import { explainIncidentFull, explainKey } from '../services/ai/incidentExplain.
 import { planAction, applyAction, undoAction, actionLog, view, cleanSpec, ACTION_TYPES } from '../services/ai/actions.js'
 import { riskScore, newestSnapshot, cachedSnapshot } from '../services/ai/risk.js'
 import { fleetText } from '../services/ai/fleet.js'
+import { handleChat } from '../services/ai/chatops.js'
 import { riskOf, fleetFor, advisorFor } from '../services/ai/insights.js'
 import { addonSettingsStore } from '../services/addonSettings.js'
 import { ADVISOR_SCRIPT, analyze as analyzeAdvisor, advisorText } from '../services/ai/advisor.js'
@@ -110,6 +111,14 @@ router.post('/explain/incident/:id', requirePermission('ai:use'), async (req, re
     const canAct = canOn(req.user, 'incident:act', cluster)
     await runJob(req, res, explainKey(inc), () => explainIncidentFull(req.user, inc, cluster, { fresh: !!req.body?.fresh }),
         { fresh: !!req.body?.fresh, decorate: (v) => ({ ...v, canAct }) })
+})
+
+// ── Ask AI (the web chat): the same answers as ChatOps, only about what this member may see ──
+router.post('/chat', requirePermission('ai:use'), async (req, res) => {
+    const text = String(req.body?.text || '').trim().slice(0, 2000)
+    if (!text) return res.status(400).json({ error: 'Ask something' })
+    await runJob(req, res, `chat:${req.user.id}:${randomBytes(6).toString('hex')}`,
+        () => handleChat({ orgId: req.user.orgId, chatKey: `web:${req.user.id}`, who: req.user.username, source: 'Web', text, user: req.user, rate: 60 }))
 })
 
 // ── Text → YAML (generating runs as a job; nothing touches a cluster here) ──

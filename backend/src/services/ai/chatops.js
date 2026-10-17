@@ -20,6 +20,8 @@ import { collectChanges, changesText } from './changes.js'
 import { summarizeChanges } from './doctor.js'
 import { planAction } from './actions.js'
 import { riskScore, cachedSnapshot } from './risk.js'
+import { visibleClusters } from './insights.js'
+import { canOn } from '../accessControl.js'
 
 const CLOSED = new Set(['resolved', 'cleared'])
 const RATE = 20, RATE_MS = 3600e3
@@ -63,29 +65,32 @@ export function intentOf(raw) {
 const chats = new Map()   // chatKey → { list: [incidentId], at, asked: [ts] }
 const chatState = (k) => { let c = chats.get(k); if (!c) { c = { list: [], at: 0, asked: [] }; chats.set(k, c) } return c }
 
-const openIncidents = (orgId) => incidentDetector.getIncidents()
-    .filter(i => i.orgId === orgId && !CLOSED.has(i.status) && !i.causedBy)
+// a scope is { orgId } for a team chat (the whole workspace, like its alerts) or
+// { orgId, user, visible } in the web app (only what that member may see)
+const mayView = (sc, i) => !sc.visible || sc.visible.some(c => c.id === i.clusterId && canOn(sc.user, 'incident:view', c))
+const openIncidents = (sc) => incidentDetector.getIncidents()
+    .filter(i => i.orgId === sc.orgId && !CLOSED.has(i.status) && !i.causedBy && mayView(sc, i))
     .sort((a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1) || b.lastSeen.localeCompare(a.lastSeen))
 const sev = (i) => i.severity === 'critical' ? '🔴' : i.severity === 'info' ? '🔵' : '🟠'
 const RISK = { low: '🟢', medium: '🟡', high: '🔴' }
 
-async function clustersOf(orgId) { return (await clusterStore.getClusters().catch(() => [])).filter(c => c.orgId === orgId && c.status !== 'failed') }
+async function clustersOf(sc) { return (sc.visible || (await clusterStore.getClusters().catch(() => [])).filter(c => c.orgId === sc.orgId)).filter(c => c.status !== 'failed') }
 const findCluster = (clusters, text) => clusters.find(c => new RegExp(`\\b${String(c.clusterName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)) || (clusters.length === 1 ? clusters[0] : null)
 
-function listText(orgId, state, lang) {
-    const list = openIncidents(orgId).slice(0, 10)
+function listText(sc, state, lang) {
+    const list = openIncidents(sc).slice(0, 10)
     state.list = list.map(i => i.id); state.at = Date.now()
     if (!list.length) return T[lang].none
     return list.map((i, n) => `${n + 1}. ${sev(i)} ${reasonLabel(i.reason)} — ${i.clusterName}: ${i.namespace ? `${i.namespace}/` : ''}${i.target}`).join('\n') +
         `\n\n${lang === 'en' ? 'Send "why 1" for the cause, "fix 1" for a fix.' : lang === 'hi' ? 'कारण के लिए "why 1", सुधार के लिए "fix 1" भेजें।' : 'Wajah ke liye "1 kyu", fix ke liye "fix 1" bhejo.'}`
 }
 
-const pick = (orgId, state, n) => {
-    if (!state.list.length || Date.now() - state.at > 3600e3) listTextSilently(orgId, state)
+const pick = (sc, state, n) => {
+    if (!state.list.length || Date.now() - state.at > 3600e3) listTextSilently(sc, state)
     const id = state.list[n - 1]
     return id ? incidentDetector.find(id) : null
 }
-function listTextSilently(orgId, state) { state.list = openIncidents(orgId).slice(0, 10).map(i => i.id); state.at = Date.now() }
+function listTextSilently(sc, state) { state.list = openIncidents(sc).slice(0, 10).map(i => i.id); state.at = Date.now() }
 
 const user = (orgId, who, source) => ({ id: `chat:${source}`, username: `${who} (${source})`, orgId, role: 'viewer' })
 
@@ -102,33 +107,34 @@ export async function handleChat(ctx) {
     const s = aiStore.get(orgId)
     const state = chatState(chatKey)
     state.asked = state.asked.filter(t => Date.now() - t < RATE_MS)
-    if (state.asked.length >= RATE) return { reply: L.limit(Math.ceil((RATE_MS - (Date.now() - state.asked[0])) / 60e3)) }
+    const sc = ctx.user ? { orgId, user: ctx.user, visible: await visibleClusters(ctx.user) } : { orgId }
+    if (state.asked.length >= (ctx.rate || RATE)) return { reply: L.limit(Math.ceil((RATE_MS - (Date.now() - state.asked[0])) / 60e3)) }
     state.asked.push(Date.now())
     auditLog.record({ orgId, actor: { username: `${who} (${source})` }, action: 'ai.chatops', detail: `${intent.kind}: ${String(intent.text).slice(0, 120)}` })
-    const u = user(orgId, who, source)
+    const u = ctx.user || user(orgId, who, source)
     const needsAi = ['explain', 'ask'].includes(intent.kind)
     if (needsAi && !s.enabled) return { reply: L.off }
 
     try {
         switch (intent.kind) {
             case 'help': return { reply: helpText(lang) }
-            case 'incidents': return { reply: listText(orgId, state, lang) }
+            case 'incidents': return { reply: listText(sc, state, lang) }
             case 'status': {
-                const clusters = await clustersOf(orgId)
+                const clusters = await clustersOf(sc)
                 if (!clusters.length) return { reply: lang === 'en' ? 'No clusters yet.' : 'Abhi koi cluster nahi hai.' }
                 const mon = incidentDetector.getMonitoring()
                 const lines = clusters.map(c => {
-                    const inc = incidentDetector.getIncidents().filter(i => i.clusterId === c.id && !CLOSED.has(i.status) && !i.causedBy)
+                    const inc = incidentDetector.getIncidents().filter(i => i.clusterId === c.id && !CLOSED.has(i.status) && !i.causedBy && mayView(sc, i))
                     const m = mon.find(x => x.clusterId === c.id)
                     const r = riskScore({ cluster: c, incidents: inc, monitoring: m ? { watched: true, connected: m.connected } : { watched: false }, snapshot: cachedSnapshot(c.id), offsite: undefined, compliance: null })
                     return `${RISK[r.level]} ${c.clusterName} — risk ${r.score}/100, ${inc.length} open${r.factors[0] ? ` · ${r.factors[0].label}` : ''}`
                 })
-                return { reply: `${lines.join('\n')}\n\n${listText(orgId, state, lang)}` }
+                return { reply: `${lines.join('\n')}\n\n${listText(sc, state, lang)}` }
             }
             case 'explain': case 'fix': {
-                const inc = pick(orgId, state, intent.n)
+                const inc = pick(sc, state, intent.n)
                 if (!inc) return { reply: L.unknownN(intent.n) }
-                const cluster = (await clustersOf(orgId)).find(c => c.id === inc.clusterId)
+                const cluster = (await clustersOf(sc)).find(c => c.id === inc.clusterId)
                 if (!cluster) return { reply: L.unknownN(intent.n) }
                 if (!s.enabled) return { reply: L.off }
                 await ctx.send?.(L.looking)
@@ -144,7 +150,7 @@ export async function handleChat(ctx) {
                 return { reply: [head, '', `🛠 ${plan.title || `${spec.type} ${spec.kind}/${spec.name}`}`, plan.change || '', plan.blocked ? `⛔ ${plan.blocked}` : plan.dryRun ? `${plan.dryRun.ok ? '✅' : '❌'} dry-run ${plan.dryRun.ok ? 'passed' : 'failed'}` : '', plan.undo?.text ? `↩ ${plan.undo.text}` : '', '', L.openIn, link(`/incidents?open=${inc.id}`) || 'KubeEZ → Incidents'].filter(x => x !== '').join('\n') }
             }
             case 'changes': {
-                const clusters = await clustersOf(orgId)
+                const clusters = await clustersOf(sc)
                 const c = findCluster(clusters, intent.text)
                 if (!c) return { reply: `${lang === 'en' ? 'Which cluster?' : 'Kaunsa cluster?'} ${clusters.map(x => x.clusterName).join(', ')}` }
                 const r = await collectChanges(c, { hours: intent.hours })
@@ -157,10 +163,10 @@ export async function handleChat(ctx) {
             }
             default: {
                 await ctx.send?.(L.looking)
-                const clusters = await clustersOf(orgId)
+                const clusters = await clustersOf(sc)
                 const facts = [
                     `Clusters: ${clusters.map(c => `${c.clusterName} (Kubernetes ${c.k8sVersion}, ${(c.masterNodes || []).length} control-plane, ${(c.workerNodes || []).length} workers)`).join('; ') || 'none'}`,
-                    `Open problems: ${openIncidents(orgId).slice(0, 15).map(i => `${reasonLabel(i.reason)} on ${i.clusterName} ${i.namespace ? `${i.namespace}/` : ''}${i.target}: ${i.message}`).join(' | ') || 'none'}`
+                    `Open problems: ${openIncidents(sc).slice(0, 15).map(i => `${reasonLabel(i.reason)} on ${i.clusterName} ${i.namespace ? `${i.namespace}/` : ''}${i.target}: ${i.message}`).join(' | ') || 'none'}`
                 ].join('\n')
                 const r = await ask(u, {
                     task: 'chat', purpose: `chat (${source})`, maxTokens: 400, language: lang,
@@ -171,7 +177,7 @@ export async function handleChat(ctx) {
             }
         }
     } catch (e) {
-        if (e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE') return { reply: `${L.noAi}\n${listText(orgId, state, lang)}` }
+        if (e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE') return { reply: `${L.noAi}\n${listText(sc, state, lang)}` }
         return { reply: `⚠ ${e.message}` }
     }
 }

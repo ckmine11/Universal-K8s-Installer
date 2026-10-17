@@ -106,6 +106,25 @@ describe('ChatOps: answers', () => {
         assert.equal(tgSent[0].reply_to_message_id, 5)
     })
 
+    test('Ask AI in the web app: only the clusters and problems this member may see', async () => {
+        const org2 = 'org-web'
+        fs.writeFileSync(path.join(DATA, 'clusters.json'), JSON.stringify([
+            { id: 'w1', clusterName: 'shop', orgId: org2, ownerId: 'u', k8sVersion: '1.36.0', status: 'completed', masterNodes: [], workerNodes: [] },
+            { id: 'w2', clusterName: 'finance', orgId: org2, ownerId: 'u', k8sVersion: '1.36.0', status: 'completed', masterNodes: [], workerNodes: [] }
+        ]))
+        const now = new Date().toISOString()
+        incidentDetector.incidents.unshift(
+            { id: 'wi1', orgId: org2, clusterId: 'w1', clusterName: 'shop', reason: 'CrashLoopBackOff', target: 'web-1', namespace: 'shop', status: 'unresolved', severity: 'warning', message: 'crash', timestamp: now, lastSeen: now, timeline: [] },
+            { id: 'wi2', orgId: org2, clusterId: 'w2', clusterName: 'finance', reason: 'NodeNotReady', target: 'fin-1', status: 'unresolved', severity: 'critical', message: 'down', timestamp: now, lastSeen: now, timeline: [] })
+        const member = { id: 'm1', username: 'dev', orgId: org2, role: 'viewer', clusterAccess: [{ type: 'cluster', clusterId: 'w2', role: 'none' }] }
+        const r = await handleChat({ orgId: org2, chatKey: 'web:m1', who: 'dev', source: 'Web', text: 'sab theek hai?', user: member, rate: 60 })
+        assert.match(r.reply, /shop — risk/)
+        assert.equal(/finance|fin-1/.test(r.reply), false, 'the hidden cluster and its problem are not shown')
+        const team = await handleChat({ orgId: org2, chatKey: 'tg:team', who: 'ops', source: 'Telegram', text: 'incidents' })
+        assert.match(team.reply, /fin-1/, 'a team chat sees the whole workspace, like its alerts')
+        incidentDetector.incidents = incidentDetector.incidents.filter(i => !['wi1', 'wi2'].includes(i.id))
+    })
+
     test('Slack: only requests signed with the channel\'s secret, within 5 minutes', () => {
         const secret = 'a'.repeat(32), ts = String(Math.floor(Date.now() / 1000)), body = 'text=status&user_name=ravi'
         const sig = `v0=${crypto.createHmac('sha256', secret).update(`v0:${ts}:${body}`).digest('hex')}`

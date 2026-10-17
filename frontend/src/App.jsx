@@ -21,6 +21,7 @@ import Pricing from './pages/Pricing'
 import VendorPortal from './pages/VendorPortal'
 import Incidents from './pages/Incidents'
 import Fleet from './pages/Fleet'
+import AiHub from './pages/AiHub'
 import Alerts from './pages/Alerts'
 import Compliance from './pages/Compliance'
 import Explorer from './pages/Explorer'
@@ -143,6 +144,8 @@ function AuthenticatedApp() {
                         element={<Incidents />}
                     />
                     <Route path="/fleet" element={<Fleet />} />
+                    <Route path="/ai" element={<AiHub />} />
+                    <Route path="/ai/:tool" element={<AiHub />} />
                     <Route
                         path="/pricing"
                         element={<Pricing />}

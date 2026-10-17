@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
-    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2
+    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2,
+    Sparkles, Wand2, Coins, History, Bot
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
@@ -28,15 +29,26 @@ export function navSections(user, approvalsWaiting = 0) {
     // what the member may do decides the menu (custom roles included)
     const canAgents = can(role, 'agent:view')
     const canDeploy = can(role, 'cluster:create')
+    const canAi = can(role, 'ai:use')
     return [
         {
             title: 'Overview', items: [
                 { to: '/', label: 'Clusters', icon: LayoutDashboard, end: true },
                 { to: '/explorer', label: 'Explorer', icon: Compass },
-                { to: '/fleet', label: 'Fleet', icon: Globe2 },
                 { to: '/incidents', label: 'Incidents', icon: ShieldAlert },
                 { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
             ]
+        },
+        // every AI feature in one place
+        {
+            title: 'AI', items: [
+                canAi && { to: '/ai', label: 'Ask AI', icon: Sparkles, end: true },
+                { to: '/fleet', label: 'Fleet', icon: Globe2 },
+                canAi && { to: '/ai/create', label: 'Create YAML', icon: Wand2 },
+                { to: '/ai/advisor', label: 'Advisor', icon: Coins },
+                { to: '/ai/changes', label: 'What changed', icon: History },
+                can(role, 'ai:manage') && { to: '/settings?tab=ai', label: 'AI settings', icon: Bot },
+            ].filter(Boolean)
         },
         {
             title: 'Build', items: [
@@ -65,7 +77,7 @@ export function navSections(user, approvalsWaiting = 0) {
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
     [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'], [/^\/approvals/, 'Approvals'],
-    [/^\/settings/, 'Settings'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
+    [/^\/settings/, 'Settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }

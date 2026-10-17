@@ -665,6 +665,7 @@ export default function Docs() {
 
                     <Section id="ai" Icon={Bot} color="text-violet-400" title="KubeEZ AI"
                         intro="An AI assistant for your clusters — free on every plan. It runs on open-source models (on the KubeEZ server or inside your own cluster), or on your own API keys.">
+                        <P>Everything is in the <B>AI</B> section of the sidebar: <B>Ask AI</B> (chat about your clusters in English, हिन्दी or Hinglish — “sab theek hai?”, “2 kyu hua”, “kya badla”), <B>Fleet</B>, <B>Create YAML</B>, <B>Advisor</B>, <B>What changed</B> and, for admins, <B>AI settings</B>. Ask AI only answers about the clusters you may see and never changes anything.</P>
                         <H4>Set it up (Settings → AI)</H4>
                         <Steps items={[
                             <>Pick where the model runs. <B>Free and private:</B> the built-in server model, or the <B>KubeEZ AI</B> add-on on one of your clusters (cluster page → Add-ons; nothing leaves your network). <B>Your own:</B> an Ollama machine on your network, or a cloud API (OpenAI-compatible such as Groq or DeepSeek, Google Gemini, Anthropic Claude) with your key.</>,
