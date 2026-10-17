@@ -5,7 +5,7 @@ import { can } from '../../config/permissions'
 import { aiJob } from './aiJob'
 import Feedback from './Feedback'
 
-// Cluster → Advisor: security and cost per workload, facts first, AI summary on demand.
+// AI → Advisor: security and cost per workload, facts first, AI summary on demand.
 const SEV = { high: 'text-red-300 border-red-400/30 bg-red-500/10', medium: 'text-amber-300 border-amber-400/30 bg-amber-500/10', low: 'text-slate-300 border-white/15 bg-white/5' }
 const KIND = { over: ['Asks for more than it uses', 'text-amber-300'], under: ['Uses more than it asks for', 'text-red-300'], 'no-requests': ['No requests', 'text-amber-300'], idle: ['Idle', 'text-slate-400'] }
 const cores = (c) => c >= 1 ? `${+c.toFixed(2)}` : `${Math.max(1, Math.round(c * 1000))}m`
@@ -101,7 +101,7 @@ export default function Advisor({ clusterId }) {
                     <div className="space-y-2">
                         <Bar label={`CPU · ${a.cost.nodes.count} node(s)`} used={a.cost.nodes.used.cpu} requested={a.cost.nodes.requested.cpu} total={a.cost.nodes.total.cpu} fmt={cores} />
                         <Bar label="Memory" used={a.cost.nodes.used.mem} requested={a.cost.nodes.requested.mem} total={a.cost.nodes.total.mem} fmt={mem} />
-                        <p className="text-[10px] text-slate-500"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 mr-1" />used now <span className="inline-block w-2 h-2 rounded-sm bg-blue-400/40 ml-3 mr-1" />requested. Prices: {a.cost.rates.currency}{a.cost.rates.cpu} per core and {a.cost.rates.currency}{a.cost.rates.memGb} per GiB a month (Settings → AI).</p>
+                        <p className="text-[10px] text-slate-500"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 mr-1" />used now <span className="inline-block w-2 h-2 rounded-sm bg-blue-400/40 ml-3 mr-1" />requested. Prices: {a.cost.rates.currency}{a.cost.rates.cpu} per core and {a.cost.rates.currency}{a.cost.rates.memGb} per GiB a month (AI settings).</p>
                     </div>
                 )}
                 {!a.cost.workloads.length && <p className="text-sm text-emerald-300">Requests match what the workloads use.</p>}

@@ -3,7 +3,7 @@ import { ThumbsUp, ThumbsDown, Check } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 
 // 👍 / 👎 on an AI answer. A 👎 asks why — that is what shows which engine
-// to trust (Settings → AI → Quality) and what to improve.
+// to trust (AI settings → Quality) and what to improve.
 const REASONS = [['wrong', 'Wrong cause'], ['invented', 'Made something up'], ['unclear', 'Not clear'], ['unsafe', 'Unsafe advice'], ['slow', 'Too slow'], ['other', 'Other']]
 
 export default function Feedback({ traceId }) {

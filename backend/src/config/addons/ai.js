@@ -60,7 +60,7 @@ const kubeezAi = {
             'IP=$(kubectl -n kubeez-ai get svc kubeez-ai -o jsonpath=\'{.spec.clusterIP}\' 2>/dev/null); OK=""',
             'for _ in $(seq 1 120); do curl -s -m 5 "http://$IP:11434/api/tags" 2>/dev/null | grep -q "\\"$MODEL" && { OK=1; break; }; sleep 5; done',
             '[ -n "$OK" ] || fail MODEL_NOT_READY "KubeEZ AI runs, but the model $MODEL is not downloaded yet." "The first download can take a while on a slow link — check \'kubectl -n kubeez-ai logs deploy/kubeez-ai\', then Repair."',
-            'log "✓ KubeEZ AI is ready with $MODEL — choose it in Settings → AI"'
+            'log "✓ KubeEZ AI is ready with $MODEL — choose it in AI settings"'
         ].join('\n')
     }),
     locked: { 'kubeez-ai': ['fullnameOverride', 'service'] },

@@ -28,7 +28,7 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package, History, Coins, Wand2 } from 'lucide-react'
+    Package } from 'lucide-react'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
@@ -38,21 +38,17 @@ import BackupsTab from '../components/backups/BackupsTab'
 import ExplorerTab from '../components/explorer/ExplorerTab'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
-import WhatChanged from '../components/ai/WhatChanged'
 import RiskCard from '../components/ai/RiskCard'
-import YamlStudio from '../components/ai/YamlStudio'
-import Advisor from '../components/ai/Advisor'
 
 // Page sections — one tab each, so nothing is buried in a long page
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
-    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database },
-    { key: 'changes', label: 'Changes', hint: 'what changed, AI fixes', Icon: History },
-    { key: 'advisor', label: 'Advisor', hint: 'security & cost', Icon: Coins },
-    { key: 'create', label: 'Create', hint: 'describe → YAML', Icon: Wand2 }
+    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
 ]
+// moved to the AI section of the sidebar (old links still work)
+const MOVED_TO_AI = { changes: 'changes', advisor: 'advisor', create: 'create' }
 const ADDON_SECTIONS = [
     { key: 'access', label: 'Access & logins' },
     { key: 'manage', label: 'Manage & logs' }
@@ -95,6 +91,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     const tab = TABS.some(t => t.key === params.get('tab')) ? params.get('tab') : 'overview'
     const section = ADDON_SECTIONS.some(s => s.key === params.get('section')) ? params.get('section') : 'access'
     const setTab = (key) => setParams(key === 'overview' ? {} : { tab: key })
+    useEffect(() => { const m = MOVED_TO_AI[params.get('tab')]; if (m) navigate(`/ai/${m}?cluster=${id}`, { replace: true }) }, [params, id])   // eslint-disable-line react-hooks/exhaustive-deps
     const setSection = (key) => setParams({ tab: 'addons', section: key }, { replace: true })
 
     // Calculate next version options
@@ -588,9 +585,6 @@ export default function ClusterDetails({ onScaleCluster }) {
             )}
 
             {/* ── What changed? ───────────────────────────────────────── */}
-            {tab === 'changes' && <WhatChanged clusterId={id} />}
-            {tab === 'advisor' && <Advisor clusterId={id} />}
-            {tab === 'create' && <YamlStudio clusterId={id} canEdit={['edit', 'admin'].includes(kubeLevel(user?.role, id))} />}
 
             {/* ── Explorer (Radar behind KubeEZ) ─────────────────────── */}
             {tab === 'explorer' && (

@@ -3,7 +3,7 @@ import { Loader2, Trash2, Copy, Download, KeyRound, Plus, Check } from 'lucide-r
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 
-// Settings → AI: MCP tokens, the AI-BOM, and learning from 👍 answers.
+// AI settings: MCP tokens, the AI-BOM, and learning from 👍 answers.
 const copy = (text, toast) => { navigator.clipboard?.writeText(text); toast({ title: 'Copied', type: 'success' }) }
 const origin = () => window.location.origin
 

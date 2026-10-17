@@ -70,7 +70,7 @@ export const aiStore = {
     usedToday(orgId) { const u = load().usage[orgId || '_']; return u?.date === today() ? u.count : 0 },
     countUse(orgId) { const all = load(); const u = all.usage[orgId || '_']; all.usage[orgId || '_'] = u?.date === today() ? { date: u.date, count: u.count + 1 } : { date: today(), count: 1 }; save() },
 
-    // the last calls (masked prompts only, never keys), for Settings → AI → Activity
+    // the last calls (masked prompts only, never keys), for AI settings → Activity
     addTrace(orgId, t) {
         const all = loadTraces(); const list = all[orgId || '_'] ||= []
         list.unshift(t); if (list.length > 300) list.length = 300

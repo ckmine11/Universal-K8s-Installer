@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 
-// Settings → AI → ChatOps: ask KubeEZ from the Telegram / Slack alert channels.
+// AI settings → ChatOps: ask KubeEZ from the Telegram / Slack alert channels.
 function Toggle({ on, onChange, label, disabled }) {
     return (
         <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}

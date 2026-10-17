@@ -238,7 +238,7 @@ function checkWrite(req, res) {
     const nss = accessOn(req.user, cluster).namespaces
     if (nss && !nsMatches(nss, namespace)) { res.status(403).json({ error: `You may only change: ${nss.join(', ')}` }); return null }
     const policy = actionPolicy(req.user.orgId, { risk: 'medium' })
-    if (policy === 'blocked') { res.status(403).json({ error: 'AI actions are stopped in this workspace (Settings → AI → kill switch).', code: 'AI_ACTIONS_STOPPED' }); return null }
+    if (policy === 'blocked') { res.status(403).json({ error: 'AI actions are stopped in this workspace (AI settings → kill switch).', code: 'AI_ACTIONS_STOPPED' }); return null }
     if (policy === 'suggest') { res.status(403).json({ error: 'KubeEZ AI is set to "Suggest only" — copy the YAML and apply it yourself.', code: 'AI_SUGGEST_ONLY' }); return null }
     return { cluster, checked, namespace }
 }
@@ -287,8 +287,8 @@ function checkAction(req, res) {
     if (nss && !nsMatches(nss, spec.namespace)) { res.status(403).json({ error: `You may only act in: ${nss.join(', ')}` }); return null }
     const risk = spec.type === 'scale' && spec.replicas === 0 ? 'high' : ACTION_TYPES[spec.type].risk
     const policy = actionPolicy(req.user.orgId, { risk })
-    if (policy === 'blocked') { res.status(403).json({ error: 'AI actions are stopped in this workspace (Settings → AI → kill switch).', code: 'AI_ACTIONS_STOPPED' }); return null }
-    if (policy === 'suggest') { res.status(403).json({ error: 'KubeEZ AI is set to "Suggest only" — fixes are not run from here (Settings → AI).', code: 'AI_SUGGEST_ONLY' }); return null }
+    if (policy === 'blocked') { res.status(403).json({ error: 'AI actions are stopped in this workspace (AI settings → kill switch).', code: 'AI_ACTIONS_STOPPED' }); return null }
+    if (policy === 'suggest') { res.status(403).json({ error: 'KubeEZ AI is set to "Suggest only" — fixes are not run from here (AI settings).', code: 'AI_SUGGEST_ONLY' }); return null }
     return { spec, cluster }
 }
 

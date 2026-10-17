@@ -80,7 +80,7 @@ export function parseJson(text) {
 export async function ask(user, opts) {
     const orgId = user.orgId
     const s = aiStore.get(orgId)
-    if (!s.enabled) throw Object.assign(new AiUnavailable('KubeEZ AI is turned off for this workspace (Settings → AI)'), { code: 'AI_OFF', status: 400 })
+    if (!s.enabled) throw Object.assign(new AiUnavailable('KubeEZ AI is turned off for this workspace (AI settings)'), { code: 'AI_OFF', status: 400 })
     const task = opts.task || 'chat'
     const t0 = Date.now()
     const traceId = randomBytes(6).toString('hex')
@@ -107,7 +107,7 @@ export async function ask(user, opts) {
 
     // 3–4) engines in order, with retries, breaker, queue and validation
     const route = opts.only ? [opts.only] : routeFor(orgId, task)
-    if (!route.length) throw new AiUnavailable('No AI engine is set up — add one in Settings → AI, or install the KubeEZ AI add-on')
+    if (!route.length) throw new AiUnavailable('No AI engine is set up — add one in AI settings, or install the KubeEZ AI add-on')
     const attempts = []
     let result = null
     for (const p of route) {
@@ -159,7 +159,7 @@ export async function ask(user, opts) {
     if (opts.trace !== false) auditLog.record({ orgId, actor: user, action: 'ai.ask', ok: !!result, target: opts.clusterId ? { clusterId: opts.clusterId, clusterName: opts.clusterName } : null,
         detail: `${opts.purpose || task} — ${result ? `${result.provider} (${result.model}), ${ms} ms` : 'no engine answered'}${masked ? `, ${masked} secret(s) masked` : ''}${hits.length ? ', trick text flagged' : ''}` })
 
-    if (!result) throw new AiUnavailable(attempts.some(a => a.skipped?.startsWith('daily limit')) && attempts.every(a => a.skipped || a.error) ? 'Today\'s AI limit is used up — tomorrow it resets, or add your own engine in Settings → AI' : 'No AI engine could answer right now', attempts)
+    if (!result) throw new AiUnavailable(attempts.some(a => a.skipped?.startsWith('daily limit')) && attempts.every(a => a.skipped || a.error) ? 'Today\'s AI limit is used up — tomorrow it resets, or add your own engine in AI settings' : 'No AI engine could answer right now', attempts)
     return { text: result.text, json: result.json, provider: result.provider, providerId: result.providerId, providerKind: result.providerKind, model: result.model, ms, attempts, masked, suspicious: hits.length > 0, traceId }
 }
 

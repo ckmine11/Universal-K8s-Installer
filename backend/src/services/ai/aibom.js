@@ -88,7 +88,7 @@ export async function buildAiBom(orgId, { now = new Date() } = {}) {
         ['Activity log', 'last 300 AI calls per workspace — masked prompts and answers, never API keys'],
         ['API keys', 'encrypted at rest (AES-256-GCM), never shown again or sent to the browser'],
         ['Audit trail', `every AI question, fix, undo and setting change — hash-chained, kept ${AUDIT_RETENTION_DAYS} days`],
-        ['Learned runbooks / examples', 'masked, per workspace, can be deleted in Settings → AI']
+        ['Learned runbooks / examples', 'masked, per workspace, can be deleted in AI settings']
     ]
 
     const cyclonedx = {

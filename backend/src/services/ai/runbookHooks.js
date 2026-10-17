@@ -30,7 +30,7 @@ export const depsFor = (cluster) => ({
         notifier.emit(cluster.orgId, {
             type: 'incident', severity: 'info', key: `runbook|${rec.id}`,
             title: `KubeEZ AI ran a runbook: ${rec.title}`,
-            text: `It fixed this problem ${rb.successes} time(s) before. Undo within 24 hours on the incident or under Cluster → Changes.`,
+            text: `It fixed this problem ${rb.successes} time(s) before. Undo within 24 hours on the incident or under AI → What changed.`,
             clusterId: cluster.id, clusterName: cluster.clusterName, link: '/incidents'
         })
     }

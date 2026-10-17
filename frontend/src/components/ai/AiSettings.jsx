@@ -9,7 +9,7 @@ import ChatOpsPanel from './ChatOpsPanel'
 import { McpPanel, AiBomPanel, LearningPanel } from './Phase6Panels'
 import Feedback from './Feedback'
 
-// Settings → AI: the engines (models) KubeEZ AI may use, which engine does
+// AI settings: the engines (models) KubeEZ AI may use, which engine does
 // which job (with fallbacks), the safety switches, a test box and the log.
 const AUTONOMY_INFO = {
     suggest: ['Suggest only', 'AI explains and suggests; it never runs anything.'],

@@ -666,10 +666,10 @@ export default function Docs() {
                     <Section id="ai" Icon={Bot} color="text-violet-400" title="KubeEZ AI"
                         intro="An AI assistant for your clusters — free on every plan. It runs on open-source models (on the KubeEZ server or inside your own cluster), or on your own API keys.">
                         <P>Everything is in the <B>AI</B> section of the sidebar: <B>Ask AI</B> (chat about your clusters in English, हिन्दी or Hinglish — “sab theek hai?”, “2 kyu hua”, “kya badla”), <B>Fleet</B>, <B>Create YAML</B>, <B>Advisor</B>, <B>What changed</B> and, for admins, <B>AI settings</B>. Ask AI only answers about the clusters you may see and never changes anything.</P>
-                        <H4>Set it up (Settings → AI)</H4>
+                        <H4>Set it up (AI settings)</H4>
                         <Steps items={[
                             <>Pick where the model runs. <B>Free and private:</B> the built-in server model, or the <B>KubeEZ AI</B> add-on on one of your clusters (cluster page → Add-ons; nothing leaves your network). <B>Your own:</B> an Ollama machine on your network, or a cloud API (OpenAI-compatible such as Groq or DeepSeek, Google Gemini, Anthropic Claude) with your key.</>,
-                            <>Settings → AI → <B>Add engine</B>, then <B>Test</B>. For Ollama engines, <B>Download model</B> fetches a model (e.g. <C>qwen2.5:3b</C>).</>,
+                            <>AI settings → <B>Add engine</B>, then <B>Test</B>. For Ollama engines, <B>Download model</B> fetches a model (e.g. <C>qwen2.5:3b</C>).</>,
                             <>Optional: <B>Routing</B> — which engines do each job and in what order. Without it, every engine is tried in list order.</>,
                             <>Use <B>Try it</B> to ask a question and see which engine answered.</>
                         ]} />
@@ -687,7 +687,7 @@ export default function Docs() {
                             ['Kill switch', <><B>AI actions allowed</B> off = AI can only explain. It is in the audit trail.</>],
                             ['Who decides', <><B>Suggest only</B>, <B>Ask first</B> (default — a person approves) or <B>Auto for low-risk</B>.</>],
                             ['Who may use it', <>Permission <C>ai:use</C> (all built-in roles) and <C>ai:manage</C> for the settings (admins; can be given in a custom role).</>],
-                            ['Records', 'Every question is in Settings → AI → Activity (masked) and in the audit trail. API keys are stored encrypted and never shown again.']
+                            ['Records', 'Every question is in AI settings → Activity (masked) and in the audit trail. API keys are stored encrypted and never shown again.']
                         ]} />
                         <H4>Explain a failure (Install Doctor)</H4>
                         <P>When an install, upgrade or add-on job fails, click <B>Explain this failure with AI</B> on its page. KubeEZ AI reads the whole log, finds the first real error, and shows the exact log lines that prove it, then the steps to fix it. Lines the model quotes that are not really in the log are removed, and the answer says how sure it is.</P>
@@ -700,9 +700,9 @@ export default function Docs() {
                         <Steps items={[
                             <><B>Preview (dry-run)</B> shows the current state, exactly what changes (e.g. image 2.0 → 1.9), the result of a server-side dry-run on the cluster, and how to undo it. Nothing changes yet.</>,
                             <><B>Apply</B> runs it, after checking the state and the dry-run again. If two-person approval protects <B>Run a fix suggested by KubeEZ AI</B> (Approvals), a second admin approves first.</>,
-                            <><B>Undo</B> (on the incident, or Cluster → Changes, for 24 hours) scales back or rolls forward again. A restart or a deleted pod needs no undo.</>
+                            <><B>Undo</B> (on the incident, or AI → What changed, for 24 hours) scales back or rolls forward again. A restart or a deleted pod needs no undo.</>
                         ]} />
-                        <Note>Who can apply fixes: members with <C>incident:act</C> on that cluster, only in their namespaces. The kill switch or <B>Suggest only</B> (Settings → AI) stops all of them. Every fix and undo is in the audit trail.</Note>
+                        <Note>Who can apply fixes: members with <C>incident:act</C> on that cluster, only in their namespaces. The kill switch or <B>Suggest only</B> (AI settings) stops all of them. Every fix and undo is in the audit trail.</Note>
                         <H4>Risk score</H4>
                         <P>Every cluster has a risk score (cluster list and cluster page): 100 means no known risk. Each point taken off is a named reason with its fix — open or predicted problems, KubeEZ unable to reach it, no or old etcd snapshot, no offsite backup, a Kubernetes version leaving support, a single control-plane, a low compliance score. It needs no AI.</P>
                         <H4>Problems seen coming</H4>
@@ -714,10 +714,10 @@ export default function Docs() {
                         <H4>Specialists</H4>
                         <P>“Explain with AI” thinks like the right expert — control-plane, storage, networking, node or application — chosen from the problem and what the logs say (e.g. “no such host” → networking). Each specialist reads the extra evidence its area needs (read-only) and follows its own checklist.</P>
                         <H4>Learned runbooks</H4>
-                        <P>When a fix applied from an explanation makes the problem go away within 2 hours, KubeEZ remembers it for that problem on that workload; an undo, or the problem still there 45 minutes later, counts against it. Next time, the explanation shows <B>Worked before</B> with the fix ready to preview. Settings → AI → <B>Runbooks</B> lists them.</P>
+                        <P>When a fix applied from an explanation makes the problem go away within 2 hours, KubeEZ remembers it for that problem on that workload; an undo, or the problem still there 45 minutes later, counts against it. Next time, the explanation shows <B>Worked before</B> with the fix ready to preview. AI settings → <B>Runbooks</B> lists them.</P>
                         <Note>A runbook can run <B>by itself</B> only when all of this is true: an admin switched it on, it is a restart or a pod deletion, it worked at least twice and 80 % of the time, “When AI suggests a fix” is <B>Auto for low-risk</B>, AI actions are not stopped, AI fixes do not need a second person, the cluster is not in maintenance, KubeEZ’s own automatic fix does not handle that problem, and it did not run in the last 30 minutes (3 times a day at most). It is dry-run first, you get an alert, and it can be undone.</Note>
                         <H4>ChatOps — ask from Telegram or Slack</H4>
-                        <P>Settings → AI → <B>ChatOps</B>: switch it on for a Telegram or Slack alert channel, then ask in that chat — in English, हिन्दी or Hinglish; the answer comes in the same language.</P>
+                        <P>AI settings → <B>ChatOps</B>: switch it on for a Telegram or Slack alert channel, then ask in that chat — in English, हिन्दी or Hinglish; the answer comes in the same language.</P>
                         <Table head={['You write', 'KubeEZ answers']} rows={[
                             [<C>sab theek hai?</C>, 'Every cluster with its risk score and the open problems, numbered'],
                             [<C>kya problem hai</C>, 'The open problems, numbered'],
@@ -728,7 +728,7 @@ export default function Docs() {
                         ]} />
                         <Note>Chat is read-only: nothing in a cluster changes from a chat message. Only the channel\u2019s own chat is answered; in Telegram groups start with <C>/ask</C> or reply to the bot. Slack: create a <C>/kubeez</C> slash command with the URL shown in Settings and paste the app\u2019s signing secret (needs KubeEZ on a public https address). 20 questions an hour per chat; every question is in the audit trail.</Note>
                         <H4>Create from a description (text → YAML)</H4>
-                        <P>AI → <B>Create YAML</B> (or Cluster → <B>Create</B>): describe what you want — in English or Hinglish — and KubeEZ makes the YAML in the most reliable way it can:</P>
+                        <P>AI → <B>Create YAML</B>: describe what you want — in English or Hinglish — and KubeEZ makes the YAML in the most reliable way it can:</P>
                         <Table head={['', '']} rows={[
                             ['Built by KubeEZ', <>Most requests (“create httpd pod”, “nginx 1.27 with 2 replicas on port 80”, “ek postgres chahiye 5Gi volume ke saath”, “har raat 2 baje busybox job”) are understood by rules and built by KubeEZ from its app catalog — instantly, without AI, always valid: a pinned image, the right port and health check, resources, a volume where the app keeps data, a random password in a Secret for databases.</>],
                             ['Understood by AI', 'When the rules are not sure, KubeEZ AI only says what is wanted (a short structured answer); KubeEZ still writes the YAML.'],
@@ -736,14 +736,14 @@ export default function Docs() {
                         ]} />
                         <P>Above the YAML you see what KubeEZ understood and how it was built; change the description to adjust (“3 replicas”, “port 8080”, “2Gi volume”, “nodeport”, “host shop.example.com”). <B>Auto-fix</B> repairs YAML you edited. KubeEZ checks every object — only namespaced kinds (no RBAC, CRDs or nodes), no privileged containers or host access, valid CPU and memory — then dry-runs it on the cluster and shows the diff. <B>Apply</B> needs Kubernetes edit access in that namespace (two-person approval can protect it); <B>Undo</B> (24 hours) deletes what was created and puts back what was changed. Known apps: nginx, httpd (Apache), caddy, redis, memcached, postgres, mysql, mariadb, mongo, rabbitmq, adminer, whoami, busybox, alpine, ubuntu, node, python — or any image (“image myrepo/app:1.0 on port 8080”).</P>
                         <H4>Advisor — security and cost</H4>
-                        <P>Cluster → <B>Advisor</B> looks at every workload. <B>Security</B>: privileged or host access, dangerous capabilities, passwords in plain env vars, running as root, unpinned images, no memory limit, services open to the outside, namespaces without a NetworkPolicy — worst first, each with its fix (system and add-on namespaces are listed apart). <B>Cost</B>: what each workload asks for compared with what it uses now, with a suggested request, idle workloads, and the possible saving per month at your prices (Settings → AI → Cost prices). <B>What to fix first</B> asks AI for the five most valuable steps.</P>
+                        <P>AI → <B>Advisor</B> looks at every workload. <B>Security</B>: privileged or host access, dangerous capabilities, passwords in plain env vars, running as root, unpinned images, no memory limit, services open to the outside, namespaces without a NetworkPolicy — worst first, each with its fix (system and add-on namespaces are listed apart). <B>Cost</B>: what each workload asks for compared with what it uses now, with a suggested request, idle workloads, and the possible saving per month at your prices (AI settings → Cost prices). <B>What to fix first</B> asks AI for the five most valuable steps.</P>
                         <H4>Fleet</H4>
                         <P><B>Fleet</B> (sidebar) shows every cluster on one page, riskiest first: open problems, Kubernetes versions (out of support marked), add-ons running different versions on different clusters, and <B>the same problem on several clusters</B> — usually one bad image or setting rolled out everywhere, so it is fixed once. <B>What needs attention</B> asks AI for the short list.</P>
                         <H4>MCP — use KubeEZ from your AI assistant</H4>
-                        <P>Settings → AI → <B>MCP</B>: create a personal token, then connect Claude Code, Claude Desktop, Cursor or any MCP client to <C>https://&lt;your KubeEZ&gt;/api/mcp</C>. The assistant gets read-only tools — list clusters, fleet overview, cluster risk, open problems, explain a problem, what changed, security and cost advice — with <B>your</B> permissions (a viewer sees what a viewer sees). Tokens are stored hashed, shown once, expire after 30–365 days, can be revoked, and stop working when the member is suspended; 120 calls an hour; every call is in the audit trail.</P>
+                        <P>AI settings → <B>MCP</B>: create a personal token, then connect Claude Code, Claude Desktop, Cursor or any MCP client to <C>https://&lt;your KubeEZ&gt;/api/mcp</C>. The assistant gets read-only tools — list clusters, fleet overview, cluster risk, open problems, explain a problem, what changed, security and cost advice — with <B>your</B> permissions (a viewer sees what a viewer sees). Tokens are stored hashed, shown once, expire after 30–365 days, can be revoked, and stop working when the member is suspended; 120 calls an hour; every call is in the audit trail.</P>
                         <P><C>claude mcp add --transport http kubeez https://&lt;your KubeEZ&gt;/api/mcp --header &quot;Authorization: Bearer kzm_…&quot;</C></P>
                         <H4>AI-BOM</H4>
-                        <P>Settings → AI → <B>AI-BOM</B>: the bill of materials of KubeEZ AI in your workspace — every model with its exact digest, where its data goes (stays inside, or leaves to which cloud), what it is used for and its quality score; every prompt by hash (a changed prompt is a changed AI); the safety controls and what is kept. Download it as CycloneDX 1.6 for auditors and tools (DPDP, ISO 27001, EU AI Act).</P>
+                        <P>AI settings → <B>AI-BOM</B>: the bill of materials of KubeEZ AI in your workspace — every model with its exact digest, where its data goes (stays inside, or leaves to which cloud), what it is used for and its quality score; every prompt by hash (a changed prompt is a changed AI); the safety controls and what is kept. Download it as CycloneDX 1.6 for auditors and tools (DPDP, ISO 27001, EU AI Act).</P>
                         <H4>Without internet (air-gapped)</H4>
                         <Steps items={[
                             <>On a machine with internet: <C>./ai-offline.sh export qwen2.5:3b</C> (the model, ~2 GB) and, if needed, <C>docker save ollama/ollama:0.40.5 -o ollama-image.tar</C>.</>,
@@ -751,16 +751,16 @@ export default function Docs() {
                             <>For the KubeEZ AI add-on: install it with <B>Download the model now</B> off, then <C>./ai-offline.sh import-cluster kubeez-ai-qwen2.5-3b.tar</C>.</>
                         ]} />
                         <H4>Learning from your feedback</H4>
-                        <P>An explanation members mark 👍 becomes a <B>worked example</B>: the next explanation of the same kind of problem sees it — better answers with any model, no GPU, no training. Settings → AI → <B>Learning</B> lists the examples (delete any) and downloads the <B>dataset</B>: every 👍 answer, masked, in chat format (JSONL) for fine-tuning a model elsewhere (this needs a GPU — e.g. Unsloth or Axolotl); the fine-tuned model can then be added as an Ollama engine and compared in Quality.</P>
+                        <P>An explanation members mark 👍 becomes a <B>worked example</B>: the next explanation of the same kind of problem sees it — better answers with any model, no GPU, no training. AI settings → <B>Learning</B> lists the examples (delete any) and downloads the <B>dataset</B>: every 👍 answer, masked, in chat format (JSONL) for fine-tuning a model elsewhere (this needs a GPU — e.g. Unsloth or Axolotl); the fine-tuned model can then be added as an Ollama engine and compared in Quality.</P>
                         <H4>Quality: test and compare engines</H4>
-                        <P>Settings → AI → <B>Quality</B> gives every engine the same exam: 16 real-looking failures (out of memory, a wrong image tag, a missing registry login, a failed kubeadm preflight, an expired certificate…) with the same prompts, masking and checks as the real features. Each answer is scored on the right cause (50), proof that is really in the data (20), a usable answer with steps (20) and nothing wrong or unsafe (10). Three traps check that an engine ignores orders hidden in a log, admits when there is too little data, and never repeats a password.</P>
+                        <P>AI settings → <B>Quality</B> gives every engine the same exam: 16 real-looking failures (out of memory, a wrong image tag, a missing registry login, a failed kubeadm preflight, an expired certificate…) with the same prompts, masking and checks as the real features. Each answer is scored on the right cause (50), proof that is really in the data (20), a usable answer with steps (20) and nothing wrong or unsafe (10). Three traps check that an engine ignores orders hidden in a log, admits when there is too little data, and never repeats a password.</P>
                         <Steps items={[
                             <>Tick the engines and click <B>Test</B>. It runs in the background (a local model on CPU needs a few minutes) and does not use the daily allowance.</>,
                             <>The table compares score, right cause, real proof, traps, speed and what members said. KubeEZ recommends one — <B>Use it first for Explain</B> puts it first; the others stay as fallbacks.</>,
                             <>When an engine’s model changes, its card says <B>model changed — test again</B>, so a worse version never goes unnoticed.</>
                         ]} />
                         <P><B>Was this right?</B> Every AI answer has 👍 / 👎 (with a reason such as “Made something up”). The ratings show in Activity, in the Quality table, and on an engine’s card when members mark many of its answers wrong.</P>
-                        <Note>The server model has a daily allowance per workspace (Settings → AI). Your own engines — the add-on, Ollama or your API keys — have no KubeEZ limit.</Note>
+                        <Note>The server model has a daily allowance per workspace (AI settings). Your own engines — the add-on, Ollama or your API keys — have no KubeEZ limit.</Note>
                     </Section>
 
                     <Section id="security" Icon={Lock} color="text-emerald-400" title="Security & Privacy"

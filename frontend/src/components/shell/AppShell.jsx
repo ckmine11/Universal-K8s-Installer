@@ -47,7 +47,7 @@ export function navSections(user, approvalsWaiting = 0) {
                 canAi && { to: '/ai/create', label: 'Create YAML', icon: Wand2 },
                 { to: '/ai/advisor', label: 'Advisor', icon: Coins },
                 { to: '/ai/changes', label: 'What changed', icon: History },
-                can(role, 'ai:manage') && { to: '/settings?tab=ai', label: 'AI settings', icon: Bot },
+                can(role, 'ai:manage') && { to: '/ai/settings', label: 'AI settings', icon: Bot },
             ].filter(Boolean)
         },
         {
@@ -77,7 +77,7 @@ export function navSections(user, approvalsWaiting = 0) {
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
     [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'], [/^\/approvals/, 'Approvals'],
-    [/^\/settings/, 'Settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
+    [/^\/settings/, 'Settings'], [/^\/ai\/settings/, 'AI settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }

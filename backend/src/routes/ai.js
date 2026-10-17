@@ -56,7 +56,7 @@ function cleanProvider(input, orgClusterIds, partial = false) {
 
 const orgClusters = async (req) => (await clusterStore.getClusters().catch(() => [])).filter(c => c.orgId === req.user.orgId)
 
-// Everything Settings → AI shows
+// Everything AI settings shows
 router.get('/', requirePermission('ai:use'), async (req, res) => {
     const s = aiStore.get(req.user.orgId)
     const server = SERVER()

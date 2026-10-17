@@ -28,7 +28,7 @@ const RATE = 20, RATE_MS = 3600e3
 const publicUrl = () => (process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/+$/, '')
 const link = (path) => publicUrl() ? `${publicUrl()}${path}` : null
 
-export const CHAT_SYSTEM = 'You answer questions about the user\'s Kubernetes clusters in a chat app. Keep it short: at most 6 lines, plain text, no tables. Use the workspace facts given; for general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. For actions, point to KubeEZ (Incidents, Cluster → Changes, Settings → AI).'
+export const CHAT_SYSTEM = 'You answer questions about the user\'s Kubernetes clusters in a chat app. Keep it short: at most 6 lines, plain text, no tables. Use the workspace facts given; for general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. For actions, point to KubeEZ (Incidents, AI → What changed, AI settings).'
 
 // ── language ──
 const HINGLISH = /\b(kya|kyu|kyun|kyon|hai|hain|ho|hua|hui|kaise|kaisa|batao|bata|theek|thik|sab|mera|meri|kitne|kitna|badla|karo|kar|nahi|nahin|chal|raha|rahi|abhi|aaj|kal|samjhao|dikkat|gadbad|haal|wala|wali|kaun|kab)\b/i

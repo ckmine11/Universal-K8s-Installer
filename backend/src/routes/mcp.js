@@ -11,7 +11,7 @@ export const mcpTokenRoutes = express.Router()
 mcpEndpoint.post('/', async (req, res) => {
     const m = /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '')
     const who = m && mcpTokens.resolve(m[1])
-    if (!who) return res.status(401).set('WWW-Authenticate', 'Bearer realm="kubeez"').json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'A valid KubeEZ MCP token is needed (Settings → AI → MCP)' } })
+    if (!who) return res.status(401).set('WWW-Authenticate', 'Bearer realm="kubeez"').json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'A valid KubeEZ MCP token is needed (AI settings → MCP)' } })
     if (!mcpTokens.touch(who.rec)) return res.status(429).json({ jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32002, message: 'Too many calls — 120 an hour per token' } })
     if (Array.isArray(req.body)) return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Batches are not supported' } })
     try {

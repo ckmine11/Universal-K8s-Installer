@@ -1,5 +1,5 @@
 // The KubeEZ AI exam — real-looking failures with a known answer. Every engine
-// can be scored on them (Settings → AI → Quality): does it find the real cause,
+// can be scored on them (AI settings → Quality): does it find the real cause,
 // prove it with lines that are really there, keep the format, and survive the
 // traps (orders hidden in logs, too little data, secrets)?
 //

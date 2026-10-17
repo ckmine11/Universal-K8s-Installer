@@ -5,7 +5,7 @@ import { useToast } from '../ToastProvider'
 import { aiJob } from './aiJob'
 import Feedback from './Feedback'
 
-// Cluster → Create: describe what you want, KubeEZ AI writes the YAML, KubeEZ
+// AI → Create YAML: describe what you want, KubeEZ AI writes the YAML, KubeEZ
 // checks it, dry-runs it on the cluster and shows the diff; Apply can be undone.
 const EXAMPLES = [
     'create httpd pod',

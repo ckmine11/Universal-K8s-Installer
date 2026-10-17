@@ -3,7 +3,7 @@ import { Loader2, Trash2, Zap } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 
-// Settings → AI → Runbooks: the fixes KubeEZ learned (what really solved a
+// AI settings → Runbooks: the fixes KubeEZ learned (what really solved a
 // problem on a workload), and which proven low-risk ones may run by themselves.
 const TYPE = { restart: 'Restart', rollback: 'Roll back', scale: 'Scale', 'delete-pod': 'Delete the pod' }
 

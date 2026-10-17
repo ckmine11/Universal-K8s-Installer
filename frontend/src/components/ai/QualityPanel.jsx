@@ -3,7 +3,7 @@ import { GraduationCap, Loader2, Play, Square, Trophy, CheckCircle2, XCircle, Al
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 
-// Settings → AI → Quality: the KubeEZ AI exam on any engine, the engines side
+// AI settings → Quality: the KubeEZ AI exam on any engine, the engines side
 // by side, the one to use first for "Explain", and what members said (👍/👎).
 const tone = (n) => n == null ? 'text-slate-500' : n >= 80 ? 'text-emerald-300' : n >= 60 ? 'text-amber-300' : 'text-red-300'
 const secs = (ms) => ms == null ? '—' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
