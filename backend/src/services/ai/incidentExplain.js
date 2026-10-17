@@ -22,7 +22,7 @@ export const explainKey = (inc) => `inc:${inc.id}:${inc.lastSeen}:${inc.status}`
 
 const cache = new Map()   // explainKey → { at, value, promise }
 export async function explainIncidentFull(user, inc, cluster, { fresh: forceFresh = false } = {}) {
-    const key = `${explainKey(inc)}:${user.language || ''}`   // answers are in the asker's language
+    const key = explainKey(inc)
     const hit = cache.get(key)
     if (!forceFresh && hit?.value && Date.now() - hit.at < 10 * 60e3) return { ...hit.value, cached: true }
     if (!forceFresh && hit?.promise) return hit.promise

@@ -16,7 +16,6 @@ const AUTONOMY_INFO = {
     approve: ['Ask first (recommended)', 'AI may prepare a fix; a person approves before it runs.'],
     auto: ['Auto for low-risk', 'Low-risk fixes (e.g. restart a crashed pod) run on their own; everything else asks first.']
 }
-const LANGS = [['en', 'English'], ['hinglish', 'Hinglish'], ['hi', 'हिन्दी']]
 const kindIcon = (k) => k === 'server' ? Server : k === 'cluster' ? Boxes : (k === 'ollama' ? Bot : Cloud)
 const isLocal = (k) => ['ollama', 'server', 'cluster'].includes(k)
 
@@ -404,12 +403,6 @@ export default function AiSettings() {
                         <div className="flex-1"><div className="text-xs font-semibold text-white">Mask IP addresses</div><div className="text-[11px] text-slate-500">Hides IPs from models (answers get less specific).</div></div>
                         <Toggle on={data.maskIps} label="Mask IP addresses" onChange={v => saveSettings({ maskIps: v })} />
                     </div>
-                    <div className="rounded-xl border border-white/[0.07] p-3">
-                        <label className="kz-label" htmlFor="ai-lang">Answer language</label>
-                        <select id="ai-lang" className="kz-input" value={data.language} onChange={e => saveSettings({ language: e.target.value }, 'Saved')}>
-                            {LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                        </select>
-                    </div>
                     {data.server && (
                         <div className="rounded-xl border border-white/[0.07] p-3">
                             <label className="kz-label" htmlFor="ai-limit">Server model: questions per day</label>
@@ -427,7 +420,7 @@ export default function AiSettings() {
                 </Section>
             )}
 
-            <Section icon={MessageCircle} title="ChatOps" hint="Ask KubeEZ from your Telegram or Slack alert channel — answers come in the language you ask in.">
+            <Section icon={MessageCircle} title="ChatOps" hint="Ask KubeEZ from your Telegram or Slack alert channel — ask in English, हिन्दी or Hinglish — answers are always in English.">
                 <ChatOpsPanel channels={data.chatops || []} onChanged={load} />
             </Section>
 

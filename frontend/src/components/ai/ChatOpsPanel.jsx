@@ -55,7 +55,7 @@ export default function ChatOpsPanel({ channels, onChanged }) {
     return (
         <div className="space-y-3">
             <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4 text-xs text-slate-400 leading-relaxed">
-                <p className="text-slate-200 font-semibold mb-1">Try in the chat (English, हिन्दी or Hinglish):</p>
+                <p className="text-slate-200 font-semibold mb-1">Try in the chat (ask in English, हिन्दी or Hinglish — answers come in English):</p>
                 <p><code className="text-blue-200">sab theek hai?</code> · <code className="text-blue-200">kya problem hai</code> · <code className="text-blue-200">2 kyu hua</code> · <code className="text-blue-200">fix 2</code> · <code className="text-blue-200">prod pe kya badla 6h</code> · <code className="text-blue-200">what is a DaemonSet?</code></p>
                 <p className="mt-1">Read-only: chat never changes a cluster — fixes are previewed there and applied in KubeEZ. Only the channel's own chat; in Telegram groups start with <code className="text-blue-200">/ask</code> or reply to the bot. 20 questions an hour per chat; every question is in the audit trail.</p>
             </div>

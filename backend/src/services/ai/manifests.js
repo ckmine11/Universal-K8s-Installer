@@ -141,7 +141,7 @@ export async function generateManifests(user, { description, namespace, context 
     else {
         try {
             const r = await ask(user, {
-                task: 'chat', purpose: 'text to YAML (understand)', json: true, maxTokens: 500, timeoutMs: 300000, system: INTENT_SYSTEM,
+                task: 'chat', purpose: 'text to YAML (understand)', json: true, english: false, maxTokens: 500, timeoutMs: 300000, system: INTENT_SYSTEM,
                 validate: (j) => Array.isArray(j.workloads) || j.freeform ? null : 'needs "workloads"',
                 data: [{ label: 'known apps', text: Object.entries(APPS).map(([k, a]) => `${k} (${a.image})`).join(', ') }, ...(context ? [{ label: 'cluster facts', text: context }] : [])],
                 question: d.slice(0, 2000)
@@ -164,7 +164,7 @@ export async function generateManifests(user, { description, namespace, context 
 
     // free-form: the model writes the YAML; KubeEZ fixes it, and asks once more if needed
     const write = (question, data = []) => ask(user, {
-        task: 'chat', purpose: 'text to YAML', maxTokens: 1200, timeoutMs: 300000, system: GENERATE_SYSTEM,
+        task: 'chat', purpose: 'text to YAML', english: false, maxTokens: 1200, timeoutMs: 300000, system: GENERATE_SYSTEM,
         data: [...(context ? [{ label: 'cluster facts', text: context }] : []), ...data], question
     })
     let r = await write(d.slice(0, 2000))

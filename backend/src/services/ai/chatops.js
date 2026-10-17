@@ -1,5 +1,5 @@
-// ChatOps — ask KubeEZ from Telegram or Slack, in English, Hindi or Hinglish,
-// and get the answer in the same language:
+// ChatOps — ask KubeEZ from Telegram or Slack (or Ask AI in the web app), in
+// English, Hindi or Hinglish; the answer is always in clear English:
 //   "status" / "sab theek hai?"           clusters, risk, open problems
 //   "incidents" / "kya problem hai"       the open problems, numbered
 //   "why 2" / "2 kyu hua"                 the AI explanation of problem 2
@@ -42,20 +42,8 @@ const link = (path) => publicUrl() ? `${publicUrl()}${path}` : null
 
 export const CHAT_SYSTEM = 'You answer questions about the user\'s Kubernetes clusters in a chat app. Keep it short: at most 6 lines, plain text, no tables. The workspace facts are read live from the clusters and are exact: use them for anything about the user\'s clusters, and never guess a count or a name that is not in them. For general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. For actions, point to KubeEZ (Incidents, AI → What changed, AI settings).'
 
-// ── language ──
-const HINGLISH = /\b(kya|kyu|kyun|kyon|hai|hain|ho|hua|hui|kaise|kaisa|batao|bata|theek|thik|sab|mera|meri|kitne|kitna|badla|karo|kar|nahi|nahin|chal|raha|rahi|abhi|aaj|kal|samjhao|dikkat|gadbad|haal|wala|wali|kaun|kab|ka|ke|ki|ko|pe|dikhao|dikha|dikhana|kaunse|kaunsa|kitni|mein|wale|chahiye|bhi|karna|hoga)\b/i
-export function detectLanguage(text) {
-    if (/[\u0900-\u097F]/.test(text)) return 'hi'
-    // names like "web-6d4f9-b2" or "kube-system" are not words of either language
-    const words = String(text).toLowerCase().split(/\s+/).filter(w => !/[-\d./]/.test(w)).join(' ').match(/[a-z]+/g) || []
-    const hits = words.filter(w => HINGLISH.test(w)).length
-    return hits >= 1 && hits / Math.max(1, words.length) >= 0.15 ? 'hinglish' : 'en'
-}
-const T = {
-    en: { looking: '🔎 Looking into it…', none: '✅ No open problems.', limit: (m) => `Too many questions — try again in ${m} min.`, off: 'KubeEZ AI is turned off for this workspace.', noAi: 'No AI engine could answer right now — here are the facts:', unknownN: (n) => `There is no problem #${n} — send "incidents" for the list.`, openIn: 'Open in KubeEZ to preview and apply:', noFix: 'No fix KubeEZ can run for this one — the steps above are for a person.' },
-    hinglish: { looking: '🔎 Dekh raha hoon…', none: '✅ Abhi koi problem nahi hai.', limit: (m) => `Bahut saare sawaal — ${m} min baad try karo.`, off: 'Is workspace mein KubeEZ AI band hai.', noAi: 'Abhi koi AI engine jawab nahi de paya — ye facts hain:', unknownN: (n) => `Problem #${n} nahi hai — list ke liye "incidents" bhejo.`, openIn: 'KubeEZ mein preview karke apply karo:', noFix: 'Iske liye KubeEZ khud fix nahi chala sakta — upar ke steps follow karo.' },
-    hi: { looking: '🔎 देख रहा हूँ…', none: '✅ अभी कोई समस्या नहीं है।', limit: (m) => `बहुत सारे सवाल — ${m} मिनट बाद कोशिश करें।`, off: 'इस वर्कस्पेस में KubeEZ AI बंद है।', noAi: 'अभी कोई AI इंजन जवाब नहीं दे पाया — ये तथ्य हैं:', unknownN: (n) => `समस्या #${n} नहीं है — सूची के लिए "incidents" भेजें।`, openIn: 'KubeEZ में देखकर लागू करें:', noFix: 'इसके लिए KubeEZ खुद सुधार नहीं चला सकता — ऊपर के कदम अपनाएँ।' }
-}
+// ── answers are always in English (questions may be English, Hindi or Hinglish) ──
+const L = { looking: '🔎 Looking into it…', none: '✅ No open problems.', limit: (m) => `Too many questions — try again in ${m} min.`, off: 'KubeEZ AI is turned off for this workspace.', noAi: 'No AI engine could answer right now — here are the facts:', unknownN: (n) => `There is no problem #${n} — send "incidents" for the list.`, openIn: 'Open in KubeEZ to preview and apply:', noFix: 'No fix KubeEZ can run for this one — the steps above are for a person.' }
 
 // ── what was asked ──
 export function intentOf(raw) {
@@ -91,17 +79,17 @@ const RISK = { low: '🟢', medium: '🟡', high: '🔴' }
 async function clustersOf(sc) { return (sc.visible || (await clusterStore.getClusters().catch(() => [])).filter(c => c.orgId === sc.orgId)).filter(c => c.status !== 'failed') }
 const findCluster = (clusters, text) => clusters.find(c => new RegExp(`\\b${String(c.clusterName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)) || (clusters.length === 1 ? clusters[0] : null)
 
-function listText(sc, state, lang) {
+function listText(sc, state) {
     const list = openIncidents(sc).slice(0, 10)
     state.list = list.map(i => i.id); state.at = Date.now()
-    if (!list.length) return T[lang].none
+    if (!list.length) return L.none
     return list.map((i, n) => `${n + 1}. ${sev(i)} ${reasonLabel(i.reason)} — ${i.clusterName}: ${i.namespace ? `${i.namespace}/` : ''}${i.target}`).join('\n') +
-        `\n\n${lang === 'en' ? 'Send "why 1" for the cause, "fix 1" for a fix.' : lang === 'hi' ? 'कारण के लिए "why 1", सुधार के लिए "fix 1" भेजें।' : 'Wajah ke liye "1 kyu", fix ke liye "fix 1" bhejo.'}`
+        '\n\nSend "why 1" for the cause, "fix 1" for a fix.'
 }
 
-async function statusReply(sc, state, lang) {
+async function statusReply(sc, state) {
     const clusters = await clustersOf(sc)
-    if (!clusters.length) return { reply: lang === 'en' ? 'No clusters yet.' : 'Abhi koi cluster nahi hai.' }
+    if (!clusters.length) return { reply: 'No clusters yet.' }
     const mon = incidentDetector.getMonitoring()
     const lines = clusters.map(c => {
         const inc = incidentDetector.getIncidents().filter(i => i.clusterId === c.id && !CLOSED.has(i.status) && !i.causedBy && mayView(sc, i))
@@ -109,7 +97,7 @@ async function statusReply(sc, state, lang) {
         const r = riskScore({ cluster: c, incidents: inc, monitoring: m ? { watched: true, connected: m.connected } : { watched: false }, snapshot: cachedSnapshot(c.id), offsite: undefined, compliance: null })
         return `${RISK[r.level]} ${c.clusterName} — risk ${r.score}/100, ${inc.length} open${r.factors[0] ? ` · ${r.factors[0].label}` : ''}`
     })
-    return { reply: `${lines.join('\n')}\n\n${listText(sc, state, lang)}` }
+    return { reply: `${lines.join('\n')}\n\n${listText(sc, state)}` }
 }
 
 const pick = (sc, state, n) => {
@@ -133,8 +121,6 @@ const user = (orgId, who, source) => ({ id: `chat:${source}`, username: `${who} 
 export async function handleChat(ctx) {
     const { orgId, chatKey, who, source } = ctx
     const intent = intentOf(ctx.text)
-    const lang = detectLanguage(intent.text || ctx.text)
-    const L = T[lang]
     const s = aiStore.get(orgId)
     const state = chatState(chatKey)
     state.asked = state.asked.filter(t => Date.now() - t < RATE_MS)
@@ -154,9 +140,9 @@ export async function handleChat(ctx) {
 
     try {
         switch (intent.kind) {
-            case 'help': return { reply: helpText(lang) }
-            case 'incidents': return { reply: listText(sc, state, lang) }
-            case 'status': return statusReply(sc, state, lang)
+            case 'help': return { reply: helpText() }
+            case 'incidents': return { reply: listText(sc, state) }
+            case 'status': return statusReply(sc, state)
             case 'explain': case 'fix': {
                 const inc = pick(sc, state, intent.n)
                 if (!inc) return { reply: L.unknownN(intent.n) }
@@ -164,7 +150,7 @@ export async function handleChat(ctx) {
                 if (!cluster) return { reply: L.unknownN(intent.n) }
                 if (!s.enabled) return { reply: L.off }
                 await ctx.send?.(L.looking)
-                const out = await explainIncidentFull({ ...u, language: lang }, inc, cluster)
+                const out = await explainIncidentFull(u, inc, cluster)
                 const a = out.answer
                 const head = `${sev(inc)} ${reasonLabel(inc.reason)} — ${inc.clusterName}: ${inc.namespace ? `${inc.namespace}/` : ''}${inc.target}`
                 const body = [head, '', a.summary, a.cause ? `→ ${a.cause}` : '', a.change ? `Δ ${a.change}` : '', ...(a.fix || []).slice(0, 3).map((x, i) => `${i + 1}. ${x}`), a.blockedSteps?.length ? `⚠ ${a.blockedSteps.length} dangerous step(s) removed by KubeEZ.` : ''].filter(Boolean)
@@ -178,13 +164,13 @@ export async function handleChat(ctx) {
             case 'changes': {
                 const clusters = await clustersOf(sc)
                 const c = findCluster(clusters, intent.text)
-                if (!c) return { reply: `${lang === 'en' ? 'Which cluster?' : 'Kaunsa cluster?'} ${clusters.map(x => x.clusterName).join(', ')}` }
+                if (!c) return { reply: `Which cluster? ${clusters.map(x => x.clusterName).join(', ')}` }
                 const r = await collectChanges(c, { hours: intent.hours })
-                if (!r.items.length) return { reply: `${c.clusterName}: ${lang === 'en' ? `no changes in the last ${intent.hours} h.` : `pichhle ${intent.hours} ghante mein koi change nahi.`}` }
+                if (!r.items.length) return { reply: `${c.clusterName}: no changes in the last ${intent.hours} h.` }
                 const facts = `${c.clusterName} — ${r.items.length} change(s), last ${intent.hours} h:\n${changesText(r.items, 8).split('\n').map(l => `• ${l.replace(/^\S+ /, '')}`).join('\n')}`
                 if (!s.enabled) return { reply: facts }
                 await ctx.send?.(L.looking)
-                try { const sum = await summarizeChanges({ ...u, language: lang }, c, r); return { reply: `${c.clusterName} (${intent.hours} h):\n${sum.summary}` } }
+                try { const sum = await summarizeChanges(u, c, r); return { reply: `${c.clusterName} (${intent.hours} h):\n${sum.summary}` } }
                 catch { return { reply: facts } }
             }
             default: {
@@ -196,17 +182,17 @@ export async function handleChat(ctx) {
                 // a pod or app named in the question ("web-2", "api deployment"), or "the crashing pod"
                 const found = snaps.map(x => x.snap && { ...x, t: targetOf(intent.text, x.snap) }).find(x => x?.t)
                 if (found && ['pod', 'deployment', 'statefulset', 'daemonset'].includes(found.t.kind) && DIAG.test(intent.text.toLowerCase())) {
-                    return await lookInto({ ctx, u, sc, s, lang, L, cluster: found.c, t: found.t })
+                    return await lookInto({ ctx, u, sc, s, cluster: found.c, t: found.t })
                 }
                 // what is in a cluster: answered exactly by KubeEZ, no AI, a second or two
                 const q = queryOf(intent.text, snaps.flatMap(x => x.snap?.namespaces || []))
-                if (q && !clusters.length) return { reply: lang === 'en' ? 'No clusters yet — add or install one in KubeEZ first.' : 'Abhi koi cluster nahi hai — pehle KubeEZ mein ek cluster jodo.' }
+                if (q && !clusters.length) return { reply: 'No clusters yet — add or install one in KubeEZ first.' }
                 if (q && !found) {
-                    const parts = snaps.map(x => x.snap ? answerQuery(q, x.snap, x.c.clusterName, lang) : `${x.c.clusterName}: ⚠ ${lang === 'en' ? 'could not read the cluster' : 'cluster padh nahi paya'} — ${x.error}`).filter(Boolean)
+                    const parts = snaps.map(x => x.snap ? answerQuery(q, x.snap, x.c.clusterName) : `${x.c.clusterName}: ⚠ could not read the cluster — ${x.error}`).filter(Boolean)
                     if (parts.length) return { reply: parts.join('\n\n').slice(0, 3500), direct: snaps.some(x => x.snap) }
                 }
-                if (intent.was === 'incidents' && !found) return { reply: listText(sc, state, lang) }
-                if (intent.was === 'status' && !found) return statusReply(sc, state, lang)
+                if (intent.was === 'incidents' && !found) return { reply: listText(sc, state) }
+                if (intent.was === 'status' && !found) return statusReply(sc, state)
                 if (!s.enabled) return { reply: L.off }
                 await ctx.send?.(L.looking)
                 // a question about one thing ("web service ka port", "api ka image kya hai"): its live describe too
@@ -221,7 +207,7 @@ export async function handleChat(ctx) {
                     ...snaps.filter(x => x.snap).map(x => snapshotText(x.snap, x.c.clusterName))
                 ].join('\n')
                 const r = await ask(u, {
-                    task: 'chat', purpose: `chat (${source})`, maxTokens: 350, language: lang,
+                    task: 'chat', purpose: `chat (${source})`, maxTokens: 350,
                     system: CHAT_SYSTEM,
                     data: [{ label: 'workspace facts (live)', text: facts }, ...(about1 ? [about1] : [])], question: intent.text
                 })
@@ -229,7 +215,7 @@ export async function handleChat(ctx) {
             }
         }
     } catch (e) {
-        if (e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE') return { reply: `${L.noAi}\n${listText(sc, state, lang)}` }
+        if (e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE') return { reply: `${L.noAi}\n${listText(sc, state)}` }
         return { reply: `⚠ ${e.message}` }
     }
 }
@@ -237,15 +223,10 @@ export async function handleChat(ctx) {
 // ── looking into a pod: logs, describe, events → problem, cause, fix ──
 // may this asker read logs and describe in that cluster? (team chats: the workspace, like its alerts)
 const mayLook = (sc, u, c) => !sc.user || kubeLevelOn(u, c) !== 'none'
-const D = {
-    en: { problem: 'Problem', cause: 'Cause', proof: 'Proof', fix: 'How to fix it', log: 'Last log lines', kubeez: 'KubeEZ\'s own check', changed: 'Changed just before', run: 'A fix KubeEZ can run', removed: (n) => `⚠ ${n} dangerous step(s) removed by KubeEZ.`, noPods: 'it has no pods right now', worst: 'its pod with the most trouble', others: 'Other pods with trouble', notAllowed: 'Your role may not read logs in this cluster.', aiFail: 'The AI could not answer right now — this is KubeEZ\'s own check.', unknown: 'KubeEZ found no known cause in the logs and events.', webApply: 'Preview it (dry-run) and apply it below.', chatApply: 'Preview and apply it in KubeEZ → Ask AI.' },
-    hinglish: { problem: 'Problem', cause: 'Wajah', proof: 'Saboot', fix: 'Aise theek karo', log: 'Aakhri log lines', kubeez: 'KubeEZ ka apna check', changed: 'Isse thik pehle badla', run: 'Ye fix KubeEZ chala sakta hai', removed: (n) => `⚠ ${n} khatarnak step KubeEZ ne hata diye.`, noPods: 'abhi iska koi pod nahi hai', worst: 'iska sabse zyada problem wala pod', others: 'Aur pods jinme problem hai', notAllowed: 'Aapke role ko is cluster ke logs padhne ki permission nahi hai.', aiFail: 'AI abhi jawab nahi de paya — ye KubeEZ ka apna check hai.', unknown: 'Logs aur events mein KubeEZ ko koi jaani-pehchaani wajah nahi mili.', webApply: 'Neeche preview (dry-run) karke apply karo.', chatApply: 'KubeEZ → Ask AI mein preview karke apply karo.' },
-    hi: { problem: 'समस्या', cause: 'कारण', proof: 'सबूत', fix: 'ऐसे ठीक करें', log: 'आख़िरी log lines', kubeez: 'KubeEZ की अपनी जाँच', changed: 'ठीक पहले बदला', run: 'यह सुधार KubeEZ चला सकता है', removed: (n) => `⚠ ${n} ख़तरनाक कदम KubeEZ ने हटाए।`, noPods: 'अभी इसका कोई pod नहीं है', worst: 'इसका सबसे ज़्यादा समस्या वाला pod', others: 'और pods जिनमें समस्या है', notAllowed: 'आपकी भूमिका इस cluster के logs नहीं पढ़ सकती।', aiFail: 'AI अभी जवाब नहीं दे पाया — यह KubeEZ की अपनी जाँच है।', unknown: 'Logs और events में KubeEZ को कोई जाना-पहचाना कारण नहीं मिला।', webApply: 'नीचे preview (dry-run) करके लागू करें।', chatApply: 'KubeEZ → Ask AI में preview करके लागू करें।' }
-}
-const looked = new Map()   // pod + 2-minute slot + language → the AI answer (asking twice costs one model call)
+const W = { problem: 'Problem', cause: 'Cause', proof: 'Proof', fix: 'How to fix it', log: 'Last log lines', kubeez: 'KubeEZ\'s own check', changed: 'Changed just before', run: 'A fix KubeEZ can run', removed: (n) => `⚠ ${n} dangerous step(s) removed by KubeEZ.`, noPods: 'it has no pods right now', worst: 'its pod with the most trouble', others: 'Other pods with trouble', notAllowed: 'Your role may not read logs in this cluster.', aiFail: 'The AI could not answer right now — this is KubeEZ\'s own check.', unknown: 'KubeEZ found no known cause in the logs and events.', webApply: 'Preview it (dry-run) and apply it below.', chatApply: 'Preview and apply it in KubeEZ → Ask AI.' }
+const looked = new Map()   // pod + 2-minute slot → the AI answer (asking twice costs one model call)
 
-async function lookInto({ ctx, u, sc, s, lang, L, cluster, t }) {
-    const W = D[lang]
+async function lookInto({ ctx, u, sc, s, cluster, t }) {
     if (!mayLook(sc, u, cluster)) return { reply: W.notAllowed }
     const pod = t.pod, wl = t.workload
     if (!pod) return { reply: `${cluster.clusterName}: ${t.kind} ${t.ns}/${t.name} — ${wl.ready}/${wl.want} ready, ${W.noPods}${wl.want === 0 ? ' (scaled to 0)' : ''}.` }
@@ -265,14 +246,14 @@ async function lookInto({ ctx, u, sc, s, lang, L, cluster, t }) {
     const clean = ok && quick && !quick.fix.length   // running, ready and no errors: nothing for the AI to find
     let ai = null, aiErr = null
     if (s.enabled && !clean) {
-        const key = `${inc.id}:${inc.lastSeen}:${lang}`
+        const key = `${inc.id}:${inc.lastSeen}`
         try {
             if (!looked.has(key)) {
                 if (quick) inc.details = `KubeEZ's own check of the logs/events: ${quick.summary} ${quick.cause}`.trim()
                 const p = (async () => {
                     const changes = await within(collectChanges(cluster, { from: Date.now() - 3 * 3600e3, to: Date.now() }), 30e3).then(c => c.items, () => [])
                     const runbook = suggestRunbook(cluster.orgId, inc.reason, fresh.workload)
-                    const out = await explainIncident({ ...u, language: lang }, { incident: inc, catalog: CATALOG[inc.reason], cluster, fresh, changes, related: null, runbook })
+                    const out = await explainIncident(u, { incident: inc, catalog: CATALOG[inc.reason], cluster, fresh, changes, related: null, runbook })
                     return { ...out, runbook }
                 })()
                 looked.set(key, p); p.catch(() => looked.delete(key))
@@ -311,9 +292,7 @@ async function lookInto({ ctx, u, sc, s, lang, L, cluster, t }) {
     }
 }
 
-function helpText(lang) {
-    if (lang === 'hinglish') return 'Main KubeEZ AI hoon. Poocho:\n• "sab theek hai?" — clusters aur risk\n• "kya problem hai" — open problems (number ke saath)\n• "kitne namespace hain", "nodes dikhao" — cluster mein kya chal raha hai\n• "web-2 ka log check karo" — pod ki problem, wajah aur solution\n• "2 kyu hua" — problem 2 ki wajah\n• "fix 2" — fix ka dry-run (apply KubeEZ mein)\n• "prod pe kya badla 6h" — changes\n• kuch bhi Kubernetes ke baare mein'
-    if (lang === 'hi') return 'मैं KubeEZ AI हूँ। पूछें:\n• "सब ठीक है?" — क्लस्टर और जोखिम\n• "incidents" — खुली समस्याएँ\n• "कितने namespace हैं" — cluster में क्या चल रहा है\n• "web-2 का log check करो" — pod की समस्या, कारण और सुधार\n• "why 2" — समस्या 2 का कारण\n• "fix 2" — सुधार का dry-run\n• "क्या बदला prod 6h" — बदलाव'
+function helpText() {
     return 'I am KubeEZ AI. Ask me:\n• "status" — clusters and risk\n• "incidents" — open problems, numbered\n• "how many namespaces", "show nodes" — what runs in a cluster\n• "check the logs of web-2" — the problem in a pod, its cause and the fix\n• "why 2" — the cause of problem 2\n• "fix 2" — the suggested fix with its dry-run (applied in KubeEZ)\n• "what changed prod 6h" — the change timeline\n• anything about Kubernetes'
 }
 

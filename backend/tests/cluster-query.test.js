@@ -90,7 +90,7 @@ describe('the live snapshot', () => {
         const ns = a('how many namespaces')
         assert.match(ns, /^prod has 6 namespaces — 4 yours \+ 2 system:/)
         assert.match(ns, /• shop\n/); assert.match(ns, /• old \(Terminating\)/)
-        assert.match(a('kitne namespace hai', 'hinglish'), /^prod me 6 namespaces hain/)
+        assert.match(a('kitne namespace hai'), /^prod has 6 namespaces/, 'asked in Hinglish, answered in English')
         const pods = a('kitne pod hain')
         assert.match(pods, /^prod has 6 pods — 3 Running, 1 CrashLoopBackOff, 1 Pending, 1 Succeeded\./)
         assert.match(pods, /shop\/web-2 — CrashLoopBackOff \(0\/1 ready, 14 restarts\)/)
@@ -99,7 +99,7 @@ describe('the live snapshot', () => {
         assert.match(a('pods in payments'), /^prod has 1 pod in payments — 1 Running\. ✅ all healthy\.\n• pay-1/)
         const nodes = a('nodes')
         assert.match(nodes, /3 nodes — 2 Ready, 1 NOT ready/); assert.match(nodes, /cp-1 — Ready · control-plane/)
-        assert.match(a('nodes dikhao', 'hinglish'), /^prod me 3 nodes hain/)
+        assert.match(a('nodes dikhao'), /^prod has 3 nodes/)
         assert.match(a('ingress'), /^prod has 1 ingress:/); assert.match(nodes, /w-2 — NOT ready, cordoned · worker/)
         assert.match(a('deployments'), /3 deployments — 2 not healthy/)
         assert.match(a('shop me deployments'), /shop\/api — 0\/1 ready ⚠/)
@@ -134,11 +134,11 @@ describe('Ask AI uses the live cluster', () => {
     fs.writeFileSync(path.join(DATA, 'clusters.json'), JSON.stringify([cluster]))
     _setSnapshot('cq1', parseSnapshot(OUT))
 
-    test('"kitne namespace hai" — the exact answer, no AI needed (works with AI off too)', async () => {
+    test('"kitne namespace hai" — the exact answer in English, no AI needed (works with AI off too)', async () => {
         aiStore.save(org, { enabled: false })
         const progress = []
         const r = await handleChat({ orgId: org, chatKey: 'tg:cq', who: 'ravi', source: 'Telegram', text: 'kitne namespace hai', send: (t) => progress.push(t) })
-        assert.match(r.reply, /^prod me 6 namespaces hain/)
+        assert.match(r.reply, /^prod has 6 namespaces/)
         assert.equal(r.direct, true)
         assert.deepEqual(progress, [], 'instant — no "looking into it"')
         aiStore.save(org, { enabled: true })

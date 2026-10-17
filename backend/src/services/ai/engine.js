@@ -61,7 +61,52 @@ export function routeFor(orgId, task) {
     return out.length ? out : (serverAvailable() ? [SERVER] : [])
 }
 
-const LANG = { en: 'Answer in clear, simple English.', hi: 'Answer in simple Hindi (Devanagari).', hinglish: 'Answer in simple Hinglish (Hindi in Latin letters, mixed with English technical words).' }
+// every answer is in English, whatever language the question, the logs or the data are in —
+// asked for, and checked: an answer in Hindi / Hinglish, or one that only repeats the
+// question (small models do), is asked again once and otherwise not used
+const HINGLISH_WORDS = /\b(kya|kyu|kyun|kyon|hai|hain|kaise|karo|kare|karna|karein|nahi|nahin|mein|aur|hota|hoti|aata|aati|aate|jaata|jata|jati|raha|rahi|theek|thik|chahiye|abhi|wala|wali|bhi|lekin|agar|toh|tha|thi|apna|apne|sakte|sakta)\b/g
+const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9ऀ-ॿ]+/g, ' ').trim()
+/** Is this question not in English? (then the model is told again to answer in English) */
+export const nonEnglishQuestion = (q) => /[ऀ-ॿ]/.test(q) || (String(q).toLowerCase().match(HINGLISH_WORDS) || []).length >= 1
+/** Why an answer is not acceptable English, or null. */
+export function notEnglish(answer, question = '') {
+    const a = String(answer || '')
+    if ((a.match(/[ऀ-ॿ]/g) || []).length > 3) return 'it is not in English (Hindi script)'
+    const words = norm(a).split(' ').filter(Boolean)
+    const hits = (a.toLowerCase().match(HINGLISH_WORDS) || []).length
+    const ratio = hits / Math.max(1, words.length)
+    if ((hits >= 2 && ratio >= 0.06) || (hits >= 1 && ratio >= 0.12)) return 'it is in Hinglish, not English'
+    const q = norm(question)
+    // the question repeated — as asked, or as KubeEZ's word-by-word English of it
+    for (const echo of [q, norm(roughEnglish(question))]) {
+        if (echo.length >= 8 && norm(a).includes(echo) && norm(a).length < echo.length * 2 + 60) return 'it only repeats the question'
+    }
+    if (/\b(the (user'?s )?question (is|in english|as the user wrote)|the same question in english|in english,? the (user'?s )?question|the user asked)\b/i.test(a) && words.length < 60) return 'it only repeats the question'
+    return null
+}
+// A rough English version of a Hindi / Hinglish question, word by word: small models
+// answer in the language they read, so they are given the question in English.
+const GLOSS = [
+    [/\b(hota|hoti|hote|jata|jati) (hai|hain|he)\b|होता है|होती है/g, 'is'],
+    [/\b(kya|kyaa)\b|क्या/g, 'what'], [/\b(kyu|kyun|kyon|kyo)\b|क्यों|क्यूँ/g, 'why'], [/\b(kaise|kese)\b|कैसे/g, 'how'], [/\b(kab)\b|कब/g, 'when'], [/\b(kahan|kaha)\b|कहाँ|कहां/g, 'where'],
+    [/\b(kaun ?sa|kaun ?se|kaunsa|kaunse|kaun)\b|कौन ?सा|कौन ?से|कौन/g, 'which'], [/\b(kitne|kitna|kitni)\b|कितने|कितना|कितनी/g, 'how many'],
+    [/\b(theek|thik|sahi) (kare|karo|karu|karein|karna|kaise)\b/g, 'fix'], [/\b(theek|thik)\b|ठीक/g, 'fine'], [/\b(atka|atki|atke|phasa|fasa)\b/g, 'stuck'],
+    [/\b(check|dekh|dekho) (karu|karo|kare|karna|karein)\b/g, 'check'], [/\b(karu|karun|karoon)\b/g, 'should I do'], [/\b(karo|kare|karein|karna)\b|करें|करो|करना/g, 'do'],
+    [/\b(ho gaya|ho gayi|ho gaye|hogaya)\b|हो गया|हो गई/g, 'has become'], [/\b(ho raha|ho rahi|ho rahe|chal raha|chal rahi)\b/g, 'is happening'], [/\b(jata|jati|jate)\b/g, 'goes'],
+    [/\b(hota|hoti|hote)\b/g, 'is'], [/\b(hai|hain|he|h)\b|है|हैं/g, 'is'], [/\b(tha|thi|the)\b/g, 'was'], [/\b(nahi|nahin|na)\b|नहीं/g, 'not'], [/\b(aur)\b|और/g, 'and'],
+    [/\b(me|mein|mai)\b|में/g, 'in'], [/\b(pe|par)\b|पर/g, 'on'], [/\b(se)\b|से/g, 'from'], [/\b(ka|ki|ke)\b|का|की|के/g, 'of'], [/\b(ko)\b|को/g, 'to'],
+    [/\b(mera|meri|mere)\b|मेरा|मेरी|मेरे/g, 'my'], [/\b(fark|farak|antar)\b|फर्क|फ़र्क|अंतर/g, 'difference'], [/\b(batao|bata|samjhao)\b|बताओ|समझाओ/g, 'explain'],
+    [/\b(chahiye)\b|चाहिए/g, 'is needed'], [/\b(abhi)\b|अभी/g, 'now'], [/\b(sab)\b|सब/g, 'all'], [/\b(band)\b|बंद/g, 'stopped'], [/\b(kharab)\b|खराब/g, 'broken'], [/\b(galti|error)\b|गलती/g, 'error']
+]
+const asQuestion = (t) => /[?.!]$/.test(t) ? t : `${t}?`
+export function roughEnglish(q) {
+    let t = ` ${String(q || '').toLowerCase()} `
+    for (const [re, en] of GLOSS) t = t.replace(re, en)
+    return t.replace(/[ऀ-ॿ]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+// the prose of a JSON answer (not quoted evidence, commands or names)
+const proseOf = (j) => j && typeof j === 'object' ? ['summary', 'cause', 'missing', 'change', 'answer', 'text'].map(k => j[k]).concat(Array.isArray(j.fix) ? j.fix.map(x => String(x).replace(/`[^`]*`/g, '')) : []).filter(x => typeof x === 'string').join(' ') : ''
+const ENGLISH ='Always answer in clear, correct, professional English with proper grammar and full sentences — even when the question, the logs or the data are in Hindi, Hinglish or another language. Never answer in Hindi or Hinglish.'
 
 // first JSON object in a reply (models sometimes add prose or code fences)
 export function parseJson(text) {
@@ -99,10 +144,16 @@ export async function ask(user, opts) {
         'You are KubeEZ AI, a careful Kubernetes operations assistant inside the KubeEZ console.',
         'Base every statement on the evidence given. If the evidence is not enough, say what is missing instead of guessing.',
         UNTRUSTED_RULES,
-        LANG[opts.language] || LANG[user.language] || LANG[s.language] || LANG.en,   // a chat answers in the language it was asked in
+        ENGLISH,
         opts.system || ''
     ].filter(Boolean).join('\n\n')
-    const content = [...blocks, q.text].filter(Boolean).join('\n\n')
+    const checkEnglish = opts.english !== false
+    // asked in Hindi / Hinglish: the model reads the question in English; the words as written
+    // are only reference data (a small model repeats whatever it reads last)
+    const foreign = checkEnglish && q.text && nonEnglishQuestion(q.text)
+    const asked = foreign ? asQuestion(roughEnglish(q.text)) : q.text
+    const original = foreign ? [wrapUntrusted('the question as the user wrote it (Hindi/Hinglish) — for meaning only, do not repeat it', q.text).block] : []
+    const content = [...blocks, ...original, asked].filter(Boolean).join('\n\n')
     const messages = [{ role: 'user', content }]
 
     // 3–4) engines in order, with retries, breaker, queue and validation
@@ -119,15 +170,29 @@ export async function ask(user, opts) {
         try { release = await acquire(keyOf(orgId, p), local ? 1 : 4, local ? 180000 : 60000) }
         catch (e) { attempts.push({ provider: p.name, kind: p.kind, error: e.message, code: e.code }); continue }
         try {
+            let redo = null   // the messages for the second try, when the first answer was rejected
             for (let attempt = 1; attempt <= 2; attempt++) {
                 const a0 = Date.now()
                 try {
-                    const r = await chat(p, aiStore.keyOf(p), { system, messages: attempt === 1 || !opts.json ? messages : [...messages, { role: 'assistant', content: '(invalid)' }, { role: 'user', content: 'Your last reply was not valid JSON in the required shape. Reply again with ONLY the JSON object.' }], maxTokens: opts.maxTokens || 1500, json: !!opts.json, timeoutMs })
-                    let json
+                    const r = await chat(p, aiStore.keyOf(p), { system, messages: attempt === 1 || !redo ? messages : redo, maxTokens: opts.maxTokens || 1500, json: !!opts.json, timeoutMs })
+                    let json, problem = null, english = null
                     if (opts.json) {
                         json = parseJson(r.text)
-                        const problem = !json ? 'not valid JSON' : opts.validate ? opts.validate(json) : null
-                        if (problem) { attempts.push({ provider: p.name, kind: p.kind, model: r.model, ms: Date.now() - a0, error: `answer rejected: ${problem}` }); if (attempt === 1) continue; throw Object.assign(new Error(`answer rejected: ${problem}`), { code: 'INVALID' }) }
+                        problem = !json ? 'not valid JSON' : opts.validate ? opts.validate(json) : null
+                        if (!problem && checkEnglish) english = notEnglish(proseOf(json), q.text)
+                    } else if (checkEnglish) english = notEnglish(r.text, q.text)
+                    if (problem || english) {
+                        const why = problem || english
+                        attempts.push({ provider: p.name, kind: p.kind, model: r.model, ms: Date.now() - a0, error: `answer rejected: ${why}` })
+                        if (attempt === 1) {
+                            // not English: ask afresh with only the English question (seeing its own
+                            // Hinglish answer, or the original words, makes a small model repeat them)
+                            redo = problem
+                                ? [...messages, { role: 'assistant', content: '(invalid)' }, { role: 'user', content: 'Your last reply was not valid JSON in the required shape. Reply again with ONLY the JSON object.' }]
+                                : [{ role: 'user', content: [...blocks, `${q.text && nonEnglishQuestion(q.text) ? asQuestion(roughEnglish(q.text)) : q.text}\n\nAnswer only in clear, correct English (keep commands, names and quoted log lines as they are).${opts.json ? ' Reply with ONLY the JSON object.' : ''}`].filter(Boolean).join('\n\n') }]
+                            continue
+                        }
+                        throw Object.assign(new Error(`answer rejected: ${why}`), { code: 'INVALID' })
                     }
                     attempts.push({ provider: p.name, kind: p.kind, model: r.model, ms: Date.now() - a0, ok: true, tokensIn: r.tokensIn, tokensOut: r.tokensOut })
                     if (!opts.only) { noteResult(orgId, p, true); if (p.kind === 'server') aiStore.countUse(orgId) }

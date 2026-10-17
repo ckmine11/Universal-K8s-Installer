@@ -115,11 +115,7 @@ export function queryOf(text, namespaces = []) {
 }
 
 // ── the answer ──
-const W = {
-    en: { has: (c, n, what) => `${c} has ${n} ${one(n, what)}`, none: (c, what) => `${c}: no ${what}`, in: (ns) => ` in ${ns}`, allOk: 'all healthy', notOk: 'not healthy', more: (n) => `… and ${n} more` },
-    hinglish: { has: (c, n, what) => `${c} me ${n} ${one(n, what)} ${n === 1 ? 'hai' : 'hain'}`, none: (c, what) => `${c}: koi ${what} nahi`, in: (ns) => ` (${ns} me)`, allOk: 'sab theek', notOk: 'theek nahi', more: (n) => `… aur ${n}` },
-    hi: { has: (c, n, what) => `${c} में ${n} ${one(n, what)} ${n === 1 ? 'है' : 'हैं'}`, none: (c, what) => `${c}: कोई ${what} नहीं`, in: (ns) => ` (${ns} में)`, allOk: 'सब ठीक', notOk: 'ठीक नहीं', more: (n) => `… और ${n}` }
-}
+const W = { has: (c, n, what) => `${c} has ${n} ${one(n, what)}`, none: (c, what) => `${c}: no ${what}`, in: (ns) => ` in ${ns}`, allOk: 'all healthy', notOk: 'not healthy', more: (n) => `… and ${n} more` }
 // "1 node", not "1 nodes" (the first word: namespaces → namespace, ingresses → ingress)
 const one = (n, what) => n !== 1 ? what : what.replace(/^(\w+?)(sses|s)\b/, (m, w, e) => e === 'sses' ? `${w}ss` : w)
 const cap = (arr, n, L) => arr.length > n ? [...arr.slice(0, n), L.more(arr.length - n)] : arr
@@ -127,8 +123,8 @@ const healthy = (p) => (p.phase === 'Running' && p.ready === p.containers) || p.
 const podLine = (p) => `${p.ns}/${p.name} — ${p.reason || p.phase}${p.containers ? ` (${p.ready}/${p.containers} ready` : ''}${p.restarts ? `, ${p.restarts} restarts` : ''}${p.containers ? ')' : ''}`
 
 /** A direct answer from the snapshot (null = not a question for this). */
-export function answerQuery(q, snap, clusterName, lang = 'en') {
-    const L = W[lang] || W.en
+export function answerQuery(q, snap, clusterName) {
+    const L = W
     const where = q.ns ? L.in(q.ns) : ''
     const inNs = (arr) => q.ns ? arr.filter(x => x.ns === q.ns) : arr
     const c = clusterName

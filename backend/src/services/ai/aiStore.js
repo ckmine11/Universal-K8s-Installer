@@ -12,7 +12,7 @@ const FILE = path.join(DATA_DIR, 'ai.json')
 const TRACES = path.join(DATA_DIR, 'ai-traces.json')
 export const TASKS = { explain: 'Explain failures & incidents', chat: 'Questions & chat', summarize: 'Summaries & reports' }
 export const AUTONOMY = ['suggest', 'approve', 'auto']
-const DEFAULTS = { enabled: true, providers: [], routes: {}, autonomy: 'approve', actionsEnabled: true, maskEmails: false, maskIps: false, dailyLimit: 50, language: 'en', chatops: {}, costRates: { cpu: 1100, memGb: 250, currency: '₹' } }
+const DEFAULTS = { enabled: true, providers: [], routes: {}, autonomy: 'approve', actionsEnabled: true, maskEmails: false, maskIps: false, dailyLimit: 50, chatops: {}, costRates: { cpu: 1100, memGb: 250, currency: '₹' } }
 
 let cache = null
 const load = () => { if (!cache) { try { cache = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { cache = {} } cache.orgs ||= {}; cache.usage ||= {} } return cache }

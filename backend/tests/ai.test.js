@@ -259,11 +259,10 @@ describe('/api/ai', () => {
     test('settings are checked; the kill switch is audited', async () => {
         assert.equal((await api('PUT', '/api/ai/settings', owner.token, { autonomy: 'yolo' })).status, 400)
         assert.equal((await api('PUT', '/api/ai/settings', owner.token, { dailyLimit: -1 })).status, 400)
-        assert.equal((await api('PUT', '/api/ai/settings', owner.token, { language: 'fr' })).status, 400)
-        const ok = await api('PUT', '/api/ai/settings', owner.token, { actionsEnabled: false, autonomy: 'suggest', language: 'hinglish', maskIps: true })
+        const ok = await api('PUT', '/api/ai/settings', owner.token, { actionsEnabled: false, autonomy: 'suggest', maskIps: true })
         assert.equal(ok.status, 200)
         const g = (await api('GET', '/api/ai', owner.token)).data
-        assert.equal(g.actionsEnabled, false); assert.equal(g.autonomy, 'suggest'); assert.equal(g.language, 'hinglish'); assert.equal(g.maskIps, true)
+        assert.equal(g.actionsEnabled, false); assert.equal(g.autonomy, 'suggest'); assert.equal(g.language, undefined, 'no answer-language setting: answers are always English'); assert.equal(g.maskIps, true)
         const audit = await api('GET', '/api/compliance/audit?limit=300', owner.token)
         assert.ok(JSON.stringify(audit.data).includes('ai.actions_stopped'), 'kill switch in the audit trail')
     })

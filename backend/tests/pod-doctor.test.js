@@ -147,14 +147,14 @@ describe('Ask AI: "check the logs of this pod"', () => {
     _setSnapshot('pd1', SNAP)
     const admin = { id: 'a1', username: 'boss', orgId: org, role: 'admin' }
 
-    test('AI off: KubeEZ\'s own check — the problem, the cause, the fix and the log, in Hinglish', async () => {
+    test('AI off: KubeEZ\'s own check — the problem, the cause, the fix and the log, in English (asked in Hinglish)', async () => {
         aiStore.save(org, { enabled: false })
         const r = await handleChat({ orgId: org, chatKey: 'tg:pd', who: 'ravi', source: 'Telegram', text: 'web-6d4f9-b2 ka log check karo' })
         assert.match(r.reply, /^🔎 prod: shop\/web-6d4f9-b2 — CrashLoopBackOff \(0\/1 ready, 14 restarts, node w-1\)/)
         assert.match(r.reply, /Problem: The app cannot reach something it depends on: "ECONNREFUSED 10\.96\.7\.7:5432"/)
-        assert.match(r.reply, /Wajah: /); assert.match(r.reply, /Saboot:\n  › 2026\/10\/17 10:00:02 Error: connect ECONNREFUSED/)
-        assert.match(r.reply, /Aise theek karo:\n1\. /)
-        assert.match(r.reply, /Aakhri log lines:\n {2}2026\/10\/17 10:00:01 starting/)
+        assert.match(r.reply, /Cause: /); assert.match(r.reply, /Proof:\n  › 2026\/10\/17 10:00:02 Error: connect ECONNREFUSED/)
+        assert.match(r.reply, /How to fix it:\n1\. /)
+        assert.match(r.reply, /Last log lines:\n {2}2026\/10\/17 10:00:01 starting/)
         assert.equal(r.direct, true)
         assert.ok(cmds.some(c => /logs web-6d4f9-b2 -n shop --all-containers --previous/.test(c)), 'the crashed container\'s log is read too')
         assert.equal(cmds.some(c => /kubectl (delete|apply|patch|scale|rollout restart)/.test(c)), false, 'read-only')

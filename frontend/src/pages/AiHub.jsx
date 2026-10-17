@@ -11,7 +11,7 @@ import WhatChanged from '../components/ai/WhatChanged'
 import FixPreview, { actionLabel } from '../components/ai/FixPreview'
 
 // The AI section of the sidebar: Ask AI (chat about your clusters, in English,
-// Hindi or Hinglish) and the per-cluster AI tools with a cluster picker.
+// Hindi or Hinglish; answers in English) and the per-cluster AI tools with a cluster picker.
 const TOOLS = {
     create: { title: 'Create YAML', icon: Wand2, description: 'Describe what you want — KubeEZ AI writes the YAML, checks it, dry-runs it on the cluster; Apply can be undone.' },
     advisor: { title: 'Advisor', icon: Coins, description: 'Security and cost advice for every workload of a cluster.' },
@@ -49,7 +49,7 @@ function AskAi() {
                 {!msgs.length && (
                     <div className="text-center py-10">
                         <Bot className="w-10 h-10 mx-auto text-violet-300" />
-                        <p className="mt-3 text-sm text-slate-300">Ask about your clusters — in English, हिन्दी or Hinglish. The answer comes in the same language.</p>
+                        <p className="mt-3 text-sm text-slate-300">Ask about your clusters — in English, हिन्दी or Hinglish. Answers are always in clear English.</p>
                         <p className="mt-1 text-xs text-slate-500">Ask anything about what runs in your clusters, or say “web-2 ka log check karo” — KubeEZ reads its logs and events and tells you the problem and how to fix it. Only about what you may see; a fix runs only after you preview (dry-run) and apply it.</p>
                     </div>
                 )}

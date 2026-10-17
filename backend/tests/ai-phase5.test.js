@@ -37,7 +37,7 @@ before(async () => {
 })
 after(async () => { (await import('../src/services/alertActions.js')).telegramPoller.stop(); fake.closeAllConnections?.(); fake.close(); process.env.KUBEEZ_MODE = prevMode; fs.rmSync(DATA, { recursive: true, force: true }) })
 
-const { intentOf, detectLanguage, handleChat } = await import('../src/services/ai/chatops.js')
+const { intentOf, handleChat } = await import('../src/services/ai/chatops.js')
 const { handleTelegramUpdate } = await import('../src/services/alertActions.js')
 const { aiStore } = await import('../src/services/ai/aiStore.js')
 const { incidentDetector } = await import('../src/services/incidentDetector.js')
@@ -45,7 +45,7 @@ const { slackSignatureOk } = await import('../src/routes/chatops.js')
 const { parseManifests, checkManifests, generateManifests, previewManifests, applyManifests, undoManifests } = await import('../src/services/ai/manifests.js')
 const { analyze } = await import('../src/services/ai/advisor.js')
 
-describe('ChatOps: what was asked, in which language', () => {
+describe('ChatOps: what was asked (in English, Hindi or Hinglish)', () => {
     test('intents in English, Hinglish and Hindi', () => {
         const k = (t) => { const i = intentOf(t); return `${i.kind}${i.n ? `:${i.n}` : ''}${i.kind === 'changes' ? `:${i.hours}` : ''}` }
         assert.equal(k('sab theek hai?'), 'status')
@@ -57,22 +57,17 @@ describe('ChatOps: what was asked, in which language', () => {
         assert.equal(k('what changed in the last 2 days'), 'changes:48')
         assert.equal(k('/ask@kubeez_bot status'), 'status')
         assert.equal(k('What is a DaemonSet?'), 'ask')
-        assert.equal(detectLanguage('sab theek hai?'), 'hinglish')
-        assert.equal(detectLanguage('क्या बदला'), 'hi')
-        assert.equal(detectLanguage('what changed in prod'), 'en')
-        assert.equal(detectLanguage('nodes dikhao'), 'hinglish')
-        assert.equal(detectLanguage('kaunse pod fail ho rahe'), 'hinglish')
     })
 })
 
 describe('ChatOps: answers', () => {
     const org = 'org-chat'
     const inc = { id: 'chat-i1', orgId: org, clusterId: 'c-chat', clusterName: 'prod', reason: 'CrashLoopBackOff', target: 'web-1', namespace: 'shop', status: 'unresolved', severity: 'warning', message: 'crash', timestamp: new Date().toISOString(), lastSeen: new Date().toISOString(), timeline: [] }
-    test('numbered problems, the answer in the asker\'s language, a rate limit', async () => {
+    test('numbered problems, the answer in English (also when asked in Hinglish), a rate limit', async () => {
         incidentDetector.incidents.unshift(inc)
         const r = await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'kya problem hai' })
         assert.match(r.reply, /^1\. 🟠 Pod crash loop — prod: shop\/web-1/)
-        assert.match(r.reply, /"1 kyu"/, 'the hint is in Hinglish')
+        assert.match(r.reply, /Send "why 1" for the cause/, 'the hint is in English')
         assert.match((await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'why 7' })).reply, /no problem #7/)
         assert.match((await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'help' })).reply, /I am KubeEZ AI/)
         for (let i = 0; i < 17; i++) await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'help' })
@@ -80,15 +75,15 @@ describe('ChatOps: answers', () => {
         incidentDetector.incidents = incidentDetector.incidents.filter(i => i.id !== 'chat-i1')
     })
 
-    test('a free question goes to the model, in Hinglish when asked in Hinglish; AI off says so', async () => {
+    test('a free question goes to the model, which must answer in English even when asked in Hinglish; AI off says so', async () => {
         aiStore.addProvider(org, { name: 'Fake', kind: 'ollama', baseUrl: base, model: 'm' })
         let sys = ''
-        modelReply = (body) => { sys = body.messages[0].content; return 'DaemonSet har node pe ek pod chalata hai.' }
+        modelReply = (body) => { sys = body.messages[0].content; return 'A DaemonSet runs one pod on every node.' }
         const progress = []
         const r = await handleChat({ orgId: org, chatKey: 'tg:2', who: 'ravi', source: 'Telegram', text: 'daemonset kya hota hai', send: (t) => progress.push(t) })
-        assert.equal(r.reply, 'DaemonSet har node pe ek pod chalata hai.')
-        assert.match(sys, /Hinglish/); assert.match(sys, /Never claim you changed anything/)
-        assert.deepEqual(progress, ['🔎 Dekh raha hoon…'])
+        assert.equal(r.reply, 'A DaemonSet runs one pod on every node.')
+        assert.match(sys, /Always answer in clear, correct, professional English/); assert.match(sys, /Never answer in Hindi or Hinglish/); assert.match(sys, /Never claim you changed anything/)
+        assert.deepEqual(progress, ['🔎 Looking into it…'])
         aiStore.save(org, { enabled: false })
         assert.match((await handleChat({ orgId: org, chatKey: 'tg:2', who: 'ravi', source: 'Telegram', text: 'what is a pod?' })).reply, /turned off/)
         aiStore.save(org, { enabled: true })
@@ -276,6 +271,6 @@ describe('API', () => {
         assert.equal(s.status, 401)
         const g = await api('GET', '/api/ai', owner.token)
         assert.deepEqual(g.data.chatops, []); assert.equal(g.data.costRates.cpu, 900)
-        assert.equal(JSON.stringify((await api('PUT', '/api/ai/settings', owner.token, { language: 'en' })).data).includes('chatops'), false)
+        assert.equal(JSON.stringify((await api('PUT', '/api/ai/settings', owner.token, { maskIps: false })).data).includes('chatops'), false)
     })
 })

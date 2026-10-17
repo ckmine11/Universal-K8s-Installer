@@ -72,7 +72,7 @@ router.get('/', requirePermission('ai:use'), async (req, res) => {
     })
     res.json({
         enabled: s.enabled, autonomy: s.autonomy, actionsEnabled: s.actionsEnabled, maskEmails: s.maskEmails, maskIps: s.maskIps,
-        dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), language: s.language, costRates: s.costRates,
+        dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), costRates: s.costRates,
         engines, routes: s.routes, effectiveRoutes: Object.fromEntries(Object.keys(TASKS).map(t => [t, routeFor(req.user.orgId, t).map(p => p.id)])),
         tasks: TASKS, kinds: KINDS, autonomyLevels: AUTONOMY, server: server ? { model: server.model } : null,
         clusters: (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => ({ id: c.id, name: c.clusterName, hasAi: !!c.addons?.['kubeez-ai'] })),
@@ -115,7 +115,6 @@ router.put('/settings', requirePermission('ai:manage'), (req, res) => {
         if (b.maskEmails !== undefined) patch.maskEmails = !!b.maskEmails
         if (b.maskIps !== undefined) patch.maskIps = !!b.maskIps
         if (b.autonomy !== undefined) { if (!AUTONOMY.includes(b.autonomy)) throw bad('Autonomy: suggest, approve or auto'); patch.autonomy = b.autonomy }
-        if (b.language !== undefined) { if (!['en', 'hi', 'hinglish'].includes(b.language)) throw bad('Language: en, hi or hinglish'); patch.language = b.language }
         if (b.dailyLimit !== undefined) { const n = Number(b.dailyLimit); if (!Number.isInteger(n) || n < 0 || n > 10000) throw bad('Daily limit: 0 – 10000'); patch.dailyLimit = n }
         if (b.costRates !== undefined) {
             const r = b.costRates || {}
