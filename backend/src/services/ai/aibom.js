@@ -12,6 +12,7 @@ import { UNTRUSTED_RULES } from './guard.js'
 import { INSTALL_SYSTEM, incidentSystem, JSON_RULES } from './doctor.js'
 import { SPECIALISTS } from './specialists.js'
 import { GENERATE_SYSTEM } from './manifests.js'
+import { INTENT_SYSTEM } from './yamlBuilder.js'
 import { CHAT_SYSTEM } from './chatops.js'
 import { latestByEngine, feedbackStats } from './quality.js'
 import { EXAM_VERSION, EXAM } from '../../config/aiExam.js'
@@ -30,7 +31,8 @@ export function promptInventory() {
         ['Install Doctor', INSTALL_SYSTEM, 'failed installs, upgrades, add-on jobs'],
         ['incident explainer', incidentSystem(), 'incidents'],
         ...Object.entries(SPECIALISTS).map(([k, v]) => [`specialist: ${v.label}`, v.prompt, `incidents (${k})`]),
-        ['text to YAML', GENERATE_SYSTEM, 'cluster → Create'],
+        ['text to YAML (understand the request)', INTENT_SYSTEM, 'Create YAML — what is wanted, as JSON'],
+        ['text to YAML (free-form)', GENERATE_SYSTEM, 'Create YAML — only what the templates cannot build'],
         ['ChatOps', CHAT_SYSTEM, 'Telegram / Slack questions']
     ]
     return list.map(([name, text, usedFor]) => ({ name, usedFor, sha256: sha(text), chars: text.length }))

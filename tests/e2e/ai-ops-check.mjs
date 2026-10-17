@@ -73,7 +73,10 @@ const before = K(`-n shop get deploy web -o jsonpath='{.spec.template.metadata.a
 await applyAction(ssh, { type: 'restart', kind: 'deployment', name: 'web', namespace: 'shop' }, { orgId: C.orgId, cluster: C, user: USER })
 ok(K(`-n shop get deploy web -o jsonpath='{.spec.template.metadata.annotations.kubectl\\.kubernetes\\.io/restartedAt}'`).out !== before, 'rolling restart started')
 ok(await waitFor(rolledOut), 'healthy after the restart')
-const pod = K(`-n shop get pod -l app=web -o jsonpath='{.items[0].metadata.name}'`).out
+// a pod that is running and not on its way out (old pods of the restart may still be terminating)
+const livePod = () => (JSON.parse(K('-n shop get pod -l app=web -o json').stdout || '{"items":[]}').items.find(p => p.status?.phase === 'Running' && !p.metadata.deletionTimestamp) || {}).metadata?.name
+ok(await waitFor(() => !!livePod() && JSON.parse(K('-n shop get pod -l app=web -o json').stdout).items.every(p => !p.metadata.deletionTimestamp)), 'the restart is fully done')
+const pod = livePod()
 await applyAction(ssh, { type: 'delete-pod', kind: 'pod', name: pod, namespace: 'shop' }, { orgId: C.orgId, cluster: C, user: USER })
 ok(await waitFor(() => { const n = K(`-n shop get pod -l app=web -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{"\\n"}{end}'`).out; return n.includes('Running') && !n.split('\n').some(l => l.startsWith(`${pod} Running`)) }), 'pod deleted and replaced by the controller')
 K('-n shop run lonely --image=nginx:1.28-alpine --restart=Never')
@@ -208,6 +211,38 @@ ok(K(`-n shop get cm site -o jsonpath='{.data.title}'`).out === 'new', 'the Conf
 await undoManifests(ssh, applied, USER)
 ok(await waitFor(() => K('-n shop get deploy hello').code !== 0 && K('-n shop get svc hello').code !== 0), 'undo deleted what was created')
 ok(K(`-n shop get cm site -o jsonpath='{.data.title}'`).out === 'old', 'undo put the old ConfigMap back')
+
+console.log('== text → YAML golden set: every description passes the real server-side dry-run')
+const { GOLDEN } = await import('../../backend/tests/helpers/yamlGolden.js')
+const { generateManifests } = await import('../../backend/src/services/ai/manifests.js')
+K('create namespace golden')
+const noAi = { id: 'g', username: 'golden', orgId: 'org-golden' }   // no engine: KubeEZ builds it itself
+let dryFails = 0
+for (const [d] of GOLDEN) {
+    const g = await generateManifests(noAi, { description: d, namespace: 'golden' })
+    const p = await previewManifests(ssh, g.yaml, g.objects)
+    if (!p.ok || g.blocked) { dryFails++; console.log(`   ✗ "${d}": ${(p.dryRun || '').split('\n').filter(l => /error|invalid|forbidden/i.test(l)).join(' / ').slice(0, 300) || JSON.stringify(g.problems)}`) }
+}
+ok(dryFails === 0, `${GOLDEN.length - dryFails}/${GOLDEN.length} golden descriptions pass the server dry-run`)
+
+console.log('== text → YAML: built from words, really running')
+const running = []
+for (const d of ['create httpd pod', 'nginx 1.27 with 2 replicas, 64Mi memory, a service on port 80', 'memcached 2 replicas', 'a cronjob that runs busybox every night at 2am and prints the date']) {
+    const g = await generateManifests(noAi, { description: d, namespace: 'golden' })
+    running.push(await applyManifests(ssh, g, { orgId: C.orgId, cluster: C, user: USER, description: d }))
+}
+ok(await waitFor(() => K(`-n golden get pod httpd -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`).out === 'True'), '"create httpd pod" → the pod is Ready (its health check passes)')
+ok(await waitFor(() => K('-n golden rollout status deploy/nginx --timeout=120s').code === 0 && K(`-n golden get deploy nginx -o jsonpath='{.status.readyReplicas}'`).out === '2'), '"nginx … 2 replicas" → 2 of 2 ready')
+ok(await waitFor(() => K(`-n golden get deploy memcached -o jsonpath='{.status.readyReplicas}'`).out === '2'), '"memcached 2 replicas" → ready (TCP health check)')
+ok(K(`-n golden run curl-check --image=busybox:1.36 --restart=Never --rm -i --timeout=90s -- wget -qO- http://httpd/`).out.includes('It works'), 'the httpd Service answers inside the cluster')
+K('-n golden create job busybox-now --from=cronjob/busybox')
+ok(await waitFor(() => K(`-n golden get job busybox-now -o jsonpath='{.status.succeeded}'`).out === '1'), 'the CronJob\'s job runs and finishes')
+ok(/\d{2}:\d{2}:\d{2}/.test(K('-n golden logs job/busybox-now').out), `…and prints the date (${K('-n golden logs job/busybox-now').out})`)
+K('-n golden delete job busybox-now --wait=false')
+for (const r of running) { const u = await undoManifests(ssh, r, USER); console.log(`   undo "${r.description}": ${u.undoOutput.replace(/\n/g, ' | ')}`) }
+// exactly what was created (the job started by hand above is not part of it)
+const created = running.flatMap(r => r.created)
+ok(await waitFor(() => !created.some(ref => { const [kind, name] = ref.split('/'); return K(`-n golden get ${kind.toLowerCase()} ${name} -o name`).code === 0 })), `undo removed all of it (${created.join(', ')})`)
 
 console.log('== phase 5: ChatOps answers from the real cluster')
 fs.writeFileSync(path.join(DATA, 'clusters.json'), JSON.stringify([{ id: C.id, clusterName: 'shopcluster', orgId: C.orgId, ownerId: C.ownerId, k8sVersion: '1.35.0', status: 'completed', masterNodes: [{ ip: '127.0.0.1', username: 'root' }], workerNodes: [] }]))

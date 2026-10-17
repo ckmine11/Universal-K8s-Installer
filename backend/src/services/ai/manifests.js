@@ -10,6 +10,8 @@ import { parseAllDocuments, stringify } from 'yaml'
 import { DATA_DIR } from '../../utils/paths.js'
 import { writeFileAtomicSync } from '../../utils/atomicWrite.js'
 import { ask } from './engine.js'
+import { parseIntent, cleanIntent, buildFromIntent, describeIntent, autoFix, INTENT_SYSTEM } from './yamlBuilder.js'
+import { APPS } from '../../config/appCatalog.js'
 
 const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf timeout 60 kubectl'
 const NAME = /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/
@@ -19,10 +21,11 @@ const bad = (m, status = 400) => Object.assign(new Error(m), { status })
 // what may be created from a description (namespaced only — no RBAC, CRDs, nodes, webhooks)
 export const ALLOWED_KINDS = {
     Deployment: 'apps/v1', StatefulSet: 'apps/v1', DaemonSet: 'apps/v1', Service: 'v1', ConfigMap: 'v1', Secret: 'v1',
-    PersistentVolumeClaim: 'v1', Job: 'batch/v1', CronJob: 'batch/v1', Ingress: 'networking.k8s.io/v1', NetworkPolicy: 'networking.k8s.io/v1',
+    PersistentVolumeClaim: 'v1', Pod: 'v1', Job: 'batch/v1', CronJob: 'batch/v1', Ingress: 'networking.k8s.io/v1', NetworkPolicy: 'networking.k8s.io/v1',
     HorizontalPodAutoscaler: 'autoscaling/v2', PodDisruptionBudget: 'policy/v1', ServiceAccount: 'v1'
 }
-const PLURAL = { Deployment: 'deployment', StatefulSet: 'statefulset', DaemonSet: 'daemonset', Service: 'service', ConfigMap: 'configmap', Secret: 'secret', PersistentVolumeClaim: 'pvc', Job: 'job', CronJob: 'cronjob', Ingress: 'ingress', NetworkPolicy: 'networkpolicy', HorizontalPodAutoscaler: 'hpa', PodDisruptionBudget: 'pdb', ServiceAccount: 'serviceaccount' }
+// every allowed kind must be here — undo deletes by it (a missing one was silently skipped)
+const PLURAL = { Pod: 'pod', Deployment: 'deployment', StatefulSet: 'statefulset', DaemonSet: 'daemonset', Service: 'service', ConfigMap: 'configmap', Secret: 'secret', PersistentVolumeClaim: 'pvc', Job: 'job', CronJob: 'cronjob', Ingress: 'ingress', NetworkPolicy: 'networkpolicy', HorizontalPodAutoscaler: 'hpa', PodDisruptionBudget: 'pdb', ServiceAccount: 'serviceaccount' }
 
 export const GENERATE_SYSTEM = `You write Kubernetes manifests for KubeEZ from a description. Output ONLY YAML documents separated by "---" — no explanations, no code fences.
 Rules:
@@ -65,7 +68,7 @@ export function parseManifests(text) {
     return out
 }
 
-const podSpecOf = (o) => o.kind === 'CronJob' ? o.spec?.jobTemplate?.spec?.template?.spec : ['Deployment', 'StatefulSet', 'DaemonSet', 'Job'].includes(o.kind) ? o.spec?.template?.spec : null
+const podSpecOf = (o) => o.kind === 'Pod' ? o.spec : o.kind === 'CronJob' ? o.spec?.jobTemplate?.spec?.template?.spec : ['Deployment', 'StatefulSet', 'DaemonSet', 'Job'].includes(o.kind) ? o.spec?.template?.spec : null
 
 /** Check and normalise: → { objects, yaml, problems: [{ level: 'block'|'warn', object, text }] } */
 export function checkManifests(docs, { namespace }) {
@@ -104,20 +107,80 @@ export function checkManifests(docs, { namespace }) {
         objects.push({ kind: o.kind, name: o.metadata.name, namespace })
     }
     const okDocs = docs.filter(o => ALLOWED_KINDS[o.kind] && NAME.test(o.metadata?.name || ''))
-    return { objects, problems, blocked: problems.some(p => p.level === 'block'), yaml: okDocs.map(o => stringify(o).trim()).join('\n---\n') + '\n' }
+    return { objects, problems, blocked: problems.some(p => p.level === 'block'), yaml: okDocs.map(o => stringify(o, { aliasDuplicateObjects: false }).trim()).join('\n---\n') + '\n' }
 }
 
 /** Ask the model for manifests; parse + check them. */
-export async function generateManifests(user, { description, namespace, context = '' }) {
+const toYaml = (docs) => docs.map(o => stringify(o, { aliasDuplicateObjects: false }).trim()).join('\n---\n') + '\n'
+const engineOf = (r) => r ? { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } : null
+
+// what the cluster needs for these objects (add-ons) — said before the dry-run
+function clusterNotes(docs, addons = []) {
+    const has = (k) => addons.includes(k)
+    const out = []
+    if (docs.some(o => o.kind === 'Ingress') && !has('ingress')) out.push('An Ingress needs an ingress controller — install the Nginx Ingress add-on on this cluster (or use a NodePort / LoadBalancer).')
+    if (docs.some(o => o.kind === 'PersistentVolumeClaim' || o.spec?.volumeClaimTemplates) && !has('longhorn') && !has('nfs-provisioner')) out.push('Volumes need storage: install the Longhorn or NFS add-on, or make sure the cluster has a default StorageClass — otherwise the volume stays Pending.')
+    if (docs.some(o => o.kind === 'Service' && o.spec?.type === 'LoadBalancer') && !has('metallb')) out.push('A LoadBalancer Service needs MetalLB on your own servers — install the MetalLB add-on, or the external IP stays pending.')
+    return out
+}
+
+/**
+ * Description → checked manifests, the most reliable way first:
+ *   templates   the rules understood it → KubeEZ builds it (instant, no AI)
+ *   ai-intent   the model says what is wanted (short JSON) → KubeEZ builds it
+ *   ai-yaml     only for what the templates cannot build: the model writes YAML,
+ *               KubeEZ fixes what it can and asks once more with the errors
+ */
+export async function generateManifests(user, { description, namespace, context = '', addons = [] }) {
     const d = String(description || '').trim()
-    if (d.length < 8) throw bad('Describe what you want (e.g. "nginx 1.27 with 2 replicas and a service on port 80")')
-    const r = await ask(user, {
-        // a background job: a CPU model may take minutes for a few hundred lines
+    if (d.length < 3) throw bad('Describe what you want (e.g. "nginx 1.27 with 2 replicas and a service on port 80")')
+    const rule = parseIntent(d)
+    let intent = null, method = null, engine = null, aiError = null
+
+    if (rule.confident && rule.workloads.length) { intent = rule; method = 'templates' }
+    else {
+        try {
+            const r = await ask(user, {
+                task: 'chat', purpose: 'text to YAML (understand)', json: true, maxTokens: 500, timeoutMs: 300000, system: INTENT_SYSTEM,
+                validate: (j) => Array.isArray(j.workloads) || j.freeform ? null : 'needs "workloads"',
+                data: [{ label: 'known apps', text: Object.entries(APPS).map(([k, a]) => `${k} (${a.image})`).join(', ') }, ...(context ? [{ label: 'cluster facts', text: context }] : [])],
+                question: d.slice(0, 2000)
+            })
+            engine = engineOf(r)
+            const c = cleanIntent(r.json)
+            if (c?.workloads?.length) { intent = c; method = 'ai-intent' }
+            else if (!c?.freeform && rule.workloads.length) { intent = rule; method = 'templates' }
+        } catch (e) { aiError = e.message; if (rule.workloads.length) { intent = rule; method = 'templates' } }
+    }
+
+    if (intent) {
+        const { docs, notes } = buildFromIntent(intent, { namespace })
+        const checked = checkManifests(docs, { namespace })
+        if (method === 'templates' && !rule.confident) notes.unshift('Built the main app from the description — the parts KubeEZ cannot build from text (' + (rule.reason || 'extras') + ') are not included; add them to the YAML.')
+        if (aiError) notes.unshift('KubeEZ AI could not answer, so KubeEZ built it from the description itself.')
+        return { ...checked, method, understood: intent.workloads.map(describeIntent), notes: [...notes, ...clusterNotes(docs, addons)], fixes: [], engine }
+    }
+    if (aiError) throw bad(`${aiError} — and KubeEZ could not recognise an app in the description. Name the app or image, e.g. "nginx with 2 replicas" or "image myrepo/app:1.0 on port 8080".`, 503)
+
+    // free-form: the model writes the YAML; KubeEZ fixes it, and asks once more if needed
+    const write = (question, data = []) => ask(user, {
         task: 'chat', purpose: 'text to YAML', maxTokens: 1200, timeoutMs: 300000, system: GENERATE_SYSTEM,
-        data: context ? [{ label: 'cluster facts', text: context }] : [], question: d.slice(0, 2000)
+        data: [...(context ? [{ label: 'cluster facts', text: context }] : []), ...data], question
     })
-    const docs = parseManifests(r.text)
-    return { ...checkManifests(docs, { namespace }), engine: { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } }
+    let r = await write(d.slice(0, 2000))
+    let docs, fixes = [], checked
+    for (let round = 1; round <= 2; round++) {
+        let problem = null
+        try {
+            docs = parseManifests(r.text)
+            const f = autoFix(docs); docs = f.docs; fixes = f.fixes
+            checked = checkManifests(docs, { namespace })
+            if (checked.blocked) problem = checked.problems.filter(p => p.level === 'block').map(p => `${p.object}: ${p.text}`).join('; ')
+        } catch (e) { problem = e.message }
+        if (!problem || round === 2) { if (problem && !checked) throw bad(`KubeEZ AI could not write valid YAML for this (${problem}). Try a simpler description, or one app at a time.`); break }
+        r = await write(`${d.slice(0, 1500)}\n\nYour previous YAML had these problems: ${problem}\nWrite it again, fixed, following every rule.`, [{ label: 'previous YAML', text: String(r.text).slice(0, 6000) }])
+    }
+    return { ...checked, method: 'ai-yaml', understood: [], notes: clusterNotes(docs, addons), fixes, engine: engineOf(r) }
 }
 
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64')

@@ -94,12 +94,14 @@ if [ "$MODE" = "test" ]; then
     openssl enc -aes-256-cbc -pbkdf2 -iter 1000 -pass pass:x -in /dev/null -out /dev/null 2>/dev/null \
         || fail OPENSSL_OLD "This node's OpenSSL is too old for encrypted backups (needs 1.1.1+; CentOS/RHEL 7 is not supported)."
     TOKEN="kubeez-$(date +%s)-$RANDOM"
-    printf '%s' "$TOKEN" > /tmp/kubeez-probe.txt
-    s3 "Writing a test file" -T /tmp/kubeez-probe.txt "$KZ_PUT"
+    # its own file — two tests at the same moment must not share one
+    PROBE=$(mktemp /tmp/kubeez-probe.XXXXXX)
+    printf '%s' "$TOKEN" > "$PROBE"
+    s3 "Writing a test file" -T "$PROBE" "$KZ_PUT"
     s3 "Reading the test file back" "$KZ_GET"
     [ "$(cat "$RESP")" = "$TOKEN" ] || fail STORAGE_ERROR "Wrote a test file but read back different content."
     s3 "Deleting the test file" -X DELETE "$KZ_DEL"
-    rm -f /tmp/kubeez-probe.txt
+    rm -f "$PROBE"
     echo "OFFSITE_OK|test"
     exit 0
 fi

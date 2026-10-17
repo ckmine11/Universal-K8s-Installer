@@ -22,6 +22,7 @@ import { handleChat } from '../services/ai/chatops.js'
 import { riskOf, fleetFor, advisorFor } from '../services/ai/insights.js'
 import { addonSettingsStore } from '../services/addonSettings.js'
 import { ADVISOR_SCRIPT, analyze as analyzeAdvisor, advisorText } from '../services/ai/advisor.js'
+import { autoFix } from '../services/ai/yamlBuilder.js'
 import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView } from '../services/ai/manifests.js'
 import { offsiteStore } from '../services/offsiteStore.js'
 import { complianceStore } from '../services/complianceService.js'
@@ -129,11 +130,16 @@ router.post('/generate-yaml', requirePermission('ai:use'), async (req, res) => {
     const description = String(req.body?.description || '').slice(0, 2000)
     const context = `Kubernetes ${cluster.k8sVersion}; installed add-ons: ${Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}`
     await runJob(req, res, `yaml:${req.user.id}:${cluster.id}:${namespace}:${Buffer.from(description).toString('base64').slice(0, 200)}`,
-        () => generateManifests(req.user, { description, namespace, context }), { fresh: true })
+        () => generateManifests(req.user, { description, namespace, context, addons: Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k) }), { fresh: true })
 })
 // the user's own edits are checked the same way (no AI)
 router.post('/check-yaml', (req, res) => {
-    try { res.json(checkManifests(parseManifests(req.body?.yaml), { namespace: String(req.body?.namespace || 'default') })) } catch (e) { fail(res, e) }
+    try {
+        const docs = parseManifests(req.body?.yaml)
+        // "Auto-fix": pin images, add resources / probes / labels, fix units and apiVersions first
+        const f = req.body?.fix ? autoFix(docs) : { docs, fixes: [] }
+        res.json({ ...checkManifests(f.docs, { namespace: String(req.body?.namespace || 'default') }), fixes: f.fixes })
+    } catch (e) { fail(res, e) }
 })
 
 // ── Advisor: the AI summary of the security and cost findings ──
