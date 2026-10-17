@@ -16,7 +16,7 @@ const TOOLS = {
     advisor: { title: 'Advisor', icon: Coins, description: 'Security and cost advice for every workload of a cluster.' },
     changes: { title: 'What changed', icon: History, description: 'Everything that changed on a cluster — by KubeEZ and inside Kubernetes.' }
 }
-const SUGGESTIONS = ['sab theek hai?', 'kya problem hai', 'why 1', 'fix 1', 'what changed in the last 6h', 'What is a DaemonSet?']
+const SUGGESTIONS = ['sab theek hai?', 'kitne namespace hain?', 'kaunse pod fail ho rahe hain?', 'nodes dikhao', 'kya problem hai', 'why 1', 'what changed in the last 6h', 'What is a DaemonSet?']
 const STORE = 'kz.ai.chat'
 
 // links in answers become clickable; nothing else is interpreted
@@ -38,7 +38,7 @@ function AskAi() {
         setText(''); setBusy(true)
         setMsgs(m => [...m, { who: 'me', text: question }])
         const { ok, data } = await aiJob('/api/ai/chat', { text: question })
-        setMsgs(m => [...m, { who: 'ai', text: ok ? data.reply : `⚠ ${data.error}` }])
+        setMsgs(m => [...m, { who: 'ai', text: ok ? data.reply : `⚠ ${data.error}`, direct: ok && !!data.direct }])
         setBusy(false)
     }
 
@@ -56,10 +56,11 @@ function AskAi() {
                     <div key={i} className={`flex ${m.who === 'me' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${m.who === 'me' ? 'bg-blue-500/20 text-white' : 'bg-white/[0.04] border border-white/[0.07] text-slate-200'}`}>
                             <Linkified text={m.text} />
+                            {m.direct && <div className="mt-1.5 text-[10px] uppercase tracking-wide text-emerald-300/80">Live from the cluster · exact</div>}
                         </div>
                     </div>
                 ))}
-                {busy && <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin text-violet-300" /> Looking into it… a local model on CPU can take up to a minute.</div>}
+                {busy && <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin text-violet-300" /> Looking into it… questions about what is in a cluster answer in seconds; others go to the AI model (on CPU up to a minute).</div>}
                 <div ref={end} />
             </div>
             <div className="border-t border-white/[0.07] p-3 space-y-2">

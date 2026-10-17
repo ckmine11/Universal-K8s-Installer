@@ -255,6 +255,26 @@ ok(/shopcluster — \d+ change/.test(chg.reply) && /Deployment web rolled out/.t
 const st = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'sab theek hai?' })
 ok(/shopcluster — risk \d+\/100/.test(st.reply), `"sab theek hai?" → ${st.reply.split('\n')[0]}`)
 
+console.log('== Ask AI: what is in the cluster — exact, from the live cluster, no AI')
+const realNs = K(`get ns -o name`).out.split('\n').filter(Boolean).length
+const realPods = K(`get pods -A -o name`).out.split('\n').filter(Boolean).length
+const realShopPods = K(`-n shop get pods -o name`).out.split('\n').filter(Boolean).length
+const realNodes = K(`get nodes -o name`).out.split('\n').filter(Boolean).length
+let t0 = Date.now()
+const nsA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'kitne namespace hai' })
+ok(new RegExp(`^shopcluster me ${realNs} namespaces hain`).test(nsA.reply) && /• shop\b/.test(nsA.reply) && /• kube-system/.test(nsA.reply), `"kitne namespace hai" → ${nsA.reply.split('\n')[0]} (kubectl: ${realNs}) in ${Date.now() - t0} ms`)
+t0 = Date.now()
+const podA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'how many pods are there' })
+ok(new RegExp(`^shopcluster has ${realPods} pods — `).test(podA.reply), `"how many pods" → ${podA.reply.split('\n')[0]} (kubectl: ${realPods}) in ${Date.now() - t0} ms (cached)`)
+const shopA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'pods in shop' })
+ok(new RegExp(`^shopcluster has ${realShopPods} pods in shop`).test(shopA.reply), `"pods in shop" → ${shopA.reply.split('\n')[0]}`)
+const nodeA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'nodes dikhao' })
+ok(new RegExp(`shopcluster me ${realNodes} nodes? ha(i|in) — ${realNodes} Ready`).test(nodeA.reply) && /control-plane · v1\.\d+/.test(nodeA.reply), `"nodes dikhao" → ${nodeA.reply.split('\n').slice(0, 2).join(' | ')}`)
+const depA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'shop me deployments' })
+ok(/shop\/web — \d+\/\d+ ready/.test(depA.reply), `"shop me deployments" → ${depA.reply.split('\n').slice(0, 2).join(' | ')}`)
+const verA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'kubernetes version kya hai' })
+ok(/^shopcluster: Kubernetes v1\.\d+\.\d+/.test(verA.reply), `"version" → ${verA.reply}`)
+
 fs.rmSync(DATA, { recursive: true, force: true })
 console.log(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS')
 process.exit(fails ? 1 : 0)

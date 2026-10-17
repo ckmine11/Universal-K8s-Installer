@@ -6,7 +6,9 @@
 //   "what changed prod 6h" / "kya badla"  the change timeline, summarised
 //   "fix 2" / "2 theek karo"              the suggested fix with its dry-run —
 //                                         applied only in KubeEZ (a link)
-//   anything else                         answered from the workspace's facts
+//   "kitne namespace hain" / "failing pods" what is in a cluster — answered by
+//                                         KubeEZ from the live cluster, no AI
+//   anything else                         answered by AI from the live facts
 // Read-only from chat: nothing changes a cluster. Off until an admin turns it
 // on for a channel; only that channel's own chat; 20 questions an hour.
 import { incidentDetector } from '../incidentDetector.js'
@@ -21,17 +23,18 @@ import { summarizeChanges } from './doctor.js'
 import { planAction } from './actions.js'
 import { riskScore, cachedSnapshot } from './risk.js'
 import { visibleClusters } from './insights.js'
-import { canOn } from '../accessControl.js'
+import { canOn, accessOn, nsMatches } from '../accessControl.js'
+import { snapshotOf, limitSnapshot, queryOf, answerQuery, snapshotText } from './clusterQuery.js'
 
 const CLOSED = new Set(['resolved', 'cleared'])
 const RATE = 20, RATE_MS = 3600e3
 const publicUrl = () => (process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/+$/, '')
 const link = (path) => publicUrl() ? `${publicUrl()}${path}` : null
 
-export const CHAT_SYSTEM = 'You answer questions about the user\'s Kubernetes clusters in a chat app. Keep it short: at most 6 lines, plain text, no tables. Use the workspace facts given; for general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. For actions, point to KubeEZ (Incidents, AI → What changed, AI settings).'
+export const CHAT_SYSTEM = 'You answer questions about the user\'s Kubernetes clusters in a chat app. Keep it short: at most 6 lines, plain text, no tables. The workspace facts are read live from the clusters and are exact: use them for anything about the user\'s clusters, and never guess a count or a name that is not in them. For general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. For actions, point to KubeEZ (Incidents, AI → What changed, AI settings).'
 
 // ── language ──
-const HINGLISH = /\b(kya|kyu|kyun|kyon|hai|hain|ho|hua|hui|kaise|kaisa|batao|bata|theek|thik|sab|mera|meri|kitne|kitna|badla|karo|kar|nahi|nahin|chal|raha|rahi|abhi|aaj|kal|samjhao|dikkat|gadbad|haal|wala|wali|kaun|kab)\b/i
+const HINGLISH = /\b(kya|kyu|kyun|kyon|hai|hain|ho|hua|hui|kaise|kaisa|batao|bata|theek|thik|sab|mera|meri|kitne|kitna|badla|karo|kar|nahi|nahin|chal|raha|rahi|abhi|aaj|kal|samjhao|dikkat|gadbad|haal|wala|wali|kaun|kab|dikhao|dikha|dikhana|kaunse|kaunsa|kitni|mein|wale|chahiye|bhi|karna|hoga)\b/i
 export function detectLanguage(text) {
     if (/[\u0900-\u097F]/.test(text)) return 'hi'
     const words = String(text).toLowerCase().match(/[a-z]+/g) || []
@@ -92,6 +95,10 @@ const pick = (sc, state, n) => {
 }
 function listTextSilently(sc, state) { state.list = openIncidents(sc).slice(0, 10).map(i => i.id); state.at = Date.now() }
 
+// a member limited to some namespaces sees only those (team chats see the workspace, like its alerts)
+const within = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('the cluster did not answer in time')), ms).unref?.())])
+const nsFilter = (sc, u, c) => { if (!sc.user) return null; const p = accessOn(u, c).namespaces; return p ? (ns) => nsMatches(p, ns) : null }
+
 const user = (orgId, who, source) => ({ id: `chat:${source}`, username: `${who} (${source})`, orgId, role: 'viewer' })
 
 /**
@@ -112,8 +119,9 @@ export async function handleChat(ctx) {
     state.asked.push(Date.now())
     auditLog.record({ orgId, actor: { username: `${who} (${source})` }, action: 'ai.chatops', detail: `${intent.kind}: ${String(intent.text).slice(0, 120)}` })
     const u = ctx.user || user(orgId, who, source)
-    const needsAi = ['explain', 'ask'].includes(intent.kind)
-    if (needsAi && !s.enabled) return { reply: L.off }
+    if (intent.kind === 'explain' && !s.enabled) return { reply: L.off }
+    // "nodes ka status", "pods with problems" — about what is in the cluster
+    if (['status', 'incidents'].includes(intent.kind)) { const q = queryOf(intent.text); if (q && q.resource !== 'warnings') intent.kind = 'ask' }
 
     try {
         switch (intent.kind) {
@@ -162,16 +170,29 @@ export async function handleChat(ctx) {
                 catch { return { reply: facts } }
             }
             default: {
-                await ctx.send?.(L.looking)
                 const clusters = await clustersOf(sc)
+                // the clusters this is about: the one named, else all of them (up to 5)
+                const named = clusters.filter(c => new RegExp(`(^|[^a-z0-9-])${String(c.clusterName).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9-])`).test(intent.text.toLowerCase()))
+                const about = (named.length ? named : clusters).slice(0, 5)
+                const snaps = await Promise.all(about.map(c => within(snapshotOf(c), 20e3).then(snap => ({ c, snap: limitSnapshot(snap, nsFilter(sc, u, c)) })).catch(e => ({ c, error: e.message }))))
+                // what is in a cluster: answered exactly by KubeEZ, no AI, a second or two
+                const q = queryOf(intent.text, snaps.flatMap(x => x.snap?.namespaces || []))
+                if (q && !clusters.length) return { reply: lang === 'en' ? 'No clusters yet — add or install one in KubeEZ first.' : 'Abhi koi cluster nahi hai — pehle KubeEZ mein ek cluster jodo.' }
+                if (q) {
+                    const parts = snaps.map(x => x.snap ? answerQuery(q, x.snap, x.c.clusterName, lang) : `${x.c.clusterName}: ⚠ ${lang === 'en' ? 'could not read the cluster' : 'cluster padh nahi paya'} — ${x.error}`).filter(Boolean)
+                    if (parts.length) return { reply: parts.join('\n\n').slice(0, 3500), direct: snaps.some(x => x.snap) }
+                }
+                if (!s.enabled) return { reply: L.off }
+                await ctx.send?.(L.looking)
                 const facts = [
                     `Clusters: ${clusters.map(c => `${c.clusterName} (Kubernetes ${c.k8sVersion}, ${(c.masterNodes || []).length} control-plane, ${(c.workerNodes || []).length} workers)`).join('; ') || 'none'}`,
-                    `Open problems: ${openIncidents(sc).slice(0, 15).map(i => `${reasonLabel(i.reason)} on ${i.clusterName} ${i.namespace ? `${i.namespace}/` : ''}${i.target}: ${i.message}`).join(' | ') || 'none'}`
+                    `Open problems: ${openIncidents(sc).slice(0, 15).map(i => `${reasonLabel(i.reason)} on ${i.clusterName} ${i.namespace ? `${i.namespace}/` : ''}${i.target}: ${i.message}`).join(' | ') || 'none'}`,
+                    ...snaps.filter(x => x.snap).map(x => snapshotText(x.snap, x.c.clusterName))
                 ].join('\n')
                 const r = await ask(u, {
-                    task: 'chat', purpose: `chat (${source})`, maxTokens: 400, language: lang,
+                    task: 'chat', purpose: `chat (${source})`, maxTokens: 300, language: lang,
                     system: CHAT_SYSTEM,
-                    data: [{ label: 'workspace facts', text: facts }], question: intent.text
+                    data: [{ label: 'workspace facts (live)', text: facts }], question: intent.text
                 })
                 return { reply: r.text.trim().slice(0, 3500) }
             }

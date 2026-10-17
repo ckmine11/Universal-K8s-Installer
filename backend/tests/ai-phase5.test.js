@@ -60,6 +60,8 @@ describe('ChatOps: what was asked, in which language', () => {
         assert.equal(detectLanguage('sab theek hai?'), 'hinglish')
         assert.equal(detectLanguage('क्या बदला'), 'hi')
         assert.equal(detectLanguage('what changed in prod'), 'en')
+        assert.equal(detectLanguage('nodes dikhao'), 'hinglish')
+        assert.equal(detectLanguage('kaunse pod fail ho rahe'), 'hinglish')
     })
 })
 
