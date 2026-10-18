@@ -212,23 +212,36 @@ await undoManifests(ssh, applied, USER)
 ok(await waitFor(() => K('-n shop get deploy hello').code !== 0 && K('-n shop get svc hello').code !== 0), 'undo deleted what was created')
 ok(K(`-n shop get cm site -o jsonpath='{.data.title}'`).out === 'old', 'undo put the old ConfigMap back')
 
-console.log('== text → YAML golden set: every description passes the real server-side dry-run')
+console.log('== text → YAML golden set: KubeEZ\'s draft (what the AI starts from) passes the real server-side dry-run')
 const { GOLDEN } = await import('../../backend/tests/helpers/yamlGolden.js')
-const { generateManifests } = await import('../../backend/src/services/ai/manifests.js')
+const { generateManifests, buildDraft } = await import('../../backend/src/services/ai/manifests.js')
+// the draft (KubeEZ's reference for the AI) — with real random passwords, as applied
+const draftOf = async (d, ns, extra = {}) => { const r = await buildDraft(d, { namespace: ns, ...extra }); return r }
 K('create namespace golden')
 const noAi = { id: 'g', username: 'golden', orgId: 'org-golden' }   // no engine: KubeEZ builds it itself
 let dryFails = 0
 for (const [d] of GOLDEN) {
-    const g = await generateManifests(noAi, { description: d, namespace: 'golden' })
+    const g = await draftOf(d, 'golden')
     const p = await previewManifests(ssh, g.yaml, g.objects)
     if (!p.ok || g.blocked) { dryFails++; console.log(`   ✗ "${d}": ${(p.dryRun || '').split('\n').filter(l => /error|invalid|forbidden/i.test(l)).join(' / ').slice(0, 300) || JSON.stringify(g.problems)}`) }
 }
 ok(dryFails === 0, `${GOLDEN.length - dryFails}/${GOLDEN.length} golden descriptions pass the server dry-run`)
 
+console.log('== text → YAML: "expose deployment web" reads the real labels and port from the cluster')
+{
+    const { workloadSelector } = await import('../../backend/src/services/ai/manifests.js')
+    const realSel = K(`-n shop get deploy web -o jsonpath='{.spec.selector.matchLabels}'`).out
+    const g = await draftOf('expose deployment web on nodeport 30081', 'shop', { lookup: (kind, name) => workloadSelector(ssh, 'shop', kind, name) })
+    const svc = g.yaml.split('\n---\n').map(x => x).find(x => /kind: Service/.test(x)) || ''
+    ok(/app: web/.test(svc) && !/app.kubernetes.io\/name: web/.test(svc) && /nodePort: 30081/.test(svc), `selector from the real deployment (${realSel}), NodePort 30081`)
+    const p = await previewManifests(ssh, g.yaml, g.objects)
+    ok(p.ok, `…and it passes the server dry-run${p.ok ? '' : `: ${String(p.dryRun).slice(0, 200)}`}`)
+}
+
 console.log('== text → YAML: built from words, really running')
 const running = []
 for (const d of ['create httpd pod', 'nginx 1.27 with 2 replicas, 64Mi memory, a service on port 80', 'memcached 2 replicas', 'a cronjob that runs busybox every night at 2am and prints the date']) {
-    const g = await generateManifests(noAi, { description: d, namespace: 'golden' })
+    const g = await draftOf(d, 'golden')
     running.push(await applyManifests(ssh, g, { orgId: C.orgId, cluster: C, user: USER, description: d }))
 }
 ok(await waitFor(() => K(`-n golden get pod httpd -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`).out === 'True'), '"create httpd pod" → the pod is Ready (its health check passes)')
@@ -346,6 +359,14 @@ if (process.env.GPU_IP) {
     const t3 = Date.now()
     const real = await handleChat({ orgId: C.orgId, chatKey: 'e2e-real', who: 'ravi', source: 'Telegram', text: 'kitne namespace hai?' })
     ok(real.reply && !/connect an AI|did not answer/i.test(real.reply) && /\d/.test(real.reply), `Ask AI through the real AI in ${((Date.now() - t3) / 1000).toFixed(1)} s ("kitne namespace hai?"): ${real.reply.replace(/\n+/g, ' ').slice(0, 160)}`)
+    const gk = await handleChat({ orgId: C.orgId, chatKey: 'e2e-real', who: 'ravi', source: 'Telegram', text: 'What is the capital of France?' })
+    ok(/paris/i.test(gk.reply), `a general question through the real AI: ${gk.reply.replace(/\n+/g, ' ').slice(0, 120)}`)
+    // Create YAML written by the real AI (with KubeEZ's draft and rules), checked, and dry-run on the real cluster
+    const { generateManifests: writeYaml, previewManifests: dry } = await import('../../backend/src/services/ai/manifests.js')
+    const t4 = Date.now()
+    const y = await writeYaml(USER, { description: 'nginx with 2 replicas and a service', namespace: 'golden' }).catch(e => ({ error: e.message }))
+    const yp = y.yaml ? await dry(ssh, y.yaml, y.objects) : { ok: false, dryRun: y.error }
+    ok(y.method === 'ai' && y.engine?.provider === 'Office GPU (OpenAI API)' && !y.blocked && yp.ok, `Create YAML written by the real AI in ${((Date.now() - t4) / 1000).toFixed(1)} s (${(y.objects || []).map(o => o.kind + '/' + o.name).join(', ')}), dry-run ${yp.ok ? 'passed' : 'failed: ' + String(yp.dryRun).slice(0, 160)}`)
     aiStore.removeProvider(C.orgId, gen.id)
     process.env.KUBEEZ_MODE = prevMode
 } else ok(false, 'GPU_IP is not set — run through e2e.sh ai-ops, which starts the GPU server')

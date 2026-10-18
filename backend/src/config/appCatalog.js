@@ -26,6 +26,9 @@ export const APPS = {
         env: { MONGO_INITDB_ROOT_USERNAME: 'admin', MONGO_INITDB_ROOT_PASSWORD: { secret: true } }, initialDelay: 20, aliases: ['mongo', 'mongodb'] },
     rabbitmq: { image: 'rabbitmq:3.13-management-alpine', port: 5672, extraPorts: [{ name: 'management', port: 15672 }], probe: { tcp: true }, cpu: '200m', memory: '256Mi', limit: '512Mi', data: '/var/lib/rabbitmq', kind: 'StatefulSet',
         env: { RABBITMQ_DEFAULT_USER: 'admin', RABBITMQ_DEFAULT_PASS: { secret: true } }, initialDelay: 30, aliases: ['rabbitmq', 'rabbit', 'amqp'] },
+    // needs a database: KubeEZ adds MySQL when none is asked for, and links them (host + password from its Secret)
+    wordpress: { image: 'wordpress:6.6-apache', port: 80, probe: { http: '/wp-login.php' }, cpu: '100m', memory: '128Mi', limit: '512Mi', data: '/var/www/html', initialDelay: 20,
+        needsDb: ['mysql', 'mariadb'], env: { WORDPRESS_DB_HOST: { db: 'host' }, WORDPRESS_DB_USER: 'root', WORDPRESS_DB_PASSWORD: { db: 'password' }, WORDPRESS_DB_NAME: 'wordpress' }, aliases: ['wordpress', 'word press'] },
     adminer: { image: 'adminer:4.8.1', port: 8080, probe: { http: '/' }, cpu: '50m', memory: '64Mi', limit: '128Mi', aliases: ['adminer'] },
     whoami: { image: 'traefik/whoami:v1.10', port: 80, probe: { http: '/' }, cpu: '10m', memory: '16Mi', limit: '32Mi', aliases: ['whoami', 'echo server', 'demo app'] },
     busybox: { image: 'busybox:1.36', cpu: '10m', memory: '16Mi', limit: '64Mi', command: ['sh', '-c', 'echo "Hello from KubeEZ"; while true; do sleep 3600; done'], aliases: ['busybox'] },

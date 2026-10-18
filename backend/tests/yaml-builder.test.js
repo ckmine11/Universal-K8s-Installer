@@ -18,13 +18,13 @@ delete process.env.KUBEEZ_AI_URL
 const prevMode = process.env.KUBEEZ_MODE
 process.env.KUBEEZ_MODE = 'selfhosted'
 const { parseIntent, buildFromIntent, autoFix, cleanIntent, cronOf } = await import('../src/services/ai/yamlBuilder.js')
-const { generateManifests, checkManifests, parseManifests } = await import('../src/services/ai/manifests.js')
+const { generateManifests, buildDraft, checkManifests, parseManifests, RANDOM } = await import('../src/services/ai/manifests.js')
 const { aiStore } = await import('../src/services/ai/aiStore.js')
 const { APPS } = await import('../src/config/appCatalog.js')
 after(() => { process.env.KUBEEZ_MODE = prevMode; fs.rmSync(DATA, { recursive: true, force: true }) })
 
 const USER = { id: 'u', username: 'a', orgId: 'org-noai' }   // no engine → only rules
-const gen = (d, extra = {}) => generateManifests(USER, { description: d, namespace: 'shop', ...extra })
+const gen = async (d, extra = {}) => { const r = await buildDraft(d, { namespace: 'shop', ...extra }); if (!r) throw new Error('Name the app or image'); return r }
 const kinds = (r) => r.objects.map(o => o.kind)
 const doc = (r, kind) => r.yaml.split('\n---\n').map(x => parse(x)).find(o => o.kind === kind)
 const container = (o) => (o.kind === 'Pod' ? o.spec : o.kind === 'CronJob' ? o.spec.jobTemplate.spec.template.spec : o.spec.template.spec).containers[0]
@@ -121,20 +121,38 @@ describe('undo covers every kind it can create', () => {
     })
 })
 
-describe('fallbacks', () => {
-    test('AI down: what the rules understood is still built; nothing understood → a clear message', async () => {
-        const r = await gen('nginx with a sidecar that ships logs')
-        assert.equal(r.method, 'templates'); assert.ok(r.notes.some(n => /could not answer/.test(n)) || r.notes.some(n => /not included/.test(n)))
-        await assert.rejects(gen('make my thing work nicely'), /Name the app or image/)
+describe('written by the connected AI', () => {
+    test('no AI connected: "connect an AI model first" — nothing is made up', async () => {
+        await assert.rejects(() => generateManifests({ id: 'u', username: 'a', orgId: 'org-no-ai' }, { description: 'nginx with 2 replicas', namespace: 'shop' }), (e) => e.code === 'AI_NONE' && /connect an AI model first/i.test(e.message))
+    })
+    test('the AI starts from KubeEZ\'s draft; its answer is the output; secret values never go to the AI', async () => {
+        let sent = ''
+        const m = http.createServer((req, res) => { let b = ''; req.on('data', x => b += x); req.on('end', () => {
+            const body = JSON.parse(b); sent = body.messages.map(x => x.content).join('\n')
+            // the AI's own version: the draft, with 2 replicas changed to 3
+            const draft = /<<DATA-\w+ a draft KubeEZ prepared[^>]*>>\n([\s\S]*?)\n<<END DATA/.exec(sent)?.[1] || ''
+            res.end(JSON.stringify({ choices: [{ message: { content: draft.replace('replicas: 1', 'replicas: 3') } }] }))
+        }) })
+        await new Promise(r => m.listen(0, '127.0.0.1', r))
+        try {
+            aiStore.addProvider('org-draft', { name: 'My AI', kind: 'ollama', baseUrl: `http://127.0.0.1:${m.address().port}`, model: 'm' })
+            const r = await generateManifests({ id: 'u', username: 'a', orgId: 'org-draft' }, { description: 'postgres 16 with a 5Gi volume', namespace: 'shop' })
+            assert.equal(r.method, 'ai'); assert.equal(r.engine.provider, 'My AI')
+            assert.match(sent, /a draft KubeEZ prepared/); assert.match(sent, /image: postgres:16-alpine/)
+            assert.match(sent, new RegExp(RANDOM), 'secret values go as a placeholder')
+            const pw = doc(r, 'Secret').stringData.POSTGRES_PASSWORD
+            assert.match(pw, /^[\w-]{20,}$/, 'filled in with a random value')
+            assert.equal(sent.includes(pw), false, 'the real value never reached the AI')
+            assert.equal(doc(r, 'StatefulSet').spec.replicas, 3, 'the output is the AI\'s version')
+            assert.ok(r.notes.some(n => /never sent to the AI/.test(n)))
+        } finally { m.closeAllConnections?.(); m.close() }
     })
     test('the model writes broken YAML → KubeEZ fixes it and asks once more', async () => {
         let calls = 0
         const m = http.createServer((req, res) => { let b = ''; req.on('data', x => b += x); req.on('end', () => {
             calls++
             const body = JSON.parse(b)
-            const understand = /turn a request for Kubernetes workloads into JSON/.test(body.messages[0].content)
-            const text = understand ? '{"workloads":[],"freeform":true}'
-                : calls === 2 ? 'apiVersion: v1\nkind: Pod\nmetadata: { name: x }\nspec:\n  hostNetwork: true\n  containers: [{ name: c, image: nginx:latest }]'
+            const text = calls === 1 ? 'apiVersion: v1\nkind: Pod\nmetadata: { name: x }\nspec:\n  hostNetwork: true\n  containers: [{ name: c, image: nginx:latest }]'
                     : 'apiVersion: v1\nkind: Pod\nmetadata: { name: x }\nspec:\n  containers: [{ name: c, image: nginx:latest }]'
             res.end(JSON.stringify({ choices: [{ message: { content: text } }] }))
         }) })
@@ -142,10 +160,53 @@ describe('fallbacks', () => {
         try {
             aiStore.addProvider('org-free', { name: 'F', kind: 'ollama', baseUrl: `http://127.0.0.1:${m.address().port}`, model: 'm' })
             const r = await generateManifests({ id: 'u', username: 'a', orgId: 'org-free' }, { description: 'a pod with a sidecar container that tails logs', namespace: 'shop' })
-            assert.equal(r.method, 'ai-yaml')
-            assert.equal(calls, 3, 'understand → write (blocked: hostNetwork) → write again')
+            assert.equal(r.method, 'ai')
+            assert.equal(calls, 2, 'write (blocked: hostNetwork) → write again with the problem')
             assert.equal(r.blocked, false)
             assert.ok(r.fixes.some(f => /nginx:1\.27-alpine/.test(f)), 'the image was pinned')
         } finally { m.close() }
+    })
+})
+
+describe('more than apps: linked apps, autoscaling, settings, exposing what runs', () => {
+    test('WordPress gets a MySQL (added when not asked for), linked by its Secret', async () => {
+        for (const d of ['wordpress with mysql', 'wordpress']) {
+            const r = await gen(d)
+            const wp = r.yaml.split('\n---\n').map(x => parse(x)).find(o => o.kind === 'Deployment' && o.metadata.name === 'wordpress')
+            const env = Object.fromEntries(wp.spec.template.spec.containers[0].env.map(e => [e.name, e.value ?? e.valueFrom]))
+            assert.equal(env.WORDPRESS_DB_HOST, 'mysql')
+            assert.deepEqual(env.WORDPRESS_DB_PASSWORD, { secretKeyRef: { name: 'mysql-secret', key: 'MYSQL_ROOT_PASSWORD' } })
+            assert.ok(kinds(r).indexOf('StatefulSet') < kinds(r).indexOf('Deployment'), 'the database comes first')
+        }
+    })
+    test('autoscaling → a HorizontalPodAutoscaler on the Deployment', async () => {
+        const r = await gen('nginx autoscale from 2 to 8 replicas at 60% cpu')
+        const h = doc(r, 'HorizontalPodAutoscaler')
+        assert.deepEqual([h.spec.minReplicas, h.spec.maxReplicas, h.spec.metrics[0].resource.target.averageUtilization, h.spec.scaleTargetRef.name], [2, 8, 60, 'nginx'])
+        assert.equal(doc(r, 'Deployment').spec.replicas, 2)
+    })
+    test('an image named without the word "image" wins over a word like "node"', async () => {
+        const r = await gen('deploy my node app ghcr.io/me/api:2.1 on port 3000')
+        const c = container(doc(r, 'Deployment'))
+        assert.equal(c.image, 'ghcr.io/me/api:2.1'); assert.equal(c.command, undefined, 'its own entrypoint, not a sleep loop')
+    })
+    test('a ConfigMap, a Secret — and an app reading the ConfigMap', async () => {
+        const cm = await gen('configmap app-config with LOG_LEVEL=debug and MODE=prod')
+        assert.deepEqual(kinds(cm), ['ConfigMap']); assert.deepEqual(doc(cm, 'ConfigMap').data, { LOG_LEVEL: 'debug', MODE: 'prod' })
+        const sec = await gen('secret db-creds with a random password')
+        assert.match(doc(sec, 'Secret').stringData.password, /^[\w-]{20,}$/)
+        const app = await gen('nginx with a configmap app-config LOG_LEVEL=debug')
+        assert.deepEqual(container(doc(app, 'Deployment')).envFrom, [{ configMapRef: { name: 'app-config' } }])
+    })
+    test('expose a deployment that already runs: its real labels and port, read from the cluster', async () => {
+        const lookup = async (kind, name) => kind === 'deployment' && name === 'web' ? { selector: { app: 'web', tier: 'front' }, port: 8080 } : null
+        const r = await buildDraft('expose deployment web on nodeport 30080', { namespace: 'shop', lookup })
+        const svc = doc(r, 'Service')
+        assert.deepEqual(svc.spec.selector, { app: 'web', tier: 'front' })
+        assert.deepEqual(svc.spec.ports[0], { name: 'main', port: 8080, targetPort: 8080, nodePort: 30080 })
+        assert.equal(svc.spec.type, 'NodePort')
+    })
+    test('a namespace itself: a clear answer, not a guess', async () => {
+        await assert.rejects(() => gen('namespace dev'), /makes objects inside a namespace, not the namespace itself/)
     })
 })

@@ -9,8 +9,8 @@ import { randomBytes } from 'crypto'
 import { parseAllDocuments, stringify } from 'yaml'
 import { DATA_DIR } from '../../utils/paths.js'
 import { writeFileAtomicSync } from '../../utils/atomicWrite.js'
-import { ask } from './engine.js'
-import { parseIntent, cleanIntent, buildFromIntent, describeIntent, autoFix, INTENT_SYSTEM } from './yamlBuilder.js'
+import { ask, routeFor } from './engine.js'
+import { parseIntent, cleanIntent, buildFromIntent, describeIntent, autoFix, INTENT_SYSTEM, describeExtra } from './yamlBuilder.js'
 import { APPS } from '../../config/appCatalog.js'
 
 const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf timeout 60 kubectl'
@@ -35,7 +35,8 @@ Rules:
 - Every container: a pinned image tag (never :latest), resources.requests and resources.limits for cpu and memory, readiness and liveness probes when it serves a port.
 - Never privileged, hostNetwork, hostPID, hostIPC, hostPath or added capabilities; runAsNonRoot when the image supports it.
 - Services are ClusterIP unless a NodePort or LoadBalancer is asked for. Ingress uses ingressClassName nginx.
-- Never put real passwords in a Secret — use a placeholder like CHANGE_ME and say nothing else.`
+- For every password or other secret value write exactly __KUBEEZ_RANDOM__ — KubeEZ fills in a random value. Never write a real password.
+- Make it do exactly what was asked: every app, every setting, every number in the description.`
 
 /** YAML text → documents (fences and prose around it removed). */
 export function parseManifests(text) {
@@ -131,56 +132,90 @@ function clusterNotes(docs, addons = []) {
  *   ai-yaml     only for what the templates cannot build: the model writes YAML,
  *               KubeEZ fixes what it can and asks once more with the errors
  */
-export async function generateManifests(user, { description, namespace, context = '', addons = [] }) {
+/** The labels and container port of a workload that already runs (to expose it). → { selector, port } | null */
+export async function workloadSelector(ssh, namespace, kind, name) {
+    const ok = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/
+    if (!ok.test(namespace) || !ok.test(name) || !['deployment', 'statefulset', 'daemonset'].includes(kind)) return null
+    const r = await ssh.execCommand(`sudo KUBECONFIG=/etc/kubernetes/admin.conf timeout 15 kubectl -n ${namespace} get ${kind} ${name} -o jsonpath='{.spec.selector.matchLabels}{"\\n"}{.spec.template.spec.containers[0].ports[0].containerPort}' 2>/dev/null`)
+    const [labels, port] = String(r.stdout || '').split('\n')
+    let selector = null; try { selector = JSON.parse(labels) } catch { }
+    return selector && typeof selector === 'object' && Object.keys(selector).length ? { selector, port: Number(port) || null } : null
+}
+
+// secret values never go to the AI: the draft carries this placeholder, KubeEZ fills it in afterwards
+export const RANDOM = '__KUBEEZ_RANDOM__'
+const PLACEHOLDER = /^(__KUBEEZ_RANDOM__|hidden|\[hidden\]|change_?me|changeme|<[^>]*>|\$\{?[A-Z_]+\}?|your[-_ ]?password|password|secret|xxx+|\*+|)$/i
+/** Random values for every secret placeholder the AI left (or invented). → the keys filled */
+function fillSecrets(docs) {
+    const filled = []
+    for (const o of docs) {
+        if (o.kind !== 'Secret') continue
+        if (o.data && !o.stringData) { o.stringData = Object.fromEntries(Object.entries(o.data).map(([k, v]) => { try { return [k, Buffer.from(String(v), 'base64').toString('utf8')] } catch { return [k, String(v)] } })); delete o.data }
+        for (const [k, v] of Object.entries(o.stringData || {})) if (typeof v !== 'string' || PLACEHOLDER.test(v.trim())) { o.stringData[k] = randomBytes(18).toString('base64url'); filled.push(`${o.metadata?.name}/${k}`) }
+    }
+    return filled
+}
+
+/** KubeEZ's own reading of the description, built with its catalog — the reference the AI starts from. */
+export async function buildDraft(description, { namespace, lookup = null } = {}) {
+    const d = String(description || '').trim()
+    const rule = parseIntent(d)
+    if (rule.refuse) throw bad(rule.refuse)
+    // "expose deployment web on nodeport 30080": the labels and port of what already runs, read from the cluster
+    for (const x of rule.extras || []) {
+        if (x.kind !== 'Service' || !x.target || !lookup) continue
+        const r = await lookup(x.target.kind, x.target.name).catch(() => null)
+        if (r?.selector && Object.keys(r.selector).length) { x.selector = r.selector; x.targetPort = r.port || x.port || null }
+    }
+    if (!rule.workloads.length && !rule.extras?.length) return null
+    const { docs, notes } = buildFromIntent(rule, { namespace })
+    const checked = checkManifests(docs, { namespace })
+    return { ...checked, docs, method: 'templates', confident: rule.confident, reason: rule.reason, understood: [...rule.workloads.map(describeIntent), ...(rule.extras || []).map(describeExtra)], notes }
+}
+
+const NO_AI = 'Please connect an AI model first — Create YAML is written by the AI connected to this workspace. An admin can connect one in AI settings → Connect AI (Claude, Gemini, OpenAI, OpenRouter… or your own offline model).'
+
+/**
+ * Description → YAML, written by the workspace's AI. KubeEZ gives it a reference
+ * draft (its own reading, with pinned images, health checks, resources) and the
+ * rules, then checks and fixes what comes back, asks again with the problems if
+ * needed, and fills in random secret values (they are never sent to the AI).
+ */
+export async function generateManifests(user, { description, namespace, context = '', addons = [], lookup = null }) {
     const d = String(description || '').trim()
     if (d.length < 3) throw bad('Describe what you want (e.g. "nginx 1.27 with 2 replicas and a service on port 80")')
-    const rule = parseIntent(d)
-    let intent = null, method = null, engine = null, aiError = null
-
-    if (rule.confident && rule.workloads.length) { intent = rule; method = 'templates' }
-    else {
-        try {
-            const r = await ask(user, {
-                task: 'chat', purpose: 'text to YAML (understand)', json: true, english: false, maxTokens: 500, timeoutMs: 300000, system: INTENT_SYSTEM,
-                validate: (j) => Array.isArray(j.workloads) || j.freeform ? null : 'needs "workloads"',
-                data: [{ label: 'known apps', text: Object.entries(APPS).map(([k, a]) => `${k} (${a.image})`).join(', ') }, ...(context ? [{ label: 'cluster facts', text: context }] : [])],
-                question: d.slice(0, 2000)
-            })
-            engine = engineOf(r)
-            const c = cleanIntent(r.json)
-            if (c?.workloads?.length) { intent = c; method = 'ai-intent' }
-            else if (!c?.freeform && rule.workloads.length) { intent = rule; method = 'templates' }
-        } catch (e) { aiError = e.message; if (rule.workloads.length) { intent = rule; method = 'templates' } }
-    }
-
-    if (intent) {
-        const { docs, notes } = buildFromIntent(intent, { namespace })
-        const checked = checkManifests(docs, { namespace })
-        if (method === 'templates' && !rule.confident) notes.unshift('Built the main app from the description — the parts KubeEZ cannot build from text (' + (rule.reason || 'extras') + ') are not included; add them to the YAML.')
-        if (aiError) notes.unshift('KubeEZ AI could not answer, so KubeEZ built it from the description itself.')
-        return { ...checked, method, understood: intent.workloads.map(describeIntent), notes: [...notes, ...clusterNotes(docs, addons)], fixes: [], engine }
-    }
-    if (aiError) throw bad(`${aiError} — and KubeEZ could not recognise an app in the description. Name the app or image, e.g. "nginx with 2 replicas" or "image myrepo/app:1.0 on port 8080".`, 503)
-
-    // free-form: the model writes the YAML; KubeEZ fixes it, and asks once more if needed
+    if (!NAME.test(namespace || '')) throw bad('Pick a valid namespace')
+    if (!routeFor(user.orgId, 'chat').length) throw Object.assign(bad(NO_AI), { code: 'AI_NONE' })
+    const draft = await buildDraft(d, { namespace, lookup })
+    if (draft) for (const o of draft.docs) if (o.kind === 'Secret' && o.stringData) for (const k of Object.keys(o.stringData)) o.stringData[k] = RANDOM
+    const draftYaml = draft ? draft.docs.map(o => { const c = JSON.parse(JSON.stringify(o)); delete c.metadata.namespace; return stringify(c, { aliasDuplicateObjects: false }).trim() }).join('\n---\n') : ''
+    const reference = draftYaml
+        ? [{ label: 'a draft KubeEZ prepared from the description (pinned images, health checks, resources, linked settings) — start from it, and correct or complete it so it does exactly what was asked', text: draftYaml }]
+        : [{ label: 'apps KubeEZ knows (use these pinned images and ports when one fits)', text: Object.entries(APPS).map(([k, a]) => `${k}: ${a.image}${a.port ? ` port ${a.port}` : ''}`).join('\n') }]
     const write = (question, data = []) => ask(user, {
-        task: 'chat', purpose: 'text to YAML', english: false, maxTokens: 1200, timeoutMs: 300000, system: GENERATE_SYSTEM,
-        data: [...(context ? [{ label: 'cluster facts', text: context }] : []), ...data], question
+        task: 'chat', purpose: 'text to YAML', english: false, maxTokens: 2500, timeoutMs: 300000, system: GENERATE_SYSTEM,
+        data: [...(context ? [{ label: 'cluster facts', text: context }] : []), ...reference, ...data], question
     })
     let r = await write(d.slice(0, 2000))
-    let docs, fixes = [], checked
+    let docs, fixes = [], checked, filled = []
     for (let round = 1; round <= 2; round++) {
         let problem = null
         try {
             docs = parseManifests(r.text)
             const f = autoFix(docs); docs = f.docs; fixes = f.fixes
+            filled = fillSecrets(docs)
             checked = checkManifests(docs, { namespace })
             if (checked.blocked) problem = checked.problems.filter(p => p.level === 'block').map(p => `${p.object}: ${p.text}`).join('; ')
         } catch (e) { problem = e.message }
-        if (!problem || round === 2) { if (problem && !checked) throw bad(`KubeEZ AI could not write valid YAML for this (${problem}). Try a simpler description, or one app at a time.`); break }
-        r = await write(`${d.slice(0, 1500)}\n\nYour previous YAML had these problems: ${problem}\nWrite it again, fixed, following every rule.`, [{ label: 'previous YAML', text: String(r.text).slice(0, 6000) }])
+        if (!problem || round === 2) { if (problem && !checked) throw bad(`The AI (${r.provider}) could not write valid YAML for this (${problem}). Try again, describe it differently, or connect a stronger model.`); break }
+        r = await write(`${d.slice(0, 1500)}\n\nYour previous YAML had these problems: ${problem}\nWrite it again, fixed, following every rule.`, [{ label: 'your previous YAML', text: String(r.text).slice(0, 8000) }])
     }
-    return { ...checked, method: 'ai-yaml', understood: [], notes: clusterNotes(docs, addons), fixes, engine: engineOf(r) }
+    const notes = [
+        ...(filled.length ? [`KubeEZ filled in random values for ${filled.join(', ')} — they were never sent to the AI. Read one with: kubectl -n ${namespace} get secret <name> -o jsonpath='{.data.<key>}' | base64 -d`] : []),
+        ...(draft?.notes || []).filter(n => !/random password|read with/.test(n)),
+        ...clusterNotes(docs, addons)
+    ]
+    return { ...checked, method: 'ai', understood: [], notes: [...new Set(notes)], fixes, engine: engineOf(r) }
 }
 
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64')

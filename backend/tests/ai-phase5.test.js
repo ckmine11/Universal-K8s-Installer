@@ -171,14 +171,15 @@ describe('text → YAML', () => {
         assert.equal(parseManifests('apiVersion: v1\nkind: ConfigMap\nmetadata: {name: a}\napiVersion: v1\nkind: ConfigMap\nmetadata: {name: b}').length, 2, 'objects without --- between them')
     })
 
-    test('a plain request is built by KubeEZ itself; only extras go to the model, with the rules in the prompt', async () => {
+    test('every request is written by the connected AI, with KubeEZ\'s rules (and its draft when it has one)', async () => {
         aiStore.addProvider('org-yaml', { name: 'Fake', kind: 'ollama', baseUrl: base, model: 'm' })
         const prompts = []
-        modelReply = (body) => { prompts.push(body.messages[0].content); return /into JSON for KubeEZ/.test(body.messages[0].content) ? '{"workloads":[],"freeform":true}' : good }
+        modelReply = (body) => { prompts.push(body.messages.map(m => m.content).join('\n')); return good }
         const plain = await generateManifests({ id: 'u', username: 'a', orgId: 'org-yaml' }, { description: 'nginx with 2 replicas and a service', namespace: 'shop' })
-        assert.equal(plain.method, 'templates'); assert.equal(prompts.length, 0, 'no model call for a plain request')
+        assert.equal(plain.method, 'ai'); assert.equal(prompts.length, 1, 'the AI wrote it')
+        assert.match(prompts[0], /a draft KubeEZ prepared/); assert.match(prompts[0], /replicas: 2/)
         const extra = await generateManifests({ id: 'u', username: 'a', orgId: 'org-yaml' }, { description: 'nginx with a sidecar that tails the logs', namespace: 'shop' })
-        assert.equal(extra.method, 'ai-yaml'); assert.equal(extra.objects.length, 2)
+        assert.equal(extra.method, 'ai'); assert.equal(extra.objects.length, 2)
         assert.match(prompts.at(-1), /never :latest/); assert.match(prompts.at(-1), /Never privileged/)
     })
     test('preview, apply and undo — what was created is deleted, what was changed is put back', async () => {

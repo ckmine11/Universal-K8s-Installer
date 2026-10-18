@@ -35,5 +35,12 @@ export const GOLDEN = [
     // traps found while testing: words inside commands and image tags are not apps
     ['busybox job that runs "echo hello alpine"', { kinds: ['Job'], command: 'echo hello alpine' }],
     ['image nginx:1.27-alpine on port 80', { kinds: ['Deployment', 'Service'], image: 'nginx:1.27-alpine' }],
-    ['deploy a demo app', { kinds: ['Deployment', 'Service'], image: 'traefik/whoami:v1.10' }]
+    ['deploy a demo app', { kinds: ['Deployment', 'Service'], image: 'traefik/whoami:v1.10' }],
+    // found while checking real descriptions (2026-10-18)
+    ['deploy my node app ghcr.io/me/api:2.1 on port 3000 with 2 replicas', { kinds: ['Deployment', 'Service'], image: 'ghcr.io/me/api:2.1', port: 3000, replicas: 2 }],
+    ['deploy stripe/mock:1.2 on port 12111', { kinds: ['Deployment', 'Service'], image: 'stripe/mock:1.2', port: 12111 }],
+    ['nginx with autoscaling 2 to 5 replicas at 70% cpu', { kinds: ['Deployment', 'Service', 'HorizontalPodAutoscaler'], replicas: 2 }],
+    ['wordpress with mysql', { kinds: ['Secret', 'StatefulSet', 'Service', 'Deployment', 'Service'], image: 'mysql:8.4', note: /wordpress: connected to mysql/ }],
+    ['a job that runs once and prints hello', { kinds: ['Job'], command: 'echo .hello' }],
+    ['nginx with a configmap app-config LOG_LEVEL=debug', { kinds: ['ConfigMap', 'Deployment', 'Service'] }]
 ]

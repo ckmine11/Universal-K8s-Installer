@@ -1,22 +1,29 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Wand2, Loader2, ShieldCheck, Eye, Play, Undo2, AlertTriangle, XCircle, CheckCircle2, Copy, History, Sparkles, Wrench, Info, BadgeCheck } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Wand2, Loader2, ShieldCheck, Eye, Play, Undo2, AlertTriangle, XCircle, CheckCircle2, Copy, History, Sparkles, Wrench, Info, BadgeCheck, X, RotateCcw, Lightbulb, Boxes } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import { aiJob } from './aiJob'
 import Feedback from './Feedback'
 
-// AI → Create YAML: describe what you want, KubeEZ AI writes the YAML, KubeEZ
-// checks it, dry-runs it on the cluster and shows the diff; Apply can be undone.
+// AI → Create YAML: describe what you want — the AI connected to the workspace
+// writes the YAML (from a draft and the rules KubeEZ gives it); KubeEZ checks and
+// fixes it, dry-runs it on the cluster and shows the diff; Apply can be undone.
+// what can be asked
 const EXAMPLES = [
-    'create httpd pod',
-    'nginx 1.27 with 2 replicas, 64Mi memory, a service on port 80',
-    'ek postgres chahiye 5Gi volume ke saath',
-    'redis 7 with a 1Gi volume, only reachable inside the namespace',
-    'a cronjob that runs busybox every night at 2am and prints the date',
-    'image ghcr.io/acme/shop:1.4 port 8080 3 replicas ingress host shop.example.com'
+    ['App from your image', 'ghcr.io/acme/shop:1.4 on port 8080, 3 replicas, ingress host shop.example.com'],
+    ['Web server', 'nginx 1.27 with 2 replicas, 64Mi memory and a service on port 80'],
+    ['Autoscaling', 'nginx autoscaling 2 to 5 replicas at 70% cpu'],
+    ['Database', 'postgres 16 with a 5Gi volume'],
+    ['App + database', 'wordpress with mysql'],
+    ['Internal cache', 'redis 7 with a 1Gi volume, only reachable inside the namespace'],
+    ['Scheduled job', 'a cronjob that runs busybox every night at 2am and prints the date'],
+    ['Settings', 'configmap app-config with LOG_LEVEL=info and MODE=prod'],
+    ['Expose what runs', 'expose deployment web on nodeport 30080'],
+    ['Hinglish', 'ek postgres chahiye 5Gi volume ke saath']
 ]
 // how the YAML came about — the first one is always valid
 const METHOD = {
+    ai: [Sparkles, (e) => `Written by ${e?.provider || 'your AI'}${e?.model ? ` · ${e.model}` : ''} — checked and fixed by KubeEZ; dry-run it before applying`, 'text-violet-300 border-violet-400/30 bg-violet-500/10'],
     templates: [BadgeCheck, 'Built by KubeEZ from the description — no AI needed, always valid', 'text-emerald-300 border-emerald-400/30 bg-emerald-500/10'],
     'ai-intent': [Sparkles, 'Understood by KubeEZ AI, built by KubeEZ — always valid', 'text-violet-300 border-violet-400/30 bg-violet-500/10'],
     'ai-yaml': [Wrench, 'Written by KubeEZ AI, checked and fixed by KubeEZ — review it', 'text-amber-300 border-amber-400/30 bg-amber-500/10']
@@ -54,16 +61,31 @@ export default function YamlStudio({ clusterId, canEdit }) {
     const [preview, setPreview] = useState(null)
     const [history, setHistory] = useState([])
     const [error, setError] = useState(null)
+    const [showExamples, setShowExamples] = useState(false)
+    // written by the AI connected to the workspace — none yet: connect one first
+    const [engines, setEngines] = useState(null)
+    useEffect(() => { apiFetch('/api/ai').then(r => r.ok ? r.json() : null).then(d => setEngines(d ? d.engines.filter(e => e.enabled !== false).length : null)).catch(() => { }) }, [])
+    const run = useRef(0)          // the current "Write YAML" — a cancelled one is ignored when it comes back
+    const descBox = useRef(null)
 
     const loadHistory = useCallback(() => apiFetch(`/api/clusters/${clusterId}/ai-manifests`).then(r => r.ok ? r.json() : { applied: [] }).then(d => setHistory(d.applied || [])).catch(() => { }), [clusterId])
     useEffect(() => { loadHistory() }, [loadHistory])
 
     const generate = async () => {
+        const mine = ++run.current
         setBusy('gen'); setError(null); setPreview(null)
         const { ok, data } = await aiJob('/api/ai/generate-yaml', { clusterId, namespace: ns, description: desc })
+        if (mine !== run.current) return   // cancelled meanwhile
         setBusy(null)
-        if (!ok) return setError(data.error)
+        if (!ok) { if (data.code === 'AI_NONE') setEngines(0); return setError(data.error) }
         setYaml(data.yaml); setChecked(data); setEngine(data.engine); setInfo({ method: data.method, understood: data.understood || [], notes: data.notes || [], fixes: data.fixes || [] })
+    }
+    const cancel = () => { run.current++; setBusy(null) }
+    // a new description from scratch: the output and the checks go away
+    const startOver = () => {
+        run.current++
+        setYaml(''); setChecked(null); setEngine(null); setInfo(null); setPreview(null); setError(null); setBusy(null); setDesc('')
+        setTimeout(() => descBox.current?.focus(), 0)
     }
     const check = async (fix = false) => {
         setBusy(fix ? 'fix' : 'check'); setError(null); setPreview(null)
@@ -99,18 +121,37 @@ export default function YamlStudio({ clusterId, canEdit }) {
                     <Wand2 className="w-5 h-5 text-violet-300 mt-0.5" />
                     <div>
                         <h3 className="text-base font-semibold text-white">Create from a description</h3>
-                        <p className="text-xs text-slate-400">Describe what you want — KubeEZ AI writes the YAML, KubeEZ checks it (no privileged or host access, limits, pinned images), dry-runs it on this cluster and shows the diff. Apply can be undone for 24 hours.</p>
+                        <p className="text-xs text-slate-400">Describe what you want — your connected AI writes the YAML; KubeEZ checks and fixes it (no privileged or host access, limits, pinned images, health checks), dry-runs it on this cluster and shows the diff. Passwords are filled in by KubeEZ and never sent to the AI. Apply can be undone for 24 hours.</p>
                     </div>
                 </div>
-                <textarea className="kz-input min-h-[70px]" value={desc} onChange={e => setDesc(e.target.value)} maxLength={2000} placeholder={EXAMPLES[0]} aria-label="What do you want to create?" />
-                <div className="flex flex-wrap gap-1.5">{EXAMPLES.map(x => <button key={x} onClick={() => setDesc(x)} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-slate-400 hover:text-white">{x}</button>)}</div>
+                {engines === 0 && (
+                    <div className="rounded-xl border border-amber-400/30 bg-amber-500/[0.07] p-3 flex flex-wrap items-center gap-3 text-xs text-amber-100">
+                        <span className="flex-1 min-w-[220px]"><b className="text-white">Connect an AI model first.</b> Create YAML is written by the AI connected to this workspace — any model: Claude, Gemini, OpenAI, OpenRouter… or your own offline one.</span>
+                        <a href="/ai/settings" className="kz-btn-primary !text-xs">Connect AI</a>
+                    </div>
+                )}
+                <textarea ref={descBox} className="kz-input min-h-[70px]" value={desc} onChange={e => setDesc(e.target.value)} maxLength={2000} placeholder="e.g. ghcr.io/acme/shop:1.4 on port 8080, 3 replicas, ingress host shop.example.com" aria-label="What do you want to create?" disabled={busy === 'gen'} />
+                <div>
+                    <button type="button" onClick={() => setShowExamples(v => !v)} className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-white"><Lightbulb className="w-3.5 h-3.5" /> {showExamples ? 'Hide examples' : 'Examples — what you can ask'}</button>
+                    {showExamples && (
+                        <div className="mt-2 grid sm:grid-cols-2 gap-1.5">
+                            {EXAMPLES.map(([title, x]) => (
+                                <button key={x} onClick={() => { setDesc(x); setShowExamples(false); descBox.current?.focus() }} className="text-left rounded-lg border border-white/10 px-2.5 py-1.5 hover:bg-white/5 hover:border-violet-400/30">
+                                    <span className="block text-[10px] uppercase tracking-wide text-slate-500">{title}</span>
+                                    <span className="block text-[11px] text-slate-300">{x}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
                 <div className="flex flex-wrap items-end gap-3">
                     <div>
                         <label className="kz-label" htmlFor="yaml-ns">Namespace</label>
                         <input id="yaml-ns" className="kz-input !w-48 font-mono" value={ns} onChange={e => setNs(e.target.value.trim())} />
                     </div>
-                    <button onClick={generate} disabled={!!busy || desc.trim().length < 3} className="kz-btn-primary">{busy === 'gen' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} Write YAML</button>
-                    {busy === 'gen' && <span className="text-xs text-slate-500">Simple requests are built at once; anything the AI must understand can take a minute on a CPU model…</span>}
+                    <button onClick={generate} disabled={!!busy || desc.trim().length < 3 || engines === 0} className="kz-btn-primary">{busy === 'gen' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {yaml ? 'Write again' : 'Write YAML'}</button>
+                    {busy === 'gen' && <button onClick={cancel} className="kz-btn-ghost"><X className="w-4 h-4" /> Cancel</button>}
+                    {busy === 'gen' && <span className="text-xs text-slate-500">The AI is writing it… (a model on CPU can take a minute)</span>}
                 </div>
                 {error && <p className="flex items-start gap-1.5 text-xs text-red-300"><AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />{error}</p>}
             </div>
@@ -120,8 +161,10 @@ export default function YamlStudio({ clusterId, canEdit }) {
                     <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-base font-semibold text-white flex-1">YAML <span className="text-xs font-normal text-slate-500">— edit it if you like, then check again</span></h3>
                         <button onClick={() => { navigator.clipboard?.writeText(yaml); toast({ title: 'Copied', type: 'success' }) }} className="kz-btn-ghost !py-1.5 !text-xs"><Copy className="w-3.5 h-3.5" /> Copy</button>
+                        <button onClick={startOver} className="kz-btn-ghost !py-1.5 !text-xs" title="Clear this YAML and write a new description"><RotateCcw className="w-3.5 h-3.5" /> New description</button>
                     </div>
-                    {info?.method && METHOD[info.method] && (() => { const [Icon, text, tone] = METHOD[info.method]; return <p className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}><Icon className="w-3.5 h-3.5" />{text}</p> })()}
+                    {info?.method && METHOD[info.method] && (() => { const [Icon, text, tone] = METHOD[info.method]; return <p className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}><Icon className="w-3.5 h-3.5" />{typeof text === 'function' ? text(engine) : text}</p> })()}
+                    {checked?.objects?.length > 0 && <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-300"><Boxes className="w-3.5 h-3.5 text-blue-300" /><span className="text-slate-500">Will create:</span>{checked.objects.map((o, i) => <span key={i} className="kz-chip font-mono">{o.kind} {o.name}</span>)}<span className="text-slate-500">in {ns}</span></p>}
                     {info?.understood?.length > 0 && <div className="text-xs text-slate-300"><span className="text-slate-500">Understood: </span>{info.understood.map((u, i) => <span key={i} className="kz-chip mr-1.5 mb-1">{u}</span>)}<span className="block text-[11px] text-slate-500 mt-1">Not what you meant? Change the description (e.g. add "3 replicas", "port 8080", "2Gi volume", "nodeport") and write again.</span></div>}
                     {info?.notes?.length > 0 && <ul className="space-y-1">{info.notes.map((n, i) => <li key={i} className="flex items-start gap-1.5 text-xs text-sky-200"><Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />{n}</li>)}</ul>}
                     {info?.fixes?.length > 0 && <details className="text-xs text-slate-400"><summary className="cursor-pointer hover:text-slate-200">KubeEZ fixed {info.fixes.length} thing(s)</summary><ul className="mt-1 ml-4 list-disc space-y-0.5">{info.fixes.map((f, i) => <li key={i}>{f}</li>)}</ul></details>}

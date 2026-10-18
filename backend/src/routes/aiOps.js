@@ -23,7 +23,7 @@ import { riskOf, fleetFor, advisorFor } from '../services/ai/insights.js'
 import { addonSettingsStore } from '../services/addonSettings.js'
 import { ADVISOR_SCRIPT, analyze as analyzeAdvisor, advisorText } from '../services/ai/advisor.js'
 import { autoFix } from '../services/ai/yamlBuilder.js'
-import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView } from '../services/ai/manifests.js'
+import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView, workloadSelector } from '../services/ai/manifests.js'
 import { offsiteStore } from '../services/offsiteStore.js'
 import { complianceStore } from '../services/complianceService.js'
 
@@ -130,8 +130,10 @@ router.post('/generate-yaml', requirePermission('ai:use'), async (req, res) => {
     const description = String(req.body?.description || '').slice(0, 2000)
     const context = `Kubernetes ${cluster.k8sVersion}; installed add-ons: ${Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}`
     await runJob(req, res, `yaml:${req.user.id}:${cluster.id}:${namespace}:${Buffer.from(description).toString('base64').slice(0, 200)}`,
-        () => generateManifests(req.user, { description, namespace, context, addons: Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k) }), { fresh: true })
+        () => generateManifests(req.user, { description, namespace, context, addons: Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k), lookup: (kind, name) => selectorOf(cluster, namespace, kind, name) }), { fresh: true })
 })
+// what an existing workload's pods are labelled and listen on — for "expose deployment web"
+const selectorOf = (cluster, namespace, kind, name) => withTimeout(onCluster(cluster, (ssh) => workloadSelector(ssh, namespace, kind, name)), 25000, 'timeout')
 // the user's own edits are checked the same way (no AI)
 router.post('/check-yaml', (req, res) => {
     try {

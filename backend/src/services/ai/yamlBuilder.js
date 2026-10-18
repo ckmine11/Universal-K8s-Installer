@@ -21,7 +21,7 @@ const QTY_CPU = /^\d+(\.\d+)?m?$/
 const ALIASES = Object.entries(APPS).flatMap(([k, a]) => a.aliases.map(al => [al, k])).sort((x, y) => y[0].length - x[0].length)
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // things the templates do not build — those go to the model as free-form YAML
-const BEYOND = /\b(sidecar|init ?container|configmap with|config map with|autoscal|hpa\b|affinity|toleration|node ?selector|tls|certificate|cert-manager|helm|operator|crd|custom resource|service ?account with|rbac|role ?binding|kafka|zookeeper|elasticsearch|keycloak|wordpress|prometheus|grafana)\b/i
+const BEYOND = /\b(sidecar|init ?container|affinity|toleration|node ?selector|tls|certificate|cert-manager|helm|operator|crd|custom resource|service ?account with|rbac|role ?binding|kafka|zookeeper|elasticsearch|keycloak|prometheus|grafana)\b/i
 
 function memOf(t, words) {
     const re = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(mi|mb|gi|gb|m|g)\\b[^,.;]{0,12}\\b(${words})\\b|\\b(${words})\\b[^,.;\\d]{0,12}(\\d+(?:\\.\\d+)?)\\s*(mi|mb|gi|gb|m|g)\\b`, 'i')
@@ -46,7 +46,7 @@ export function cronOf(t) {
     if (/every\s+week|weekly/i.test(t)) return '0 3 * * 0'
     return null
 }
-function commandOf(t, app) {
+function commandOf(t) {
     const q = /\b(?:runs?|run karo|chalao|command)\s+["'`]([^"'`]{1,300})["'`]/i.exec(t)
     if (q) return ['sh', '-c', q[1]]
     if (/print(?:s|ing)? (?:the )?(?:current )?date|date print/i.test(t)) return ['sh', '-c', 'date']
@@ -62,14 +62,50 @@ export function withVersion(image, version) {
     return `${repo}:${version}${flavour}`
 }
 
-/** The request in words → { workloads: [intent], confident, reason } — no AI. */
+// an image reference written without the word "image": ghcr.io/acme/shop:1.4, stripe/mock:1.2
+const IMG_WORD = /\bimage\s*[:=]?\s*([a-z0-9][a-z0-9._/-]*(?::[\w][\w.-]*)?)/i
+const IMG_REF = /(?:^|[\s(,])((?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\/[a-z0-9._-]+(?:\/[a-z0-9._-]+)*(?::[\w][\w.-]*)?|[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9._-]+)*:[\w][\w.-]*)(?=[\s,;)]|\.(?:\s|$)|$)/i
+const imageIn = (d) => (IMG_WORD.exec(d) || IMG_REF.exec(d) || [])[1] || null
+// "autoscale 2 to 5 at 70% cpu", "hpa min 2 max 10", "scale between 2 and 6 replicas"
+function hpaOf(t) {
+    if (!/\b(auto ?scal\w*|hpa|horizontal pod autoscaler|scale (?:between|from))\b/.test(t)) return null
+    const m = /(?:from|between|min(?:imum)?)?\s*(\d{1,3})\s*(?:to|and|-|–|upto|up to|max(?:imum)?)\s*(\d{1,3})/.exec(t.slice(t.search(/auto ?scal|hpa|horizontal|scale (?:between|from)/)))
+    const min = m ? Number(m[1]) : 1, max = m ? Number(m[2]) : 5
+    const cpu = Number((/(\d{1,3})\s*%/.exec(t) || [])[1]) || 70
+    return min >= 1 && max >= min && max <= 100 ? { min, max, cpu: Math.min(Math.max(cpu, 10), 95) } : null
+}
+// settings written as KEY=value
+const pairsOf = (d) => Object.fromEntries([...String(d || '').matchAll(/\b([A-Za-z_][A-Za-z0-9_.-]{0,60})\s*=\s*("[^"]*"|'[^']*'|[^\s,;]+)/g)].map(m => [m[1], m[2].replace(/^["']|["']$/g, '')]))
+// objects that are not an app: a ConfigMap, a Secret, a Service for something that already runs
+function extrasOf(t, d) {
+    const out = []
+    const cm = /\bconfig ?map\s+(?:named\s+|called\s+)?([a-z0-9][a-z0-9-]{0,50})?/.exec(t)
+    if (cm) out.push({ kind: 'ConfigMap', name: toName(cm[1] && !/^(with|for|and)$/.test(cm[1]) ? cm[1] : 'app-config'), data: pairsOf(d) })
+    const sec = /\bsecret\s+(?:named\s+|called\s+)?([a-z0-9][a-z0-9-]{0,50})/.exec(t)
+    if (sec && !/^(with|for|and|key)$/.test(sec[1])) {
+        const data = cm ? {} : pairsOf(d)
+        if (/\b(random|generated?|strong) password\b|password (?:banao|generate)/.test(t) || !Object.keys(data).length) data.password = crypto.randomBytes(18).toString('base64url')
+        out.push({ kind: 'Secret', name: toName(sec[1]), data })
+    }
+    const ex = /\bexpose\s+(?:the\s+)?(deployment|statefulset|daemonset|app)?\s*([a-z0-9][a-z0-9-]{0,50})\b(?:[^.;]*?\b(node ?port|load ?balancer|port)\s*(\d{2,5})?)?/.exec(t)
+    if (ex && !APPS[ex[2]] && !/^(it|on|the|a|my|deployment|statefulset|service)$/.test(ex[2])) {
+        const type = /node ?port/.test(ex[3] || t) ? 'NodePort' : /load ?balancer/.test(ex[3] || t) ? 'LoadBalancer' : 'ClusterIP'
+        const n = ex[4] ? Number(ex[4]) : null
+        out.push({ kind: 'Service', name: toName(ex[2]), target: { kind: ex[1] && ex[1] !== 'app' ? ex[1] : 'deployment', name: toName(ex[2]) }, type, nodePort: type === 'NodePort' && n >= 30000 && n <= 32767 ? n : null, port: type !== 'NodePort' || (n && (n < 30000 || n > 32767)) ? n : null })
+    }
+    return out
+}
+
+/** The request in words → { workloads: [intent], extras: [object], confident, reason } — no AI. */
 export function parseIntent(description) {
     const t = ` ${String(description || '').toLowerCase().replace(/\s+/g, ' ')} `
     const hits = [], versions = {}
+    const img = imageIn(description || '')
     // quoted text is a command, an image reference is not an app name (nginx:1.27-alpine is not alpine)
     let rest = t.replace(/(["'`])[^"'`]*\1/g, ' ').replace(/\bimage\s+\S+/g, ' ')
+    if (img) rest = rest.split(img.toLowerCase()).join(' ')
     for (const [alias, key] of ALIASES) {
-        const re = new RegExp(`(^|[^a-z0-9:./-])${esc(alias)}(?![a-z0-9:/-])(?:\\s*[:v]?\\s*(\\d+(?:\\.\\d+){0,2})(?![\\d.]*\\s*(?:mi|gi|mb|gb|m\\b|g\\b|replica|cop|instance|pod|port|core|cpu)))?`, 'i')
+        const re = new RegExp(`(^|[^a-z0-9:./-])${esc(alias)}(?![a-z0-9:/-])(?:\\s*[:v]?\\s*(\\d+(?:\\.\\d+){0,2})(?![\\d.]*\\s*(?:mi|gi|mb|gb|m\\b|g\\b|replica|cop|instance|pod|port|core|cpu|to\\b|%)))?`, 'i')
         const m = re.exec(rest)
         if (m && !hits.some(h => h.key === key)) {
             hits.push({ key, at: m.index })
@@ -77,44 +113,62 @@ export function parseIntent(description) {
             rest = rest.slice(0, m.index) + ' '.repeat(m[0].length) + rest.slice(m.index + m[0].length)
         }
     }
-    // in the order they were written
-    const found = hits.sort((a, b) => a.at - b.at).map(h => h.key)
-    const img = /\bimage\s+([a-z0-9][a-z0-9._/-]*(?::[\w][\w.-]*)?)/i.exec(description || '')
+    // in the order they were written; "my node app ghcr.io/me/api:2.1" — the image is the app, not a Node.js base image
+    let found = hits.sort((a, b) => a.at - b.at).map(h => h.key)
+    if (img) found = found.filter(k => !APPS[k].base)
+    // an app that needs a database gets one (and they are linked)
+    for (const k of [...found]) if (APPS[k].needsDb && !found.some(x => APPS[k].needsDb.includes(x))) found.push(APPS[k].needsDb[0])
     const named = /\b(?:named|called|name)\s+["'`]?([a-z0-9][a-z0-9-]{0,40})["'`]?/i.exec(t)
     const schedule = cronOf(t)
     const kind = /\bcron ?job\b|\bschedule/.test(t) || schedule ? 'CronJob'
         : /\bdaemon ?set\b|every node|each node|har node|sab node/.test(t) ? 'DaemonSet'
             : /\bstateful ?set\b/.test(t) ? 'StatefulSet'
                 : /\bjob\b|run once|ek baar/.test(t) ? 'Job'
-                    : /\bpods?\b/.test(t) && !/\d+\s*pods?\b/.test(t) ? 'Pod'
-                        : /\bdeployment\b/.test(t) ? 'Deployment' : null
-    const replicas = Number((/(\d{1,3})\s*(?:replicas?|copies|instances|pods\b)|replicas?\s*[:=]?\s*(\d{1,3})/.exec(t) || []).slice(1).find(Boolean)) || null
-    const port = Number((/\bport\s*[:=]?\s*(\d{2,5})\b|\b(\d{2,5})\s*port\b|\bon\s+(\d{2,5})\b|:(\d{2,5})\b/.exec(t) || []).slice(1).find(Boolean)) || null
+                    : /\bpods?\b/.test(t) && !/\d+\s*pods?\b/.test(t) && !/\bexpose\b/.test(t) ? 'Pod'
+                        : /\bdeployment\b/.test(t) && !/\bexpose\s+(?:the\s+)?deployment\b/.test(t) ? 'Deployment' : null
+    const hpa = hpaOf(t)
+    const replicas = hpa ? hpa.min : Number((/(\d{1,3})\s*(?:replicas?|copies|instances|pods\b)|replicas?\s*[:=]?\s*(\d{1,3})/.exec(t) || []).slice(1).find(Boolean)) || null
+    const port = Number((/\bport\s*[:=]?\s*(\d{2,5})\b|\b(\d{2,5})\s*port\b|\bon\s+(\d{2,5})\b|:(\d{2,5})\b/.exec(t.replace(img ? img.toLowerCase() : '\u0000', ' ')) || []).slice(1).find(Boolean)) || null
     const memory = memOf(t, 'memory|ram|mem')
     const volume = memOf(t, 'volume|disk|storage|pvc|persistent') || (/\b(volume|persistent|persist)\b/.test(t) ? '1Gi' : null)
     const cpu = (/(\d+(?:\.\d+)?)\s*(cores?|vcpus?|cpus?)\b/.exec(t) || [])[1] || ((/(\d{2,4})m\s*cpu|cpu\s*(\d{2,4})m/.exec(t) || []).slice(1).find(Boolean) ? `${(/(\d{2,4})m\s*cpu|cpu\s*(\d{2,4})m/.exec(t)).slice(1).find(Boolean)}m` : null)
-    const host = (/\b(?:host|domain|url|on)\s+((?:[a-z0-9-]+\.)+[a-z]{2,})\b/.exec(t) || [])[1] || null
+    const host = (/\b(?:host|domain|url|on)\s+((?:[a-z0-9-]+\.)+[a-z]{2,})\b/.exec(t.replace(img ? img.toLowerCase() : '\u0000', ' ')) || [])[1] || null
     const expose = /\bload ?balancer\b|public ip|bahar se/.test(t) ? 'loadbalancer' : /\bnode ?port\b/.test(t) ? 'nodeport' : host || /\bingress\b/.test(t) ? 'ingress'
         : /\bservice\b|\bexpose|reachable|access/.test(t) ? 'cluster' : null
     const internal = /(only|just)\s+(reachable|accessible)\s+(inside|within|from)\s+(the\s+)?namespace|internal only|namespace ke andar|sirf namespace/.test(t)
+    const extras = extrasOf(t, description)
     const env = {}
-    for (const m of (description || '').matchAll(/\b([A-Z][A-Z0-9_]{1,40})=([^\s,;]+)/g)) env[m[1]] = m[2]
+    if (!extras.some(x => x.kind === 'ConfigMap' || x.kind === 'Secret')) for (const m of (description || '').matchAll(/\b([A-Z][A-Z0-9_]{1,40})=([^\s,;]+)/g)) env[m[1]] = m[2]
+    const command = commandOf(t)
 
-    const apps = found.length ? found : img ? [IMAGE_TO_APP[img[1].split(':')[0]] || null] : []
-    if (!apps.length) return { workloads: [], confident: false, reason: 'no app or image recognised' }
-    const workloads = apps.map((key, i) => {
+    // a namespace is not created from here (only objects inside one)
+    if (/^\s*(create\s+|make\s+|new\s+|ek\s+)?(a\s+)?namespace\s+[a-z0-9-]+\s*(banao|chahiye)?\s*$/.test(t)) return { workloads: [], extras: [], confident: true, reason: null, refuse: `Create YAML makes objects inside a namespace, not the namespace itself. Create it with: kubectl create namespace ${(/namespace\s+([a-z0-9-]+)/.exec(t) || [])[1]} — then pick it here.` }
+
+    let apps = found.length ? found : img ? [IMAGE_TO_APP[img.split(':')[0]] || null] : []
+    // a Job / CronJob / DaemonSet / Pod that only runs a command: busybox
+    if (!apps.length && !img && command && kind) apps = ['busybox']
+    const exposeOnly = extras.some(x => x.kind === 'Service' && x.target)
+    if (exposeOnly) apps = []
+    if (!apps.length && !extras.length) return { workloads: [], extras: [], confident: false, reason: 'no app or image recognised' }
+    // databases first: an app that needs one can then be linked to it
+    const order = [...apps].sort((x, y) => (APPS[y]?.database ? 1 : 0) - (APPS[x]?.database ? 1 : 0))
+    const first = apps[0]
+    const workloads = order.map((key) => {
         const a = key ? APPS[key] : null
-        const w = {
-            name: toName(i === 0 && named ? named[1] : key || img[1].split('/').pop().split(':')[0]), app: key, image: i === 0 && img ? img[1] : (key && versions[key] ? withVersion(APPS[key].image, versions[key]) : null),
-            kind: kind || null, replicas: i === 0 ? replicas : null, port: i === 0 && port ? port : null,
-            cpu: i === 0 && cpu ? String(cpu) : null, memory: i === 0 ? memory : null,
-            volume: i === 0 && volume ? { size: volume } : (a?.database && !/no volume|without volume/.test(t) ? { size: '1Gi' } : null),
-            expose: i === 0 && expose ? expose : (a?.port || (i === 0 && port) ? 'cluster' : 'none'), host: i === 0 ? host : null,
-            schedule: kind === 'CronJob' ? (schedule || '0 2 * * *') : null, command: commandOf(t, a), env: i === 0 ? env : {}, internal
+        const main = key === first
+        return {
+            name: toName(main && named ? named[1] : key || img.split('/').pop().split(':')[0]), app: key, image: main && img ? img : (key && versions[key] ? withVersion(APPS[key].image, versions[key]) : null),
+            kind: main ? kind || null : null, replicas: main ? replicas : null, port: main && port ? port : null,
+            cpu: main && cpu ? String(cpu) : null, memory: main ? memory : null,
+            volume: main && volume && !a?.needsDb ? { size: volume } : (a?.database && !/no volume|without volume/.test(t) ? { size: main && volume ? volume : (found.length > 1 && volume && !APPS[first]?.database ? volume : '1Gi') } : null),
+            expose: main && expose ? expose : (a?.port || (main && port) ? 'cluster' : 'none'), host: main ? host : null,
+            schedule: main && kind === 'CronJob' ? (schedule || '0 2 * * *') : null, command: main ? command : null, env: main ? env : {}, internal,
+            ...(main && hpa ? { hpa } : {}),
+            ...(main && extras.some(x => x.kind === 'ConfigMap') ? { envFrom: extras.filter(x => x.kind === 'ConfigMap').map(x => x.name) } : {})
         }
-        return w
     })
-    return { workloads, confident: !BEYOND.test(t) && String(description).length <= 220, reason: BEYOND.test(t) ? 'asks for something the templates do not build' : null }
+    const beyond = BEYOND.test(t)
+    return { workloads, extras, confident: !beyond && String(description).length <= 260, reason: beyond ? 'asks for something the templates do not build' : null }
 }
 
 // ── 1b. understanding by the model: the same intent as JSON ──
@@ -154,8 +208,11 @@ export const describeIntent = (w) => [
     w.app ? (APPS[w.app].aliases[0]) : w.image, w.kind, w.replicas != null && w.kind !== 'Pod' && w.kind !== 'CronJob' && w.kind !== 'Job' ? `${w.replicas} replica(s)` : null,
     w.port ? `port ${w.port}` : null, w.memory ? `${w.memory} memory` : null, w.volume ? `${w.volume.size} volume` : null,
     w.schedule ? `schedule "${w.schedule}"` : null, w.expose && w.expose !== 'none' ? { cluster: 'service inside the cluster', nodeport: 'NodePort', loadbalancer: 'LoadBalancer', ingress: `ingress${w.host ? ` ${w.host}` : ''}` }[w.expose] : null,
-    w.internal ? 'only reachable inside the namespace' : null
+    w.internal ? 'only reachable inside the namespace' : null,
+    w.hpa ? `autoscale ${w.hpa.min}–${w.hpa.max} at ${w.hpa.cpu}% CPU` : null,
+    w.envFrom?.length ? `settings from ${w.envFrom.join(', ')}` : null
 ].filter(Boolean).join(' · ')
+export const describeExtra = (x) => x.kind === 'Service' ? `Service ${x.name} for ${x.target.kind} ${x.target.name} (${x.type}${x.nodePort ? ` ${x.nodePort}` : x.port ? ` port ${x.port}` : ''})` : `${x.kind} ${x.name}${Object.keys(x.data || {}).length ? ` (${Object.keys(x.data).join(', ')})` : ''}`
 
 // ── 2. building the manifests ──
 const pw = () => crypto.randomBytes(18).toString('base64url')
@@ -170,7 +227,8 @@ function probes(a, port) {
 export function buildFromIntent(intent, { namespace = 'default' } = {}) {
     const docs = [], notes = []
     const names = new Set()
-    for (const raw of intent.workloads) {
+    const dbs = {}   // database app → { name, secretKey } — for apps that need one (WordPress → MySQL)
+    for (const raw of intent.workloads || []) {
         const w = { ...raw }
         const a = w.app ? APPS[w.app] : null
         let name = toName(w.name); while (names.has(name)) name = `${name}-2`; names.add(name)
@@ -185,7 +243,14 @@ export function buildFromIntent(intent, { namespace = 'default' } = {}) {
 
         // settings: passwords go into a Secret with a random value
         const env = [], secret = {}
+        const db = a?.needsDb ? a.needsDb.map(k => dbs[k]).find(Boolean) : null
         for (const [k, v] of Object.entries({ ...(a?.env || {}), ...(w.env || {}) })) {
+            if (v && typeof v === 'object' && v.db) {
+                if (!db) continue
+                if (v.db === 'host') env.push({ name: k, value: db.name })
+                if (v.db === 'password') env.push({ name: k, valueFrom: { secretKeyRef: { name: `${db.name}-secret`, key: db.secretKey } } })
+                continue
+            }
             if (v && typeof v === 'object' && v.secret) { secret[k] = pw(); env.push({ name: k, valueFrom: { secretKeyRef: { name: `${name}-secret`, key: k } } }) }
             else env.push({ name: k, value: String(v) })
         }
@@ -193,12 +258,15 @@ export function buildFromIntent(intent, { namespace = 'default' } = {}) {
             docs.push({ apiVersion: 'v1', kind: 'Secret', metadata: meta(`${name}-secret`), type: 'Opaque', stringData: secret })
             notes.push(`${name}: random password(s) in the Secret ${name}-secret (${Object.keys(secret).join(', ')}) — read with: kubectl -n ${namespace} get secret ${name}-secret -o jsonpath='{.data.${Object.keys(secret)[0]}}' | base64 -d`)
         }
+        if (a?.database) dbs[w.app] = { name, secretKey: Object.entries(a.env || {}).find(([, v]) => v?.secret)?.[0] }
+        if (db) notes.push(`${name}: connected to ${db.name} (its address and the password from ${db.name}-secret)`)
         const mountPath = w.volume?.mountPath || a?.data || '/data'
         const container = {
             name, image: w.image || a?.image,
             ...(w.command || (a?.command && (!port || a.base)) ? { command: w.command || a.command } : {}),
             ...(port ? { ports: [{ name: 'main', containerPort: port }, ...(a?.extraPorts || []).map(p => ({ name: p.name, containerPort: p.port }))] } : {}),
             ...(env.length ? { env } : {}),
+            ...(w.envFrom?.length ? { envFrom: w.envFrom.map(n => ({ configMapRef: { name: n } })) } : {}),
             resources: { requests: { cpu: w.cpu || a?.cpu || '50m', memory: w.memory || a?.memory || '64Mi' }, limits: { memory: w.memory ? w.memory : (a?.limit || '256Mi') } },
             ...(['Job', 'CronJob'].includes(kind) || (a?.base && !w.image) ? {} : probes(a, port)),
             securityContext: { allowPrivilegeEscalation: false },
@@ -229,7 +297,30 @@ export function buildFromIntent(intent, { namespace = 'default' } = {}) {
                 if (!w.host) notes.push(`${name}: the Ingress answers every host name — add "host app.example.com" to the description for one`)
             }
         }
+        if (w.hpa && ['Deployment', 'StatefulSet'].includes(kind)) {
+            docs.push({ apiVersion: 'autoscaling/v2', kind: 'HorizontalPodAutoscaler', metadata: meta(name), spec: { scaleTargetRef: { apiVersion: 'apps/v1', kind, name }, minReplicas: w.hpa.min, maxReplicas: w.hpa.max, metrics: [{ type: 'Resource', resource: { name: 'cpu', target: { type: 'Utilization', averageUtilization: w.hpa.cpu } } }] } })
+            notes.push(`${name}: scales between ${w.hpa.min} and ${w.hpa.max} replicas at ${w.hpa.cpu}% CPU — needs the Metrics Server add-on to read CPU`)
+        }
         if (w.internal) docs.push({ apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy', metadata: meta(`${name}-internal`), spec: { podSelector: { matchLabels: { 'app.kubernetes.io/name': name } }, policyTypes: ['Ingress'], ingress: [{ from: [{ podSelector: {} }] }] } })
+    }
+    for (const x of intent.extras || []) {
+        const labels = { 'app.kubernetes.io/managed-by': 'kubeez' }
+        let name = x.name; while (names.has(`${x.kind}:${name}`)) name = `${name}-2`; names.add(`${x.kind}:${name}`)
+        if (x.kind === 'ConfigMap') {
+            docs.unshift({ apiVersion: 'v1', kind: 'ConfigMap', metadata: { name, labels }, data: Object.fromEntries(Object.entries(x.data || {}).map(([k, v]) => [k, String(v)])) })
+            if (!Object.keys(x.data || {}).length) notes.push(`${name}: an empty ConfigMap — add settings as KEY=value in the description (e.g. LOG_LEVEL=debug)`)
+        }
+        if (x.kind === 'Secret') {
+            docs.unshift({ apiVersion: 'v1', kind: 'Secret', metadata: { name, labels }, type: 'Opaque', stringData: Object.fromEntries(Object.entries(x.data || {}).map(([k, v]) => [k, String(v)])) })
+            if (x.data?.password && Object.keys(x.data).length === 1) notes.push(`${name}: a random password — read with: kubectl -n ${namespace} get secret ${name} -o jsonpath='{.data.password}' | base64 -d`)
+        }
+        if (x.kind === 'Service') {
+            const selector = x.selector || { 'app.kubernetes.io/name': x.target.name }
+            const target = x.targetPort || x.port || 80
+            docs.push({ apiVersion: 'v1', kind: 'Service', metadata: { name, labels }, spec: { type: x.type, selector, ports: [{ name: 'main', port: x.port || target, targetPort: target, ...(x.nodePort ? { nodePort: x.nodePort } : {}) }] } })
+            if (!x.selector) notes.push(`${name}: KubeEZ could not read ${x.target.kind} ${x.target.name} on the cluster — the selector assumes its pods have the label app.kubernetes.io/name=${x.target.name}; check it matches`)
+            else notes.push(`${name}: selects the pods of ${x.target.kind} ${x.target.name} (${Object.entries(selector).map(([k, v]) => `${k}=${v}`).join(', ')}), port ${target}`)
+        }
     }
     return { docs, notes }
 }

@@ -18,8 +18,10 @@ const RULES = [
     ['bearer', /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/g, '$1 [hidden]'],
     // user:password@ in connection strings (postgres://u:p@host)
     ['url-credentials', /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+):[^\s@/]+@/gi, '$1:[hidden]@'],
-    // key = value / key: value for secret-ish names
-    ['secret-field', /\b([A-Za-z0-9_.-]*(password|passwd|pwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?token|credentials?)[A-Za-z0-9_.-]*)(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1$3[hidden]'],
+    // key = value / key: value for secret-ish names — the value on the same line (a YAML key
+    // with nothing after it is not one), and a key that only NAMES a secret (secretKeyRef,
+    // secretName…) is not one either
+    ['secret-field', /\b(?![A-Za-z0-9_.-]*(?:Ref|Name|Names)\b)([A-Za-z0-9_.-]*(password|passwd|pwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?token|credentials?)[A-Za-z0-9_.-]*)([ \t]*[:=][ \t]*)("[^"\n]*"|'[^'\n]*'|[^\s,;]+)/gi, '$1$3[hidden]'],
     // long base64 blobs (encoded secrets, certs)
     ['base64-blob', /\b[A-Za-z0-9+/]{120,}={0,2}/g, '[encoded data]']
 ]
