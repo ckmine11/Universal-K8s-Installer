@@ -186,8 +186,24 @@ export default function AiSettings() {
     const [busy, setBusy] = useState(null)        // engine id being tested / pulled
     const [tests, setTests] = useState({})
 
-    const load = useCallback(() => call('/api/ai').then(d => { setData(d); setError(null) }).catch(e => setError(e.message)), [])
-    useEffect(() => { load() }, [load])
+    const load = useCallback(() => call('/api/ai').then(d => { setData(d); setError(null); return d }).catch(e => setError(e.message)), [])
+    const [signIn, setSignIn] = useState(null)   // null | 'finishing' — back from "Sign in with OpenRouter"
+    useEffect(() => {
+        const q = new URLSearchParams(window.location.search)
+        const code = q.get('code'), state = q.get('state')
+        if (!code || !state) { load(); return }
+        window.history.replaceState(null, '', window.location.pathname)   // the code is single-use: off the address bar
+        setSignIn('finishing')
+        call('/api/ai/openrouter/finish', json('POST', { code, state }))
+            .then(async (p) => {
+                toast({ title: p.again ? 'OpenRouter signed in again' : 'OpenRouter connected', message: `${p.models} models available — pick the one to use.`, type: 'success' })
+                const d = await load()
+                const eng = d?.engines.find(e => e.id === p.id)
+                if (eng) setDialog(eng)   // straight to the model picker
+            })
+            .catch(e => { toast({ title: 'OpenRouter sign-in failed', message: e.message, type: 'error' }); load() })
+            .finally(() => setSignIn(null))
+    }, [load])   // eslint-disable-line react-hooks/exhaustive-deps
     // while a model downloads, keep the list fresh
     const downloading = data?.engines.some(e => e.pull?.status === 'downloading' || ['downloading', 'waiting'].includes(e.state?.status))
     useEffect(() => { if (!downloading) return; const t = setInterval(load, 5000); return () => clearInterval(t) }, [downloading, load])
@@ -210,13 +226,14 @@ export default function AiSettings() {
         catch (err) { toast({ title: 'Download not started', message: err.message, type: 'error' }) }
     }
     const remove = async (e) => {
-        if (!window.confirm(`Remove the AI engine "${e.name}"?`)) return
+        if (!window.confirm(e.signedIn ? `Sign out of OpenRouter in KubeEZ?\n\nKubeEZ forgets the key. To cancel the key itself: openrouter.ai → Settings → API Keys.` : `Remove the AI engine "${e.name}"?`)) return
         try { await call(`/api/ai/providers/${e.id}`, { method: 'DELETE' }); load() } catch (err) { toast({ title: 'Not removed', message: err.message, type: 'error' }) }
     }
     const toggleEngine = async (e, enabled) => {
         try { await call(`/api/ai/providers/${e.id}`, json('PUT', { enabled })); load() } catch (err) { toast({ title: 'Not saved', message: err.message, type: 'error' }) }
     }
 
+    if (signIn === 'finishing') return <div className="kz-card p-10 flex flex-col items-center gap-3 text-sm text-slate-300"><Loader2 className="w-6 h-6 animate-spin text-violet-300" />Connecting your OpenRouter account…</div>
     if (error) return <div className="kz-card p-6 text-sm text-red-200">{error}</div>
     if (!data) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
 
@@ -260,7 +277,7 @@ export default function AiSettings() {
                                     <Icon className="w-5 h-5 text-blue-300 mt-0.5" />
                                     <div className="flex-1 min-w-0">
                                         <div className="text-sm font-semibold text-white truncate">{e.name}</div>
-                                        <div className="text-[11px] text-slate-500 truncate">{(data.presets || []).find(p => p.id === e.preset)?.label || data.kinds[e.kind]?.label}{e.offline || isLocal(e.kind) ? ' · offline' : ' · cloud'}{e.viaClusterName ? ` · through cluster ${e.viaClusterName}` : ''} · <span className="font-mono">{e.model || 'default model'}</span>{e.hasKey ? ' · key saved' : ''}</div>
+                                        <div className="text-[11px] text-slate-500 truncate">{(data.presets || []).find(p => p.id === e.preset)?.label || data.kinds[e.kind]?.label}{e.offline || isLocal(e.kind) ? ' · offline' : ' · cloud'}{e.viaClusterName ? ` · through cluster ${e.viaClusterName}` : ''} · <span className="font-mono">{e.model || 'default model'}</span>{e.signedIn ? ' · signed in' : e.hasKey ? ' · key saved' : ''}</div>
                                     </div>
                                     <EngineStatus e={e} />
                                     {!e.builtin && <Toggle on={e.enabled !== false} label={`${e.name} on`} onChange={v => toggleEngine(e, v)} />}
@@ -279,7 +296,7 @@ export default function AiSettings() {
                                     <button onClick={() => test(e)} disabled={busy === e.id} className="kz-btn-ghost !py-1.5 !text-xs">{busy === e.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />} Test</button>
                                     {isLocal(e.kind) && <button onClick={() => pull(e)} disabled={e.pull?.status === 'downloading'} className="kz-btn-ghost !py-1.5 !text-xs"><Download className="w-3.5 h-3.5" /> Download model</button>}
                                     {!e.builtin && <button onClick={() => setDialog(e)} className="kz-btn-ghost !py-1.5 !text-xs"><Pencil className="w-3.5 h-3.5" /> Model & settings</button>}
-                                    {!e.builtin && <button onClick={() => remove(e)} className="kz-btn-ghost !py-1.5 !text-xs hover:!text-red-300"><Trash2 className="w-3.5 h-3.5" /> Remove</button>}
+                                    {!e.builtin && <button onClick={() => remove(e)} className="kz-btn-ghost !py-1.5 !text-xs hover:!text-red-300"><Trash2 className="w-3.5 h-3.5" /> {e.signedIn ? 'Sign out' : 'Remove'}</button>}
                                 </div>
                             </div>
                         )

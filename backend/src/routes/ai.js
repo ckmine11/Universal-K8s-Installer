@@ -12,6 +12,7 @@ import { notificationStore } from '../services/notificationStore.js'
 import { PRESETS, presetOf, legacyPreset } from '../config/aiPresets.js'
 import { discover, modelsOf, newCount, OLLAMA_SUGGESTIONS } from '../services/ai/modelCatalog.js'
 import { startExam, isRunning } from '../services/ai/quality.js'
+import { startSignIn, finishSignIn, openRouterApi } from '../services/ai/openrouterAuth.js'
 
 // KubeEZ AI: engines (providers), routing per task, safety switches, a test
 // box and the activity log. Mounted at /api/ai behind requireAuth.
@@ -159,6 +160,30 @@ router.put('/settings', requirePermission('ai:manage'), (req, res) => {
         if (patch.actionsEnabled === false) auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.actions_stopped', detail: 'Kill switch: AI actions stopped' })
         const { chatops: _secrets, ...safe } = out   // never send the (encrypted) Slack secrets
         res.json({ ...safe, providers: out.providers.map(p => aiStore.view(p)) })
+    } catch (e) { fail(res, e) }
+})
+
+// "Sign in with OpenRouter": no API key to copy — the admin signs in there and comes back connected
+router.post('/openrouter/start', requirePermission('ai:manage'), (req, res) => {
+    try {
+        const origin = req.headers.origin || req.body?.origin
+        res.json(startSignIn(req.user, origin, { label: `KubeEZ (${req.user.username})` }))
+    } catch (e) { fail(res, e) }
+})
+router.post('/openrouter/finish', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const key = await finishSignIn(req.user, req.body || {})
+        const base = openRouterApi()
+        // the models this account can use, live — one preselected (the admin can change it right away)
+        const d = await discover({ kind: 'openai', baseUrl: base }, key).catch(() => ({ models: [], suggested: null }))
+        const model = d.suggested || 'openrouter/auto'
+        // signing in again refreshes the same engine instead of adding a second one
+        const cur = aiStore.get(req.user.orgId).providers.find(p => p.preset === 'openrouter' && p.signedIn)
+        const p = cur
+            ? aiStore.updateProvider(req.user.orgId, cur.id, { apiKey: key, enabled: true })
+            : aiStore.addProvider(req.user.orgId, { name: 'OpenRouter', kind: 'openai', preset: 'openrouter', offline: false, baseUrl: base, model, apiKey: key, signedIn: true })
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.engine_signed_in', detail: `${cur ? 'Signed in again' : 'Signed in'} with OpenRouter (${p.model}) — ${d.models.length} model(s)` })
+        res.json({ ...aiStore.view(p), models: d.models.length, again: !!cur })
     } catch (e) { fail(res, e) }
 })
 

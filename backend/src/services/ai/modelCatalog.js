@@ -25,7 +25,7 @@ export function classify(ids, { known = {}, baseline = null, now = Date.now() } 
     const out = [...new Set(ids)].filter(id => id && !NOT_CHAT.test(id)).map(id => {
         const first = known[id] ? Date.parse(known[id]) : now
         const isNew = !!known[id] && (!baseline || Date.parse(known[id]) > Date.parse(baseline) + 60e3) && now - first < NEW_DAYS * 86400e3
-        return { id, recommended: RECOMMENDED.some(re => re.test(id)), fast: FAST.test(id), large: LARGE.test(id), new: isNew }
+        return { id, recommended: RECOMMENDED.some(re => re.test(id)), fast: FAST.test(id), large: LARGE.test(id), free: /:free$/.test(id), new: isNew }
     })
     // recommended first, then new, then the newest-looking versions (higher numbers first)
     const ver = (id) => (id.match(/\d+(\.\d+)?/g) || []).map(Number)

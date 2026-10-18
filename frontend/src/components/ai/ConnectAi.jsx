@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Loader2, ArrowLeft, PlugZap, CheckCircle2, AlertTriangle, Search, Server, Cloud, Boxes, Bot, ExternalLink, Sparkles, Zap, Star, Download } from 'lucide-react'
+import { X, Loader2, ArrowLeft, PlugZap, CheckCircle2, AlertTriangle, Search, Server, Cloud, Boxes, Bot, ExternalLink, Sparkles, Zap, Star, Download, LogIn } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
@@ -26,13 +26,16 @@ function Tag({ children, className = '' }) { return <span className={`rounded px
 
 function ModelList({ models, value, onPick }) {
     const [q, setQ] = useState('')
-    const shown = useMemo(() => models.filter(m => m.id.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 300), [models, q])
+    const [freeOnly, setFreeOnly] = useState(false)
+    const anyFree = models.some(m => m.free)
+    const shown = useMemo(() => models.filter(m => (!freeOnly || m.free) && m.id.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 300), [models, q, freeOnly])
     return (
         <div className="rounded-xl border border-white/10">
             {models.length > 8 && (
                 <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
                     <Search className="w-3.5 h-3.5 text-slate-500" />
                     <input className="flex-1 bg-transparent text-xs text-white outline-none" placeholder={`Search ${models.length} models…`} value={q} onChange={e => setQ(e.target.value)} aria-label="Search models" />
+                    {anyFree && <label className="flex items-center gap-1 text-[11px] text-slate-400 cursor-pointer"><input type="checkbox" checked={freeOnly} onChange={e => setFreeOnly(e.target.checked)} /> Free only</label>}
                 </div>
             )}
             <div className="max-h-56 overflow-y-auto divide-y divide-white/5" role="listbox" aria-label="Models">
@@ -41,6 +44,7 @@ function ModelList({ models, value, onPick }) {
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition ${value === m.id ? 'bg-blue-500/15 text-white' : 'text-slate-300 hover:bg-white/5'}`}>
                         <span className={`w-3 h-3 rounded-full border ${value === m.id ? 'border-blue-300 bg-blue-400' : 'border-white/30'}`} />
                         <span className="flex-1 font-mono truncate">{m.id}</span>
+                        {m.free && <Tag className="bg-amber-500/15 text-amber-200">Free</Tag>}
                         {m.new && <Tag className="bg-fuchsia-500/20 text-fuchsia-200">NEW</Tag>}
                         {m.recommended && <Tag className="bg-emerald-500/15 text-emerald-200">Recommended</Tag>}
                         {m.fast && <Tag className="bg-sky-500/15 text-sky-200">Fast</Tag>}
@@ -65,6 +69,13 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
     const [connecting, setConnecting] = useState(false)
     const [saving, setSaving] = useState(false)
     const [quality, setQuality] = useState(true)
+    const [signingIn, setSigningIn] = useState(false)
+    // one click, no key: sign in on OpenRouter (Google, GitHub or e-mail) and come back connected
+    const signIn = async () => {
+        setSigningIn(true)
+        try { const r = await call('/api/ai/openrouter/start', json('POST', { origin: window.location.origin })); window.location.assign(r.url) }
+        catch (e) { toast({ title: 'Sign-in not started', message: e.message, type: 'error' }); setSigningIn(false) }
+    }
     const set = (k, v) => setF(p => ({ ...p, [k]: v }))
 
     const pick = (p) => {
@@ -127,10 +138,20 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
                 {!preset && (
                     <div className="space-y-5">
                         <p className="text-xs text-slate-400">Use any model you like. KubeEZ reads the engine's model list live, so new models appear here on their own.</p>
-                        {[['offline', 'Offline — on your own machine or server', 'Free, private: the data stays with you. Any model your runtime can run.'], ['cloud', 'Cloud — with your own API key', 'Fast and strong models; billed to your account. Secrets are masked before anything is sent.']].map(([g, title, hint]) => (
+                        {[['cloud', 'Cloud — sign in, or use your own API key', 'Fast and strong models; billed to your own account. Secrets are masked before anything is sent.'], ['offline', 'Offline — on your own machine or server', 'Free, private: the data stays with you. Any model your runtime can run.']].map(([g, title, hint]) => (
                             <div key={g}>
                                 <div className="text-sm font-semibold text-white">{title}</div>
                                 <p className="text-[11px] text-slate-500 mb-2">{hint}{g === 'offline' && data.saas ? ' On KubeEZ Cloud your server must be reachable over https — or use the KubeEZ AI add-on, which needs nothing exposed.' : ''}</p>
+                                {g === 'cloud' && (
+                                    <button type="button" onClick={signIn} disabled={signingIn} className="w-full mb-2 text-left rounded-xl border border-violet-400/40 bg-gradient-to-r from-violet-500/15 to-fuchsia-500/10 px-4 py-3 hover:border-violet-300/70 transition flex items-center gap-3">
+                                        {signingIn ? <Loader2 className="w-5 h-5 animate-spin text-violet-200" /> : <LogIn className="w-5 h-5 text-violet-200" />}
+                                        <span className="flex-1">
+                                            <span className="block text-sm font-semibold text-white">Sign in with OpenRouter <span className="ml-1 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-200">no API key</span></span>
+                                            <span className="block text-[11px] text-slate-300 mt-0.5">One login, every model — Claude, GPT, Gemini, Llama, DeepSeek… (free ones too). Sign in with your Google account, GitHub or e-mail; you come back connected.</span>
+                                        </span>
+                                    </button>
+                                )}
+                                {g === 'cloud' && <div className="text-[11px] text-slate-500 mb-2">— or connect with an API key —</div>}
                                 <div className="grid sm:grid-cols-2 gap-2">
                                     {presets.filter(p => p.group === g).map(p => {
                                         const Icon = iconOf(p)
@@ -151,6 +172,7 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
                 {preset && (
                     <form onSubmit={save} className="space-y-4">
                         <p className="text-[11px] text-slate-400 leading-relaxed">{preset.note}</p>
+                        {preset.id === 'openrouter' && !editing && <button type="button" onClick={signIn} disabled={signingIn} className="kz-btn-ghost !text-xs">{signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />} Sign in instead — no API key needed</button>}
                         {preset.kind === 'cluster' && (
                             <div>
                                 <label className="kz-label" htmlFor="ca-cluster">Cluster</label>

@@ -45,7 +45,7 @@ export const aiStore = {
     addProvider(orgId, input) {
         const s = this.get(orgId)
         if (s.providers.length >= 20) throw Object.assign(new Error('Up to 20 AI engines per workspace'), { status: 400 })
-        const p = { id: randomBytes(5).toString('hex'), name: input.name, kind: input.kind, baseUrl: input.baseUrl || null, model: input.model || null, clusterId: input.clusterId || null, preset: input.preset || null, offline: !!input.offline, viaClusterId: input.viaClusterId || null, enabled: input.enabled !== false, createdAt: new Date().toISOString(), ...(input.apiKey ? { key: encrypt(input.apiKey) } : {}) }
+        const p = { id: randomBytes(5).toString('hex'), name: input.name, kind: input.kind, baseUrl: input.baseUrl || null, model: input.model || null, clusterId: input.clusterId || null, preset: input.preset || null, offline: !!input.offline, viaClusterId: input.viaClusterId || null, ...(input.signedIn ? { signedIn: true } : {}), enabled: input.enabled !== false, createdAt: new Date().toISOString(), ...(input.apiKey ? { key: encrypt(input.apiKey) } : {}) }
         this.save(orgId, { providers: [...s.providers, p] })
         return p
     },
