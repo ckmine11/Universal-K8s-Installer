@@ -6,7 +6,7 @@
 //   new                 first seen in the last 14 days (checked daily)
 // For offline runtimes it also tells which runtime is listening.
 import { requestJson } from './http.js'
-import { health } from './providers.js'
+import { health, requestVia } from './providers.js'
 import { aiStore } from './aiStore.js'
 import { auditLog } from '../auditLog.js'
 
@@ -49,9 +49,9 @@ const trim = (s) => String(s || '').trim().replace(/\/+$/, '')
 const root = (base) => trim(base).replace(/\/v1$/, '')
 
 /** Which runtime answers at this address? (best effort, a few quick probes) */
-export async function detectRuntime(baseUrl, { headers = {} } = {}) {
+export async function detectRuntime(baseUrl, { headers = {}, via = null } = {}) {
     const r = root(baseUrl)
-    const probe = (path, ok) => requestJson('GET', `${r}${path}`, undefined, { headers, timeoutMs: 4000 }).then(j => ok(j) ? true : false, () => false)
+    const probe = (path, ok) => requestVia(via, 'GET', `${r}${path}`, undefined, { headers, timeoutMs: 4000 }).then(j => ok(j) ? true : false, () => false)
     const [ollama, lmstudio, vllm, tgi, llamacpp] = await Promise.all([
         probe('/api/tags', j => Array.isArray(j?.models)),
         probe('/api/v0/models', j => Array.isArray(j?.data)),
@@ -63,10 +63,10 @@ export async function detectRuntime(baseUrl, { headers = {} } = {}) {
 }
 
 /** "http://host:1234" → "http://host:1234/v1" when only the /v1 path answers. */
-export async function normalizeBase(baseUrl, headers = {}) {
+export async function normalizeBase(baseUrl, headers = {}, via = null) {
     const b = trim(baseUrl)
     if (/\/v1$/.test(b)) return b
-    const ok = await requestJson('GET', `${b}/v1/models`, undefined, { headers, timeoutMs: 5000 }).then(j => Array.isArray(j?.data), () => false)
+    const ok = await requestVia(via, 'GET', `${b}/v1/models`, undefined, { headers, timeoutMs: 5000 }).then(j => Array.isArray(j?.data), () => false)
     return ok ? `${b}/v1` : b
 }
 
@@ -79,8 +79,9 @@ export async function discover(p, key, { known = {}, baseline = null } = {}) {
     let engine = { ...p }
     let runtime = null
     if (engine.kind === 'openai' && engine.baseUrl) {
-        engine.baseUrl = await normalizeBase(engine.baseUrl, headers)
-        if (engine.offline) runtime = await detectRuntime(engine.baseUrl, { headers }).catch(() => null)
+        const via = engine.viaClusterId ? engine : null
+        engine.baseUrl = await normalizeBase(engine.baseUrl, headers, via)
+        if (engine.offline) runtime = await detectRuntime(engine.baseUrl, { headers, via }).catch(() => null)
     }
     if (engine.kind === 'ollama') runtime = 'Ollama'
     const h = await health({ ...engine, model: null }, key)

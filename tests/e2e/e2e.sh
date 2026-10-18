@@ -387,8 +387,13 @@ cmd_ai_ops() {
     local distro="${1:-ubuntu2204}"; local node="$PREFIX-$distro"
     image "$distro"; start_node "$node" "$distro"
     docker exec "$node" bash /k/node-install.sh master 1.35.0 | grep -E 'RESULT|NODE' || return 1
+    # a "GPU server" on the office network: a real Ollama the node can reach (and KubeEZ only through the node)
+    docker rm -f "$PREFIX-gpu" >/dev/null 2>&1
+    docker run -d --name "$PREFIX-gpu" -v "${AI_MODELS_VOLUME:-kubeez_kubeez-ai-models}:/root/.ollama" ollama/ollama:0.40.5 >/dev/null || return 1
+    local gpu_ip; gpu_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$PREFIX-gpu" | awk '{print $1}')
+    [ -n "$gpu_ip" ] || { echo 'the GPU server has no IP'; return 1; }
     local rc
-    NODE_CONTAINER="$node" node "$E2E/ai-ops-check.mjs"
+    GPU_IP="$gpu_ip" NODE_CONTAINER="$node" node "$E2E/ai-ops-check.mjs"
     rc=$?
     [ -z "${KEEP:-}" ] && cmd_clean
     return $rc

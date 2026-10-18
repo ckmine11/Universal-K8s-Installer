@@ -191,3 +191,67 @@ describe('/api/ai: connect AI (SaaS)', () => {
         await api('POST', '/api/ai/quality/cancel', owner.token)
     })
 })
+
+const net = await import('node:net')
+const { clusterStore } = await import('../src/services/clusterStore.js')
+const { clusterTunnel } = await import('../src/services/clusterTunnel.js')
+const { cleanProvider } = await import('../src/routes/ai.js')
+describe('a model on the user\'s own network, through one of their clusters', () => {
+    let rt, opened = []
+    const realOpen = clusterTunnel.open
+    before(async () => {
+        rt = await fakeRuntime({ kind: 'vllm', models: ['Qwen/Qwen2.5-14B-Instruct'] })
+        await clusterStore.saveCluster({ id: 'c-office', clusterName: 'office', orgId: 'org-via', ownerId: 'u', status: 'completed', masterNodes: [{ ip: '10.0.0.10', username: 'root', password: 'x' }], workerNodes: [] })
+        // the cluster tunnel: the "office GPU server" 192.168.1.50:8000 is the fake runtime
+        clusterTunnel.open = async (cluster, host, port) => {
+            opened.push(`${cluster.id}:${host}:${port}`)
+            if (host !== '192.168.1.50' || port !== 8000) throw new Error('connect ECONNREFUSED')
+            const s = net.connect(Number(new URL(rt.root).port), '127.0.0.1')
+            await new Promise((ok, no) => { s.once('connect', ok); s.once('error', no) })
+            return s
+        }
+        process.env.KUBEEZ_MODE = 'saas'   // like KubeEZ Cloud
+    })
+    after(() => { clusterTunnel.open = realOpen; process.env.KUBEEZ_MODE = 'selfhosted'; rt?.close() })
+
+    test('directly the private address is refused; through the cluster it answers', async () => {
+        const direct = await discover({ kind: 'openai', offline: true, baseUrl: 'http://192.168.1.50:8000/v1' }, null)
+        assert.equal(direct.ok, false); assert.match(direct.detail, /https|private/)
+        opened = []
+        const via = await discover({ kind: 'openai', offline: true, baseUrl: 'http://192.168.1.50:8000', viaClusterId: 'c-office' }, null)
+        assert.equal(via.ok, true, via.detail)
+        assert.equal(via.runtime, 'vLLM'); assert.equal(via.baseUrl, 'http://192.168.1.50:8000/v1')
+        assert.deepEqual(via.models.map(m => m.id), ['Qwen/Qwen2.5-14B-Instruct'])
+        assert.ok(opened.every(x => x === 'c-office:192.168.1.50:8000') && opened.length >= 2, 'every request is a fresh stream through the cluster')
+    })
+    test('a saved engine answers through the cluster (text and JSON)', async () => {
+        const org = 'org-via'
+        const p = aiStore.addProvider(org, { name: 'Office GPU', kind: 'openai', preset: 'vllm', offline: true, baseUrl: 'http://192.168.1.50:8000/v1', model: 'Qwen/Qwen2.5-14B-Instruct', viaClusterId: 'c-office' })
+        assert.equal(p.viaClusterId, 'c-office')
+        const user = { id: 'u', username: 'u', orgId: org, role: 'admin' }
+        const r = await ask(user, { task: 'chat', question: 'What is a DaemonSet?' })
+        assert.equal(r.text, 'A DaemonSet runs one pod on every node.')
+        assert.equal(r.provider, 'Office GPU')
+        const j = await ask(user, { task: 'explain', json: true, question: 'Why does it restart?', validate: (x) => x.summary ? null : 'no summary' })
+        assert.equal(j.json.summary, 'The pod runs out of memory.')
+        assert.ok(rt.seen.some(s => s.url === '/v1/chat/completions' && s.body.model === 'Qwen/Qwen2.5-14B-Instruct'))
+    })
+    test('only private addresses, plain http, never the control plane or the cloud metadata service', () => {
+        const ok = (u) => cleanProvider({ preset: 'vllm', name: 'GPU', baseUrl: u, model: 'm', viaClusterId: 'c-office' }, ['c-office'])
+        assert.equal(ok('http://192.168.1.50:8000/v1').viaClusterId, 'c-office')
+        assert.equal(ok('http://gpu-server:1234/v1').baseUrl, 'http://gpu-server:1234/v1')
+        assert.equal(ok('http://127.0.0.1:11434').offline, true, 'a model on the control-plane node itself')
+        assert.throws(() => ok('https://192.168.1.50/v1'), /plain http/)
+        assert.throws(() => ok('http://8.8.8.8/v1'), /public address/)
+        assert.throws(() => ok('http://169.254.169.254/latest'), /metadata/)
+        assert.throws(() => ok('http://10.0.0.10:6443'), /control plane/)
+        assert.throws(() => ok('http://10.0.0.10:22'), /SSH/)
+        assert.throws(() => ok('http://example.com/v1'), /IP address on your network/)
+    })
+    test('only offline runtimes, only the workspace\'s own clusters', () => {
+        assert.throws(() => cleanProvider({ preset: 'openrouter', name: 'Cloud',  baseUrl: 'http://10.0.0.5/v1', model: 'm', apiKey: 'k', viaClusterId: 'c-office' }, ['c-office']), /own network/)
+        assert.throws(() => cleanProvider({ preset: 'vllm', name: 'GPU',  baseUrl: 'http://10.0.0.5:8000/v1', model: 'm', viaClusterId: 'c-other-org' }, ['c-office']), /your clusters/)
+        // switching an existing engine to "directly" checks its address again (refused on KubeEZ Cloud)
+        assert.throws(() => cleanProvider({ viaClusterId: '', kind: 'openai', _offline: true, _viaClusterId: 'c-office', _baseUrl: 'http://192.168.1.50:8000/v1' }, ['c-office'], true), /https|private/)
+    })
+})

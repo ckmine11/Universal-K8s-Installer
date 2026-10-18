@@ -234,7 +234,10 @@ for (const d of ['create httpd pod', 'nginx 1.27 with 2 replicas, 64Mi memory, a
 ok(await waitFor(() => K(`-n golden get pod httpd -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`).out === 'True'), '"create httpd pod" → the pod is Ready (its health check passes)')
 ok(await waitFor(() => K('-n golden rollout status deploy/nginx --timeout=120s').code === 0 && K(`-n golden get deploy nginx -o jsonpath='{.status.readyReplicas}'`).out === '2'), '"nginx … 2 replicas" → 2 of 2 ready')
 ok(await waitFor(() => K(`-n golden get deploy memcached -o jsonpath='{.status.readyReplicas}'`).out === '2'), '"memcached 2 replicas" → ready (TCP health check)')
-ok(K(`-n golden run curl-check --image=busybox:1.36 --restart=Never --rm -i --timeout=90s -- wget -qO- http://httpd/`).out.includes('It works'), 'the httpd Service answers inside the cluster')
+// a one-off pod on a busy test node can miss its window — up to 3 tries
+let httpdOk = false
+for (let i = 0; i < 3 && !httpdOk; i++) { K('-n golden delete pod curl-check --ignore-not-found --wait=true'); httpdOk = K(`-n golden run curl-check --image=busybox:1.36 --restart=Never --rm -i --timeout=90s -- wget -qO- http://httpd/`).out.includes('It works') }
+ok(httpdOk, 'the httpd Service answers inside the cluster')
 K('-n golden create job busybox-now --from=cronjob/busybox')
 ok(await waitFor(() => K(`-n golden get job busybox-now -o jsonpath='{.status.succeeded}'`).out === '1'), 'the CronJob\'s job runs and finishes')
 ok(/\d{2}:\d{2}:\d{2}/.test(K('-n golden logs job/busybox-now').out), `…and prints the date (${K('-n golden logs job/busybox-now').out})`)
@@ -283,6 +286,46 @@ ok(/› FATAL: cannot connect to postgres at db:5432/.test(look.reply) && /Last 
 ok(/Problem: The app cannot reach something it depends on: "cannot connect to postgres at db:5432"/.test(look.reply) && /How to fix it:\n1\. /.test(look.reply), `KubeEZ's own diagnosis and fix steps (AI off):\n${look.reply.split('\n').slice(2, 7).join('\n')}`)
 const guess = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'crash wala pod check karo' })
 ok(/shop\/crasher-/.test(guess.reply.split('\n')[0]), `"crash wala pod check karo" picks the crashing pod: ${guess.reply.split('\n')[0]}`)
+
+console.log('== Connect AI: a model on the office network (a real Ollama), reached THROUGH the cluster')
+if (process.env.GPU_IP) {
+    const GPU = process.env.GPU_IP
+    const { spawn } = await import('node:child_process')
+    const { Duplex } = await import('node:stream')
+    const { clusterTunnel } = await import('../../backend/src/services/clusterTunnel.js')
+    // the tunnel into the node's network (as the Explorer e2e does): TCP opened from inside the node
+    const opened = []
+    clusterTunnel.open = async (cluster, host, port) => {
+        opened.push(`${cluster.id} → ${host}:${port}`)
+        const p = spawn('docker', ['exec', '-i', NODE, 'bash', '-c', `exec 3<>/dev/tcp/${host}/${port} && (cat <&3 & cat >&3; wait)`], { env })
+        const d = new Duplex({ read() { }, write(c, e, cb) { p.stdin.write(c, cb) }, final(cb) { p.stdin.end(); cb() }, destroy(err, cb) { try { p.kill() } catch { } cb(err) } })
+        p.stdout.on('data', c => d.push(c)); p.stdout.on('end', () => d.push(null)); d.on('error', () => { })
+        return d
+    }
+    // the GPU server answers inside the node's network
+    ok(await waitFor(() => /models/.test(dx(`curl -s -m 3 http://${GPU}:11434/api/tags`).stdout), 60), `the node reaches the "GPU server" at ${GPU}:11434`)
+    const { discover } = await import('../../backend/src/services/ai/modelCatalog.js')
+    const { ask } = await import('../../backend/src/services/ai/engine.js')
+    const prevMode = process.env.KUBEEZ_MODE
+    process.env.KUBEEZ_MODE = 'saas'   // like KubeEZ Cloud
+    const direct = await discover({ kind: 'openai', offline: true, baseUrl: `http://${GPU}:11434` }, null)
+    ok(!direct.ok && /private|internal|https/i.test(direct.detail), `directly from KubeEZ Cloud the private address is refused: ${direct.detail}`)
+    const via = await discover({ kind: 'openai', offline: true, baseUrl: `http://${GPU}:11434`, viaClusterId: C.id }, null)
+    ok(via.ok && via.runtime === 'Ollama' && via.baseUrl === `http://${GPU}:11434/v1` && via.models.some(m => /qwen/.test(m.id)), `through the cluster: ${via.runtime}, ${via.baseUrl}, models ${via.models.map(m => m.id).join(', ')}`)
+    ok(opened.some(x => x === `${C.id} → ${GPU}:11434`), `the tunnel went to the GPU server (${opened.length} connections)`)
+    // an engine saved this way answers — the generic OpenAI-compatible type and the Ollama type
+    aiStore.save(C.orgId, { enabled: true })
+    const model = via.suggested
+    const gen = aiStore.addProvider(C.orgId, { name: 'Office GPU (OpenAI API)', kind: 'openai', preset: 'other-local', offline: true, baseUrl: via.baseUrl, model, viaClusterId: C.id })
+    const t0 = Date.now()
+    const a1 = await ask(USER, { task: 'chat', only: gen, question: 'In one sentence: what does a Kubernetes Service do?', maxTokens: 80 }).catch(e => ({ error: e.message, attempts: e.attempts }))
+    ok(a1.text && a1.provider === 'Office GPU (OpenAI API)', `answered through the cluster in ${((Date.now() - t0) / 1000).toFixed(1)} s: ${(a1.text || a1.error || '').replace(/\n+/g, ' ').slice(0, 120)}`)
+    const oll = aiStore.addProvider(C.orgId, { name: 'Office GPU (Ollama)', kind: 'ollama', preset: 'ollama', offline: true, baseUrl: `http://${GPU}:11434`, model, viaClusterId: C.id })
+    const a2 = await ask(USER, { task: 'explain', only: oll, json: true, maxTokens: 300, question: 'A pod restarts with OOMKilled. Reply as JSON with summary, cause, fix (array), evidence (array), confidence, missing.', validate: (x) => typeof x.summary === 'string' ? null : 'no summary' }).catch(e => ({ error: e.message }))
+    ok(a2.json?.summary, `the Ollama type through the cluster, JSON answer: ${(a2.json?.summary || a2.error || '').slice(0, 100)}`)
+    aiStore.removeProvider(C.orgId, gen.id); aiStore.removeProvider(C.orgId, oll.id)
+    process.env.KUBEEZ_MODE = prevMode
+} else ok(false, 'GPU_IP is not set — run through e2e.sh ai-ops, which starts the GPU server')
 
 fs.rmSync(DATA, { recursive: true, force: true })
 console.log(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS')

@@ -260,7 +260,7 @@ export default function AiSettings() {
                                     <Icon className="w-5 h-5 text-blue-300 mt-0.5" />
                                     <div className="flex-1 min-w-0">
                                         <div className="text-sm font-semibold text-white truncate">{e.name}</div>
-                                        <div className="text-[11px] text-slate-500 truncate">{(data.presets || []).find(p => p.id === e.preset)?.label || data.kinds[e.kind]?.label}{e.offline || isLocal(e.kind) ? ' · offline' : ' · cloud'} · <span className="font-mono">{e.model || 'default model'}</span>{e.hasKey ? ' · key saved' : ''}</div>
+                                        <div className="text-[11px] text-slate-500 truncate">{(data.presets || []).find(p => p.id === e.preset)?.label || data.kinds[e.kind]?.label}{e.offline || isLocal(e.kind) ? ' · offline' : ' · cloud'}{e.viaClusterName ? ` · through cluster ${e.viaClusterName}` : ''} · <span className="font-mono">{e.model || 'default model'}</span>{e.hasKey ? ' · key saved' : ''}</div>
                                     </div>
                                     <EngineStatus e={e} />
                                     {!e.builtin && <Toggle on={e.enabled !== false} label={`${e.name} on`} onChange={v => toggleEngine(e, v)} />}

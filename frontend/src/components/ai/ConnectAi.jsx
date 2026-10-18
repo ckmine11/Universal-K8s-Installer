@@ -11,6 +11,8 @@ import useBackdropClose from '../ui/useBackdropClose'
 //   2. connect: KubeEZ reads the engine's models live (so new models show
 //      up by themselves), tells which runtime answered, suggests one
 //   3. add it — and, if wanted, run the quality test on it straight away
+// A model on the user's own network (e.g. a GPU server at 192.168.1.50) can be
+// reached through one of their clusters — nothing needs to be exposed.
 async function call(url, opts) {
     const res = await apiFetch(url, opts)
     const d = await res.json().catch(() => ({}))
@@ -58,7 +60,7 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
     const presets = data.presets || []
     const [presetId, setPresetId] = useState(initial?.preset || null)
     const preset = presets.find(p => p.id === presetId) || null
-    const [f, setF] = useState(() => ({ name: initial?.name || '', baseUrl: initial?.baseUrl || '', apiKey: '', clusterId: initial?.clusterId || '', model: initial?.model || '' }))
+    const [f, setF] = useState(() => ({ name: initial?.name || '', baseUrl: initial?.baseUrl || '', apiKey: '', clusterId: initial?.clusterId || '', viaClusterId: initial?.viaClusterId || '', model: initial?.model || '' }))
     const [disc, setDisc] = useState(null)        // the live result: runtime, models
     const [connecting, setConnecting] = useState(false)
     const [saving, setSaving] = useState(false)
@@ -67,17 +69,19 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
 
     const pick = (p) => {
         setPresetId(p.id); setDisc(null)
-        setF(x => ({ ...x, name: p.label, baseUrl: p.baseUrl || '', model: '', apiKey: '', clusterId: '' }))
+        setF(x => ({ ...x, name: p.label, baseUrl: p.baseUrl || '', model: '', apiKey: '', clusterId: '', viaClusterId: '' }))
     }
     const needsUrl = preset && ['openai', 'ollama'].includes(preset.kind)
     const offline = preset?.group === 'offline'
+    const canVia = offline && needsUrl && data.clusters.length > 0
+    const viaName = data.clusters.find(c => c.id === f.viaClusterId)?.name
 
     const connect = async () => {
         setConnecting(true); setDisc(null)
         try {
             const r = editing
                 ? await call(`/api/ai/providers/${initial.id}/models`)
-                : await call('/api/ai/discover', json('POST', { preset: preset.id, baseUrl: f.baseUrl || undefined, apiKey: f.apiKey || undefined, clusterId: f.clusterId || undefined }))
+                : await call('/api/ai/discover', json('POST', { preset: preset.id, baseUrl: f.baseUrl || undefined, apiKey: f.apiKey || undefined, clusterId: f.clusterId || undefined, viaClusterId: f.viaClusterId || undefined }))
             setDisc(r)
             if (r.baseUrl && r.baseUrl !== f.baseUrl) set('baseUrl', r.baseUrl)
             if (!f.model && r.suggested) set('model', r.suggested)
@@ -92,7 +96,7 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
     const save = async (ev) => {
         ev.preventDefault(); setSaving(true)
         try {
-            const body = { name: f.name.trim(), model: f.model.trim(), ...(needsUrl ? { baseUrl: f.baseUrl.trim() } : {}), ...(preset.kind === 'cluster' ? { clusterId: f.clusterId } : {}), ...(f.apiKey ? { apiKey: f.apiKey } : {}) }
+            const body = { name: f.name.trim(), model: f.model.trim(), ...(needsUrl ? { baseUrl: f.baseUrl.trim() } : {}), ...(preset.kind === 'cluster' ? { clusterId: f.clusterId } : {}), ...(canVia ? { viaClusterId: f.viaClusterId || null } : {}), ...(f.apiKey ? { apiKey: f.apiKey } : {}) }
             let saved
             if (editing) saved = await call(`/api/ai/providers/${initial.id}`, json('PUT', body))
             else saved = await call('/api/ai/providers', json('POST', { ...body, preset: preset.id, qualityCheck: quality }))
@@ -157,11 +161,22 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
                                 {!data.clusters.some(c => c.hasAi) && <p className="text-[11px] text-amber-300/90 mt-1">Install the <b>KubeEZ AI</b> add-on on a cluster first (cluster page → Add-ons). It is free.</p>}
                             </div>
                         )}
+                        {canVia && (
+                            <div>
+                                <label className="kz-label" htmlFor="ca-via">How KubeEZ reaches it</label>
+                                <select id="ca-via" className="kz-input" value={f.viaClusterId} onChange={e => { set('viaClusterId', e.target.value); setDisc(null) }}>
+                                    <option value="">Directly — the address is reachable from KubeEZ</option>
+                                    {data.clusters.map(c => <option key={c.id} value={c.id}>Through cluster {c.name} — a server on that cluster's network</option>)}
+                                </select>
+                                {f.viaClusterId && <p className="text-[11px] text-emerald-200/80 mt-1">KubeEZ goes through its secure tunnel to {viaName}; that cluster's control-plane node reaches the server. No public address, no open port — nothing is exposed.</p>}
+                            </div>
+                        )}
                         {needsUrl && (
                             <div>
                                 <label className="kz-label" htmlFor="ca-url">Address</label>
                                 <input id="ca-url" className="kz-input font-mono" value={f.baseUrl} onChange={e => { set('baseUrl', e.target.value); setDisc(null) }} placeholder={preset.baseUrl || 'http://192.168.1.50:8000/v1'} autoComplete="off" />
-                                {offline && <p className="text-[11px] text-slate-500 mt-1">Where it listens{preset.baseUrl ? ` (default ${preset.baseUrl.replace('localhost', 'your-server')})` : ''}. "localhost" is the KubeEZ server itself — use the machine's address if the model runs elsewhere.</p>}
+                                {offline && f.viaClusterId && <p className="text-[11px] text-slate-500 mt-1">As the control-plane node of {viaName} sees it, e.g. <span className="font-mono">http://192.168.1.50:8000/v1</span> — plain http (the tunnel is already encrypted).</p>}
+                                {offline && !f.viaClusterId && <p className="text-[11px] text-slate-500 mt-1">Where it listens{preset.baseUrl ? ` (default ${preset.baseUrl.replace('localhost', 'your-server')})` : ''}. "localhost" is the KubeEZ server itself — use the machine's address if the model runs elsewhere.</p>}
                             </div>
                         )}
                         {preset.kind !== 'cluster' && (preset.needsKey || offline) && preset.kind !== 'ollama' && (
@@ -187,7 +202,7 @@ export default function ConnectAi({ data, initial, onClose, onSaved }) {
                         {disc && !disc.ok && offline && /https|private|internal|not allowed/i.test(disc.detail || '') && (
                             <p className="rounded-xl border border-amber-400/25 bg-amber-500/[0.05] p-3 text-[11px] text-amber-100 leading-relaxed">
                                 KubeEZ Cloud reaches your model over the internet, so it needs a <b>public https address</b> (e.g. behind a reverse proxy or a tunnel such as Cloudflare Tunnel).
-                                {' '}For a model on your own network with nothing exposed, use the <button type="button" className="underline text-amber-200" onClick={() => pick(presets.find(p => p.id === 'kubeez-addon'))}>KubeEZ AI add-on</button> in your cluster instead.
+                                {' '}For a model on your own network with nothing exposed, {canVia ? <><button type="button" className="underline text-amber-200" onClick={() => { set('viaClusterId', data.clusters[0].id); setDisc(null) }}>reach it through your cluster {data.clusters[0].name}</button> ("How KubeEZ reaches it" above), or </> : ''}use the <button type="button" className="underline text-amber-200" onClick={() => pick(presets.find(p => p.id === 'kubeez-addon'))}>KubeEZ AI add-on</button> in your cluster.
                             </p>
                         )}
                         {disc?.models?.length > 0 && (

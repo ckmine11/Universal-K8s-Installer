@@ -45,7 +45,7 @@ export const aiStore = {
     addProvider(orgId, input) {
         const s = this.get(orgId)
         if (s.providers.length >= 20) throw Object.assign(new Error('Up to 20 AI engines per workspace'), { status: 400 })
-        const p = { id: randomBytes(5).toString('hex'), name: input.name, kind: input.kind, baseUrl: input.baseUrl || null, model: input.model || null, clusterId: input.clusterId || null, preset: input.preset || null, offline: !!input.offline, enabled: input.enabled !== false, createdAt: new Date().toISOString(), ...(input.apiKey ? { key: encrypt(input.apiKey) } : {}) }
+        const p = { id: randomBytes(5).toString('hex'), name: input.name, kind: input.kind, baseUrl: input.baseUrl || null, model: input.model || null, clusterId: input.clusterId || null, preset: input.preset || null, offline: !!input.offline, viaClusterId: input.viaClusterId || null, enabled: input.enabled !== false, createdAt: new Date().toISOString(), ...(input.apiKey ? { key: encrypt(input.apiKey) } : {}) }
         this.save(orgId, { providers: [...s.providers, p] })
         return p
     },
@@ -54,7 +54,7 @@ export const aiStore = {
         const i = s.providers.findIndex(p => p.id === id)
         if (i < 0) throw Object.assign(new Error('AI engine not found'), { status: 404 })
         const cur = s.providers[i]
-        const next = { ...cur, name: input.name ?? cur.name, baseUrl: input.baseUrl ?? cur.baseUrl, model: input.model ?? cur.model, clusterId: input.clusterId ?? cur.clusterId, enabled: input.enabled ?? cur.enabled }
+        const next = { ...cur, name: input.name ?? cur.name, baseUrl: input.baseUrl ?? cur.baseUrl, model: input.model ?? cur.model, clusterId: input.clusterId ?? cur.clusterId, viaClusterId: input.viaClusterId !== undefined ? input.viaClusterId : (cur.viaClusterId || null), enabled: input.enabled ?? cur.enabled }
         if (input.apiKey) next.key = encrypt(input.apiKey)
         if (input.apiKey === '') delete next.key
         s.providers[i] = next
