@@ -173,7 +173,7 @@ describe('the engine', () => {
     })
 
     test('no engine, AI off, and the kill switch', async () => {
-        await assert.rejects(ask(USER('org-none'), { question: 'anyone?' }), (e) => e instanceof AiUnavailable && /No AI engine is set up/.test(e.message))
+        await assert.rejects(ask(USER('org-none'), { question: 'anyone?' }), (e) => e instanceof AiUnavailable && /No AI is connected/.test(e.message) && e.none === true)
         aiStore.save('org-off', { enabled: false })
         await assert.rejects(ask(USER('org-off'), { question: 'anyone?' }), { code: 'AI_OFF' })
         const down = await fakeModel(() => ({ status: 400 }))
@@ -271,7 +271,7 @@ describe('/api/ai', () => {
         const r = await api('POST', '/api/ai/ask', viewer.token, { question: 'What is a pod?' })
         assert.equal(r.status, 503)
         assert.equal(r.data.code, 'AI_UNAVAILABLE')
-        assert.match(r.data.error, /No AI engine/)
+        assert.match(r.data.error, /No AI is connected/)
         assert.equal((await api('POST', '/api/ai/ask', viewer.token, { question: '' })).status, 400)
     })
 })

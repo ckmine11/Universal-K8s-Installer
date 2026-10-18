@@ -746,8 +746,7 @@ export default function Docs() {
                         <P>AI settings → <B>AI-BOM</B>: the bill of materials of KubeEZ AI in your workspace — every model with its exact digest, where its data goes (stays inside, or leaves to which cloud), what it is used for and its quality score; every prompt by hash (a changed prompt is a changed AI); the safety controls and what is kept. Download it as CycloneDX 1.6 for auditors and tools (DPDP, ISO 27001, EU AI Act).</P>
                         <H4>Without internet (air-gapped)</H4>
                         <Steps items={[
-                            <>On a machine with internet: <C>./ai-offline.sh export qwen2.5:3b</C> (the model, ~2 GB) and, if needed, <C>docker save ollama/ollama:0.40.5 -o ollama-image.tar</C>.</>,
-                            <>On the KubeEZ server: <C>docker load -i ollama-image.tar</C>, then <C>./ai-offline.sh import kubeez-ai-qwen2.5-3b.tar</C> — the server model works without internet.</>,
+                            <>On a machine with internet: <C>./ai-offline.sh export qwen2.5:3b</C> (the model, ~2 GB). Any other offline runtime (LM Studio, vLLM, llama.cpp…) works too — copy its model files the way that runtime expects, then connect it.</>,
                             <>For the KubeEZ AI add-on: install it with <B>Download the model now</B> off, then <C>./ai-offline.sh import-cluster kubeez-ai-qwen2.5-3b.tar</C>.</>
                         ]} />
                         <H4>Learning from your feedback</H4>
@@ -760,7 +759,7 @@ export default function Docs() {
                             <>When an engine’s model changes, its card says <B>model changed — test again</B>, so a worse version never goes unnoticed.</>
                         ]} />
                         <P><B>Was this right?</B> Every AI answer has 👍 / 👎 (with a reason such as “Made something up”). The ratings show in Activity, in the Quality table, and on an engine’s card when members mark many of its answers wrong.</P>
-                        <Note>The server model has a daily allowance per workspace (AI settings). Your own engines — the add-on, Ollama or your API keys — have no KubeEZ limit.</Note>
+                        <Note>KubeEZ runs no AI model of its own: each workspace connects its own AI (AI settings → Connect AI) — the add-on in your cluster, any offline runtime, or a cloud API with your key. KubeEZ adds no limit or cost to them. Without one, KubeEZ still answers what it reads from your clusters itself (counts, pod checks, the cause and fix of common problems).</Note>
                     </Section>
 
                     <Section id="security" Icon={Lock} color="text-emerald-400" title="Security & Privacy"

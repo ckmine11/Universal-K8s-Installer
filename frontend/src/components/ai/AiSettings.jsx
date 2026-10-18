@@ -228,7 +228,7 @@ export default function AiSettings() {
                     <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center"><Bot className="w-5 h-5 text-white" /></div>
                     <div className="flex-1 min-w-[220px]">
                         <h2 className="text-lg font-semibold text-white">KubeEZ AI</h2>
-                        <p className="text-xs text-slate-400">Free on every plan. Uses open-source models on KubeEZ or in your cluster — or your own API keys. Secrets are masked before any model sees the data.</p>
+                        <p className="text-xs text-slate-400">Bring your own AI: any model on your own machine or server, the KubeEZ AI add-on in your cluster, or a cloud API with your key. Secrets are masked before any model sees the data.</p>
                     </div>
                     <span className="text-xs text-slate-400">{data.enabled ? 'On' : 'Off'} for this workspace</span>
                     <Toggle on={data.enabled} label="KubeEZ AI on" onChange={v => saveSettings({ enabled: v }, v ? 'KubeEZ AI is on' : 'KubeEZ AI is off')} />

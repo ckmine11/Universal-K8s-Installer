@@ -158,7 +158,7 @@ export async function ask(user, opts) {
 
     // 3–4) engines in order, with retries, breaker, queue and validation
     const route = opts.only ? [opts.only] : routeFor(orgId, task)
-    if (!route.length) throw new AiUnavailable('No AI engine is set up — add one in AI settings, or install the KubeEZ AI add-on')
+    if (!route.length) throw Object.assign(new AiUnavailable('No AI is connected to this workspace yet — an admin can connect one in AI settings → Connect AI'), { none: true })
     const attempts = []
     let result = null
     for (const p of route) {

@@ -156,3 +156,15 @@ describe('Ask AI uses the live cluster', () => {
         assert.equal(/payments/.test(r.reply), false)
     })
 })
+
+describe('no AI connected (KubeEZ runs no model of its own)', () => {
+    const org = 'org-cq'
+    test('a question for the AI says how to connect one; cluster questions still work', async () => {
+        aiStore.save(org, { enabled: true })
+        const r = await handleChat({ orgId: org, chatKey: 'web:none', who: 'dev', source: 'Web', text: 'what is a pod disruption budget?', user: { id: 'n1', username: 'dev', orgId: org, role: 'admin' }, rate: 60 })
+        assert.match(r.reply, /No AI is connected to this workspace yet/)
+        assert.match(r.reply, /AI settings → Connect AI/)
+        const inv = await handleChat({ orgId: org, chatKey: 'web:none', who: 'dev', source: 'Web', text: 'how many namespaces', user: { id: 'n1', username: 'dev', orgId: org, role: 'admin' }, rate: 60 })
+        assert.match(inv.reply, /^prod has 6 namespaces/)
+    })
+})

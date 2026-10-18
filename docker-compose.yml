@@ -14,8 +14,6 @@ services:
       - PORT=3000
       - KUBEEZ_MODE=saas
       - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:8090
-      - KUBEEZ_AI_URL=${KUBEEZ_AI_URL-http://ollama:11434}
-      - KUBEEZ_AI_MODEL=${KUBEEZ_AI_MODEL:-qwen2.5:1.5b}
     volumes:
       - ./backend/src:/app/src
       - ./backend/logs:/app/logs
@@ -29,30 +27,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  # KubeEZ AI: a local, open-source model (free forever). Private — no public
-  # port; only the backend talks to it over the internal network. Hard limits
-  # keep KubeEZ fast even when the model is busy. The model (KUBEEZ_AI_MODEL)
-  # is downloaded once into the volume by the backend on first start.
-  ollama:
-    image: ollama/ollama:0.40.5
-    container_name: kubeez-ollama
-    expose:
-      - "11434"
-    environment:
-      - OLLAMA_NUM_PARALLEL=1
-      - OLLAMA_MAX_LOADED_MODELS=1
-      - OLLAMA_KEEP_ALIVE=5m
-    volumes:
-      - kubeez-ai-models:/root/.ollama
-    networks:
-      - kubeez-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '${KUBEEZ_AI_CPUS:-2}'
-          memory: ${KUBEEZ_AI_MEMORY:-3000M}
 
   # Frontend Service
   frontend:
@@ -76,4 +50,3 @@ networks:
 
 volumes:
   backend-logs:
-  kubeez-ai-models:

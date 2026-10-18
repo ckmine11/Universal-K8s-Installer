@@ -27,6 +27,10 @@ function Linkified({ text }) {
 }
 
 function AskAi() {
+    const { user } = useAuth()
+    // no AI connected yet: say what still works, and where to connect one
+    const [engines, setEngines] = useState(null)
+    useEffect(() => { apiFetch('/api/ai').then(r => r.ok ? r.json() : null).then(d => setEngines(d ? d.engines.filter(e => e.enabled !== false).length : null)).catch(() => { }) }, [])
     const [msgs, setMsgs] = useState(() => { try { return JSON.parse(sessionStorage.getItem(STORE)) || [] } catch { return [] } })
     const [text, setText] = useState('')
     const [busy, setBusy] = useState(false)
@@ -44,6 +48,12 @@ function AskAi() {
     }
 
     return (
+        <>
+        {engines === 0 && (
+            <div className="mb-3 rounded-2xl border border-amber-400/25 bg-amber-500/[0.06] px-4 py-3 text-xs text-amber-100 leading-relaxed">
+                <b>No AI is connected to this workspace yet.</b> Questions about what runs in your clusters still work — counts, pod checks, the cause and fix of common problems. For deeper explanations, {can(user?.role, 'ai:manage') ? <Link to="/ai/settings" className="underline text-amber-200">connect your own AI</Link> : 'an admin can connect an AI'} (AI settings → Connect AI): a model on your own machine, the add-on in your cluster, or a cloud API with your key.
+            </div>
+        )}
         <div className="kz-card flex flex-col h-[calc(100vh-260px)] min-h-[420px]">
             <div className="flex-1 overflow-y-auto p-5 space-y-3">
                 {!msgs.length && (
@@ -76,6 +86,7 @@ function AskAi() {
                 </form>
             </div>
         </div>
+        </>
     )
 }
 

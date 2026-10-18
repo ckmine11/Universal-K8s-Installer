@@ -43,7 +43,7 @@ const link = (path) => publicUrl() ? `${publicUrl()}${path}` : null
 export const CHAT_SYSTEM = 'You answer questions about the user\'s Kubernetes clusters in a chat app. Keep it short: at most 6 lines, plain text, no tables. The workspace facts are read live from the clusters and are exact: use them for anything about the user\'s clusters, and never guess a count or a name that is not in them. For general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. For actions, point to KubeEZ (Incidents, AI → What changed, AI settings).'
 
 // ── answers are always in English (questions may be English, Hindi or Hinglish) ──
-const L = { looking: '🔎 Looking into it…', none: '✅ No open problems.', limit: (m) => `Too many questions — try again in ${m} min.`, off: 'KubeEZ AI is turned off for this workspace.', noAi: 'No AI engine could answer right now — here are the facts:', unknownN: (n) => `There is no problem #${n} — send "incidents" for the list.`, openIn: 'Open in KubeEZ to preview and apply:', noFix: 'No fix KubeEZ can run for this one — the steps above are for a person.' }
+const L = { looking: '🔎 Looking into it…', none: '✅ No open problems.', limit: (m) => `Too many questions — try again in ${m} min.`, off: 'KubeEZ AI is turned off for this workspace.', noEngine: 'No AI is connected to this workspace yet, so I cannot explain this one. An admin can connect one in AI settings → Connect AI (your own model, offline or cloud). I can still answer what runs in your clusters — e.g. "how many pods", "show nodes", "check the logs of web-2".', noAi: 'No AI engine could answer right now — here are the facts:', unknownN: (n) => `There is no problem #${n} — send "incidents" for the list.`, openIn: 'Open in KubeEZ to preview and apply:', noFix: 'No fix KubeEZ can run for this one — the steps above are for a person.' }
 
 // ── what was asked ──
 export function intentOf(raw) {
@@ -215,6 +215,7 @@ export async function handleChat(ctx) {
             }
         }
     } catch (e) {
+        if (e.none) return { reply: L.noEngine }
         if (e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE') return { reply: `${L.noAi}\n${listText(sc, state)}` }
         return { reply: `⚠ ${e.message}` }
     }
@@ -223,7 +224,7 @@ export async function handleChat(ctx) {
 // ── looking into a pod: logs, describe, events → problem, cause, fix ──
 // may this asker read logs and describe in that cluster? (team chats: the workspace, like its alerts)
 const mayLook = (sc, u, c) => !sc.user || kubeLevelOn(u, c) !== 'none'
-const W = { problem: 'Problem', cause: 'Cause', proof: 'Proof', fix: 'How to fix it', log: 'Last log lines', kubeez: 'KubeEZ\'s own check', changed: 'Changed just before', run: 'A fix KubeEZ can run', removed: (n) => `⚠ ${n} dangerous step(s) removed by KubeEZ.`, noPods: 'it has no pods right now', worst: 'its pod with the most trouble', others: 'Other pods with trouble', notAllowed: 'Your role may not read logs in this cluster.', aiFail: 'The AI could not answer right now — this is KubeEZ\'s own check.', unknown: 'KubeEZ found no known cause in the logs and events.', webApply: 'Preview it (dry-run) and apply it below.', chatApply: 'Preview and apply it in KubeEZ → Ask AI.' }
+const W = { problem: 'Problem', cause: 'Cause', proof: 'Proof', fix: 'How to fix it', log: 'Last log lines', kubeez: 'KubeEZ\'s own check', changed: 'Changed just before', run: 'A fix KubeEZ can run', removed: (n) => `⚠ ${n} dangerous step(s) removed by KubeEZ.`, noPods: 'it has no pods right now', worst: 'its pod with the most trouble', others: 'Other pods with trouble', notAllowed: 'Your role may not read logs in this cluster.', aiFail: 'The AI could not answer right now — this is KubeEZ\'s own check.', aiNone: 'This is KubeEZ\'s own check. Connect an AI (AI settings → Connect AI) for a deeper explanation.', unknown: 'KubeEZ found no known cause in the logs and events.', webApply: 'Preview it (dry-run) and apply it below.', chatApply: 'Preview and apply it in KubeEZ → Ask AI.' }
 const looked = new Map()   // pod + 2-minute slot → the AI answer (asking twice costs one model call)
 
 async function lookInto({ ctx, u, sc, s, cluster, t }) {
@@ -244,7 +245,7 @@ async function lookInto({ ctx, u, sc, s, cluster, t }) {
     const fill = (x) => String(x).split('<ns>').join(pod.ns).split('<name>').join(fresh.workload?.name || pod.name).split('<node>').join(pod.node || '<node>')
     const tail = logTail(fresh.data, 8)
     const clean = ok && quick && !quick.fix.length   // running, ready and no errors: nothing for the AI to find
-    let ai = null, aiErr = null
+    let ai = null, aiErr = null, aiNone = false
     if (s.enabled && !clean) {
         const key = `${inc.id}:${inc.lastSeen}`
         try {
@@ -260,7 +261,7 @@ async function lookInto({ ctx, u, sc, s, cluster, t }) {
                 if (looked.size > 100) looked.delete(looked.keys().next().value)
             }
             ai = await looked.get(key)
-        } catch (e) { aiErr = e.message }
+        } catch (e) { aiErr = e.message; aiNone = !!e.none }
     }
     const lines = [...intro, '']
     if (ai) {
@@ -277,7 +278,7 @@ async function lookInto({ ctx, u, sc, s, cluster, t }) {
         if (quick.cause) lines.push(`${W.cause}: ${quick.cause}`)
         if (quick.evidence.length) lines.push(`${W.proof}:`, ...quick.evidence.map(e => `  › ${e}`))
         if (quick.fix.length) lines.push(`${W.fix}:`, ...quick.fix.map((x, i) => `${i + 1}. ${fill(x)}`))
-        if (aiErr) lines.push('', W.aiFail)
+        if (aiErr) lines.push('', aiNone ? W.aiNone : W.aiFail)
     } else {
         lines.push(W.unknown, aiErr ? `AI: ${aiErr}` : !s.enabled ? L.off : '')
     }
