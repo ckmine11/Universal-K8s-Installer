@@ -8,6 +8,7 @@ import RunbooksPanel from './RunbooksPanel'
 import ChatOpsPanel from './ChatOpsPanel'
 import { McpPanel, AiBomPanel, LearningPanel } from './Phase6Panels'
 import Feedback from './Feedback'
+import ConnectAi from './ConnectAi'
 
 // AI settings: the engines (models) KubeEZ AI may use, which engine does
 // which job (with fallbacks), the safety switches, a test box and the log.
@@ -17,7 +18,7 @@ const AUTONOMY_INFO = {
     auto: ['Auto for low-risk', 'Low-risk fixes (e.g. restart a crashed pod) run on their own; everything else asks first.']
 }
 const kindIcon = (k) => k === 'server' ? Server : k === 'cluster' ? Boxes : (k === 'ollama' ? Bot : Cloud)
-const isLocal = (k) => ['ollama', 'server', 'cluster'].includes(k)
+const isLocal = (k) => ['ollama', 'server', 'cluster'].includes(k)   // engines that can download models
 
 async function call(url, opts) {
     const res = await apiFetch(url, opts)
@@ -49,91 +50,6 @@ function EngineStatus({ e }) {
     if (e.pull?.status === 'downloading') return <span className="kz-chip !text-amber-300"><Loader2 className="w-3 h-3 animate-spin" /> downloading {e.pull.model}</span>
     if (e.pull?.status === 'failed') return <span className="kz-chip !text-red-300" title={e.pull.error}>download failed</span>
     return <span className="kz-chip !text-emerald-300">on</span>
-}
-
-function EngineDialog({ data, initial, onClose, onSaved }) {
-    const { toast } = useToast()
-    const backdrop = useBackdropClose(onClose)
-    const editing = !!initial
-    const [f, setF] = useState(() => initial ? { ...initial, apiKey: '' } : { kind: 'ollama', name: '', baseUrl: '', model: '', apiKey: '', clusterId: '' })
-    const [busy, setBusy] = useState(false)
-    const kind = data.kinds[f.kind] || {}
-    const set = (k, v) => setF(p => ({ ...p, [k]: v }))
-    const pickKind = (k) => setF(p => ({ ...p, kind: k, baseUrl: k === 'openai' ? (data.kinds[k]?.example?.baseUrl || '') : '', model: data.kinds[k]?.example?.model || '', name: (!p.name || Object.values(data.kinds).some(v => v.label === p.name)) ? (data.kinds[k]?.label || '') : p.name }))
-    useEffect(() => { if (!initial) pickKind('ollama') }, [])   // eslint-disable-line react-hooks/exhaustive-deps
-
-    const save = async (ev) => {
-        ev.preventDefault(); setBusy(true)
-        try {
-            const body = { name: f.name, model: f.model, ...(kind.needsUrl ? { baseUrl: f.baseUrl } : {}), ...(f.kind === 'cluster' ? { clusterId: f.clusterId } : {}), ...(f.apiKey ? { apiKey: f.apiKey } : {}) }
-            if (editing) await call(`/api/ai/providers/${initial.id}`, json('PUT', body))
-            else await call('/api/ai/providers', json('POST', { ...body, kind: f.kind }))
-            toast({ title: editing ? 'Engine saved' : 'Engine added', message: 'Use "Test" to check it answers.', type: 'success' })
-            onSaved()
-        } catch (e) { toast({ title: 'Not saved', message: e.message, type: 'error' }) } finally { setBusy(false) }
-    }
-
-    const kinds = Object.entries(data.kinds).filter(([k]) => k !== 'server')
-    return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" {...backdrop}>
-            <form onSubmit={save} onClick={e => e.stopPropagation()} className="kz-card w-full max-w-xl max-h-[92vh] overflow-y-auto p-6 space-y-4" role="dialog" aria-label={editing ? 'Edit AI engine' : 'Add AI engine'}>
-                <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-white">{editing ? `Edit ${initial.name}` : 'Add an AI engine'}</h3>
-                    <button type="button" onClick={onClose} className="kz-btn-ghost !p-2" aria-label="Close"><X className="w-4 h-4" /></button>
-                </div>
-                {!editing && (
-                    <div>
-                        <label className="kz-label">Type</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {kinds.map(([k, v]) => (
-                                <button type="button" key={k} onClick={() => pickKind(k)}
-                                    className={`text-left rounded-xl border px-3 py-2 text-xs transition ${f.kind === k ? 'border-blue-400/60 bg-blue-500/10 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'}`}>
-                                    <div className="font-semibold">{v.label}</div>
-                                    <div className="text-slate-500 mt-0.5">{isLocal(k) ? 'Free · private' : 'Cloud · your API key'}</div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-                <div>
-                    <label className="kz-label" htmlFor="ai-name">Name</label>
-                    <input id="ai-name" className="kz-input" value={f.name} onChange={e => set('name', e.target.value)} maxLength={60} autoComplete="off" />
-                </div>
-                {kind.needsUrl && (
-                    <div>
-                        <label className="kz-label" htmlFor="ai-url">Address</label>
-                        <input id="ai-url" className="kz-input font-mono" value={f.baseUrl || ''} onChange={e => set('baseUrl', e.target.value)} placeholder={kind.example?.baseUrl} autoComplete="off" />
-                        <p className="text-[11px] text-slate-500 mt-1">{f.kind === 'ollama' ? 'Where Ollama listens. On KubeEZ Cloud it must be a public https address — for a private model use the KubeEZ AI add-on instead.' : 'The API base, ending in /v1 — OpenAI, Groq, DeepSeek, Mistral, OpenRouter, vLLM, LM Studio…'}</p>
-                    </div>
-                )}
-                {f.kind === 'cluster' && (
-                    <div>
-                        <label className="kz-label" htmlFor="ai-cluster">Cluster</label>
-                        <select id="ai-cluster" className="kz-input" value={f.clusterId || ''} onChange={e => set('clusterId', e.target.value)}>
-                            <option value="">Pick a cluster…</option>
-                            {data.clusters.map(c => <option key={c.id} value={c.id}>{c.name}{c.hasAi ? ' — KubeEZ AI installed' : ''}</option>)}
-                        </select>
-                        {!data.clusters.some(c => c.hasAi) && <p className="text-[11px] text-amber-300/90 mt-1">Install the <b>KubeEZ AI</b> add-on on a cluster first (cluster page → Add-ons). It is free on every plan.</p>}
-                    </div>
-                )}
-                <div>
-                    <label className="kz-label" htmlFor="ai-model">Model</label>
-                    <input id="ai-model" className="kz-input font-mono" value={f.model || ''} onChange={e => set('model', e.target.value)} placeholder={kind.example?.model || 'qwen2.5:3b'} autoComplete="off" />
-                </div>
-                {kind.needsKey && (
-                    <div>
-                        <label className="kz-label" htmlFor="ai-key">API key</label>
-                        <input id="ai-key" type="password" className="kz-input font-mono" value={f.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder={editing && initial.hasKey ? 'Saved — type to replace' : ''} autoComplete="new-password" />
-                        <p className="text-[11px] text-slate-500 mt-1">Stored encrypted on the KubeEZ server; never shown again or sent to the browser.</p>
-                    </div>
-                )}
-                <div className="flex justify-end gap-2 pt-2">
-                    <button type="button" onClick={onClose} className="kz-btn-ghost">Cancel</button>
-                    <button type="submit" disabled={busy} className="kz-btn-primary">{busy && <Loader2 className="w-4 h-4 animate-spin" />}{editing ? 'Save' : 'Add engine'}</button>
-                </div>
-            </form>
-        </div>
-    )
 }
 
 function RouteEditor({ data, onSave }) {
@@ -275,6 +191,8 @@ export default function AiSettings() {
     // while a model downloads, keep the list fresh
     const downloading = data?.engines.some(e => e.pull?.status === 'downloading' || ['downloading', 'waiting'].includes(e.state?.status))
     useEffect(() => { if (!downloading) return; const t = setInterval(load, 5000); return () => clearInterval(t) }, [downloading, load])
+    const testing = data?.engines.some(e => e.qualityRunning)
+    useEffect(() => { if (!testing) return; const t = setInterval(load, 10000); return () => clearInterval(t) }, [testing, load])
 
     const saveSettings = async (patch, msg) => {
         try { await call('/api/ai/settings', json('PUT', patch)); if (msg) toast({ title: msg, type: 'success' }); await load(); return true }
@@ -317,7 +235,7 @@ export default function AiSettings() {
                 </div>
                 <div className="grid md:grid-cols-3 gap-3 mt-5">
                     {[
-                        ['1 · Engines', 'Add the models KubeEZ AI may use: the built-in server model, the KubeEZ AI add-on in your cluster, your own Ollama, or a cloud API.'],
+                        ['1 · Engines', 'Connect any AI: a model on your own machine or server (any runtime), the KubeEZ AI add-on in your cluster, or a cloud API with your key.'],
                         ['2 · Routing', 'Pick which engines do each job and in what order. If one is slow or down, the next one answers — automatically.'],
                         ['3 · Safety', 'AI never runs anything alone unless you allow it. One switch stops all AI actions at once. Every call is logged.']
                     ].map(([t, d]) => (
@@ -329,9 +247,9 @@ export default function AiSettings() {
                 </div>
             </section>
 
-            <Section icon={PlugZap} title="Engines" hint="Local engines (Ollama, the add-on, the server model) are free and private. Cloud engines use your own API key and bill to your account."
-                right={<button onClick={() => setDialog('new')} className="kz-btn-primary"><Plus className="w-4 h-4" /> Add engine</button>}>
-                {!data.engines.length && <p className="text-sm text-slate-400">No engine yet. Install the free <b>KubeEZ AI</b> add-on on a cluster, or add your own Ollama or API.</p>}
+            <Section icon={PlugZap} title="Engines" hint="Connect any AI you like. Offline: a model on your own machine or server — Ollama, LM Studio, vLLM, llama.cpp, LocalAI, TGI, Jan or any OpenAI-compatible server, or the KubeEZ AI add-on in your cluster. Cloud: Claude, Gemini, OpenAI, OpenRouter, Groq, Mistral, DeepSeek… with your own key. Model lists are read live, so new models show up by themselves."
+                right={<button onClick={() => setDialog('new')} className="kz-btn-primary"><Plus className="w-4 h-4" /> Connect AI</button>}>
+                {!data.engines.length && <p className="text-sm text-slate-400">No AI connected yet. KubeEZ still answers what it can read from your clusters itself (counts, pod checks, quick diagnosis); connect an AI for deeper explanations — <button type="button" onClick={() => setDialog('new')} className="text-blue-300 hover:underline">Connect AI</button>.</p>}
                 <div className="grid md:grid-cols-2 gap-3">
                     {data.engines.map(e => {
                         const Icon = kindIcon(e.kind)
@@ -342,14 +260,16 @@ export default function AiSettings() {
                                     <Icon className="w-5 h-5 text-blue-300 mt-0.5" />
                                     <div className="flex-1 min-w-0">
                                         <div className="text-sm font-semibold text-white truncate">{e.name}</div>
-                                        <div className="text-[11px] text-slate-500 truncate">{data.kinds[e.kind]?.label} · <span className="font-mono">{e.model || 'default model'}</span>{e.hasKey ? ' · key saved' : ''}</div>
+                                        <div className="text-[11px] text-slate-500 truncate">{(data.presets || []).find(p => p.id === e.preset)?.label || data.kinds[e.kind]?.label}{e.offline || isLocal(e.kind) ? ' · offline' : ' · cloud'} · <span className="font-mono">{e.model || 'default model'}</span>{e.hasKey ? ' · key saved' : ''}</div>
                                     </div>
                                     <EngineStatus e={e} />
                                     {!e.builtin && <Toggle on={e.enabled !== false} label={`${e.name} on`} onChange={v => toggleEngine(e, v)} />}
                                 </div>
                                 {e.kind === 'server' && e.state?.status === 'downloading' && <p className="text-[11px] text-amber-300/90">First start: the server downloads {e.model} once (a few minutes).</p>}
                                 <div className="flex flex-wrap gap-1.5 text-[11px]">
-                                    {e.quality ? <span className={`kz-chip ${e.quality.score >= 80 ? '!text-emerald-300' : e.quality.score >= 60 ? '!text-amber-300' : '!text-red-300'}`} title="Last quality test (Quality below)"><GraduationCap className="w-3 h-3" />{e.quality.score}/100</span> : <span className="kz-chip !text-slate-500">not tested yet</span>}
+                                    {e.quality ? <span className={`kz-chip ${e.quality.score >= 80 ? '!text-emerald-300' : e.quality.score >= 60 ? '!text-amber-300' : '!text-red-300'}`} title="Last quality test (Quality below)"><GraduationCap className="w-3 h-3" />{e.quality.score}/100</span> : e.qualityRunning ? <span className="kz-chip !text-blue-300"><Loader2 className="w-3 h-3 animate-spin" />quality test running</span> : <span className="kz-chip !text-slate-500">not tested yet</span>}
+                                    {e.quality && e.quality.score < 60 && !e.quality.stale && <span className="kz-chip !text-red-300" title="It failed many of the 16 test cases"><AlertTriangle className="w-3 h-3" />answers may be wrong — try a bigger model</span>}
+                                    {e.newModels > 0 && !e.builtin && <button type="button" onClick={() => setDialog(e)} className="kz-chip !text-fuchsia-200 hover:!border-fuchsia-300/50" title="Models the provider added in the last 14 days">{e.newModels} new model{e.newModels > 1 ? 's' : ''}</button>}
                                     {e.quality?.stale && <span className="kz-chip !text-amber-300">model changed — test again</span>}
                                     {e.feedback && e.feedback.up + e.feedback.down >= 5 && e.feedback.rate < 60 && <span className="kz-chip !text-red-300" title={Object.entries(e.feedback.reasons).map(([k, v]) => `${k}: ${v}`).join(', ')}><ThumbsDown className="w-3 h-3" />members marked {100 - e.feedback.rate}% of its answers wrong</span>}
                                 </div>
@@ -358,7 +278,7 @@ export default function AiSettings() {
                                 <div className="flex flex-wrap gap-2">
                                     <button onClick={() => test(e)} disabled={busy === e.id} className="kz-btn-ghost !py-1.5 !text-xs">{busy === e.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />} Test</button>
                                     {isLocal(e.kind) && <button onClick={() => pull(e)} disabled={e.pull?.status === 'downloading'} className="kz-btn-ghost !py-1.5 !text-xs"><Download className="w-3.5 h-3.5" /> Download model</button>}
-                                    {!e.builtin && <button onClick={() => setDialog(e)} className="kz-btn-ghost !py-1.5 !text-xs"><Pencil className="w-3.5 h-3.5" /> Edit</button>}
+                                    {!e.builtin && <button onClick={() => setDialog(e)} className="kz-btn-ghost !py-1.5 !text-xs"><Pencil className="w-3.5 h-3.5" /> Model & settings</button>}
                                     {!e.builtin && <button onClick={() => remove(e)} className="kz-btn-ghost !py-1.5 !text-xs hover:!text-red-300"><Trash2 className="w-3.5 h-3.5" /> Remove</button>}
                                 </div>
                             </div>
@@ -456,7 +376,7 @@ export default function AiSettings() {
                 <Activity />
             </Section>
 
-            {dialog && <EngineDialog data={data} initial={dialog === 'new' ? null : dialog} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); load() }} />}
+            {dialog && <ConnectAi data={data} initial={dialog === 'new' ? null : dialog} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); load() }} />}
         </div>
     )
 }

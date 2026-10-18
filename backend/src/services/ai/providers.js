@@ -14,7 +14,7 @@ import { requestJson, AiHttpError } from './http.js'
 import { anthropicChat, anthropicHealth } from './anthropic.js'
 
 export const KINDS = {
-    openai: { label: 'OpenAI-compatible API', needsKey: true, needsUrl: true, example: { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' } },
+    openai: { label: 'OpenAI-compatible API', needsKey: false, needsUrl: true, example: { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' } },
     ollama: { label: 'Ollama server (your own machine)', needsKey: false, needsUrl: true, example: { baseUrl: 'http://192.168.1.50:11434', model: 'qwen2.5:3b' } },
     server: { label: 'KubeEZ server model', needsKey: false, needsUrl: false },
     cluster: { label: 'KubeEZ AI add-on (in a cluster)', needsKey: false, needsUrl: false, example: { model: 'qwen2.5:3b' } },
@@ -61,12 +61,23 @@ async function ollamaTarget(p) {
 
 const toOpenAiMessages = (system, messages) => [...(system ? [{ role: 'system', content: system }] : []), ...messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))]
 
+// servers that reject the JSON-mode field (some local runtimes) — asked without it from then on
+const noJsonMode = new Set()
 async function openAiChat(base, key, model, req, extra = {}) {
-    const r = await requestJson('POST', `${base}/chat/completions`, {
+    const send = (jsonMode) => requestJson('POST', `${base}/chat/completions`, {
         model, messages: toOpenAiMessages(req.system, req.messages),
         max_tokens: req.maxTokens, temperature: req.temperature ?? 0.2,
-        ...(req.json ? { response_format: { type: 'json_object' } } : {})
+        ...(jsonMode ? { response_format: { type: 'json_object' } } : {})
     }, { headers: key ? { authorization: `Bearer ${key}` } : {}, timeoutMs: req.timeoutMs, ...extra })
+    const jsonMode = !!req.json && !noJsonMode.has(base)
+    let r
+    try { r = await send(jsonMode) }
+    catch (e) {
+        // the JSON answer is still asked for in the prompt and checked by KubeEZ
+        if (!jsonMode || ![400, 404, 415, 422, 500, 501].includes(e.status) || !/response_format|json|grammar|unsupported|not supported|unknown|extra (fields|inputs)/i.test(`${e.message} ${e.body || ''}`)) throw e
+        noJsonMode.add(base)
+        r = await send(false)
+    }
     const text = r?.choices?.[0]?.message?.content
     if (typeof text !== 'string') throw new AiHttpError('The model returned no text', { code: 'EMPTY', retryable: true })
     return { text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null }

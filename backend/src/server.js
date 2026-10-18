@@ -34,6 +34,7 @@ import chatopsRoutes from './routes/chatops.js'
 import { mcpEndpoint, mcpTokenRoutes } from './routes/mcp.js'
 import { notifier } from './services/notifier.js'
 import { telegramPoller } from './services/alertActions.js'
+import { startModelRefresh } from './services/ai/modelCatalog.js'
 import { addonVersionService } from './services/addonVersions.js'
 import { canAccessResource } from './utils/access.js'
 import { clusterStore } from './services/clusterStore.js'
@@ -533,6 +534,7 @@ server.listen(PORT, () => {
     setInterval(() => terminalRecorder.prune(), 24 * 3600e3).unref?.()   // terminal recordings, same retention
     startComplianceSchedule()     // monthly compliance reports (Pro)
     startApprovalSweeper()        // temporary access that ran out → RBAC re-synced
+    startModelRefresh()           // every AI engine's model list, daily — new models show up by themselves
     import('./services/ai/providers.js').then(m => m.ensureServerModel()).catch(() => { })   // KubeEZ AI server model (background)
     import('./services/ai/runbookHooks.js').then(m => m.startRunbooks()).catch(e => console.warn('[KubeEZ AI] runbooks not started:', e.message))   // learned runbooks
 

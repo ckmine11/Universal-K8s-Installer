@@ -9,6 +9,9 @@ import { clusterStore } from '../services/clusterStore.js'
 import { auditLog } from '../services/auditLog.js'
 import { latestByEngine, feedbackStats } from '../services/ai/quality.js'
 import { notificationStore } from '../services/notificationStore.js'
+import { PRESETS, presetOf, legacyPreset } from '../config/aiPresets.js'
+import { discover, modelsOf, newCount, OLLAMA_SUGGESTIONS } from '../services/ai/modelCatalog.js'
+import { startExam, isRunning } from '../services/ai/quality.js'
 
 // KubeEZ AI: engines (providers), routing per task, safety switches, a test
 // box and the activity log. Mounted at /api/ai behind requireAuth.
@@ -24,11 +27,18 @@ function cleanProvider(input, orgClusterIds, partial = false) {
         out.name = String(input.name || '').trim().slice(0, 60)
         if (out.name.length < 2) throw bad('Give the engine a name')
     }
+    // a preset ("LM Studio", "OpenRouter"…) decides the engine type, and whether a key is needed
+    const preset = input.preset ? presetOf(input.preset) : null
+    if (input.preset && !preset) throw bad('Unknown engine')
     if (!partial) {
-        if (!KINDS[input.kind] || input.kind === 'server') throw bad('Unknown engine type')
-        out.kind = input.kind
+        const k = preset ? preset.kind : input.kind
+        if (!KINDS[k] || k === 'server') throw bad('Unknown engine type')
+        out.kind = k
+        if (preset) { out.preset = preset.id; out.offline = preset.group === 'offline' }
+        else if (['ollama', 'cluster'].includes(k)) out.offline = true
     }
-    const kind = input.kind
+    const kind = out.kind || input.kind
+    const needsKey = preset ? !!preset.needsKey : KINDS[kind]?.needsKey
     if (input.baseUrl !== undefined && input.baseUrl !== null && input.baseUrl !== '') { checkProviderUrl(input.baseUrl); out.baseUrl = String(input.baseUrl).trim().replace(/\/+$/, '') }
     if (!partial && KINDS[kind]?.needsUrl && !out.baseUrl) throw bad('This engine needs its address')
     if (input.model !== undefined) {
@@ -49,7 +59,7 @@ function cleanProvider(input, orgClusterIds, partial = false) {
         if (k.length > 500) throw bad('That API key is too long')
         out.apiKey = k
     }
-    if (!partial && KINDS[kind]?.needsKey && !out.apiKey) throw bad('This engine needs an API key')
+    if (!partial && needsKey && !out.apiKey) throw bad('This engine needs an API key')
     if (input.enabled !== undefined) out.enabled = !!input.enabled
     return out
 }
@@ -61,10 +71,12 @@ router.get('/', requirePermission('ai:use'), async (req, res) => {
     const s = aiStore.get(req.user.orgId)
     const server = SERVER()
     const latest = latestByEngine(req.user.orgId), fb = feedbackStats(req.user.orgId)
+    const raw = Object.fromEntries(s.providers.map(p => [p.id, p]))
     const engines = [...s.providers.map(p => aiStore.view(p)), ...(server ? [server] : [])].map(p => {
         const q = latest[p.id]
         return {
-            ...p, breaker: breakerState(req.user.orgId, p), queue: queueState(req.user.orgId, p), pull: pulls.get(`${req.user.orgId}:${p.id}`) || null,
+            ...p, preset: p.preset || legacyPreset(p.kind), newModels: raw[p.id] ? newCount(raw[p.id]) : 0,
+            qualityRunning: isRunning(req.user.orgId), breaker: breakerState(req.user.orgId, p), queue: queueState(req.user.orgId, p), pull: pulls.get(`${req.user.orgId}:${p.id}`) || null,
             // the last quality test — and whether the model changed since (then it is untested)
             quality: q ? { score: q.summary.score, at: q.finishedAt, stale: (q.engineModel || null) !== (p.model || null) } : null,
             feedback: fb[p.id] || null
@@ -74,7 +86,7 @@ router.get('/', requirePermission('ai:use'), async (req, res) => {
         enabled: s.enabled, autonomy: s.autonomy, actionsEnabled: s.actionsEnabled, maskEmails: s.maskEmails, maskIps: s.maskIps,
         dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), costRates: s.costRates,
         engines, routes: s.routes, effectiveRoutes: Object.fromEntries(Object.keys(TASKS).map(t => [t, routeFor(req.user.orgId, t).map(p => p.id)])),
-        tasks: TASKS, kinds: KINDS, autonomyLevels: AUTONOMY, server: server ? { model: server.model } : null,
+        tasks: TASKS, kinds: KINDS, presets: PRESETS, ollamaSuggestions: OLLAMA_SUGGESTIONS, saas: process.env.KUBEEZ_MODE === 'saas', autonomyLevels: AUTONOMY, server: server ? { model: server.model } : null,
         clusters: (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => ({ id: c.id, name: c.clusterName, hasAi: !!c.addons?.['kubeez-ai'] })),
         chatops: chatopsChannels(req.user.orgId)
     })
@@ -139,10 +151,39 @@ router.put('/settings', requirePermission('ai:manage'), (req, res) => {
     } catch (e) { fail(res, e) }
 })
 
+// Connect to an engine before saving it: which runtime answers, and which models it offers (live)
+router.post('/discover', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const b = req.body || {}
+        const preset = presetOf(b.preset)
+        if (!preset) throw bad('Pick an engine')
+        const clean = cleanProvider({ ...b, name: b.name || preset.label, model: 'probe' }, (await orgClusters(req)).map(c => c.id))
+        const p = { ...clean, model: null }
+        const r = await discover(p, clean.apiKey || null)
+        res.json(r)
+    } catch (e) { fail(res, e) }
+})
+
+// The models a saved engine offers now (live), with the ones that are new marked
+router.get('/providers/:id/models', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const p = aiStore.get(req.user.orgId).providers.find(x => x.id === req.params.id)
+        if (!p) return res.status(404).json({ error: 'AI engine not found' })
+        res.json(await modelsOf(req.user.orgId, p))
+    } catch (e) { fail(res, e) }
+})
+
 router.post('/providers', requirePermission('ai:manage'), async (req, res) => {
     try {
         const p = aiStore.addProvider(req.user.orgId, cleanProvider(req.body || {}, (await orgClusters(req)).map(c => c.id)))
-        res.json(aiStore.view(p))
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.engine_added', detail: `${p.name} (${p.preset || p.kind}${p.model ? `, ${p.model}` : ''})` })
+        // the quality test runs on its own, so a weak model is noticed before people rely on it
+        let qualityCheck = null
+        if (req.body?.qualityCheck === true) {
+            if (isRunning(req.user.orgId)) qualityCheck = 'busy'
+            else { try { startExam(req.user, [{ ...p }]); qualityCheck = 'started' } catch { qualityCheck = null } }
+        }
+        res.json({ ...aiStore.view(p), qualityCheck })
     } catch (e) { fail(res, e) }
 })
 router.put('/providers/:id', requirePermission('ai:manage'), async (req, res) => {

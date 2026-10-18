@@ -164,7 +164,7 @@ export async function ask(user, opts) {
     for (const p of route) {
         if (!opts.only && breakerState(orgId, p).open) { attempts.push({ provider: p.name, kind: p.kind, skipped: 'failing — paused for a moment' }); continue }
         if (!opts.only && p.kind === 'server' && aiStore.usedToday(orgId) >= s.dailyLimit) { attempts.push({ provider: p.name, kind: p.kind, skipped: `daily limit (${s.dailyLimit}) reached` }); continue }
-        const local = LOCAL_KINDS.has(p.kind)
+        const local = LOCAL_KINDS.has(p.kind) || !!p.offline   // a model on someone's own machine: slower, one at a time
         const timeoutMs = opts.timeoutMs || (local ? 150000 : 60000)
         let release
         try { release = await acquire(keyOf(orgId, p), local ? 1 : 4, local ? 180000 : 60000) }
