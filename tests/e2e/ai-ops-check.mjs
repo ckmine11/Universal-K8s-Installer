@@ -247,45 +247,63 @@ for (const r of running) { const u = await undoManifests(ssh, r, USER); console.
 const created = running.flatMap(r => r.created)
 ok(await waitFor(() => !created.some(ref => { const [kind, name] = ref.split('/'); return K(`-n golden get ${kind.toLowerCase()} ${name} -o name`).code === 0 })), `undo removed all of it (${created.join(', ')})`)
 
-console.log('== phase 5: ChatOps answers from the real cluster')
+console.log('== phase 5: Ask AI / ChatOps — the connected AI answers from the real cluster')
 fs.writeFileSync(path.join(DATA, 'clusters.json'), JSON.stringify([{ id: C.id, clusterName: 'shopcluster', orgId: C.orgId, ownerId: C.ownerId, k8sVersion: '1.35.0', status: 'completed', masterNodes: [{ ip: '127.0.0.1', username: 'root' }], workerNodes: [] }]))
 const { automationEngine } = await import('../../backend/src/services/automationEngine.js')
 automationEngine.connectSSH = async () => ssh
 const { handleChat } = await import('../../backend/src/services/ai/chatops.js')
-aiStore.save(C.orgId, { enabled: false })   // facts only — no model here
+aiStore.save(C.orgId, { enabled: true, providers: [] })
+const none = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'kitne namespace hai' })
+ok(/^Please connect an AI model first/.test(none.reply), `no AI connected → "${none.reply.slice(0, 40)}…"`)
+// a recording AI: what KubeEZ hands the AI is checked against kubectl
+let sent = '', aiReply = 'OK.'
+const recorder = http.createServer((req, res) => {
+    let b = ''; req.on('data', c => b += c)
+    req.on('end', () => {
+        const body = JSON.parse(b || '{}'); sent = (body.messages || []).map(m => m.content).join('\n')
+        const content = body.response_format ? JSON.stringify({ summary: 'The app cannot reach its database db:5432 and exits.', cause: 'db:5432 is not reachable.', evidence: ['FATAL: cannot connect to postgres at db:5432'], fix: ['Check the db Service'], confidence: 'high', change: '', missing: '' }) : aiReply
+        res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ choices: [{ message: { content } }] }))
+    })
+})
+await new Promise(r => recorder.listen(0, '127.0.0.1', r))
+aiStore.addProvider(C.orgId, { name: 'Recorder', kind: 'openai', preset: 'other-local', offline: true, baseUrl: `http://127.0.0.1:${recorder.address().port}/v1`, model: 'rec' })
+aiReply = 'web was rolled out to a new image.'
 const chg = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'shopcluster pe kya badla 1h' })
-ok(/shopcluster — \d+ change/.test(chg.reply) && /Deployment web rolled out/.test(chg.reply), `"kya badla" answered from the cluster:\n${chg.reply.split('\n').slice(0, 4).join('\n')}`)
+ok(chg.reply.endsWith(aiReply) && /Deployment web rolled out/.test(sent), `"kya badla": the AI got the real change timeline → ${chg.reply.split('\n').pop()}`)
+aiReply = 'shopcluster is up; one app is crash-looping.'
 const st = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'sab theek hai?' })
-ok(/shopcluster — risk \d+\/100/.test(st.reply), `"sab theek hai?" → ${st.reply.split('\n')[0]}`)
+ok(st.reply === aiReply && /shopcluster: Kubernetes 1\.35\.0.*risk \d+\/100/.test(sent), `"sab theek hai?": the AI got clusters + risk + problems`)
 
-console.log('== Ask AI: what is in the cluster — exact, from the live cluster, no AI')
+console.log('== Ask AI: what is in the cluster — the AI gets exact live counts (checked against kubectl)')
 const realNs = K(`get ns -o name`).out.split('\n').filter(Boolean).length
 const realPods = K(`get pods -A -o name`).out.split('\n').filter(Boolean).length
 const realShopPods = K(`-n shop get pods -o name`).out.split('\n').filter(Boolean).length
 const realNodes = K(`get nodes -o name`).out.split('\n').filter(Boolean).length
+const asked = async (text) => { aiReply = 'Here is what the cluster shows.'; const r = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text }); return { r, facts: sent } }
 let t0 = Date.now()
-const nsA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'kitne namespace hai' })
-ok(new RegExp(`^shopcluster has ${realNs} namespaces`).test(nsA.reply) && /• shop\b/.test(nsA.reply) && /• kube-system/.test(nsA.reply), `"kitne namespace hai" → ${nsA.reply.split('\n')[0]} (kubectl: ${realNs}) in ${Date.now() - t0} ms`)
-t0 = Date.now()
-const podA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'how many pods are there' })
-ok(new RegExp(`^shopcluster has ${realPods} pods — `).test(podA.reply), `"how many pods" → ${podA.reply.split('\n')[0]} (kubectl: ${realPods}) in ${Date.now() - t0} ms (cached)`)
-const shopA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'pods in shop' })
-ok(new RegExp(`^shopcluster has ${realShopPods} pods in shop`).test(shopA.reply), `"pods in shop" → ${shopA.reply.split('\n')[0]}`)
-const nodeA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'nodes dikhao' })
-ok(new RegExp(`shopcluster has ${realNodes} nodes? — ${realNodes} Ready`).test(nodeA.reply) && /control-plane · v1\.\d+/.test(nodeA.reply), `"nodes dikhao" → ${nodeA.reply.split('\n').slice(0, 2).join(' | ')}`)
-const depA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'shop me deployments' })
-ok(/shop\/web — \d+\/\d+ ready/.test(depA.reply), `"shop me deployments" → ${depA.reply.split('\n').slice(0, 2).join(' | ')}`)
-const verA = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'kubernetes version kya hai' })
-ok(/^shopcluster: Kubernetes v1\.\d+\.\d+/.test(verA.reply), `"version" → ${verA.reply}`)
+let x = await asked('kitne namespace hai')
+ok(x.r.reply === 'Here is what the cluster shows.' && new RegExp(`KubeEZ counted \\(exact, from shopcluster\\)[^]*shopcluster has ${realNs} namespaces`).test(x.facts) && /• kube-system/.test(x.facts), `"kitne namespace hai": the AI was given ${realNs} namespaces (kubectl: ${realNs}), ${Date.now() - t0} ms`)
+x = await asked('how many pods are there')
+ok(new RegExp(`shopcluster has ${realPods} pods — `).test(x.facts), `"how many pods": the AI was given ${realPods} (kubectl: ${realPods})`)
+x = await asked('pods in shop')
+ok(new RegExp(`shopcluster has ${realShopPods} pods in shop`).test(x.facts), `"pods in shop": ${realShopPods} (kubectl: ${realShopPods})`)
+x = await asked('nodes dikhao')
+ok(new RegExp(`shopcluster has ${realNodes} nodes? — ${realNodes} Ready`).test(x.facts) && /control-plane · v1\.\d+/.test(x.facts), `"nodes dikhao": ${realNodes} node(s), roles and versions`)
+x = await asked('shop me deployments')
+ok(/shop\/web — \d+\/\d+ ready/.test(x.facts), '"shop me deployments": each with ready/desired')
+x = await asked('kubernetes version kya hai')
+ok(/shopcluster: Kubernetes v1\.\d+\.\d+/.test(x.facts), '"version": the real kubelet version')
 
-console.log('== Ask AI: "check the logs of this pod" — real logs, describe and events → problem, cause, fix')
+console.log('== Ask AI: "check the logs of this pod" — the AI gets the real logs, describe and events')
 t0 = Date.now()
 const look = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'crasher ka log check karo' })
 ok(/^🔎 shopcluster: shop\/crasher-[a-z0-9-]+ — (CrashLoopBackOff|Error)/.test(look.reply), `found the app's pod: ${look.reply.split('\n')[0]} (${Date.now() - t0} ms)`)
-ok(/› FATAL: cannot connect to postgres at db:5432/.test(look.reply) && /Last log lines:\n {2}FATAL: cannot connect to postgres/.test(look.reply), 'the real crash log is the proof, and is shown')
-ok(/Problem: The app cannot reach something it depends on: "cannot connect to postgres at db:5432"/.test(look.reply) && /How to fix it:\n1\. /.test(look.reply), `KubeEZ's own diagnosis and fix steps (AI off):\n${look.reply.split('\n').slice(2, 7).join('\n')}`)
+ok(/FATAL: cannot connect to postgres at db:5432/.test(sent) && /KubeEZ's own check of the logs\/events: The app cannot reach something it depends on/.test(sent), 'the AI got the real crash log, and KubeEZ\'s own finding as a hint')
+ok(/Problem: The app cannot reach its database db:5432 and exits\./.test(look.reply) && /Proof:\n  › FATAL: cannot connect to postgres at db:5432/.test(look.reply) && /Last log lines:\n {2}FATAL: cannot connect to postgres/.test(look.reply), `the AI's answer, its proof checked against the real log:\n${look.reply.split('\n').slice(2, 6).join('\n')}`)
 const guess = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'crash wala pod check karo' })
 ok(/shop\/crasher-/.test(guess.reply.split('\n')[0]), `"crash wala pod check karo" picks the crashing pod: ${guess.reply.split('\n')[0]}`)
+recorder.closeAllConnections?.(); recorder.close()
+aiStore.save(C.orgId, { providers: [] })
 
 console.log('== Connect AI: a model on the office network (a real Ollama), reached THROUGH the cluster')
 if (process.env.GPU_IP) {
@@ -323,7 +341,12 @@ if (process.env.GPU_IP) {
     const oll = aiStore.addProvider(C.orgId, { name: 'Office GPU (Ollama)', kind: 'ollama', preset: 'ollama', offline: true, baseUrl: `http://${GPU}:11434`, model, viaClusterId: C.id })
     const a2 = await ask(USER, { task: 'explain', only: oll, json: true, maxTokens: 300, question: 'A pod restarts with OOMKilled. Reply as JSON with summary, cause, fix (array), evidence (array), confidence, missing.', validate: (x) => typeof x.summary === 'string' ? null : 'no summary' }).catch(e => ({ error: e.message }))
     ok(a2.json?.summary, `the Ollama type through the cluster, JSON answer: ${(a2.json?.summary || a2.error || '').slice(0, 100)}`)
-    aiStore.removeProvider(C.orgId, gen.id); aiStore.removeProvider(C.orgId, oll.id)
+    // Ask AI end to end: a real question, real cluster facts, the real AI on the office network
+    aiStore.removeProvider(C.orgId, oll.id)
+    const t3 = Date.now()
+    const real = await handleChat({ orgId: C.orgId, chatKey: 'e2e-real', who: 'ravi', source: 'Telegram', text: 'kitne namespace hai?' })
+    ok(real.reply && !/connect an AI|did not answer/i.test(real.reply) && /\d/.test(real.reply), `Ask AI through the real AI in ${((Date.now() - t3) / 1000).toFixed(1)} s ("kitne namespace hai?"): ${real.reply.replace(/\n+/g, ' ').slice(0, 160)}`)
+    aiStore.removeProvider(C.orgId, gen.id)
     process.env.KUBEEZ_MODE = prevMode
 } else ok(false, 'GPU_IP is not set — run through e2e.sh ai-ops, which starts the GPU server')
 

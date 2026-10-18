@@ -147,17 +147,14 @@ describe('Ask AI: "check the logs of this pod"', () => {
     _setSnapshot('pd1', SNAP)
     const admin = { id: 'a1', username: 'boss', orgId: org, role: 'admin' }
 
-    test('AI off: KubeEZ\'s own check — the problem, the cause, the fix and the log, in English (asked in Hinglish)', async () => {
-        aiStore.save(org, { enabled: false })
+    test('no AI connected: "connect an AI model first" — nothing is read from the cluster', async () => {
+        aiStore.save(org, { enabled: true })
+        const before = cmds.length
         const r = await handleChat({ orgId: org, chatKey: 'tg:pd', who: 'ravi', source: 'Telegram', text: 'web-6d4f9-b2 ka log check karo' })
-        assert.match(r.reply, /^🔎 prod: shop\/web-6d4f9-b2 — CrashLoopBackOff \(0\/1 ready, 14 restarts, node w-1\)/)
-        assert.match(r.reply, /Problem: The app cannot reach something it depends on: "ECONNREFUSED 10\.96\.7\.7:5432"/)
-        assert.match(r.reply, /Cause: /); assert.match(r.reply, /Proof:\n  › 2026\/10\/17 10:00:02 Error: connect ECONNREFUSED/)
-        assert.match(r.reply, /How to fix it:\n1\. /)
-        assert.match(r.reply, /Last log lines:\n {2}2026\/10\/17 10:00:01 starting/)
-        assert.equal(r.direct, true)
-        assert.ok(cmds.some(c => /logs web-6d4f9-b2 -n shop --all-containers --previous/.test(c)), 'the crashed container\'s log is read too')
-        assert.equal(cmds.some(c => /kubectl (delete|apply|patch|scale|rollout restart)/.test(c)), false, 'read-only')
+        assert.match(r.reply, /^Please connect an AI model first/)
+        assert.match(r.reply, /AI settings → Connect AI/)
+        assert.equal(r.needsAi, true)
+        assert.equal(cmds.length, before)
     })
 
     test('AI on: the explanation with proof and a fix KubeEZ can run (offered in the web app)', async () => {
@@ -177,20 +174,26 @@ describe('Ask AI: "check the logs of this pod"', () => {
         assert.match(r.reply, /1 dangerous step\(s\) removed/)
         assert.match(r.reply, /🛠 A fix KubeEZ can run: restart deployment\/web/)
         assert.deepEqual(r.fix, { clusterId: 'pd1', spec: { type: 'restart', kind: 'deployment', name: 'web', namespace: 'shop' }, canAct: true })
-        assert.match(sent, /KubeEZ's own check of the logs\/events: The app cannot reach/, 'the AI gets KubeEZ\'s own finding')
+        assert.match(sent, /KubeEZ's own check of the logs\/events: The app cannot reach/, 'the AI gets KubeEZ\'s own finding as a hint')
+        assert.ok(cmds.some(c => /logs web-6d4f9-b2 -n shop --all-containers --previous/.test(c)), 'the crashed container\'s log is read too')
+        assert.equal(cmds.some(c => /kubectl (delete|apply|patch|scale|rollout restart)/.test(c)), false, 'read-only')
+        assert.match(r.reply, /Last log lines:\n {2}2026\/10\/17 10:00:01 starting/)
         assert.match(sent, /ECONNREFUSED/, 'and the real log')
-        assert.equal(r.direct, false)
+        assert.deepEqual(r.engine, { provider: 'Fake', model: 'm' }, 'the answer says which AI wrote it')
     })
 
-    test('a healthy pod: no AI call needed', async () => {
-        let called = false
-        modelReply = () => { called = true; return '{}' }
-        const prevLog = LOG
+    test('a healthy pod: the AI answers too, told it is running and ready', async () => {
+        let sent = ''
+        modelReply = (body) => { sent = body.messages.map(m => m.content).join('\n'); return JSON.stringify({ summary: 'web-6d4f9-a1 is healthy: it is running and its log shows only normal requests.', cause: '', evidence: ['GET / 200'], fix: [], confidence: 'high', missing: '' }) }
         ssh.execCommand = (orig => async (cmd) => / logs /.test(cmd) ? { stdout: 'GET / 200' } : orig(cmd))(ssh.execCommand)
         const r = await handleChat({ orgId: org, chatKey: 'web:a1', who: 'boss', source: 'Web', text: 'check web-6d4f9-a1 logs', user: admin, rate: 60 })
-        assert.match(r.reply, /running and ready; the logs show no errors/)
-        assert.equal(called, false)
-        assert.ok(prevLog)
+        assert.match(r.reply, /Problem: web-6d4f9-a1 is healthy/)
+        assert.match(sent, /running and ready right now/)
+    })
+    test('the AI does not answer: said plainly, with the reason', async () => {
+        modelReply = () => 'not json at all'
+        const r = await handleChat({ orgId: org, chatKey: 'web:a1', who: 'boss', source: 'Web', text: 'check the logs of api-5c8-x', user: admin, rate: 60 })
+        assert.match(r.reply, /The AI did not answer this time \(answer rejected: not valid JSON/, 'with the engine\'s own reason')
     })
 
     test('a member limited to one namespace cannot look into another', async () => {

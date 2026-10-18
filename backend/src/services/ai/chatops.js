@@ -21,7 +21,7 @@ import { clusterStore } from '../clusterStore.js'
 import { auditLog } from '../auditLog.js'
 import { label as reasonLabel } from '../../config/incidentCatalog.js'
 import { aiStore } from './aiStore.js'
-import { ask, AiUnavailable } from './engine.js'
+import { ask, AiUnavailable, routeFor } from './engine.js'
 import { explainIncidentFull, onCluster } from './incidentExplain.js'
 import { collectChanges, changesText } from './changes.js'
 import { summarizeChanges } from './doctor.js'
@@ -40,10 +40,10 @@ const RATE = 20, RATE_MS = 3600e3
 const publicUrl = () => (process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/+$/, '')
 const link = (path) => publicUrl() ? `${publicUrl()}${path}` : null
 
-export const CHAT_SYSTEM = 'You answer questions about the user\'s Kubernetes clusters in a chat app. Keep it short: at most 6 lines, plain text, no tables. The workspace facts are read live from the clusters and are exact: use them for anything about the user\'s clusters, and never guess a count or a name that is not in them. For general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. For actions, point to KubeEZ (Incidents, AI → What changed, AI settings).'
+export const CHAT_SYSTEM = 'You are KubeEZ AI in a chat about the user\'s Kubernetes clusters. Answer exactly the question that was asked — directly, specifically and helpfully, in plain text (short lists are fine, no tables), at most about 12 lines. The workspace facts are read live from the clusters right now and are exact: use them for anything about the user\'s clusters — counts, names, states, problems — and never guess a number or a name that is not in them. When the facts contain "KubeEZ counted", use those numbers and names exactly. If the facts do not contain what is needed, say what is missing. For general Kubernetes questions answer from knowledge. Never claim you changed anything — from chat you can only explain. Open problems are numbered: the user can reply "why N" for the cause or "fix N" for a fix.'
 
 // ── answers are always in English (questions may be English, Hindi or Hinglish) ──
-const L = { looking: '🔎 Looking into it…', none: '✅ No open problems.', limit: (m) => `Too many questions — try again in ${m} min.`, off: 'KubeEZ AI is turned off for this workspace.', noEngine: 'No AI is connected to this workspace yet, so I cannot explain this one. An admin can connect one in AI settings → Connect AI (your own model, offline or cloud). I can still answer what runs in your clusters — e.g. "how many pods", "show nodes", "check the logs of web-2".', noAi: 'No AI engine could answer right now — here are the facts:', unknownN: (n) => `There is no problem #${n} — send "incidents" for the list.`, openIn: 'Open in KubeEZ to preview and apply:', noFix: 'No fix KubeEZ can run for this one — the steps above are for a person.' }
+const L = { looking: '🔎 Looking into it…', none: '✅ No open problems.', limit: (m) => `Too many questions — try again in ${m} min.`, off: 'KubeEZ AI is turned off for this workspace (AI settings).', noEngine: 'Please connect an AI model first. Ask AI answers through the AI connected to this workspace, and none is connected yet. An admin can connect one in AI settings → Connect AI — any model: Claude, Gemini, OpenAI, OpenRouter, Groq…, or your own offline model (Ollama, LM Studio, vLLM…). Then ask again.', aiDown: (why) => `The AI did not answer this time${why ? ` (${why})` : ''}. Please try again in a moment, or check the engine in AI settings.`, unknownN: (n) => `There is no problem #${n} — send "incidents" for the list.`, openIn: 'Open in KubeEZ to preview and apply:', noFix: 'No fix KubeEZ can run for this one — the steps above are for a person.' }
 
 // ── what was asked ──
 export function intentOf(raw) {
@@ -129,105 +129,94 @@ export async function handleChat(ctx) {
     state.asked.push(Date.now())
     auditLog.record({ orgId, actor: { username: `${who} (${source})` }, action: 'ai.chatops', detail: `${intent.kind}: ${String(intent.text).slice(0, 120)}` })
     const u = ctx.user || user(orgId, who, source)
-    if (intent.kind === 'explain' && !s.enabled) return { reply: L.off }
-    // "nodes ka status", "pods with problems" — about what is in the cluster
-    // "web-2 me kya issue hai" — a pod or app named in the question (from the last look at the clusters)
-    if (['status', 'incidents'].includes(intent.kind)) {
-        const q = queryOf(intent.text)
-        const named = (sc.visible || await clustersOf(sc)).some(c => { const snap = peekSnapshot(c.id); return snap && targetOf(intent.text, snap) })
-        if ((q && q.resource !== 'warnings') || named) { intent.was = intent.kind; intent.kind = 'ask' }
-    }
+    if (intent.kind === 'help') return { reply: helpText() }
+    // every answer comes from the AI connected to the workspace
+    if (!s.enabled) return { reply: L.off }
+    if (!routeFor(orgId, 'chat').length) return { reply: L.noEngine, needsAi: true }
 
     try {
         switch (intent.kind) {
-            case 'help': return { reply: helpText() }
-            case 'incidents': return { reply: listText(sc, state) }
-            case 'status': return statusReply(sc, state)
             case 'explain': case 'fix': {
                 const inc = pick(sc, state, intent.n)
                 if (!inc) return { reply: L.unknownN(intent.n) }
                 const cluster = (await clustersOf(sc)).find(c => c.id === inc.clusterId)
                 if (!cluster) return { reply: L.unknownN(intent.n) }
-                if (!s.enabled) return { reply: L.off }
                 await ctx.send?.(L.looking)
                 const out = await explainIncidentFull(u, inc, cluster)
                 const a = out.answer
                 const head = `${sev(inc)} ${reasonLabel(inc.reason)} — ${inc.clusterName}: ${inc.namespace ? `${inc.namespace}/` : ''}${inc.target}`
                 const body = [head, '', a.summary, a.cause ? `→ ${a.cause}` : '', a.change ? `Δ ${a.change}` : '', ...(a.fix || []).slice(0, 3).map((x, i) => `${i + 1}. ${x}`), a.blockedSteps?.length ? `⚠ ${a.blockedSteps.length} dangerous step(s) removed by KubeEZ.` : ''].filter(Boolean)
-                if (intent.kind === 'explain') return { reply: [...body, '', link(`/incidents?open=${inc.id}`) || ''].filter(Boolean).join('\n') }
+                const engine = out.engine ? { provider: out.engine.provider, model: out.engine.model } : null
+                if (intent.kind === 'explain') return { reply: [...body, '', link(`/incidents?open=${inc.id}`) || ''].filter(Boolean).join('\n'), engine }
                 // fix: the dry-run of the suggested (or learned) fix — applied only in KubeEZ
                 const spec = a.action || (out.runbook && out.allowedActions?.find(x => x.type === out.runbook.action.type))
-                if (!spec) return { reply: [...body, '', L.noFix].join('\n') }
+                if (!spec) return { reply: [...body, '', L.noFix].join('\n'), engine }
                 const plan = await onCluster(cluster, (ssh) => planAction(ssh, spec)).catch(e => ({ blocked: e.message }))
-                return { reply: [head, '', `🛠 ${plan.title || `${spec.type} ${spec.kind}/${spec.name}`}`, plan.change || '', plan.blocked ? `⛔ ${plan.blocked}` : plan.dryRun ? `${plan.dryRun.ok ? '✅' : '❌'} dry-run ${plan.dryRun.ok ? 'passed' : 'failed'}` : '', plan.undo?.text ? `↩ ${plan.undo.text}` : '', '', L.openIn, link(`/incidents?open=${inc.id}`) || 'KubeEZ → Incidents'].filter(x => x !== '').join('\n') }
+                return { reply: [head, '', `🛠 ${plan.title || `${spec.type} ${spec.kind}/${spec.name}`}`, plan.change || '', plan.blocked ? `⛔ ${plan.blocked}` : plan.dryRun ? `${plan.dryRun.ok ? '✅' : '❌'} dry-run ${plan.dryRun.ok ? 'passed' : 'failed'}` : '', plan.undo?.text ? `↩ ${plan.undo.text}` : '', '', L.openIn, link(`/incidents?open=${inc.id}`) || 'KubeEZ → Incidents'].filter(x => x !== '').join('\n'), engine }
             }
             case 'changes': {
                 const clusters = await clustersOf(sc)
                 const c = findCluster(clusters, intent.text)
                 if (!c) return { reply: `Which cluster? ${clusters.map(x => x.clusterName).join(', ')}` }
+                await ctx.send?.(L.looking)
                 const r = await collectChanges(c, { hours: intent.hours })
                 if (!r.items.length) return { reply: `${c.clusterName}: no changes in the last ${intent.hours} h.` }
-                const facts = `${c.clusterName} — ${r.items.length} change(s), last ${intent.hours} h:\n${changesText(r.items, 8).split('\n').map(l => `• ${l.replace(/^\S+ /, '')}`).join('\n')}`
-                if (!s.enabled) return { reply: facts }
-                await ctx.send?.(L.looking)
-                try { const sum = await summarizeChanges(u, c, r); return { reply: `${c.clusterName} (${intent.hours} h):\n${sum.summary}` } }
-                catch { return { reply: facts } }
+                const sum = await summarizeChanges(u, c, r)
+                return { reply: `${c.clusterName} (${intent.hours} h):\n${sum.summary}`, engine: sum.engine ? { provider: sum.engine.provider, model: sum.engine.model } : null }
             }
             default: {
+                await ctx.send?.(L.looking)
                 const clusters = await clustersOf(sc)
-                // the clusters this is about: the one named, else all of them (up to 5)
+                // the clusters this is about: the one named, else all of them (up to 5) — read live
                 const named = clusters.filter(c => new RegExp(`(^|[^a-z0-9-])${String(c.clusterName).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9-])`).test(intent.text.toLowerCase()))
                 const about = (named.length ? named : clusters).slice(0, 5)
                 const snaps = await Promise.all(about.map(c => within(snapshotOf(c), 20e3).then(snap => ({ c, snap: limitSnapshot(snap, nsFilter(sc, u, c)) })).catch(e => ({ c, error: e.message }))))
-                // a pod or app named in the question ("web-2", "api deployment"), or "the crashing pod"
+                // a pod or app named in the question ("web-2", "api deployment"), or "the crashing pod": its logs, describe, events
                 const found = snaps.map(x => x.snap && { ...x, t: targetOf(intent.text, x.snap) }).find(x => x?.t)
                 if (found && ['pod', 'deployment', 'statefulset', 'daemonset'].includes(found.t.kind) && DIAG.test(intent.text.toLowerCase())) {
-                    return await lookInto({ ctx, u, sc, s, cluster: found.c, t: found.t })
+                    return await lookInto({ ctx, u, sc, cluster: found.c, t: found.t })
                 }
-                // what is in a cluster: answered exactly by KubeEZ, no AI, a second or two
+                // the live facts the AI answers from
+                const blocks = []
+                const list = openIncidents(sc).slice(0, 10)
+                state.list = list.map(i => i.id); state.at = Date.now()   // so "why 2" / "fix 2" work after this answer
+                const mon = incidentDetector.getMonitoring()
+                blocks.push({ label: 'clusters (live)', text: clusters.map(c => {
+                    const inc = incidentDetector.getIncidents().filter(i => i.clusterId === c.id && !CLOSED.has(i.status) && !i.causedBy && mayView(sc, i))
+                    const m = mon.find(x => x.clusterId === c.id)
+                    const r = riskScore({ cluster: c, incidents: inc, monitoring: m ? { watched: true, connected: m.connected } : { watched: false }, snapshot: cachedSnapshot(c.id), offsite: undefined, compliance: null })
+                    return `${c.clusterName}: Kubernetes ${c.k8sVersion}, ${(c.masterNodes || []).length} control-plane, ${(c.workerNodes || []).length} workers; risk ${r.score}/100 (${r.level})${r.factors[0] ? ` — ${r.factors[0].label}` : ''}; ${inc.length} open problem(s)`
+                }).join('\n') || 'No clusters yet.' })
+                blocks.push({ label: 'open problems (numbered)', text: list.map((i, n) => `${n + 1}. ${i.severity} — ${reasonLabel(i.reason)} on ${i.clusterName} ${i.namespace ? `${i.namespace}/` : ''}${i.target}: ${i.message}`).join('\n') || 'none' })
+                for (const x of snaps) blocks.push(x.snap ? { label: `cluster ${x.c.clusterName} — read live just now`, text: snapshotText(x.snap, x.c.clusterName) } : { label: `cluster ${x.c.clusterName}`, text: `Could not be read just now: ${x.error}` })
+                // "how many …" / "which …": KubeEZ counts exactly, the AI tells it
                 const q = queryOf(intent.text, snaps.flatMap(x => x.snap?.namespaces || []))
-                if (q && !clusters.length) return { reply: 'No clusters yet — add or install one in KubeEZ first.' }
-                if (q && !found) {
-                    const parts = snaps.map(x => x.snap ? answerQuery(q, x.snap, x.c.clusterName) : `${x.c.clusterName}: ⚠ could not read the cluster — ${x.error}`).filter(Boolean)
-                    if (parts.length) return { reply: parts.join('\n\n').slice(0, 3500), direct: snaps.some(x => x.snap) }
-                }
-                if (intent.was === 'incidents' && !found) return { reply: listText(sc, state) }
-                if (intent.was === 'status' && !found) return statusReply(sc, state)
-                if (!s.enabled) return { reply: L.off }
-                await ctx.send?.(L.looking)
+                if (q) for (const x of snaps.filter(y => y.snap)) { const a = answerQuery(q, x.snap, x.c.clusterName); if (a) blocks.push({ label: `KubeEZ counted (exact, from ${x.c.clusterName})`, text: a }) }
                 // a question about one thing ("web service ka port", "api ka image kya hai"): its live describe too
-                let about1 = null
                 if (found && mayLook(sc, u, found.c)) {
                     const cmd = describeCmd(found.t.kind, found.t.ns, found.t.name)
-                    if (cmd) about1 = await within(onCluster(found.c, (ssh) => ssh.execCommand(cmd)), 25e3).then(r => ({ label: `kubectl describe ${found.t.kind} ${found.t.ns}/${found.t.name} (live)`, text: String(r.stdout || r.stderr || '').slice(0, 6000) }), () => null)
+                    if (cmd) { const d = await within(onCluster(found.c, (ssh) => ssh.execCommand(cmd)), 25e3).then(r => String(r.stdout || r.stderr || ''), () => ''); if (d) blocks.push({ label: `kubectl describe ${found.t.kind} ${found.t.ns}/${found.t.name} (live)`, text: d.slice(0, 6000) }) }
                 }
-                const facts = [
-                    `Clusters: ${clusters.map(c => `${c.clusterName} (Kubernetes ${c.k8sVersion}, ${(c.masterNodes || []).length} control-plane, ${(c.workerNodes || []).length} workers)`).join('; ') || 'none'}`,
-                    `Open problems: ${openIncidents(sc).slice(0, 15).map(i => `${reasonLabel(i.reason)} on ${i.clusterName} ${i.namespace ? `${i.namespace}/` : ''}${i.target}: ${i.message}`).join(' | ') || 'none'}`,
-                    ...snaps.filter(x => x.snap).map(x => snapshotText(x.snap, x.c.clusterName))
-                ].join('\n')
-                const r = await ask(u, {
-                    task: 'chat', purpose: `chat (${source})`, maxTokens: 350,
-                    system: CHAT_SYSTEM,
-                    data: [{ label: 'workspace facts (live)', text: facts }, ...(about1 ? [about1] : [])], question: intent.text
-                })
-                return { reply: r.text.trim().slice(0, 3500) }
+                const r = await ask(u, { task: 'chat', purpose: `chat (${source})`, maxTokens: 500, system: CHAT_SYSTEM, data: blocks, question: intent.text })
+                return { reply: r.text.trim().slice(0, 3800), engine: { provider: r.provider, model: r.model } }
             }
         }
     } catch (e) {
-        if (e.none) return { reply: L.noEngine }
-        if (e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE') return { reply: `${L.noAi}\n${listText(sc, state)}` }
+        if (e.none) return { reply: L.noEngine, needsAi: true }
+        if (e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE') return { reply: L.aiDown(aiWhy(e)) }
         return { reply: `⚠ ${e.message}` }
     }
 }
+// the engines' own reasons, shortly ("No answer within 60 s", "Invalid API key")
+const aiWhy = (e) => [...new Set((e.attempts || []).map(a => a.error || a.skipped).filter(Boolean))].slice(0, 2).join('; ').slice(0, 200)
 
 // ── looking into a pod: logs, describe, events → problem, cause, fix ──
 // may this asker read logs and describe in that cluster? (team chats: the workspace, like its alerts)
 const mayLook = (sc, u, c) => !sc.user || kubeLevelOn(u, c) !== 'none'
-const W = { problem: 'Problem', cause: 'Cause', proof: 'Proof', fix: 'How to fix it', log: 'Last log lines', kubeez: 'KubeEZ\'s own check', changed: 'Changed just before', run: 'A fix KubeEZ can run', removed: (n) => `⚠ ${n} dangerous step(s) removed by KubeEZ.`, noPods: 'it has no pods right now', worst: 'its pod with the most trouble', others: 'Other pods with trouble', notAllowed: 'Your role may not read logs in this cluster.', aiFail: 'The AI could not answer right now — this is KubeEZ\'s own check.', aiNone: 'This is KubeEZ\'s own check. Connect an AI (AI settings → Connect AI) for a deeper explanation.', unknown: 'KubeEZ found no known cause in the logs and events.', webApply: 'Preview it (dry-run) and apply it below.', chatApply: 'Preview and apply it in KubeEZ → Ask AI.' }
+const W = { problem: 'Problem', cause: 'Cause', proof: 'Proof', fix: 'How to fix it', log: 'Last log lines', changed: 'Changed just before', run: 'A fix KubeEZ can run', removed: (n) => `⚠ ${n} dangerous step(s) removed by KubeEZ.`, noPods: 'it has no pods right now', worst: 'its pod with the most trouble', others: 'Other pods with trouble', notAllowed: 'Your role may not read logs in this cluster.', webApply: 'Preview it (dry-run) and apply it below.', chatApply: 'Preview and apply it in KubeEZ → Ask AI.' }
 const looked = new Map()   // pod + 2-minute slot → the AI answer (asking twice costs one model call)
 
-async function lookInto({ ctx, u, sc, s, cluster, t }) {
+async function lookInto({ ctx, u, sc, cluster, t }) {
     if (!mayLook(sc, u, cluster)) return { reply: W.notAllowed }
     const pod = t.pod, wl = t.workload
     if (!pod) return { reply: `${cluster.clusterName}: ${t.kind} ${t.ns}/${t.name} — ${wl.ready}/${wl.want} ready, ${W.noPods}${wl.want === 0 ? ' (scaled to 0)' : ''}.` }
@@ -241,16 +230,16 @@ async function lookInto({ ctx, u, sc, s, cluster, t }) {
     const inc = podIncident(cluster, pod)
     const fresh = await within(onCluster(cluster, (ssh) => podEvidence(ssh, inc)), 35e3).catch(e => ({ data: [], workload: null, error: e.message }))
     if (fresh.error && !fresh.data.length) return { reply: [...intro, '', `⚠ ${fresh.error}`].join('\n') }
+    // KubeEZ's own reading of the logs/events goes to the AI as a hint; the answer is the AI's
     const quick = quickDiagnosis(fresh.data, pod)
-    const fill = (x) => String(x).split('<ns>').join(pod.ns).split('<name>').join(fresh.workload?.name || pod.name).split('<node>').join(pod.node || '<node>')
     const tail = logTail(fresh.data, 8)
-    const clean = ok && quick && !quick.fix.length   // running, ready and no errors: nothing for the AI to find
     let ai = null, aiErr = null, aiNone = false
-    if (s.enabled && !clean) {
+    {
         const key = `${inc.id}:${inc.lastSeen}`
         try {
             if (!looked.has(key)) {
                 if (quick) inc.details = `KubeEZ's own check of the logs/events: ${quick.summary} ${quick.cause}`.trim()
+                if (ok) inc.details = `${inc.details ? `${inc.details} ` : ''}The pod is running and ready right now; the user asked to check it — say whether the logs show any problem.`
                 const p = (async () => {
                     const changes = await within(collectChanges(cluster, { from: Date.now() - 3 * 3600e3, to: Date.now() }), 30e3).then(c => c.items, () => [])
                     const runbook = suggestRunbook(cluster.orgId, inc.reason, fresh.workload)
@@ -261,7 +250,7 @@ async function lookInto({ ctx, u, sc, s, cluster, t }) {
                 if (looked.size > 100) looked.delete(looked.keys().next().value)
             }
             ai = await looked.get(key)
-        } catch (e) { aiErr = e.message; aiNone = !!e.none }
+        } catch (e) { aiErr = aiWhy(e) || e.message; aiNone = !!e.none }
     }
     const lines = [...intro, '']
     if (ai) {
@@ -272,15 +261,9 @@ async function lookInto({ ctx, u, sc, s, cluster, t }) {
         if (a.evidence.length) lines.push(`${W.proof}:`, ...a.evidence.slice(0, 3).map(e => `  › ${e}`))
         if (a.fix.length) lines.push(`${W.fix}:`, ...a.fix.slice(0, 6).map((x, i) => `${i + 1}. ${x}`))
         if (a.blockedSteps?.length) lines.push(W.removed(a.blockedSteps.length))
-        if (quick?.fix.length) lines.push('', `${W.kubeez}: ${quick.summary}`)
-    } else if (quick) {
-        lines.push(`${W.problem}: ${quick.summary}`)
-        if (quick.cause) lines.push(`${W.cause}: ${quick.cause}`)
-        if (quick.evidence.length) lines.push(`${W.proof}:`, ...quick.evidence.map(e => `  › ${e}`))
-        if (quick.fix.length) lines.push(`${W.fix}:`, ...quick.fix.map((x, i) => `${i + 1}. ${fill(x)}`))
-        if (aiErr) lines.push('', aiNone ? W.aiNone : W.aiFail)
     } else {
-        lines.push(W.unknown, aiErr ? `AI: ${aiErr}` : !s.enabled ? L.off : '')
+        if (aiNone) return { reply: L.noEngine, needsAi: true }
+        lines.push(L.aiDown(aiErr))
     }
     if (tail.length) lines.push('', `${W.log}:`, ...tail.map(l => `  ${l.slice(0, 220)}`))
     // a fix KubeEZ can run: the AI's, else what fixed this before on this workload
@@ -288,13 +271,13 @@ async function lookInto({ ctx, u, sc, s, cluster, t }) {
     if (spec) lines.push('', `🛠 ${W.run}: ${spec.type} ${spec.kind}/${spec.name}${spec.type === 'scale' ? ` → ${spec.replicas}` : ''}`, sc.user ? W.webApply : W.chatApply)
     return {
         reply: lines.filter(x => x !== null && x !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 3800),
-        direct: !ai,
+        ...(ai?.engine ? { engine: { provider: ai.engine.provider, model: ai.engine.model } } : {}),
         ...(spec && sc.user ? { fix: { clusterId: cluster.id, spec, canAct: canOn(u, 'incident:act', cluster) } } : {})
     }
 }
 
 function helpText() {
-    return 'I am KubeEZ AI. Ask me:\n• "status" — clusters and risk\n• "incidents" — open problems, numbered\n• "how many namespaces", "show nodes" — what runs in a cluster\n• "check the logs of web-2" — the problem in a pod, its cause and the fix\n• "why 2" — the cause of problem 2\n• "fix 2" — the suggested fix with its dry-run (applied in KubeEZ)\n• "what changed prod 6h" — the change timeline\n• anything about Kubernetes'
+    return 'I am KubeEZ AI — I answer through the AI connected to this workspace, from live data of your clusters. Ask me:\n• "status" — clusters and risk\n• "incidents" — open problems, numbered\n• "how many namespaces", "show nodes" — what runs in a cluster\n• "check the logs of web-2" — the problem in a pod, its cause and the fix\n• "why 2" — the cause of problem 2\n• "fix 2" — the suggested fix with its dry-run (applied in KubeEZ)\n• "what changed prod 6h" — the change timeline\n• anything about Kubernetes'
 }
 
 export function _reset() { chats.clear() }

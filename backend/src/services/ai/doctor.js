@@ -70,6 +70,9 @@ export const shape = (j) => {
     return null
 }
 
+// a health check ("check web-2" on a pod that is fine): a summary alone is a real answer
+export const healthShape = (j) => typeof j.summary !== 'string' || j.summary.length < 5 ? 'missing summary' : parroted(j.summary) ? 'it copied the format description instead of answering' : null
+
 // the answer as the UI gets it — checked and trimmed
 export function finish(j, source, extra = {}) {
     j = { ...j, fix: asList(j.fix), evidence: asList(j.evidence) }
@@ -238,7 +241,7 @@ export async function explainIncident(user, { incident: inc, catalog, cluster, f
         ? `You may suggest ONE fix KubeEZ can run (a person previews and approves it), only if the evidence supports it, as "action": {"type": "${[...new Set(allowed.map(a => a.type))].join(' | ')}", "target": "${[...new Set(allowed.map(a => `${a.kind}/${a.name}`))].join(' | ')}", "replicas": number for scale}. Prefer rollback when a recent rollout caused it, restart for a stuck or leaking process. Use "action": null when the fix is a config change a person must make (memory limit, image name, missing secret…).`
         : 'Do not suggest an action ("action": null).'
     const r = await ask(user, {
-        task: 'explain', purpose: 'incident explainer', json: true, validate: shape, maxTokens: TOKENS.incident, clusterId: cluster.id, clusterName: cluster.clusterName,
+        task: 'explain', purpose: 'incident explainer', json: true, validate: inc.reason === 'PodCheck' ? healthShape : shape, maxTokens: TOKENS.incident, clusterId: cluster.id, clusterName: cluster.clusterName,
         system: `${incidentSystem(actionRules)}\n\n${SPECIALISTS[specialist].prompt}`,
         data, question: 'Why is this happening, and what should I do?',
         meta: { reason: inc.reason, specialist, input: facts }

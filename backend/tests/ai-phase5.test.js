@@ -63,11 +63,15 @@ describe('ChatOps: what was asked (in English, Hindi or Hinglish)', () => {
 describe('ChatOps: answers', () => {
     const org = 'org-chat'
     const inc = { id: 'chat-i1', orgId: org, clusterId: 'c-chat', clusterName: 'prod', reason: 'CrashLoopBackOff', target: 'web-1', namespace: 'shop', status: 'unresolved', severity: 'warning', message: 'crash', timestamp: new Date().toISOString(), lastSeen: new Date().toISOString(), timeline: [] }
-    test('numbered problems, the answer in English (also when asked in Hinglish), a rate limit', async () => {
+    test('no AI connected: "connect an AI model first"; then the AI answers from the numbered problems; a rate limit', async () => {
         incidentDetector.incidents.unshift(inc)
+        assert.match((await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'kya problem hai' })).reply, /^Please connect an AI model first/)
+        aiStore.addProvider(org, { name: 'Fake', kind: 'ollama', baseUrl: base, model: 'm' })
+        let sent = ''
+        modelReply = (body) => { sent = body.messages.map(m => m.content).join('\n'); return '1 open problem: web-1 in shop on prod is crash-looping. Send "why 1" for the cause.' }
         const r = await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'kya problem hai' })
-        assert.match(r.reply, /^1\. 🟠 Pod crash loop — prod: shop\/web-1/)
-        assert.match(r.reply, /Send "why 1" for the cause/, 'the hint is in English')
+        assert.equal(r.reply, '1 open problem: web-1 in shop on prod is crash-looping. Send "why 1" for the cause.')
+        assert.match(sent, /open problems \(numbered\)/); assert.match(sent, /1\. warning — Pod crash loop on prod shop\/web-1: crash/)
         assert.match((await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'why 7' })).reply, /no problem #7/)
         assert.match((await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'help' })).reply, /I am KubeEZ AI/)
         for (let i = 0; i < 17; i++) await handleChat({ orgId: org, chatKey: 'tg:1', who: 'ravi', source: 'Telegram', text: 'help' })
@@ -76,7 +80,6 @@ describe('ChatOps: answers', () => {
     })
 
     test('a free question goes to the model, which must answer in English even when asked in Hinglish; AI off says so', async () => {
-        aiStore.addProvider(org, { name: 'Fake', kind: 'ollama', baseUrl: base, model: 'm' })
         let sys = ''
         modelReply = (body) => { sys = body.messages[0].content; return 'A DaemonSet runs one pod on every node.' }
         const progress = []
@@ -114,11 +117,15 @@ describe('ChatOps: answers', () => {
             { id: 'wi1', orgId: org2, clusterId: 'w1', clusterName: 'shop', reason: 'CrashLoopBackOff', target: 'web-1', namespace: 'shop', status: 'unresolved', severity: 'warning', message: 'crash', timestamp: now, lastSeen: now, timeline: [] },
             { id: 'wi2', orgId: org2, clusterId: 'w2', clusterName: 'finance', reason: 'NodeNotReady', target: 'fin-1', status: 'unresolved', severity: 'critical', message: 'down', timestamp: now, lastSeen: now, timeline: [] })
         const member = { id: 'm1', username: 'dev', orgId: org2, role: 'viewer', clusterAccess: [{ type: 'cluster', clusterId: 'w2', role: 'none' }] }
+        aiStore.addProvider(org2, { name: 'Fake', kind: 'ollama', baseUrl: base, model: 'm' })
+        let sent = ''
+        modelReply = (body) => { sent = body.messages.map(m => m.content).join('\n'); return 'shop has one crash-looping pod.' }
         const r = await handleChat({ orgId: org2, chatKey: 'web:m1', who: 'dev', source: 'Web', text: 'sab theek hai?', user: member, rate: 60 })
-        assert.match(r.reply, /shop — risk/)
-        assert.equal(/finance|fin-1/.test(r.reply), false, 'the hidden cluster and its problem are not shown')
-        const team = await handleChat({ orgId: org2, chatKey: 'tg:team', who: 'ops', source: 'Telegram', text: 'incidents' })
-        assert.match(team.reply, /fin-1/, 'a team chat sees the whole workspace, like its alerts')
+        assert.equal(r.reply, 'shop has one crash-looping pod.')
+        assert.match(sent, /shop: Kubernetes 1\.36\.0.*risk \d+\/100/)
+        assert.equal(/finance|fin-1/.test(sent), false, 'the hidden cluster and its problem never reach the AI')
+        await handleChat({ orgId: org2, chatKey: 'tg:team', who: 'ops', source: 'Telegram', text: 'incidents' })
+        assert.match(sent, /fin-1/, 'a team chat sees the whole workspace, like its alerts')
         incidentDetector.incidents = incidentDetector.incidents.filter(i => !['wi1', 'wi2'].includes(i.id))
     })
 

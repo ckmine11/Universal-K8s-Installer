@@ -249,7 +249,7 @@ export default function AiSettings() {
 
             <Section icon={PlugZap} title="Engines" hint="Connect any AI you like. Offline: a model on your own machine or server — Ollama, LM Studio, vLLM, llama.cpp, LocalAI, TGI, Jan or any OpenAI-compatible server, or the KubeEZ AI add-on in your cluster. Cloud: Claude, Gemini, OpenAI, OpenRouter, Groq, Mistral, DeepSeek… with your own key. Model lists are read live, so new models show up by themselves."
                 right={<button onClick={() => setDialog('new')} className="kz-btn-primary"><Plus className="w-4 h-4" /> Connect AI</button>}>
-                {!data.engines.length && <p className="text-sm text-slate-400">No AI connected yet. KubeEZ still answers what it can read from your clusters itself (counts, pod checks, quick diagnosis); connect an AI for deeper explanations — <button type="button" onClick={() => setDialog('new')} className="text-blue-300 hover:underline">Connect AI</button>.</p>}
+                {!data.engines.length && <p className="text-sm text-slate-400">No AI connected yet. Ask AI answers through the AI you connect here, with live data from your clusters — <button type="button" onClick={() => setDialog('new')} className="text-blue-300 hover:underline">Connect AI</button>.</p>}
                 <div className="grid md:grid-cols-2 gap-3">
                     {data.engines.map(e => {
                         const Icon = kindIcon(e.kind)

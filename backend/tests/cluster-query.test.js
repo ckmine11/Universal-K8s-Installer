@@ -1,10 +1,11 @@
 // Ask AI: "how many namespaces", "kitne pod", "failing pods", "nodes" — answered
-// by KubeEZ from the live cluster, exactly and without AI; only what the member
-// may see; and the live facts go to the AI for the questions it answers.
-import { test, after, describe } from 'node:test'
+// by the connected AI from the live cluster: KubeEZ reads it (and counts exactly),
+// only what the member may see; no AI connected → "connect an AI model first".
+import { test, before, after, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import http from 'node:http'
 import { tempDataDir } from './helpers/server.js'
 
 const DATA = tempDataDir()
@@ -128,43 +129,68 @@ describe('the live snapshot', () => {
     })
 })
 
-describe('Ask AI uses the live cluster', () => {
+describe('Ask AI: the connected AI answers, from live cluster facts', () => {
     const org = 'org-cq'
     const cluster = { id: 'cq1', clusterName: 'prod', orgId: org, ownerId: 'u', k8sVersion: '1.36.0', status: 'completed', masterNodes: [{ ip: '10.0.0.10' }], workerNodes: [] }
     fs.writeFileSync(path.join(DATA, 'clusters.json'), JSON.stringify([cluster]))
     _setSnapshot('cq1', parseSnapshot(OUT))
+    // a fake AI: remembers what KubeEZ sent it
+    let sent = '', reply = 'ok'
+    let fake
+    before(async () => {
+        fake = http.createServer((req, res) => {
+            let b = ''; req.on('data', c => b += c)
+            req.on('end', () => { sent = JSON.parse(b || '{}').messages?.map(m => m.content).join('\n') || ''; res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ choices: [{ message: { content: reply } }] })) })
+        })
+        await new Promise(r => fake.listen(0, '127.0.0.1', r))
+    })
+    after(() => { fake.closeAllConnections?.(); fake.close() })
+    const admin = { id: 'a9', username: 'boss', orgId: org, role: 'admin' }
 
-    test('"kitne namespace hai" — the exact answer in English, no AI needed (works with AI off too)', async () => {
-        aiStore.save(org, { enabled: false })
-        const progress = []
-        const r = await handleChat({ orgId: org, chatKey: 'tg:cq', who: 'ravi', source: 'Telegram', text: 'kitne namespace hai', send: (t) => progress.push(t) })
-        assert.match(r.reply, /^prod has 6 namespaces/)
-        assert.equal(r.direct, true)
-        assert.deepEqual(progress, [], 'instant — no "looking into it"')
+    test('no AI connected: every question gets "connect an AI model first"', async () => {
         aiStore.save(org, { enabled: true })
+        for (const text of ['kitne namespace hai', 'what is a pod disruption budget?', 'sab theek hai?', 'kya problem hai']) {
+            const r = await handleChat({ orgId: org, chatKey: 'web:none', who: 'dev', source: 'Web', text, user: admin, rate: 60 })
+            assert.match(r.reply, /^Please connect an AI model first/, text)
+            assert.equal(r.needsAi, true)
+        }
+        assert.match((await handleChat({ orgId: org, chatKey: 'web:none', who: 'dev', source: 'Web', text: 'help', user: admin, rate: 60 })).reply, /I am KubeEZ AI/, 'help still works')
     })
 
-    test('"kya problem hai pods me" goes to the pods, not the incident list', async () => {
-        const r = await handleChat({ orgId: org, chatKey: 'tg:cq', who: 'ravi', source: 'Telegram', text: 'pods me kya problem hai' })
-        assert.match(r.reply, /web-2 — CrashLoopBackOff/)
+    test('"kitne namespace hai": the AI answers, given the exact count KubeEZ read live', async () => {
+        aiStore.addProvider(org, { name: 'My AI', kind: 'openai', preset: 'other-local', offline: true, baseUrl: `http://127.0.0.1:${fake.address().port}/v1`, model: 'm1' })
+        reply = 'prod has 6 namespaces: default, kube-system, kube-public, shop, payments and old (terminating).'
+        const r = await handleChat({ orgId: org, chatKey: 'web:cq', who: 'dev', source: 'Web', text: 'kitne namespace hai', user: admin, rate: 60 })
+        assert.equal(r.reply, reply, 'the reply is the AI\'s answer')
+        assert.deepEqual(r.engine, { provider: 'My AI', model: 'm1' })
+        assert.match(sent, /KubeEZ counted \(exact, from prod\)/)
+        assert.match(sent, /prod has 6 namespaces — 4 yours \+ 2 system/)
+        assert.match(sent, /Namespaces 6: default, kube-system/, 'and the whole live snapshot')
+        assert.match(sent, /kitne namespace hai/, 'the question as asked')
     })
 
-    test('a member limited to a namespace sees only that one', async () => {
+    test('any question gets the live facts: problems, pods, risk', async () => {
+        reply = 'shop/web-2 is crash-looping (14 restarts) and shop/api-1 is Pending.'
+        const r = await handleChat({ orgId: org, chatKey: 'web:cq', who: 'dev', source: 'Web', text: 'pods me kya problem hai', user: admin, rate: 60 })
+        assert.equal(r.reply, reply)
+        assert.match(sent, /web-2 — CrashLoopBackOff/)
+        assert.match(sent, /prod: Kubernetes 1\.36\.0, 1 control-plane, 0 workers; risk \d+\/100/)
+        reply = 'Everything is fine apart from web-2.'
+        assert.equal((await handleChat({ orgId: org, chatKey: 'web:cq', who: 'dev', source: 'Web', text: 'sab theek hai?', user: admin, rate: 60 })).reply, reply, '"status" too is answered by the AI')
+    })
+
+    test('a member limited to a namespace: the AI is only given that namespace', async () => {
         const member = { id: 'm2', username: 'dev', orgId: org, role: 'viewer', clusterAccess: [{ type: 'cluster', clusterId: 'cq1', role: 'developer', namespaces: ['shop'] }] }
-        const r = await handleChat({ orgId: org, chatKey: 'web:m2', who: 'dev', source: 'Web', text: 'how many namespaces', user: member, rate: 60 })
-        assert.match(r.reply, /prod has 1 namespace \(that you may see\)/)
-        assert.equal(/payments/.test(r.reply), false)
+        reply = 'You can see 1 namespace: shop.'
+        await handleChat({ orgId: org, chatKey: 'web:m2', who: 'dev', source: 'Web', text: 'how many namespaces', user: member, rate: 60 })
+        assert.match(sent, /prod has 1 namespace \(that you may see\)/)
+        assert.equal(/payments|pay-1|postgres/.test(sent), false, 'nothing from the other namespaces reaches the AI')
     })
-})
 
-describe('no AI connected (KubeEZ runs no model of its own)', () => {
-    const org = 'org-cq'
-    test('a question for the AI says how to connect one; cluster questions still work', async () => {
-        aiStore.save(org, { enabled: true })
-        const r = await handleChat({ orgId: org, chatKey: 'web:none', who: 'dev', source: 'Web', text: 'what is a pod disruption budget?', user: { id: 'n1', username: 'dev', orgId: org, role: 'admin' }, rate: 60 })
-        assert.match(r.reply, /No AI is connected to this workspace yet/)
-        assert.match(r.reply, /AI settings → Connect AI/)
-        const inv = await handleChat({ orgId: org, chatKey: 'web:none', who: 'dev', source: 'Web', text: 'how many namespaces', user: { id: 'n1', username: 'dev', orgId: org, role: 'admin' }, rate: 60 })
-        assert.match(inv.reply, /^prod has 6 namespaces/)
+    test('the AI is down: said plainly, with the reason — never a made-up answer', async () => {
+        const p = aiStore.get(org).providers[0]
+        aiStore.updateProvider(org, p.id, { baseUrl: 'http://127.0.0.1:9/v1' })
+        const r = await handleChat({ orgId: org, chatKey: 'web:cq', who: 'dev', source: 'Web', text: 'how many pods', user: admin, rate: 60 })
+        assert.match(r.reply, /^The AI did not answer this time \(/)
     })
 })
