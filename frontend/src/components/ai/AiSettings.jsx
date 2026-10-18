@@ -46,6 +46,7 @@ function EngineStatus({ e }) {
         return <span className="kz-chip !text-red-300">unavailable</span>
     }
     if (e.enabled === false) return <span className="kz-chip !text-slate-400">off</span>
+    if (e.breaker?.open && e.breaker.account) return <span className="kz-chip !text-red-300" title={e.breaker.reason}>account problem</span>
     if (e.breaker?.open) return <span className="kz-chip !text-red-300" title="It failed 3 times in a row; KubeEZ skips it for 2 minutes and uses the next engine">paused — failing</span>
     if (e.pull?.status === 'downloading') return <span className="kz-chip !text-amber-300"><Loader2 className="w-3 h-3 animate-spin" /> downloading {e.pull.model}</span>
     if (e.pull?.status === 'failed') return <span className="kz-chip !text-red-300" title={e.pull.error}>download failed</span>
@@ -282,9 +283,10 @@ export default function AiSettings() {
                                     <EngineStatus e={e} />
                                     {!e.builtin && <Toggle on={e.enabled !== false} label={`${e.name} on`} onChange={v => toggleEngine(e, v)} />}
                                 </div>
+                                {e.breaker?.open && e.breaker.account && <p className="rounded-lg border border-red-400/25 bg-red-500/[0.06] px-2.5 py-1.5 text-[11px] text-red-200 leading-relaxed"><AlertTriangle className="inline w-3.5 h-3.5 mr-1" />The provider refused: {e.breaker.reason} KubeEZ skips this engine for 30 minutes and uses the next one. Fix it at the provider (add credits, a new key or plan), then click <b>Test</b>.</p>}
                                 {e.kind === 'server' && e.state?.status === 'downloading' && <p className="text-[11px] text-amber-300/90">First start: the server downloads {e.model} once (a few minutes).</p>}
                                 <div className="flex flex-wrap gap-1.5 text-[11px]">
-                                    {e.quality ? <span className={`kz-chip ${e.quality.score >= 80 ? '!text-emerald-300' : e.quality.score >= 60 ? '!text-amber-300' : '!text-red-300'}`} title="Last quality test (Quality below)"><GraduationCap className="w-3 h-3" />{e.quality.score}/100</span> : e.qualityRunning ? <span className="kz-chip !text-blue-300"><Loader2 className="w-3 h-3 animate-spin" />quality test running</span> : <span className="kz-chip !text-slate-500">not tested yet</span>}
+                                    {e.qualityError && (!e.quality || e.qualityError.at > e.quality.at) ? <span className="kz-chip !text-red-300" title={e.qualityError.error}><GraduationCap className="w-3 h-3" />could not test — the provider refused</span> : e.quality ? <span className={`kz-chip ${e.quality.score >= 80 ? '!text-emerald-300' : e.quality.score >= 60 ? '!text-amber-300' : '!text-red-300'}`} title="Last quality test (Quality below)"><GraduationCap className="w-3 h-3" />{e.quality.score}/100</span> : e.qualityRunning ? <span className="kz-chip !text-blue-300"><Loader2 className="w-3 h-3 animate-spin" />quality test running</span> : <span className="kz-chip !text-slate-500">not tested yet</span>}
                                     {e.quality && e.quality.score < 60 && !e.quality.stale && <span className="kz-chip !text-red-300" title="It failed many of the 16 test cases"><AlertTriangle className="w-3 h-3" />answers may be wrong — try a bigger model</span>}
                                     {e.newModels > 0 && !e.builtin && <button type="button" onClick={() => setDialog(e)} className="kz-chip !text-fuchsia-200 hover:!border-fuchsia-300/50" title="Models the provider added in the last 14 days">{e.newModels} new model{e.newModels > 1 ? 's' : ''}</button>}
                                     {e.quality?.stale && <span className="kz-chip !text-amber-300">model changed — test again</span>}

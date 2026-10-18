@@ -29,7 +29,24 @@ export const serverAvailable = () => !!serverModel().url
 const breaker = new Map()   // providerKey → { fails, openUntil }
 const OPEN_AFTER = 3, OPEN_MS = 2 * 60 * 1000
 const keyOf = (orgId, p) => p.kind === 'server' ? 'server' : `${orgId}:${p.id}`
-export const breakerState = (orgId, p) => { const b = breaker.get(keyOf(orgId, p)); return b && b.openUntil > Date.now() ? { open: true, until: b.openUntil, fails: b.fails } : { open: false, fails: b?.fails || 0 } }
+export const breakerState = (orgId, p) => { const b = breaker.get(keyOf(orgId, p)); return b && b.openUntil > Date.now() ? { open: true, until: b.openUntil, fails: b.fails, ...(b.reason ? { reason: b.reason, account: true } : {}) } : { open: false, fails: b?.fails || 0 } }
+/** The engine was changed (new key, model, address) or answered a test: try it again right away. */
+export const resetBreaker = (orgId, p) => breaker.delete(keyOf(orgId, p))
+
+// An engine whose ACCOUNT cannot answer — no credits, quota used up, a plan or top-up needed,
+// a wrong or revoked key: asking again does not help. It is paused longer, with the reason.
+const ACCOUNT = /no credits|out of credits|insufficient[_ ]?(quota|credits|balance|funds)|exceeded your current quota|quota (exceeded|reached)|billing|payment required|top[- ]?up|subscription|credit balance|balance (is )?(too low|insufficient)|invalid (api )?key|incorrect api key|api key (is )?(not valid|invalid|expired|revoked)|unauthori[sz]ed|authentication (failed|required)|permission denied|account (is )?(disabled|suspended|deactivated|inactive)/i
+export const accountProblem = (e) => !!e && e.code !== 'BAD_URL' && ([401, 402].includes(e.status) || ACCOUNT.test(String(e.message || '')))
+const ACCOUNT_PAUSE_MS = 30 * 60 * 1000
+function noteAccount(orgId, p, reason) { breaker.set(keyOf(orgId, p), { fails: OPEN_AFTER, openUntil: Date.now() + ACCOUNT_PAUSE_MS, reason: String(reason).slice(0, 240) }) }
+/** A rate limit: how long the provider asks to wait (ms), else 0. "Retry in 12s", Retry-After… */
+export function rateLimitWait(e) {
+    const msg = String(e?.message || '')
+    if (!(e?.status === 429 || /rate.?limit|too many requests|requests per minute/i.test(msg))) return 0
+    const m = /retry (?:in|after) (\d+(?:\.\d+)?)\s*(ms|milliseconds?)?/i.exec(msg)
+    return m ? Math.round(Number(m[1]) * (m[2] ? 1 : 1000)) : 10000
+}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms).unref?.())
 function noteResult(orgId, p, ok) {
     const k = keyOf(orgId, p)
     if (ok) return breaker.delete(k)
@@ -142,7 +159,9 @@ export async function ask(user, opts) {
     masked += q.masked
     const system = [
         'You are KubeEZ AI, a careful Kubernetes operations assistant inside the KubeEZ console.',
-        'Base every statement on the evidence given. If the evidence is not enough, say what is missing instead of guessing.',
+        opts.task === 'chat'
+            ? 'For anything about the user\'s clusters, base every statement on the evidence given; if it is not enough, say what is missing instead of guessing. Any other question — on any topic — answer helpfully from your own knowledge.'
+            : 'Base every statement on the evidence given. If the evidence is not enough, say what is missing instead of guessing.',
         UNTRUSTED_RULES,
         ENGLISH,
         opts.system || ''
@@ -162,7 +181,7 @@ export async function ask(user, opts) {
     const attempts = []
     let result = null
     for (const p of route) {
-        if (!opts.only && breakerState(orgId, p).open) { attempts.push({ provider: p.name, kind: p.kind, skipped: 'failing — paused for a moment' }); continue }
+        if (!opts.only && breakerState(orgId, p).open) { const b = breakerState(orgId, p); attempts.push({ provider: p.name, kind: p.kind, skipped: b.reason ? `paused — ${b.reason}` : 'failing — paused for a moment', ...(b.account ? { account: true } : {}) }); continue }
         if (!opts.only && p.kind === 'server' && aiStore.usedToday(orgId) >= s.dailyLimit) { attempts.push({ provider: p.name, kind: p.kind, skipped: `daily limit (${s.dailyLimit}) reached` }); continue }
         const local = LOCAL_KINDS.has(p.kind) || !!p.offline   // a model on someone's own machine: slower, one at a time
         const timeoutMs = opts.timeoutMs || (local ? 150000 : 60000)
@@ -199,10 +218,15 @@ export async function ask(user, opts) {
                     result = { ...r, json, provider: p.name, providerId: p.id, providerKind: p.kind }
                     break
                 } catch (e) {
-                    if (e.code !== 'INVALID') attempts.push({ provider: p.name, kind: p.kind, ms: Date.now() - a0, error: e.message, code: e.code })
+                    const account = e.code !== 'INVALID' && accountProblem(e)
+                    if (e.code !== 'INVALID') attempts.push({ provider: p.name, kind: p.kind, ms: Date.now() - a0, error: e.message, code: e.code, ...(account ? { account: true } : {}), ...(rateLimitWait(e) ? { rateLimited: true } : {}) })
+                    // the account cannot answer (no credits, wrong key…): straight to the next engine, and pause this one
+                    if (account) { if (!opts.only) noteAccount(orgId, p, e.message); break }
                     // a local model that ran out of time is as slow the second time — go to the next engine
                     const retry = e.retryable && attempt === 1 && !(local && e.code === 'TIMEOUT')
                     if (!retry) { if (e.code !== 'INVALID' && !opts.only) noteResult(orgId, p, false); break }
+                    // a temporary error: a short wait first (as long as a rate limit asks, at most 8 s)
+                    await sleep(Math.min(rateLimitWait(e) || 1500, 8000))
                 }
             }
         } finally { release() }

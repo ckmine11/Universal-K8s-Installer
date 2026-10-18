@@ -3,11 +3,11 @@ import { requirePermission } from '../middleware/authMiddleware.js'
 import { aiStore, TASKS, AUTONOMY } from '../services/ai/aiStore.js'
 import { KINDS, health, pullModel, serverModel, serverModelState, checkViaClusterUrl } from '../services/ai/providers.js'
 import { checkProviderUrl } from '../services/ai/http.js'
-import { ask, routeFor, breakerState, queueState, serverAvailable, AiUnavailable } from '../services/ai/engine.js'
+import { ask, routeFor, breakerState, resetBreaker, queueState, serverAvailable, AiUnavailable } from '../services/ai/engine.js'
 import { canSeeCluster } from '../services/accessControl.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { auditLog } from '../services/auditLog.js'
-import { latestByEngine, feedbackStats } from '../services/ai/quality.js'
+import { latestByEngine, feedbackStats, runsOf } from '../services/ai/quality.js'
 import { notificationStore } from '../services/notificationStore.js'
 import { PRESETS, presetOf, legacyPreset } from '../config/aiPresets.js'
 import { discover, modelsOf, newCount, OLLAMA_SUGGESTIONS } from '../services/ai/modelCatalog.js'
@@ -86,10 +86,12 @@ router.get('/', requirePermission('ai:use'), async (req, res) => {
     const clusterNames = Object.fromEntries((await orgClusters(req)).map(c => [c.id, c.clusterName]))
     const engines = [...s.providers.map(p => aiStore.view(p)), ...(server ? [server] : [])].map(p => {
         const q = latest[p.id]
+        const lastRun = runsOf(req.user.orgId).find(r => r.engineId === p.id && ['done', 'failed'].includes(r.status))
         return {
             ...p, preset: p.preset || legacyPreset(p.kind), viaClusterName: p.viaClusterId ? (clusterNames[p.viaClusterId] || 'a removed cluster') : null, newModels: raw[p.id] ? newCount(raw[p.id]) : 0,
             qualityRunning: isRunning(req.user.orgId), breaker: breakerState(req.user.orgId, p), queue: queueState(req.user.orgId, p), pull: pulls.get(`${req.user.orgId}:${p.id}`) || null,
             // the last quality test — and whether the model changed since (then it is untested)
+            qualityError: lastRun?.status === 'failed' && lastRun.account ? { error: lastRun.error, at: lastRun.finishedAt } : null,
             quality: q ? { score: q.summary.score, at: q.finishedAt, stale: (q.engineModel || null) !== (p.model || null) } : null,
             feedback: fb[p.id] || null
         }
@@ -180,7 +182,7 @@ router.post('/openrouter/finish', requirePermission('ai:manage'), async (req, re
         // signing in again refreshes the same engine instead of adding a second one
         const cur = aiStore.get(req.user.orgId).providers.find(p => p.preset === 'openrouter' && p.signedIn)
         const p = cur
-            ? aiStore.updateProvider(req.user.orgId, cur.id, { apiKey: key, enabled: true })
+            ? (resetBreaker(req.user.orgId, cur), aiStore.updateProvider(req.user.orgId, cur.id, { apiKey: key, enabled: true }))
             : aiStore.addProvider(req.user.orgId, { name: 'OpenRouter', kind: 'openai', preset: 'openrouter', offline: false, baseUrl: base, model, apiKey: key, signedIn: true })
         auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.engine_signed_in', detail: `${cur ? 'Signed in again' : 'Signed in'} with OpenRouter (${p.model}) — ${d.models.length} model(s)` })
         res.json({ ...aiStore.view(p), models: d.models.length, again: !!cur })
@@ -227,6 +229,7 @@ router.put('/providers/:id', requirePermission('ai:manage'), async (req, res) =>
     try {
         const cur = aiStore.get(req.user.orgId).providers.find(p => p.id === req.params.id)
         if (!cur) return res.status(404).json({ error: 'AI engine not found' })
+        resetBreaker(req.user.orgId, cur)   // a new key / model / address: try it again right away
         const p = aiStore.updateProvider(req.user.orgId, req.params.id, cleanProvider({ ...req.body, kind: cur.kind, _offline: cur.offline, _viaClusterId: cur.viaClusterId, _baseUrl: cur.baseUrl }, (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => c.id), true))
         res.json(aiStore.view(p))
     } catch (e) { fail(res, e) }
@@ -242,7 +245,9 @@ const findEngine = (req) => req.params.id === 'server' ? SERVER() : aiStore.get(
 router.post('/providers/:id/test', requirePermission('ai:manage'), async (req, res) => {
     const p = findEngine(req)
     if (!p) return res.status(404).json({ error: 'AI engine not found' })
-    res.json(await health(p, p.builtin ? null : aiStore.keyOf(p)))
+    const h = await health(p, p.builtin ? null : aiStore.keyOf(p))
+    if (h.ok) resetBreaker(req.user.orgId, p)   // it answers again: use it again right away
+    res.json(h)
 })
 
 // Download a model into an Ollama engine (runs in the background; the list shows progress)

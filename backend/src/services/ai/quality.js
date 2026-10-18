@@ -10,7 +10,7 @@ import { randomBytes } from 'crypto'
 import { DATA_DIR } from '../../utils/paths.js'
 import { writeFileAtomicSync } from '../../utils/atomicWrite.js'
 import { EXAM, EXAM_VERSION, QUESTION } from '../../config/aiExam.js'
-import { ask } from './engine.js'
+import { ask, accountProblem, rateLimitWait } from './engine.js'
 import { learnFromTrace } from './learning.js'
 import { aiStore } from './aiStore.js'
 import { shape, finish, INSTALL_SYSTEM, incidentSystem, TOKENS } from './doctor.js'
@@ -66,7 +66,22 @@ export function scoreCase(c, answer, error = null) {
 
 const engineKey = (e) => e.id
 /** Ask one case — the same way the real features do — and score it. */
-export async function runCase(user, engine, c) {
+// a fair test: the engine's own limits are not the model's score
+//   rate limited  → wait as long as the provider asks, then the same case again (up to 3 times)
+//   the account cannot answer (no credits, wrong key, plan needed) → the test stops and says so
+const sleep = (ms) => new Promise(r => setTimeout(r, ms).unref?.())
+const firstRateLimit = (e) => (e.attempts || []).map(a => rateLimitWait({ message: a.error, status: a.rateLimited ? 429 : null })).find(Boolean) || rateLimitWait(e)
+const accountReason = (e) => (e.attempts || []).find(a => a.account || accountProblem({ message: a.error }))?.error || (accountProblem(e) ? e.message : null)
+const WAITS = process.env.KUBEEZ_QUALITY_WAIT_MS ? [1, 2, 3].map(n => n * Number(process.env.KUBEEZ_QUALITY_WAIT_MS)) : [8000, 20000, 45000]
+const PACE_MS = Number(process.env.KUBEEZ_QUALITY_PACE_MS ?? 1000)
+export async function runCase(user, engine, c, { waits = WAITS } = {}) {
+    for (let i = 0; ; i++) {
+        const r = await runCaseOnce(user, engine, c)
+        if (r.account || !r.rateLimited || i >= waits.length) return r
+        await sleep(Math.max(r.rateLimited, waits[i]))
+    }
+}
+async function runCaseOnce(user, engine, c) {
     const t0 = Date.now()
     try {
         const r = await ask(user, {
@@ -78,7 +93,8 @@ export async function runCase(user, engine, c) {
         return { id: c.id, ms: Date.now() - t0, model: r.model, ...scoreCase(c, answer), answer: { summary: answer.summary, cause: answer.cause, fix: answer.fix, blockedSteps: answer.blockedSteps, confidence: answer.confidence, claimedConfidence: answer.claimedConfidence, evidence: answer.evidence, unverified: answer.unverified } }
     } catch (e) {
         const why = e.attempts?.map(a => a.error || a.skipped).filter(Boolean).join('; ') || e.message
-        return { id: c.id, ms: Date.now() - t0, ...scoreCase(c, null, why) }
+        const account = accountReason(e)
+        return { id: c.id, ms: Date.now() - t0, ...scoreCase(c, null, why), ...(account ? { account } : {}), ...(firstRateLimit(e) ? { rateLimited: firstRateLimit(e) } : {}) }
     }
 }
 
@@ -118,15 +134,21 @@ export function startExam(user, engines, { caseIds = null } = {}) {
             for (const [i, run] of runs.entries()) {
                 if (ctl.cancel) { run.status = 'cancelled'; continue }
                 run.status = 'running'; run.startedAt = new Date().toISOString(); persist()
-                // a local model loads into memory on first use — warm it up, not scored
-                await ask(user, { only: engines[i], trace: false, task: 'chat', purpose: 'quality test warm-up', question: 'Reply with: OK', maxTokens: 5 }).catch(() => { })
+                // a local model loads into memory on first use — warm it up, not scored; an account
+                // that cannot answer at all (no credits, wrong key) is found here, before 16 refusals
+                const warm = await ask(user, { only: engines[i], trace: false, task: 'chat', english: false, purpose: 'quality test warm-up', question: 'Reply with: OK', maxTokens: 5 }).then(() => null, (e) => accountReason(e))
+                if (warm) { stopRun(run, warm); continue }
+                const local = ['ollama', 'server', 'cluster'].includes(engines[i].kind) || engines[i].offline
                 for (const c of cases) {
                     if (ctl.cancel) break
                     const res = await runCase(user, engines[i], c)
+                    if (res.account) { stopRun(run, res.account); break }
                     run.results.push(res); run.progress = run.results.length
                     if (res.model) run.model = res.model
                     persist()
+                    if (!local) await sleep(PACE_MS)   // cloud APIs: stay under per-minute limits
                 }
+                if (run.status === 'failed') continue
                 run.status = ctl.cancel ? 'cancelled' : 'done'
                 run.finishedAt = new Date().toISOString()
                 run.summary = summarize(run.results)
@@ -138,6 +160,13 @@ export function startExam(user, engines, { caseIds = null } = {}) {
         } finally { running.delete(user.orgId) }
     })()
     return runs
+}
+// the engine's account refused (no credits, wrong key…): no score — a 0 would blame the model
+function stopRun(run, reason) {
+    run.status = 'failed'; run.finishedAt = new Date().toISOString()
+    run.error = `Could not test: the engine refused — ${String(reason).slice(0, 240)}`
+    run.account = true
+    persist()
 }
 export function cancelExam(orgId) { const c = running.get(orgId); if (!c) return false; c.cancel = true; return true }
 

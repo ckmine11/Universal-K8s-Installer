@@ -135,7 +135,7 @@ export default function QualityPanel({ settings, onRoutesSaved }) {
                                 <button onClick={() => setOpen(open === r.id ? null : r.id)} className="w-full flex items-center gap-3 p-3 text-left text-xs">
                                     {open === r.id ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
                                     {r.status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" /> : r.status === 'cancelled' ? <AlertTriangle className="w-3.5 h-3.5 text-amber-300" /> : <XCircle className="w-3.5 h-3.5 text-red-300" />}
-                                    <span className="flex-1 text-slate-200">{r.engineName} <span className="font-mono text-slate-500">{r.model}</span>{r.cases < q.cases.length && <span className="kz-chip ml-2 !text-slate-400">{r.cases} of {q.cases.length} cases — not counted</span>}</span>
+                                    <span className="flex-1 text-slate-200">{r.engineName} <span className="font-mono text-slate-500">{r.model}</span>{r.cases < q.cases.length && <span className="kz-chip ml-2 !text-slate-400">{r.cases} of {q.cases.length} cases — not counted</span>}{r.status === 'failed' && r.error && <span className="block mt-0.5 text-[11px] text-red-300">{r.error}</span>}</span>
                                     {r.summary && <span className={`font-bold ${tone(r.summary.score)}`}>{r.summary.score}/100</span>}
                                     <span className="text-slate-500">{new Date(r.at).toLocaleString()} · {r.by}</span>
                                 </button>
