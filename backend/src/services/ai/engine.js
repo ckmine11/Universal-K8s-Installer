@@ -134,7 +134,10 @@ export function parseJson(text) {
 }
 
 /**
- * ask(user, { task, purpose, system, data: [{ label, text }], question, json, validate, maxTokens })
+ * ask(user, { task, purpose, system, data: [{ label, text }], question, json, validate, maxTokens,
+ *             history: [{ role: 'user'|'assistant', content }], onToken(textSoFar) })
+ * history  the conversation before this question (masked like everything else)
+ * onToken  the answer as it is written (OpenAI-compatible engines stream it); '' when a retry starts over
  * Quality tests: { only: engine } asks exactly that engine (no fallback, no breaker,
  * no daily allowance), { trace: false } keeps it out of the activity log.
  *   → { text, json?, provider, model, ms, attempts, masked, suspicious, traceId }
@@ -173,7 +176,11 @@ export async function ask(user, opts) {
     const asked = foreign ? asQuestion(roughEnglish(q.text)) : q.text
     const original = foreign ? [wrapUntrusted('the question as the user wrote it (Hindi/Hinglish) — for meaning only, do not repeat it', q.text).block] : []
     const content = [...blocks, ...original, asked].filter(Boolean).join('\n\n')
-    const messages = [{ role: 'user', content }]
+    // the conversation so far (follow-up questions: "show its logs"), masked, the last turns only
+    const history = (opts.history || []).filter(h => h && ['user', 'assistant'].includes(h.role) && h.content).slice(-8)
+        .map(h => { const r = redact(clean(String(h.content)).slice(0, 3000), { maskEmails: s.maskEmails, maskIps: s.maskIps }); masked += r.masked; return { role: h.role, content: r.text } })
+    const messages = [...history, { role: 'user', content }]
+    const live = typeof opts.onToken === 'function' && !opts.json ? (t) => { try { opts.onToken(t) } catch { } } : null
 
     // 3–4) engines in order, with retries, breaker, queue and validation
     const route = opts.only ? [opts.only] : routeFor(orgId, task)
@@ -192,8 +199,9 @@ export async function ask(user, opts) {
             let redo = null   // the messages for the second try, when the first answer was rejected
             for (let attempt = 1; attempt <= 2; attempt++) {
                 const a0 = Date.now()
+                if (live) live('')   // a new try (or the next engine) starts the answer over
                 try {
-                    const r = await chat(p, aiStore.keyOf(p), { system, messages: attempt === 1 || !redo ? messages : redo, maxTokens: opts.maxTokens || 1500, json: !!opts.json, timeoutMs })
+                    const r = await chat(p, aiStore.keyOf(p), { system, messages: attempt === 1 || !redo ? messages : redo, maxTokens: opts.maxTokens || 1500, json: !!opts.json, timeoutMs, ...(live ? { onToken: live } : {}) })
                     let json, problem = null, english = null
                     if (opts.json) {
                         json = parseJson(r.text)
@@ -208,7 +216,7 @@ export async function ask(user, opts) {
                             // Hinglish answer, or the original words, makes a small model repeat them)
                             redo = problem
                                 ? [...messages, { role: 'assistant', content: '(invalid)' }, { role: 'user', content: 'Your last reply was not valid JSON in the required shape. Reply again with ONLY the JSON object.' }]
-                                : [{ role: 'user', content: [...blocks, `${q.text && nonEnglishQuestion(q.text) ? asQuestion(roughEnglish(q.text)) : q.text}\n\nAnswer only in clear, correct English (keep commands, names and quoted log lines as they are).${opts.json ? ' Reply with ONLY the JSON object.' : ''}`].filter(Boolean).join('\n\n') }]
+                                : [...history, { role: 'user', content: [...blocks, `${q.text && nonEnglishQuestion(q.text) ? asQuestion(roughEnglish(q.text)) : q.text}\n\nAnswer only in clear, correct English (keep commands, names and quoted log lines as they are).${opts.json ? ' Reply with ONLY the JSON object.' : ''}`].filter(Boolean).join('\n\n') }]
                             continue
                         }
                         throw Object.assign(new Error(`answer rejected: ${why}`), { code: 'INVALID' })

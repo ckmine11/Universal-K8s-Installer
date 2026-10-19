@@ -18,7 +18,7 @@ import { explainIncidentFull, explainKey } from '../services/ai/incidentExplain.
 import { planAction, applyAction, undoAction, actionLog, view, cleanSpec, ACTION_TYPES } from '../services/ai/actions.js'
 import { riskScore, newestSnapshot, cachedSnapshot } from '../services/ai/risk.js'
 import { fleetText } from '../services/ai/fleet.js'
-import { handleChat } from '../services/ai/chatops.js'
+import { handleChat, resetChat } from '../services/ai/chatops.js'
 import { riskOf, fleetFor, advisorFor } from '../services/ai/insights.js'
 import { addonSettingsStore } from '../services/addonSettings.js'
 import { ADVISOR_SCRIPT, analyze as analyzeAdvisor, advisorText } from '../services/ai/advisor.js'
@@ -60,11 +60,12 @@ const jobs = new Map()   // jobId → { key, owner, status: running|done|failed,
 const byKey = new Map()  // key → jobId
 const JOB_TTL = 10 * 60e3, WAIT_MS = Number(process.env.KUBEEZ_AI_JOB_WAIT_MS) || 20000
 function sweep() { for (const [id, j] of jobs) if (j.status !== 'running' && Date.now() - j.at > JOB_TTL) { jobs.delete(id); if (byKey.get(j.key) === id) byKey.delete(j.key) } }
-const jobView = (j) => j.status === 'done' ? { status: 200, body: j.value } : j.status === 'failed' ? { status: j.error.status || 500, body: j.error.body } : { status: 202, body: { jobId: j.id, status: 'running', since: j.started } }
+// while it runs: the answer so far (streamed engines) and what it is doing ("Reading the logs…")
+const jobView = (j) => j.status === 'done' ? { status: 200, body: j.value } : j.status === 'failed' ? { status: j.error.status || 500, body: j.error.body } : { status: 202, body: { jobId: j.id, status: 'running', since: j.started, ...(j.partial ? { partial: j.partial } : {}), ...(j.stage ? { stage: j.stage } : {}) } }
 const errorBody = (e, extra = {}) => ({ status: e instanceof AiUnavailable || e.code === 'AI_UNAVAILABLE' || e.code === 'AI_OFF' ? (e.status || 503) : (e.status || 500), body: { error: e.message, code: e.code, attempts: e.attempts, ...extra } })
 
 /** Start (or join) the job for key; answer with its result if it is done within WAIT_MS. */
-async function runJob(req, res, key, work, { fresh = false, decorate = (v) => v, onError = () => ({}) } = {}) {
+async function runJob(req, res, key, work, { fresh = false, decorate = (v) => v, onError = () => ({}), waitMs = WAIT_MS } = {}) {
     sweep()
     let id = byKey.get(key), j = id && jobs.get(id)
     if (j && fresh && j.status !== 'running') { jobs.delete(id); j = null }
@@ -73,13 +74,13 @@ async function runJob(req, res, key, work, { fresh = false, decorate = (v) => v,
         j = { id, key, owner: req.user.orgId, status: 'running', started: new Date().toISOString(), at: Date.now() }
         j.decorate = decorate
         jobs.set(id, j); byKey.set(key, id)
-        j.promise = Promise.resolve().then(work)
+        j.promise = Promise.resolve().then(() => work(j))
             .then(v => Object.assign(j, { status: 'done', value: v, at: Date.now() }))
             .catch(e => Object.assign(j, { status: 'failed', error: errorBody(e, onError(e)), at: Date.now() }))
     } else if (j.status === 'done') {
         return res.json(decorate({ ...j.value, cached: true }))
     }
-    await Promise.race([j.promise, new Promise(r => setTimeout(r, WAIT_MS).unref?.())])
+    await Promise.race([j.promise, new Promise(r => setTimeout(r, waitMs).unref?.())])
     const v = jobView(j)
     res.status(v.status).json(v.status === 200 ? decorate(v.body) : v.body)
 }
@@ -118,8 +119,16 @@ router.post('/explain/incident/:id', requirePermission('ai:use'), async (req, re
 router.post('/chat', requirePermission('ai:use'), async (req, res) => {
     const text = String(req.body?.text || '').trim().slice(0, 2000)
     if (!text) return res.status(400).json({ error: 'Ask something' })
+    // answers quickly with a job id: the page then shows the answer as it is written (partial) and
+    // what KubeEZ is doing (stage), polling about once a second
     await runJob(req, res, `chat:${req.user.id}:${randomBytes(6).toString('hex')}`,
-        () => handleChat({ orgId: req.user.orgId, chatKey: `web:${req.user.id}`, who: req.user.username, source: 'Web', text, user: req.user, rate: 60 }))
+        (j) => handleChat({ orgId: req.user.orgId, chatKey: `web:${req.user.id}`, who: req.user.username, source: 'Web', text, user: req.user, rate: 60,
+            onToken: (t) => { j.partial = t }, send: (stage) => { j.stage = stage }, stage: (stage) => { j.stage = stage } }), { waitMs: 1200 })
+})
+// "Clear" in Ask AI: the conversation is forgotten (follow-up questions start fresh)
+router.post('/chat/reset', requirePermission('ai:use'), (req, res) => {
+    resetChat(`web:${req.user.id}`)
+    res.json({ success: true })
 })
 
 // ── Text → YAML (generating runs as a job; nothing touches a cluster here) ──

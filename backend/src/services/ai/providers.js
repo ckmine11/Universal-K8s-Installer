@@ -15,7 +15,7 @@
 // 192.168.1.50 — KubeEZ goes through that cluster's tunnel (Gateway Agent or
 // SSH) and its control-plane node reaches the server. Nothing is exposed.
 import net from 'net'
-import { requestJson, AiHttpError } from './http.js'
+import { requestJson, requestStream, AiHttpError } from './http.js'
 import { anthropicChat, anthropicHealth } from './anthropic.js'
 
 export const KINDS = {
@@ -87,6 +87,14 @@ const isPrivate = (ip) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|100
 /** A request — straight, or through the engine's cluster when it has one (a fresh stream each time). */
 export async function requestVia(p, method, url, body, opts = {}) {
     if (!p?.viaClusterId) return requestJson(method, url, body, opts)
+    return requestJson(method, url, body, { ...opts, ...(await tunnelTo(p, url)) })
+}
+/** The same, streamed (an answer that appears as it is written). */
+export async function streamVia(p, url, body, opts = {}) {
+    if (!p?.viaClusterId) return requestStream(url, body, opts)
+    return requestStream(url, body, { ...opts, ...(await tunnelTo(p, url)) })
+}
+async function tunnelTo(p, url) {
     const u = checkViaClusterUrl(url)
     const { installationManager } = await import('../installationManager.js')
     const { clusterTunnel } = await import('../clusterTunnel.js')
@@ -95,7 +103,7 @@ export async function requestVia(p, method, url, body, opts = {}) {
     let stream
     try { stream = await clusterTunnel.open(cluster, u.hostname.replace(/^\[|\]$/g, ''), Number(u.port || 80)) }
     catch (e) { throw new AiHttpError(`Could not reach ${u.host} through cluster ${cluster.clusterName}: ${e.message}`, { code: 'NETWORK', retryable: true }) }
-    return requestJson(method, url, body, { ...opts, createConnection: () => stream, trusted: true })
+    return { createConnection: () => stream, trusted: true }
 }
 
 const toOpenAiMessages = (system, messages) => [...(system ? [{ role: 'system', content: system }] : []), ...messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))]
@@ -103,6 +111,13 @@ const toOpenAiMessages = (system, messages) => [...(system ? [{ role: 'system', 
 // servers that reject the JSON-mode field (some local runtimes) — asked without it from then on
 const noJsonMode = new Set()
 async function openAiChat(base, key, model, req, extra = {}, via = null) {
+    if (req.onToken && !req.json) {
+        const r = await streamVia(via, `${base}/chat/completions`, {
+            model, messages: toOpenAiMessages(req.system, req.messages), max_tokens: req.maxTokens, temperature: req.temperature ?? 0.2, stream: true
+        }, { headers: key ? { authorization: `Bearer ${key}` } : {}, timeoutMs: req.timeoutMs, ...extra, onDelta: (d, all) => req.onToken(all) })
+        if (!r.text.trim()) throw new AiHttpError('The model returned no text', { code: 'EMPTY', retryable: true })
+        return { text: r.text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null, streamed: true }
+    }
     const send = (jsonMode) => requestVia(via, 'POST', `${base}/chat/completions`, {
         model, messages: toOpenAiMessages(req.system, req.messages),
         max_tokens: req.maxTokens, temperature: req.temperature ?? 0.2,

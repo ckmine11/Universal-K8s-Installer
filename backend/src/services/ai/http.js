@@ -69,3 +69,68 @@ export function requestJson(method, url, body, { headers = {}, timeoutMs = 60000
         req.end()
     })
 }
+
+/**
+ * A streamed answer (Server-Sent Events, the OpenAI format): onDelta(text) for every
+ * piece as the model writes it. → { text, model, usage } when it is done.
+ * Same rules as requestJson: address check, tunnel, a hard timeout (from the first
+ * byte on, a quiet stream also times out).
+ */
+export function requestStream(url, body, { headers = {}, timeoutMs = 60000, createConnection = null, trusted = false, onDelta = () => { } } = {}) {
+    return new Promise((resolve, reject) => {
+        let u
+        try { u = trusted || createConnection ? new URL(url) : checkProviderUrl(url) } catch (e) { return reject(e instanceof AiHttpError ? e : new AiHttpError(e.message, { code: 'BAD_URL' })) }
+        const data = JSON.stringify(body)
+        const lib = u.protocol === 'https:' && !createConnection ? https : http
+        let timer
+        const arm = () => { clearTimeout(timer); timer = setTimeout(() => req.destroy(new AiHttpError(`No answer within ${Math.round(timeoutMs / 1000)} s`, { code: 'TIMEOUT', retryable: true })), timeoutMs) }
+        const req = lib.request(u, {
+            method: 'POST',
+            ...(createConnection ? { createConnection } : trusted ? {} : { lookup: guardedLookup }),
+            headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), accept: 'text/event-stream', 'user-agent': 'KubeEZ-AI/1', ...headers }
+        }, (res) => {
+            // an error comes back as plain JSON, not as a stream
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+                const chunks = []
+                res.on('data', c => chunks.push(c))
+                res.on('end', () => {
+                    clearTimeout(timer)
+                    const t = Buffer.concat(chunks).toString('utf8')
+                    let j = null; try { j = JSON.parse(t) } catch { }
+                    const msg = j?.error?.message || j?.error || j?.message || t.slice(0, 300) || `HTTP ${res.statusCode}`
+                    reject(new AiHttpError(typeof msg === 'string' ? msg : JSON.stringify(msg).slice(0, 300), { status: res.statusCode, retryable: [408, 409, 425, 429, 500, 502, 503, 504, 529].includes(res.statusCode), body: t.slice(0, 2000) }))
+                })
+                return
+            }
+            let buf = '', text = '', model = null, usage = null, failed = null
+            res.setEncoding('utf8')
+            res.on('data', (c) => {
+                arm()
+                buf += c
+                let i
+                while ((i = buf.indexOf('\n')) >= 0) {
+                    const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1)
+                    if (!line.startsWith('data:')) continue
+                    const payload = line.slice(5).trim()
+                    if (payload === '[DONE]') continue
+                    let j; try { j = JSON.parse(payload) } catch { continue }
+                    if (j.error) { failed = new AiHttpError(typeof j.error === 'string' ? j.error : j.error.message || 'The model stopped with an error', { code: 'HTTP', retryable: true }); continue }
+                    if (j.model) model = j.model
+                    if (j.usage) usage = j.usage
+                    const d = j.choices?.[0]?.delta?.content ?? j.choices?.[0]?.message?.content ?? ''
+                    if (d) { text += d; try { onDelta(d, text) } catch { } }
+                }
+            })
+            res.on('end', () => {
+                clearTimeout(timer)
+                if (failed && !text) return reject(failed)
+                resolve({ text, model, usage })
+            })
+            res.on('error', (e) => { clearTimeout(timer); reject(new AiHttpError(e.message, { code: 'NETWORK', retryable: true })) })
+        })
+        arm()
+        req.on('error', (e) => { clearTimeout(timer); reject(e instanceof AiHttpError ? e : new AiHttpError(e.message, { code: 'NETWORK', retryable: true })) })
+        req.write(data)
+        req.end()
+    })
+}

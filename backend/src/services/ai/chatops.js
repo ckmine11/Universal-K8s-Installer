@@ -69,8 +69,14 @@ export function intentOf(raw) {
 }
 
 // ── per chat: the numbered list and the rate limit ──
-const chats = new Map()   // chatKey → { list: [incidentId], at, asked: [ts] }
-const chatState = (k) => { let c = chats.get(k); if (!c) { c = { list: [], at: 0, asked: [] }; chats.set(k, c) } return c }
+const chats = new Map()   // chatKey → { list: [incidentId], at, asked: [ts], history: [{ role, content }], lastTarget, lastAt }
+const chatState = (k) => { let c = chats.get(k); if (!c) { c = { list: [], at: 0, asked: [], history: [], lastTarget: null, lastAt: 0 }; chats.set(k, c) } return c }
+// a conversation is remembered for follow-up questions ("show its logs") — the last 8 messages, 2 hours
+const MEMORY_TURNS = 8, MEMORY_MS = 2 * 3600e3
+/** "Clear" — the conversation and what it was about are forgotten. */
+export function resetChat(k) { const c = chats.get(k); if (c) { c.history = []; c.lastTarget = null } }
+// "show its logs", "uska fix kya hai" — about the pod / app the conversation was about
+const REFERS = /\b(it|its|it's|that|this|same|the pod|the app|the deployment|uska|uske|uski|iska|iske|iski|isko|usko|ise|use|ye|yeh|wo|woh|vo)\b/
 
 // a scope is { orgId } for a team chat (the whole workspace, like its alerts) or
 // { orgId, user, visible } in the web app (only what that member may see)
@@ -124,7 +130,15 @@ const user = (orgId, who, source) => ({ id: `chat:${source}`, username: `${who} 
  * ctx: { orgId, chatKey, who, source: 'Telegram' | 'Slack', text, send?(progressText) }
  */
 export async function handleChat(ctx) {
+    const state = chatState(ctx.chatKey)
+    if (Date.now() - state.lastAt > MEMORY_MS) { state.history = []; state.lastTarget = null }
     const r = await answer(ctx)
+    if (r?.remember !== false && r?.engine && r.reply) {
+        state.history.push({ role: 'user', content: String(ctx.text).slice(0, 2000) }, { role: 'assistant', content: String(r.reply).slice(0, 2000) })
+        state.history = state.history.slice(-MEMORY_TURNS)
+    }
+    state.lastAt = Date.now()
+    delete r?.remember
     // Telegram and Slack show plain text: the AI's Markdown made readable there
     if (r?.reply && ctx.source !== 'Web') r.reply = toPlain(r.reply)
     return r
@@ -196,9 +210,15 @@ async function answer(ctx) {
                 const about = (named.length ? named : clusters).slice(0, 5)
                 const snaps = await Promise.all(about.map(c => within(snapshotOf(c), 20e3).then(snap => ({ c, snap: limitSnapshot(snap, nsFilter(sc, u, c)) })).catch(e => ({ c, error: e.message }))))
                 // a pod or app named in the question ("web-2", "api deployment"), or "the crashing pod": its logs, describe, events
-                const found = snaps.map(x => x.snap && { ...x, t: targetOf(intent.text, x.snap) }).find(x => x?.t)
+                let found = snaps.map(x => x.snap && { ...x, t: targetOf(intent.text, x.snap) }).find(x => x?.t)
+                if (!found && state.lastTarget && REFERS.test(intent.text.toLowerCase())) {
+                    const x = snaps.find(y => y.snap && y.c.id === state.lastTarget.clusterId)
+                    const t = x && targetOf(` ${state.lastTarget.kind === 'pod' ? '' : state.lastTarget.kind} ${state.lastTarget.name} `, x.snap)
+                    if (t) found = { ...x, t }
+                }
+                if (found) state.lastTarget = { clusterId: found.c.id, kind: found.t.kind, name: found.t.name }
                 if (found && ['pod', 'deployment', 'statefulset', 'daemonset'].includes(found.t.kind) && DIAG.test(intent.text.toLowerCase())) {
-                    return await lookInto({ ctx, u, sc, cluster: found.c, t: found.t })
+                    return await lookInto({ ctx, u, sc, cluster: found.c, t: found.t, state })
                 }
                 // the live facts the AI answers from
                 const blocks = []
@@ -221,7 +241,8 @@ async function answer(ctx) {
                     const cmd = describeCmd(found.t.kind, found.t.ns, found.t.name)
                     if (cmd) { const d = await within(onCluster(found.c, (ssh) => ssh.execCommand(cmd)), 25e3).then(r => String(r.stdout || r.stderr || ''), () => ''); if (d) blocks.push({ label: `kubectl describe ${found.t.kind} ${found.t.ns}/${found.t.name} (live)`, text: d.slice(0, 6000) }) }
                 }
-                const r = await ask(u, { task: 'chat', purpose: `chat (${source})`, maxTokens: 1200, system: CHAT_SYSTEM, data: blocks, question: intent.text })
+                ctx.stage?.('Asking the AI…')
+                const r = await ask(u, { task: 'chat', purpose: `chat (${source})`, maxTokens: 1200, system: CHAT_SYSTEM, data: blocks, question: intent.text, history: state.history, ...(ctx.onToken ? { onToken: ctx.onToken } : {}) })
                 return { reply: r.text.trim().slice(0, 3800), engine: { provider: r.provider, model: r.model } }
             }
         }
@@ -240,11 +261,12 @@ const mayLook = (sc, u, c) => !sc.user || kubeLevelOn(u, c) !== 'none'
 const W = { problem: 'Problem', cause: 'Cause', proof: 'Proof', fix: 'How to fix it', log: 'Last log lines', changed: 'Changed just before', run: 'A fix KubeEZ can run', removed: (n) => `⚠ ${n} dangerous step(s) removed by KubeEZ.`, noPods: 'it has no pods right now', worst: 'its pod with the most trouble', others: 'Other pods with trouble', notAllowed: 'Your role may not read logs in this cluster.', webApply: 'Preview it (dry-run) and apply it below.', chatApply: 'Preview and apply it in KubeEZ → Ask AI.' }
 const looked = new Map()   // pod + 2-minute slot → the AI answer (asking twice costs one model call)
 
-async function lookInto({ ctx, u, sc, cluster, t }) {
+async function lookInto({ ctx, u, sc, cluster, t, state }) {
     if (!mayLook(sc, u, cluster)) return { reply: W.notAllowed }
     const pod = t.pod, wl = t.workload
     if (!pod) return { reply: `${cluster.clusterName}: ${t.kind} ${t.ns}/${t.name} — ${wl.ready}/${wl.want} ready, ${W.noPods}${wl.want === 0 ? ' (scaled to 0)' : ''}.` }
     await ctx.send?.(L.looking)
+    ctx.stage?.('Reading the logs, describe and events…')
     const ok = (pod.phase === 'Running' && pod.ready === pod.containers) || pod.phase === 'Succeeded'
     const intro = [
         `🔎 ${cluster.clusterName}: ${pod.ns}/${pod.name} — ${pod.reason || pod.phase} (${pod.ready}/${pod.containers} ready, ${pod.restarts} restarts${pod.node ? `, node ${pod.node}` : ''})`,
@@ -260,6 +282,7 @@ async function lookInto({ ctx, u, sc, cluster, t }) {
     let ai = null, aiErr = null, aiNone = false
     {
         const key = `${inc.id}:${inc.lastSeen}`
+        ctx.stage?.('Asking the AI…')
         try {
             if (!looked.has(key)) {
                 if (quick) inc.details = `KubeEZ's own check of the logs/events: ${quick.summary} ${quick.cause}`.trim()

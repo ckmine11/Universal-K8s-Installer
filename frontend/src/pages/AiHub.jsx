@@ -35,6 +35,7 @@ function AskAi() {
     const [msgs, setMsgs] = useState(() => { try { return JSON.parse(sessionStorage.getItem(STORE)) || [] } catch { return [] } })
     const [text, setText] = useState('')
     const [busy, setBusy] = useState(false)
+    const [live, setLive] = useState(null)   // { partial, stage } — the answer as it is written
     const end = useRef(null)
     useEffect(() => { try { sessionStorage.setItem(STORE, JSON.stringify(msgs.slice(-40))) } catch { } end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [msgs])
 
@@ -43,7 +44,9 @@ function AskAi() {
         if (!question || busy) return
         setText(''); setBusy(true)
         setMsgs(m => [...m, { who: 'me', text: question }])
-        const { ok, data } = await aiJob('/api/ai/chat', { text: question })
+        setLive(null)
+        const { ok, data } = await aiJob('/api/ai/chat', { text: question }, { onProgress: (p) => { setLive(p); end.current?.scrollIntoView({ block: 'end' }) } })
+        setLive(null)
         setMsgs(m => [...m, { who: 'ai', text: ok ? data.reply : `⚠ ${data.error}`, engine: ok ? data.engine || null : null, needsAi: ok && !!data.needsAi, fix: ok ? data.fix || null : null }])
         if (ok && data.needsAi) setEngines(0)
         setBusy(false)
@@ -68,7 +71,7 @@ function AskAi() {
                     <div className="text-center py-10">
                         <Bot className="w-10 h-10 mx-auto text-violet-300" />
                         <p className="mt-3 text-sm text-slate-300">Ask about your clusters — in English, हिन्दी or Hinglish. Answers are always in clear English.</p>
-                        <p className="mt-1 text-xs text-slate-500">Ask anything about what runs in your clusters, or say “web-2 ka log check karo”. KubeEZ reads your clusters live (pods, logs, events, problems) and your connected AI answers from that. Only about what you may see; a fix runs only after you preview (dry-run) and apply it.</p>
+                        <p className="mt-1 text-xs text-slate-500">Ask anything about what runs in your clusters, or say “web-2 ka log check karo” — then follow up (“show its logs”, “how do I fix it?”); the AI remembers the conversation until you Clear it. KubeEZ reads your clusters live (pods, logs, events, problems) and your connected AI answers from that. Only about what you may see; a fix runs only after you preview (dry-run) and apply it.</p>
                     </div>
                 )}
                 {msgs.map((m, i) => (
@@ -83,7 +86,15 @@ function AskAi() {
                         </div>
                     </div>
                 ))}
-                {busy && <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin text-violet-300" /> Reading your clusters and asking the AI… (a model on CPU can take up to a minute)</div>}
+                {busy && live?.partial && (
+                    <div className="flex justify-start">
+                        <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed bg-white/[0.04] border border-white/[0.07] text-slate-200">
+                            <Markdown text={live.partial} />
+                            <span className="inline-block w-2 h-4 align-middle bg-violet-300/70 animate-pulse ml-0.5" aria-hidden="true" />
+                        </div>
+                    </div>
+                )}
+                {busy && !live?.partial && <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="w-4 h-4 animate-spin text-violet-300" /> {live?.stage || 'Reading your clusters…'}</div>}
                 <div ref={end} />
             </div>
             <div className="border-t border-white/[0.07] p-3 space-y-2">
@@ -91,7 +102,7 @@ function AskAi() {
                 <form onSubmit={e => { e.preventDefault(); send() }} className="flex gap-2">
                     <input className="kz-input flex-1" value={text} onChange={e => setText(e.target.value)} maxLength={2000} disabled={engines === 0} placeholder={engines === 0 ? 'Connect an AI model first (AI settings → Connect AI)' : 'e.g. web-2 ka log check karo  ·  kitne namespace hain?  ·  prod pe kya badla aaj?'} aria-label="Ask KubeEZ AI" autoFocus />
                     <button type="submit" disabled={busy || !text.trim() || engines === 0} className="kz-btn-primary">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
-                    {msgs.length > 0 && <button type="button" onClick={() => setMsgs([])} className="kz-btn-ghost !text-xs">Clear</button>}
+                    {msgs.length > 0 && <button type="button" onClick={() => { setMsgs([]); apiFetch('/api/ai/chat/reset', { method: 'POST' }).catch(() => { }) }} className="kz-btn-ghost !text-xs" title="Clear the chat — the AI forgets this conversation">Clear</button>}
                 </form>
             </div>
         </div>
