@@ -269,7 +269,7 @@ router.post('/ask', requirePermission('ai:use'), async (req, res) => {
     try {
         const question = String(req.body?.question || '').trim()
         if (question.length < 3) throw bad('Ask a question')
-        const r = await ask(req.user, { task: 'chat', purpose: 'try it', question, maxTokens: 800 })
+        const r = await ask(req.user, { task: 'chat', purpose: 'try it', question, maxTokens: 1200 })
         res.json({ answer: r.text, provider: r.provider, model: r.model, ms: r.ms, attempts: r.attempts, masked: r.masked, traceId: r.traceId })
     } catch (e) { if (e instanceof AiUnavailable) return res.status(e.status || 503).json({ error: e.message, code: e.code, attempts: e.attempts }); fail(res, e) }
 })

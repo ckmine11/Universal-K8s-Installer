@@ -7,6 +7,7 @@ import { PageTitle } from '../components/ui/PageHeader'
 import { RISK_TONE } from '../components/ai/RiskCard'
 import { aiJob } from '../components/ai/aiJob'
 import Feedback from '../components/ai/Feedback'
+import Markdown from '../components/ai/Markdown'
 
 // Fleet: every cluster on one page — riskiest first, the same problem on
 // several clusters, Kubernetes and add-on version drift.
@@ -44,7 +45,7 @@ export default function Fleet() {
             {!f && loading && <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>}
             {summary && !summary.loading && (
                 <div className={`rounded-2xl border p-4 text-sm ${summary.error ? 'border-amber-400/25 text-amber-100' : 'border-violet-400/25 bg-violet-500/[0.05] text-slate-200'}`}>
-                    {summary.error || <><p className="whitespace-pre-wrap leading-relaxed">{summary.summary}</p><div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500"><span>{summary.engine?.provider} · {summary.engine?.model}</span><Feedback traceId={summary.engine?.traceId} /></div></>}
+                    {summary.error || <><div className="leading-relaxed"><Markdown text={summary.summary} /></div><div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500"><span>{summary.engine?.provider} · {summary.engine?.model}</span><Feedback traceId={summary.engine?.traceId} /></div></>}
                 </div>
             )}
             {f && (
@@ -80,12 +81,12 @@ export default function Fleet() {
                         {!f.clusters.length && <p className="text-sm text-slate-400">No clusters yet.</p>}
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
-                                <thead className="text-left text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="py-2 pr-3">Cluster</th><th className="pr-3">Risk</th><th className="pr-3">Biggest risk</th><th className="pr-3">Kubernetes</th><th className="pr-3">Nodes</th><th className="pr-3">Open</th><th>Add-ons</th></tr></thead>
+                                <thead className="text-left text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="py-2 pr-3">Cluster</th><th className="pr-3" title="Health score: 100 is safest; every point off has a reason on the cluster page">Health</th><th className="pr-3">Biggest risk</th><th className="pr-3">Kubernetes</th><th className="pr-3">Nodes</th><th className="pr-3">Open</th><th>Add-ons</th></tr></thead>
                                 <tbody>
                                     {f.clusters.map(c => (
                                         <tr key={c.id} className="border-t border-white/5 align-top">
                                             <td className="py-2.5 pr-3"><Link to={`/cluster/${c.id}`} className="font-semibold text-white hover:text-blue-300">{c.name}</Link></td>
-                                            <td className="pr-3">{c.risk ? <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${RISK_TONE[c.risk.level]?.chip}`}>{c.risk.score}</span> : '—'}</td>
+                                            <td className="pr-3">{c.risk ? <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${RISK_TONE[c.risk.level]?.chip}`} title="Health score — 100 is safest">{c.risk.score}/100 · {c.risk.level} risk</span> : '—'}</td>
                                             <td className="pr-3 text-xs text-slate-400">{c.risk?.top || '—'}</td>
                                             <td className="pr-3 font-mono text-xs text-slate-300">{c.k8sVersion}</td>
                                             <td className="pr-3 text-xs text-slate-400">{c.nodes}{c.controlPlanes > 1 ? ` (${c.controlPlanes} CP)` : ''}</td>

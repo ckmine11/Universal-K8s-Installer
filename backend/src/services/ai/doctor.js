@@ -258,7 +258,7 @@ export async function explainIncident(user, { incident: inc, catalog, cluster, f
 // ── what changed ──
 export async function summarizeChanges(user, cluster, { items, from, to }) {
     const r = await ask(user, {
-        task: 'summarize', purpose: 'what changed', maxTokens: 600, clusterId: cluster.id, clusterName: cluster.clusterName,
+        task: 'summarize', purpose: 'what changed', maxTokens: 1500, clusterId: cluster.id, clusterName: cluster.clusterName,
         system: 'Summarise the changes to a Kubernetes cluster for its operator: group them (deployments, add-ons / Helm, config, nodes, KubeEZ actions), name the riskiest ones first, and point out anything unusual (many restarts of one app, changes at night, a Secret changed right before a rollout). 3 to 8 short bullet points. Only use the listed changes.',
         data: [{ label: `changes ${from} → ${to}`, text: items.length ? changesText(items, 150) : 'No changes.' }],
         question: 'What changed, in short?'

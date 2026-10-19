@@ -174,7 +174,7 @@ describe('Ask AI: the connected AI answers, from live cluster facts', () => {
         const r = await handleChat({ orgId: org, chatKey: 'web:cq', who: 'dev', source: 'Web', text: 'pods me kya problem hai', user: admin, rate: 60 })
         assert.equal(r.reply, reply)
         assert.match(sent, /web-2 — CrashLoopBackOff/)
-        assert.match(sent, /prod: Kubernetes 1\.36\.0, 1 control-plane, 0 workers; risk \d+\/100/)
+        assert.match(sent, /prod: Kubernetes 1\.36\.0, 1 control-plane, 0 workers; health score \d+\/100 \(higher is safer — \w+ risk\)/)
         reply = 'Everything is fine apart from web-2.'
         assert.equal((await handleChat({ orgId: org, chatKey: 'web:cq', who: 'dev', source: 'Web', text: 'sab theek hai?', user: admin, rate: 60 })).reply, reply, '"status" too is answered by the AI')
     })

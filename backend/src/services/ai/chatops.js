@@ -100,7 +100,7 @@ async function statusReply(sc, state) {
         const inc = incidentDetector.getIncidents().filter(i => i.clusterId === c.id && !CLOSED.has(i.status) && !i.causedBy && mayView(sc, i))
         const m = mon.find(x => x.clusterId === c.id)
         const r = riskScore({ cluster: c, incidents: inc, monitoring: m ? { watched: true, connected: m.connected } : { watched: false }, snapshot: cachedSnapshot(c.id), offsite: undefined, compliance: null })
-        return `${RISK[r.level]} ${c.clusterName} — risk ${r.score}/100, ${inc.length} open${r.factors[0] ? ` · ${r.factors[0].label}` : ''}`
+        return `${RISK[r.level]} ${c.clusterName} — health ${r.score}/100 (${r.level} risk), ${inc.length} open${r.factors[0] ? ` · ${r.factors[0].label}` : ''}`
     })
     return { reply: `${lines.join('\n')}\n\n${listText(sc, state)}` }
 }
@@ -124,6 +124,25 @@ const user = (orgId, who, source) => ({ id: `chat:${source}`, username: `${who} 
  * ctx: { orgId, chatKey, who, source: 'Telegram' | 'Slack', text, send?(progressText) }
  */
 export async function handleChat(ctx) {
+    const r = await answer(ctx)
+    // Telegram and Slack show plain text: the AI's Markdown made readable there
+    if (r?.reply && ctx.source !== 'Web') r.reply = toPlain(r.reply)
+    return r
+}
+/** Markdown → readable plain text (for chat apps): no **, #, code fences or table pipes. */
+export function toPlain(md) {
+    const out = []
+    for (const l of String(md).split('\n')) {
+        if (/^\s*```/.test(l)) continue
+        if (/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l)) continue
+        let t = l
+        if (/^\s*\|.*\|\s*$/.test(t)) t = t.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim()).join(' · ')
+        t = t.replace(/^\s*#{1,4}\s+/, '').replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, (m, a, b) => a || b).replace(/`([^`\n]+)`/g, '$1')
+        out.push(t)
+    }
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+async function answer(ctx) {
     const { orgId, chatKey, who, source } = ctx
     const intent = intentOf(ctx.text)
     const s = aiStore.get(orgId)
@@ -190,7 +209,7 @@ export async function handleChat(ctx) {
                     const inc = incidentDetector.getIncidents().filter(i => i.clusterId === c.id && !CLOSED.has(i.status) && !i.causedBy && mayView(sc, i))
                     const m = mon.find(x => x.clusterId === c.id)
                     const r = riskScore({ cluster: c, incidents: inc, monitoring: m ? { watched: true, connected: m.connected } : { watched: false }, snapshot: cachedSnapshot(c.id), offsite: undefined, compliance: null })
-                    return `${c.clusterName}: Kubernetes ${c.k8sVersion}, ${(c.masterNodes || []).length} control-plane, ${(c.workerNodes || []).length} workers; risk ${r.score}/100 (${r.level})${r.factors[0] ? ` — ${r.factors[0].label}` : ''}; ${inc.length} open problem(s)`
+                    return `${c.clusterName}: Kubernetes ${c.k8sVersion}, ${(c.masterNodes || []).length} control-plane, ${(c.workerNodes || []).length} workers; health score ${r.score}/100 (higher is safer — ${r.level} risk)${r.factors[0] ? `, biggest risk: ${r.factors[0].label}` : ''}; ${inc.length} open problem(s)`
                 }).join('\n') || 'No clusters yet.' })
                 blocks.push({ label: 'open problems (numbered)', text: list.map((i, n) => `${n + 1}. ${i.severity} — ${reasonLabel(i.reason)} on ${i.clusterName} ${i.namespace ? `${i.namespace}/` : ''}${i.target}: ${i.message}`).join('\n') || 'none' })
                 for (const x of snaps) blocks.push(x.snap ? { label: `cluster ${x.c.clusterName} — read live just now`, text: snapshotText(x.snap, x.c.clusterName) } : { label: `cluster ${x.c.clusterName}`, text: `Could not be read just now: ${x.error}` })
@@ -270,7 +289,7 @@ async function lookInto({ ctx, u, sc, cluster, t }) {
         if (aiNone) return { reply: L.noEngine, needsAi: true }
         lines.push(L.aiDown(aiErr))
     }
-    if (tail.length) lines.push('', `${W.log}:`, ...tail.map(l => `  ${l.slice(0, 220)}`))
+    if (tail.length) lines.push('', `${W.log}:`, '```', ...tail.map(l => l.slice(0, 220)), '```')
     // a fix KubeEZ can run: the AI's, else what fixed this before on this workload
     const spec = ai?.answer.action || (ai?.runbook && ai.allowedActions?.find(x => x.type === ai.runbook.action.type)) || null
     if (spec) lines.push('', `🛠 ${W.run}: ${spec.type} ${spec.kind}/${spec.name}${spec.type === 'scale' ? ` → ${spec.replicas}` : ''}`, sc.user ? W.webApply : W.chatApply)

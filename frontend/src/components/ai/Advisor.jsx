@@ -4,6 +4,7 @@ import { apiFetch, useAuth } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
 import { aiJob } from './aiJob'
 import Feedback from './Feedback'
+import Markdown from './Markdown'
 
 // AI → Advisor: security and cost per workload, facts first, AI summary on demand.
 const SEV = { high: 'text-red-300 border-red-400/30 bg-red-500/10', medium: 'text-amber-300 border-amber-400/30 bg-amber-500/10', low: 'text-slate-300 border-white/15 bg-white/5' }
@@ -63,7 +64,7 @@ export default function Advisor({ clusterId }) {
             </div>
             {summary && !summary.loading && (
                 <div className={`rounded-2xl border p-4 text-sm ${summary.error ? 'border-amber-400/25 text-amber-100' : 'border-violet-400/25 bg-violet-500/[0.05] text-slate-200'}`}>
-                    {summary.error || <><p className="whitespace-pre-wrap leading-relaxed">{summary.summary}</p><div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500"><span>{summary.engine?.provider} · {summary.engine?.model}</span><Feedback traceId={summary.engine?.traceId} /></div></>}
+                    {summary.error || <><div className="leading-relaxed"><Markdown text={summary.summary} /></div><div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500"><span>{summary.engine?.provider} · {summary.engine?.model}</span><Feedback traceId={summary.engine?.traceId} /></div></>}
                 </div>
             )}
 

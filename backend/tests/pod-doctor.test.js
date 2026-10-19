@@ -177,7 +177,7 @@ describe('Ask AI: "check the logs of this pod"', () => {
         assert.match(sent, /KubeEZ's own check of the logs\/events: The app cannot reach/, 'the AI gets KubeEZ\'s own finding as a hint')
         assert.ok(cmds.some(c => /logs web-6d4f9-b2 -n shop --all-containers --previous/.test(c)), 'the crashed container\'s log is read too')
         assert.equal(cmds.some(c => /kubectl (delete|apply|patch|scale|rollout restart)/.test(c)), false, 'read-only')
-        assert.match(r.reply, /Last log lines:\n {2}2026\/10\/17 10:00:01 starting/)
+        assert.match(r.reply, /Last log lines:\n```\n2026\/10\/17 10:00:01 starting/, 'the log in a code block')
         assert.match(sent, /ECONNREFUSED/, 'and the real log')
         assert.deepEqual(r.engine, { provider: 'Fake', model: 'm' }, 'the answer says which AI wrote it')
     })

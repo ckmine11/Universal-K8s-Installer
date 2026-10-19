@@ -5,6 +5,7 @@ import { can } from '../../config/permissions'
 import { UndoButton } from './FixPreview'
 import { aiJob } from './aiJob'
 import Feedback from './Feedback'
+import Markdown from './Markdown'
 
 // "What changed?" for one cluster: KubeEZ's own actions and the changes inside
 // Kubernetes on one timeline, plus the fixes applied from KubeEZ AI (with undo).
@@ -67,7 +68,7 @@ export default function WhatChanged({ clusterId }) {
                 </div>
                 {summary && !summary.loading && (
                     <div className={`rounded-xl border p-3 text-xs ${summary.error ? 'border-amber-400/25 text-amber-100' : 'border-violet-400/25 bg-violet-500/[0.05] text-slate-200'}`}>
-                        {summary.error ? summary.error : <><p className="whitespace-pre-wrap leading-relaxed">{summary.summary}</p><p className="mt-2 text-[10px] text-slate-500">{summary.engine?.provider} · {summary.engine?.model}</p><div className="mt-2"><Feedback traceId={summary.engine?.traceId} /></div></>}
+                        {summary.error ? summary.error : <><div className="leading-relaxed"><Markdown text={summary.summary} /></div><p className="mt-2 text-[10px] text-slate-500">{summary.engine?.provider} · {summary.engine?.model}</p><div className="mt-2"><Feedback traceId={summary.engine?.traceId} /></div></>}
                     </div>
                 )}
                 {data?.clusterError && <p className="flex items-center gap-1.5 text-xs text-amber-200"><AlertTriangle className="w-3.5 h-3.5" />{data.clusterError} — showing KubeEZ's own changes only.</p>}

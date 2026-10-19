@@ -3,6 +3,7 @@ import { Sparkles, Loader2, RefreshCw, Quote, ListChecks, GitCommitHorizontal, A
 import { aiJob } from './aiJob'
 import FixPreview from './FixPreview'
 import Feedback from './Feedback'
+import { Inline } from './Markdown'
 
 // "Explain with AI" for a failed job or an incident. Shows the cause, the
 // proof (lines checked against the real data), the steps, what changed
@@ -10,9 +11,7 @@ import Feedback from './Feedback'
 const CONF = { high: ['High confidence', 'text-emerald-300 border-emerald-400/30'], medium: ['Medium confidence', 'text-amber-300 border-amber-400/30'], low: ['Low confidence — check it', 'text-red-300 border-red-400/30'] }
 
 function Steps({ items, caution = [] }) {
-    // `code` in backticks becomes monospace
-    const fmt = (s) => s.split(/(`[^`]+`)/g).map((p, i) => p.startsWith('`') && p.endsWith('`') ? <code key={i} className="rounded bg-black/40 px-1 py-0.5 font-mono text-[11px] text-blue-200 break-all">{p.slice(1, -1)}</code> : p)
-    return <ol className="mt-1.5 space-y-1.5 list-decimal list-inside text-xs text-slate-300 leading-relaxed">{items.map((s, i) => <li key={i}>{fmt(s)}{caution.includes(s) && <span className="block ml-4 mt-0.5 text-[11px] text-red-300">⚠ Destroys data or setup on that machine — only if it is not part of a working cluster, and after a snapshot.</span>}</li>)}</ol>
+    return <ol className="mt-1.5 space-y-1.5 list-decimal list-inside text-xs text-slate-300 leading-relaxed">{items.map((s, i) => <li key={i}><Inline text={s} />{caution.includes(s) && <span className="block ml-4 mt-0.5 text-[11px] text-red-300">⚠ Destroys data or setup on that machine — only if it is not part of a working cluster, and after a snapshot.</span>}</li>)}</ol>
 }
 
 export default function AiExplain({ url, label = 'Explain with AI', hint, clusterId, incidentId, onFallback }) {
@@ -58,8 +57,8 @@ export default function AiExplain({ url, label = 'Explain with AI', hint, cluste
                 <button onClick={() => run(true)} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Ask again" aria-label="Ask again"><RefreshCw className="w-3.5 h-3.5" /></button>
             </div>
             <div>
-                <p className="text-sm text-slate-100 leading-relaxed">{a.summary}</p>
-                {a.cause && <p className="mt-2 text-xs text-slate-300"><span className="font-semibold text-slate-200">Cause: </span>{a.cause}</p>}
+                <p className="text-sm text-slate-100 leading-relaxed"><Inline text={a.summary} /></p>
+                {a.cause && <p className="mt-2 text-xs text-slate-300"><span className="font-semibold text-slate-200">Cause: </span><Inline text={a.cause} /></p>}
             </div>
             {a.change && (
                 <div className="rounded-xl border border-amber-400/25 bg-amber-500/[0.05] p-3">

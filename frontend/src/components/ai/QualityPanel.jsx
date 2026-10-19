@@ -112,7 +112,7 @@ export default function QualityPanel({ settings, onRoutesSaved }) {
                 {q.running
                     ? <button onClick={cancel} className="kz-btn-ghost !py-2"><Square className="w-4 h-4" /> Stop the test</button>
                     : <button onClick={run} disabled={busy || !pick?.size} className="kz-btn-primary !py-2">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Test {pick?.size || 0} engine(s)</button>}
-                <span className="text-[11px] text-slate-500">{q.cases.length} cases each{local ? ` · a local model on CPU needs about ${Math.round(q.cases.length * 0.75)}–${q.cases.length * 2} min per engine` : ''}. It does not use the daily allowance.</span>
+                <span className="text-[11px] text-slate-500">{q.cases.length} cases each{local ? ` · a local model on CPU needs about ${Math.round(q.cases.length * 0.75)}–${q.cases.length * 2} min per engine` : ''}. Runs in the background; cloud engines are paced to stay under their rate limits.</span>
             </div>
 
             {active.length > 0 && (

@@ -12,7 +12,6 @@ import { UNTRUSTED_RULES } from './guard.js'
 import { INSTALL_SYSTEM, incidentSystem, JSON_RULES } from './doctor.js'
 import { SPECIALISTS } from './specialists.js'
 import { GENERATE_SYSTEM } from './manifests.js'
-import { INTENT_SYSTEM } from './yamlBuilder.js'
 import { CHAT_SYSTEM } from './chatops.js'
 import { latestByEngine, feedbackStats } from './quality.js'
 import { EXAM_VERSION, EXAM } from '../../config/aiExam.js'
@@ -31,8 +30,7 @@ export function promptInventory() {
         ['Install Doctor', INSTALL_SYSTEM, 'failed installs, upgrades, add-on jobs'],
         ['incident explainer', incidentSystem(), 'incidents'],
         ...Object.entries(SPECIALISTS).map(([k, v]) => [`specialist: ${v.label}`, v.prompt, `incidents (${k})`]),
-        ['text to YAML (understand the request)', INTENT_SYSTEM, 'Create YAML — what is wanted, as JSON'],
-        ['text to YAML (free-form)', GENERATE_SYSTEM, 'Create YAML — only what the templates cannot build'],
+        ['text to YAML', GENERATE_SYSTEM, 'Create YAML — the AI writes it from KubeEZ\'s draft and rules'],
         ['ChatOps', CHAT_SYSTEM, 'Telegram / Slack questions']
     ]
     return list.map(([name, text, usedFor]) => ({ name, usedFor, sha256: sha(text), chars: text.length }))
@@ -81,7 +79,7 @@ export async function buildAiBom(orgId, { now = new Date() } = {}) {
         ['Autonomy', { suggest: 'suggest only', approve: 'a person approves every fix', auto: 'proven low-risk runbooks may run by themselves' }[s.autonomy]],
         ['Two-person approval for AI fixes', approvals['ai:action'] ? 'required' : 'not required'],
         ['Two-person approval for AI-written YAML', approvals['ai:apply'] ? 'required' : 'not required'],
-        ['Server model daily allowance', `${s.dailyLimit} questions`],
+        ...(serverAvailable() ? [['Server model daily allowance', `${s.dailyLimit} questions`]] : []),
         ['ChatOps', Object.values(s.chatops || {}).some(c => c.enabled) ? 'on for some channels (read-only)' : 'off']
     ]
     const retention = [

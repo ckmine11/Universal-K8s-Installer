@@ -122,7 +122,7 @@ describe('ChatOps: answers', () => {
         modelReply = (body) => { sent = body.messages.map(m => m.content).join('\n'); return 'shop has one crash-looping pod.' }
         const r = await handleChat({ orgId: org2, chatKey: 'web:m1', who: 'dev', source: 'Web', text: 'sab theek hai?', user: member, rate: 60 })
         assert.equal(r.reply, 'shop has one crash-looping pod.')
-        assert.match(sent, /shop: Kubernetes 1\.36\.0.*risk \d+\/100/)
+        assert.match(sent, /shop: Kubernetes 1\.36\.0.*health score \d+\/100 \(higher is safer/)
         assert.equal(/finance|fin-1/.test(sent), false, 'the hidden cluster and its problem never reach the AI')
         await handleChat({ orgId: org2, chatKey: 'tg:team', who: 'ops', source: 'Telegram', text: 'incidents' })
         assert.match(sent, /fin-1/, 'a team chat sees the whole workspace, like its alerts')

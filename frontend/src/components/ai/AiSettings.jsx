@@ -9,6 +9,7 @@ import ChatOpsPanel from './ChatOpsPanel'
 import { McpPanel, AiBomPanel, LearningPanel } from './Phase6Panels'
 import Feedback from './Feedback'
 import ConnectAi from './ConnectAi'
+import Markdown from './Markdown'
 
 // AI settings: the engines (models) KubeEZ AI may use, which engine does
 // which job (with fallbacks), the safety switches, a test box and the log.
@@ -122,7 +123,7 @@ function TryIt() {
             {r && (
                 <div className={`rounded-2xl border p-4 text-sm ${r.error ? 'border-red-400/25 bg-red-500/[0.05]' : 'border-white/10 bg-white/[0.02]'}`}>
                     {r.error ? <p className="text-red-200 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{r.error}</p>
-                        : <p className="text-slate-200 whitespace-pre-wrap leading-relaxed">{r.answer}</p>}
+                        : <div className="text-slate-200 leading-relaxed"><Markdown text={r.answer} /></div>}
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
                         {r.provider && <span className="kz-chip">{r.provider} · {r.model} · {(r.ms / 1000).toFixed(1)} s</span>}
                         {r.masked > 0 && <span className="kz-chip !text-amber-300"><EyeOff className="w-3 h-3" />{r.masked} secret(s) masked before sending</span>}

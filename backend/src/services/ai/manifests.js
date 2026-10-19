@@ -116,22 +116,18 @@ const toYaml = (docs) => docs.map(o => stringify(o, { aliasDuplicateObjects: fal
 const engineOf = (r) => r ? { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } : null
 
 // what the cluster needs for these objects (add-ons) — said before the dry-run
-function clusterNotes(docs, addons = []) {
+function clusterNotes(docs, addons = [], storage = null) {
     const has = (k) => addons.includes(k)
     const out = []
     if (docs.some(o => o.kind === 'Ingress') && !has('ingress')) out.push('An Ingress needs an ingress controller — install the Nginx Ingress add-on on this cluster (or use a NodePort / LoadBalancer).')
-    if (docs.some(o => o.kind === 'PersistentVolumeClaim' || o.spec?.volumeClaimTemplates) && !has('longhorn') && !has('nfs-provisioner')) out.push('Volumes need storage: install the Longhorn or NFS add-on, or make sure the cluster has a default StorageClass — otherwise the volume stays Pending.')
+    const pvc = docs.some(o => o.kind === 'PersistentVolumeClaim' || o.spec?.volumeClaimTemplates)
+    if (pvc && storage?.default) { /* the cluster's default StorageClass provides the volumes */ }
+    else if (pvc && storage?.classes?.length) out.push(`This cluster has no default StorageClass — add storageClassName: ${storage.classes[0]} to the volume claims (classes here: ${storage.classes.join(', ')}), or mark one as default.`)
+    else if (pvc && !has('longhorn') && !has('nfs-provisioner')) out.push(storage ? 'This cluster has no StorageClass yet — install the Longhorn or NFS add-on, otherwise the volume stays Pending.' : 'Volumes need storage: install the Longhorn or NFS add-on, or make sure the cluster has a default StorageClass — otherwise the volume stays Pending.')
     if (docs.some(o => o.kind === 'Service' && o.spec?.type === 'LoadBalancer') && !has('metallb')) out.push('A LoadBalancer Service needs MetalLB on your own servers — install the MetalLB add-on, or the external IP stays pending.')
     return out
 }
 
-/**
- * Description → checked manifests, the most reliable way first:
- *   templates   the rules understood it → KubeEZ builds it (instant, no AI)
- *   ai-intent   the model says what is wanted (short JSON) → KubeEZ builds it
- *   ai-yaml     only for what the templates cannot build: the model writes YAML,
- *               KubeEZ fixes what it can and asks once more with the errors
- */
 /** The labels and container port of a workload that already runs (to expose it). → { selector, port } | null */
 export async function workloadSelector(ssh, namespace, kind, name) {
     const ok = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/
@@ -181,7 +177,7 @@ const NO_AI = 'Please connect an AI model first — Create YAML is written by th
  * rules, then checks and fixes what comes back, asks again with the problems if
  * needed, and fills in random secret values (they are never sent to the AI).
  */
-export async function generateManifests(user, { description, namespace, context = '', addons = [], lookup = null }) {
+export async function generateManifests(user, { description, namespace, context = '', addons = [], lookup = null, storage = null }) {
     const d = String(description || '').trim()
     if (d.length < 3) throw bad('Describe what you want (e.g. "nginx 1.27 with 2 replicas and a service on port 80")')
     if (!NAME.test(namespace || '')) throw bad('Pick a valid namespace')
@@ -211,9 +207,9 @@ export async function generateManifests(user, { description, namespace, context 
         r = await write(`${d.slice(0, 1500)}\n\nYour previous YAML had these problems: ${problem}\nWrite it again, fixed, following every rule.`, [{ label: 'your previous YAML', text: String(r.text).slice(0, 8000) }])
     }
     const notes = [
-        ...(filled.length ? [`KubeEZ filled in random values for ${filled.join(', ')} — they were never sent to the AI. Read one with: kubectl -n ${namespace} get secret <name> -o jsonpath='{.data.<key>}' | base64 -d`] : []),
+        ...(filled.length ? [`KubeEZ filled in random values for ${filled.join(', ')} — they were never sent to the AI. Read them with: ${filled.map(x => { const [n, k] = x.split('/'); return `kubectl -n ${namespace} get secret ${n} -o jsonpath='{.data.${k}}' | base64 -d` }).join('  ·  ')}`] : []),
         ...(draft?.notes || []).filter(n => !/random password|read with/.test(n)),
-        ...clusterNotes(docs, addons)
+        ...clusterNotes(docs, addons, storage ? await storage : null)
     ]
     return { ...checked, method: 'ai', understood: [], notes: [...new Set(notes)], fixes, engine: engineOf(r) }
 }

@@ -125,13 +125,14 @@ export function analyze(out, { rates = { cpu: 1100, memGb: 250, currency: '₹' 
     for (const a of wl.values()) {
         if (!a.measured) continue
         const item = { workload: `${a.kind}/${a.name}`, namespace: a.namespace, scope: a.scope, pods: a.pods, request: { cpu: a.reqCpu, mem: a.reqMem }, use: { cpu: a.useCpu, mem: a.useMem }, advice: null }
-        if (a.noReq) item.advice = { kind: 'no-requests', text: `No requests set — uses ${cores(a.useCpu)} / ${mem(a.useMem)} now; the scheduler cannot plan for it`, suggest: { cpu: a.useCpu * 1.3, mem: a.useMem * 1.3 } }
+        const all = a.pods > 1 ? ` (all ${a.pods} pods together)` : ''
+        if (a.noReq) item.advice = { kind: 'no-requests', text: `No requests set — uses ${cores(a.useCpu)} / ${mem(a.useMem)}${all} now; the scheduler cannot plan for it`, suggest: { cpu: Math.max(0.01, a.useCpu * 1.3), mem: Math.max(32 * MB, a.useMem * 1.3) } }
         else if (a.reqCpu - a.useCpu >= 0.25 && a.reqCpu >= 2 * a.useCpu || a.reqMem - a.useMem >= 256 * MB && a.reqMem >= 2 * a.useMem) {
             const sCpu = Math.max(0.01, a.useCpu * 1.3), sMem = Math.max(32 * MB, a.useMem * 1.3)
             const dCpu = Math.max(0, a.reqCpu - sCpu), dMem = Math.max(0, a.reqMem - sMem)
             saveCpu += dCpu; saveMem += dMem
-            item.advice = { kind: 'over', text: `Asks for ${cores(a.reqCpu)} / ${mem(a.reqMem)} but uses ${cores(a.useCpu)} / ${mem(a.useMem)}`, suggest: { cpu: sCpu, mem: sMem }, saves: { cpu: dCpu, mem: dMem } }
-        } else if (a.useCpu > a.reqCpu * 1.2 + 0.05 || a.useMem > a.reqMem * 1.2 + 64 * MB) item.advice = { kind: 'under', text: `Uses more than it asks for (${cores(a.useCpu)} / ${mem(a.useMem)} vs ${cores(a.reqCpu)} / ${mem(a.reqMem)}) — it can be throttled or evicted first`, suggest: { cpu: a.useCpu * 1.3, mem: a.useMem * 1.3 } }
+            item.advice = { kind: 'over', text: `Asks for ${cores(a.reqCpu)} / ${mem(a.reqMem)} but uses ${cores(a.useCpu)} / ${mem(a.useMem)}${all}`, suggest: { cpu: Math.min(a.reqCpu, sCpu), mem: Math.min(a.reqMem, sMem) }, saves: { cpu: dCpu, mem: dMem } }
+        } else if (a.useCpu > a.reqCpu * 1.2 + 0.05 || a.useMem > a.reqMem * 1.2 + 64 * MB) item.advice = { kind: 'under', text: `Uses more than it asks for (uses ${cores(a.useCpu)} / ${mem(a.useMem)}, asks ${cores(a.reqCpu)} / ${mem(a.reqMem)}${all}) — it can be throttled or evicted first`, suggest: { cpu: Math.max(a.reqCpu, a.useCpu * 1.3), mem: Math.max(a.reqMem, a.useMem * 1.3) } }
         else if (a.kind === 'Deployment' && a.scope === 'app' && a.useCpu < 0.002) item.advice = { kind: 'idle', text: `Almost idle right now (${cores(a.useCpu)}) — scale to 0 if it is not needed` }
         if (item.advice) costWl.push(item)
     }

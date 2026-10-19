@@ -19,13 +19,21 @@ function enginesOf(orgId) {
     return list
 }
 
+// the engine to use first for Explain — among the engines the workspace has now; a single
+// engine is only shown when it is weak ("best of one" says nothing)
+function pick(latest, engines) {
+    const current = Object.fromEntries(Object.entries(latest).filter(([id]) => engines.some(e => e.id === id)))
+    const r = recommend(current)
+    return r && (Object.keys(current).length > 1 || r.weak) ? r : null
+}
+
 router.get('/quality', requirePermission('ai:manage'), (req, res) => {
     const latest = latestByEngine(req.user.orgId)
     res.json({
         examVersion: EXAM_VERSION, running: isRunning(req.user.orgId),
         cases: EXAM.map(c => ({ id: c.id, title: c.title, kind: c.kind, trap: c.trap || null })),
         runs: runsOf(req.user.orgId).slice(0, 30).map(runView),
-        latest, recommended: recommend(latest), feedback: feedbackStats(req.user.orgId), reasons: REASONS,
+        latest, recommended: pick(latest, enginesOf(req.user.orgId)), feedback: feedbackStats(req.user.orgId), reasons: REASONS,
         engines: enginesOf(req.user.orgId).map(e => ({ id: e.id, name: e.name, kind: e.kind, model: e.model || null }))
     })
 })

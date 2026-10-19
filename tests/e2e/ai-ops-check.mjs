@@ -285,7 +285,7 @@ const chg = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', sour
 ok(chg.reply.endsWith(aiReply) && /Deployment web rolled out/.test(sent), `"kya badla": the AI got the real change timeline → ${chg.reply.split('\n').pop()}`)
 aiReply = 'shopcluster is up; one app is crash-looping.'
 const st = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'sab theek hai?' })
-ok(st.reply === aiReply && /shopcluster: Kubernetes 1\.35\.0.*risk \d+\/100/.test(sent), `"sab theek hai?": the AI got clusters + risk + problems`)
+ok(st.reply === aiReply && /shopcluster: Kubernetes 1\.35\.0.*health score \d+\/100/.test(sent), `"sab theek hai?": the AI got clusters + risk + problems`)
 
 console.log('== Ask AI: what is in the cluster — the AI gets exact live counts (checked against kubectl)')
 const realNs = K(`get ns -o name`).out.split('\n').filter(Boolean).length
@@ -312,7 +312,7 @@ t0 = Date.now()
 const look = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'crasher ka log check karo' })
 ok(/^🔎 shopcluster: shop\/crasher-[a-z0-9-]+ — (CrashLoopBackOff|Error)/.test(look.reply), `found the app's pod: ${look.reply.split('\n')[0]} (${Date.now() - t0} ms)`)
 ok(/FATAL: cannot connect to postgres at db:5432/.test(sent) && /KubeEZ's own check of the logs\/events: The app cannot reach something it depends on/.test(sent), 'the AI got the real crash log, and KubeEZ\'s own finding as a hint')
-ok(/Problem: The app cannot reach its database db:5432 and exits\./.test(look.reply) && /Proof:\n  › FATAL: cannot connect to postgres at db:5432/.test(look.reply) && /Last log lines:\n {2}FATAL: cannot connect to postgres/.test(look.reply), `the AI's answer, its proof checked against the real log:\n${look.reply.split('\n').slice(2, 6).join('\n')}`)
+ok(/Problem: The app cannot reach its database db:5432 and exits\./.test(look.reply) && /Proof:\n  › FATAL: cannot connect to postgres at db:5432/.test(look.reply) && /Last log lines:\nFATAL: cannot connect to postgres/.test(look.reply), `the AI's answer, its proof checked against the real log:\n${look.reply.split('\n').slice(2, 6).join('\n')}`)
 const guess = await handleChat({ orgId: C.orgId, chatKey: 'e2e', who: 'ravi', source: 'Telegram', text: 'crash wala pod check karo' })
 ok(/shop\/crasher-/.test(guess.reply.split('\n')[0]), `"crash wala pod check karo" picks the crashing pod: ${guess.reply.split('\n')[0]}`)
 recorder.closeAllConnections?.(); recorder.close()

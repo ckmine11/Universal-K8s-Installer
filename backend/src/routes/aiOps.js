@@ -130,9 +130,13 @@ router.post('/generate-yaml', requirePermission('ai:use'), async (req, res) => {
     const description = String(req.body?.description || '').slice(0, 2000)
     const context = `Kubernetes ${cluster.k8sVersion}; installed add-ons: ${Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}`
     await runJob(req, res, `yaml:${req.user.id}:${cluster.id}:${namespace}:${Buffer.from(description).toString('base64').slice(0, 200)}`,
-        () => generateManifests(req.user, { description, namespace, context, addons: Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k), lookup: (kind, name) => selectorOf(cluster, namespace, kind, name) }), { fresh: true })
+        () => generateManifests(req.user, { description, namespace, context, addons: Object.entries(cluster.addons || {}).filter(([, v]) => v).map(([k]) => k), lookup: (kind, name) => selectorOf(cluster, namespace, kind, name), storage: storageOf(cluster) }), { fresh: true })
 })
 // what an existing workload's pods are labelled and listen on — for "expose deployment web"
+// the cluster's StorageClasses and which is the default (null when it cannot be read)
+const storageOf = (cluster) => withTimeout(onCluster(cluster, (ssh) => ssh.execCommand(`sudo KUBECONFIG=/etc/kubernetes/admin.conf timeout 10 kubectl get storageclass -o jsonpath='{range .items[*]}{.metadata.name}{"\\t"}{.metadata.annotations.storageclass\\.kubernetes\\.io/is-default-class}{.metadata.annotations.storageclass\\.beta\\.kubernetes\\.io/is-default-class}{"\\n"}{end}' 2>/dev/null`)), 15000, 'timeout')
+    .then(r => { if (r.code && r.code !== 0) return null; const rows = String(r.stdout || '').split('\n').filter(Boolean).map(l => l.split('\t')); return { classes: rows.map(x => x[0]), default: rows.find(x => /true/.test(x[1] || ''))?.[0] || null } })
+    .catch(() => null)
 const selectorOf = (cluster, namespace, kind, name) => withTimeout(onCluster(cluster, (ssh) => workloadSelector(ssh, namespace, kind, name)), 25000, 'timeout')
 // the user's own edits are checked the same way (no AI)
 router.post('/check-yaml', (req, res) => {
@@ -150,7 +154,7 @@ router.post('/advisor/:clusterId/summary', requirePermission('ai:use'), async (r
     if (!cluster) return
     await runJob(req, res, `adv:${req.user.id}:${cluster.id}:${Math.floor(Date.now() / 300e3)}`, async () => {
         const a = await advisorFor(req.user, cluster, false)
-        const r = await ask(req.user, { task: 'summarize', purpose: 'advisor', maxTokens: 600, clusterId: cluster.id, clusterName: cluster.clusterName,
+        const r = await ask(req.user, { task: 'summarize', purpose: 'advisor', maxTokens: 1500, clusterId: cluster.id, clusterName: cluster.clusterName,
             system: 'You are a Kubernetes security and cost advisor. From the findings, give the 5 most important things to do first, most valuable first: one line each, what and why, naming the workload. High security risks before cost. Only use the findings given.',
             data: [{ label: 'findings', text: advisorText(a) }], question: 'What should we fix first?' })
         return { summary: r.text, engine: { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } }
@@ -161,7 +165,7 @@ router.post('/advisor/:clusterId/summary', requirePermission('ai:use'), async (r
 router.post('/fleet/summary', requirePermission('ai:use'), async (req, res) => {
     await runJob(req, res, `fleet:${req.user.id}:${Math.floor(Date.now() / 300e3)}`, async () => {
         const f = await fleetFor(req.user)
-        const r = await ask(req.user, { task: 'summarize', purpose: 'fleet', maxTokens: 600,
+        const r = await ask(req.user, { task: 'summarize', purpose: 'fleet', maxTokens: 1500,
             system: 'You look after a fleet of Kubernetes clusters. From the facts, say in at most 6 short bullet points what needs attention across the fleet, most urgent first: clusters at risk and why, problems shared by several clusters (one root cause?), Kubernetes versions to upgrade, add-ons on different versions. Only use the facts.',
             data: [{ label: 'fleet facts', text: fleetText(f) }], question: 'What needs attention across the fleet?' })
         return { summary: r.text, engine: { provider: r.provider, model: r.model, ms: r.ms, traceId: r.traceId } }
