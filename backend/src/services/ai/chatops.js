@@ -319,7 +319,7 @@ async function lookInto({ ctx, u, sc, cluster, t, state }) {
     return {
         reply: lines.filter(x => x !== null && x !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 3800),
         ...(ai?.engine ? { engine: { provider: ai.engine.provider, model: ai.engine.model } } : {}),
-        ...(spec && sc.user ? { fix: { clusterId: cluster.id, spec, canAct: canOn(u, 'incident:act', cluster) } } : {})
+        ...(spec && sc.user ? { fix: { clusterId: cluster.id, spec, canAct: canOn(u, 'incident:act', cluster) && canOn(u, 'ai:apply') } } : {})
     }
 }
 

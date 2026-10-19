@@ -1,7 +1,8 @@
 import express from 'express'
 import { authService } from '../services/authService.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
-import { ROLES, PERMISSION_GROUPS, PERMISSIONS, permissionsForRole, CLUSTER_PERMISSIONS, ADMIN_ONLY_PERMISSIONS, KUBE_LEVELS, BUILTIN_KUBE_LEVEL, ROLE_TEMPLATES } from '../config/permissions.js'
+import { ROLES, PERMISSION_GROUPS, PERMISSIONS, permissionsForRole, CLUSTER_PERMISSIONS, ADMIN_ONLY_PERMISSIONS, KUBE_LEVELS, BUILTIN_KUBE_LEVEL, ROLE_TEMPLATES, AI_ACCESS } from '../config/permissions.js'
+import { auditLog } from '../services/auditLog.js'
 import { roleStore, customRoleKey, customRoleId } from '../services/roleStore.js'
 import { accessOn, accessSummary, describeRole, cleanClusterRules, canSeeCluster } from '../services/accessControl.js'
 import { clusterStore } from '../services/clusterStore.js'
@@ -109,6 +110,9 @@ router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
             roleName: describeRole(u.orgId, u.role).name,
             roleMissing: !!describeRole(u.orgId, u.role).missing,
             clusterAccess: Array.isArray(u.clusterAccess) ? u.clusterAccess : [],
+            // KubeEZ AI: given by an admin, or part of the role (custom roles)
+            aiAccess: u.aiAccess || 'none',
+            ai: (() => { const p = accessOn({ ...u, clusterAccess: [] }).permissions; return p.has('ai:apply') ? 'apply' : p.has('ai:use') ? 'ask' : 'none' })(),
             isOwner: u.id === ownerId,   // holds the plan — other admins cannot change this account
             createdAt: u.createdAt
         }))
@@ -134,7 +138,11 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         }
         if (customRoleId(role) && !customRolesAllowed(req)) return res.status(402).json(PLAN_ERROR)
 
+        const ai = req.body?.aiAccess || 'none'
+        if (!AI_ACCESS[ai]) return res.status(400).json({ error: 'AI access: none, ask or apply' })
         const newUser = await authService.createTeamMember(req.user.orgId, username, password, email, role || 'viewer')
+        // KubeEZ AI chosen while inviting (admins always have it)
+        if (ai !== 'none' && newUser.role !== 'admin') { const u = authService.users.find(x => x.id === newUser.id); if (u) { u.aiAccess = ai; authService.saveUsers() } }
         // Tell the new member (never the password — the admin hands that over)
         sendAccountEmailLater(newUser.email, memberAddedEmail(newUser, { addedBy: req.user.username, role: newUser.role }), 'team-invite')
         res.json({ success: true, message: 'Team member created', user: { id: newUser.id, username: newUser.username, role: newUser.role } })
@@ -166,7 +174,7 @@ router.put('/admin/users/:id/role', requireAuth, requireAdmin, async (req, res) 
 
         authService.users[userIdx].role = role
         // admins have full access everywhere — cluster rules would only confuse
-        if (role === 'admin') delete authService.users[userIdx].clusterAccess
+        if (role === 'admin') { delete authService.users[userIdx].clusterAccess; delete authService.users[userIdx].aiAccess }
         authService.saveUsers()
         scheduleOrg(req.user.orgId)
 
@@ -305,6 +313,21 @@ router.put('/admin/users/:id/cluster-access', requireAuth, requireAdmin, async (
     } catch (e) { res.status(e.status || 500).json({ error: e.message }) }
 })
 
+// A member's KubeEZ AI access: none | ask (Ask AI, explanations, Create YAML) | apply (also apply what the AI wrote)
+router.put('/admin/users/:id/ai-access', requireAuth, requireAdmin, (req, res) => {
+    const target = authService.users.find(u => u.id === req.params.id && u.orgId === req.user.orgId)
+    if (!target) return res.status(404).json({ error: 'User not found in your organization' })
+    const level = req.body?.aiAccess
+    if (!AI_ACCESS[level]) return res.status(400).json({ error: 'AI access: none, ask or apply' })
+    if (target.role === 'admin' || target.role === 'superadmin') return res.status(400).json({ error: 'Admins always have KubeEZ AI.' })
+    const before = target.aiAccess || 'none'
+    if (level === 'none') delete target.aiAccess
+    else target.aiAccess = level
+    authService.saveUsers()
+    if (before !== level) auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'team.ai_access', detail: `${target.username}: ${AI_ACCESS[before]?.label || before} → ${AI_ACCESS[level].label}` })
+    res.json({ success: true, aiAccess: level, message: `${target.username}: ${AI_ACCESS[level].label}` })
+})
+
 // What I may do — workspace-wide and on each of my clusters (for the UI)
 router.get('/rbac/me', requireAuth, async (req, res) => {
     const clusters = (await clusterStore.getClusters().catch(() => [])).filter(c => req.user.role === 'superadmin' || c.orgId === req.user.orgId)
@@ -319,7 +342,8 @@ router.get('/admin/access-review', requireAuth, requireAdmin, async (req, res) =
     for (const u of authService.getUsersByOrgId(orgId)) {
         const member = { ...u, clusterAccess: u.clusterAccess || [] }
         const main = describeRole(orgId, u.role)
-        if (!clusters.length) rows.push({ member: u.username, email: u.email || '', mainRole: main.name, cluster: '—', access: main.name, via: 'main role', kube: main.kube, namespaces: 'all', temporaryUntil: '', permissions: [...main.permissions].join(' ') })
+        const ws = accessOn(member).permissions
+        if (!clusters.length) rows.push({ member: u.username, email: u.email || '', mainRole: main.name, cluster: '—', access: main.name, via: 'main role', kube: main.kube, ai: ws.has('ai:apply') ? 'ask & apply' : ws.has('ai:use') ? 'ask' : 'none', namespaces: 'all', temporaryUntil: '', permissions: [...ws].join(' ') })
         for (const c of clusters) {
             const a = accessOn(member, c)
             const seen = canSeeCluster(member, c)
@@ -328,6 +352,7 @@ router.get('/admin/access-review', requireAuth, requireAdmin, async (req, res) =
                 access: seen ? a.role || main.name : 'No access',
                 via: a.via === 'admin' ? 'admin' : a.via === 'cluster' ? 'cluster rule' : a.via === 'label' ? 'label rule' : a.via === 'elevation' ? 'temporary access' : 'main role',
                 kube: seen ? a.kube : 'none',
+                ai: a.permissions.has('ai:apply') ? 'ask & apply' : a.permissions.has('ai:use') ? 'ask' : 'none',
                 namespaces: seen ? (a.namespaces?.join(' ') || 'all') : '',
                 temporaryUntil: a.elevatedUntil || '',
                 permissions: seen ? [...a.permissions].filter(p => CLUSTER_PERMISSIONS.includes(p)).join(' ') : ''
@@ -335,8 +360,9 @@ router.get('/admin/access-review', requireAuth, requireAdmin, async (req, res) =
         }
     }
     if (req.query.format === 'csv') {
-        const esc = (v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v)
-        const head = ['member', 'email', 'mainRole', 'cluster', 'access', 'via', 'kube', 'namespaces', 'temporaryUntil', 'permissions']
+        // a cell starting with = + - @ is shown as text, never run as a spreadsheet formula
+        const esc = (v) => { let s = String(v); if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+        const head = ['member', 'email', 'mainRole', 'cluster', 'access', 'via', 'kube', 'ai', 'namespaces', 'temporaryUntil', 'permissions']
         const csv = [head.join(','), ...rows.map(r => head.map(h => esc(r[h])).join(','))].join('\n')
         res.setHeader('Content-Type', 'text/csv; charset=utf-8')
         res.setHeader('Content-Disposition', `attachment; filename="kubeez-access-review-${new Date().toISOString().slice(0, 10)}.csv"`)

@@ -1,5 +1,6 @@
 import express from 'express'
 import { requirePermission } from '../middleware/authMiddleware.js'
+import { canOn } from '../services/accessControl.js'
 import { mcpTokens, handleMcp } from '../services/ai/mcp.js'
 import { auditLog } from '../services/auditLog.js'
 
@@ -12,6 +13,8 @@ mcpEndpoint.post('/', async (req, res) => {
     const m = /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '')
     const who = m && mcpTokens.resolve(m[1])
     if (!who) return res.status(401).set('WWW-Authenticate', 'Bearer realm="kubeez"').json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'A valid KubeEZ MCP token is needed (AI settings → MCP)' } })
+    // the member's KubeEZ AI access was taken away: their tokens stop working too
+    if (!canOn(who.user, 'ai:use')) return res.status(403).json({ jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32003, message: 'Your KubeEZ AI access was removed — ask an admin of your workspace (Team & Roles → AI access)' } })
     if (!mcpTokens.touch(who.rec)) return res.status(429).json({ jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32002, message: 'Too many calls — 120 an hour per token' } })
     if (Array.isArray(req.body)) return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Batches are not supported' } })
     try {

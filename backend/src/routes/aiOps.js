@@ -78,18 +78,19 @@ async function runJob(req, res, key, work, { fresh = false, decorate = (v) => v,
             .then(v => Object.assign(j, { status: 'done', value: v, at: Date.now() }))
             .catch(e => Object.assign(j, { status: 'failed', error: errorBody(e, onError(e)), at: Date.now() }))
     } else if (j.status === 'done') {
-        return res.json(decorate({ ...j.value, cached: true }))
+        return res.json(decorate({ ...j.value, cached: true }, req.user))
     }
     await Promise.race([j.promise, new Promise(r => setTimeout(r, waitMs).unref?.())])
     const v = jobView(j)
-    res.status(v.status).json(v.status === 200 ? decorate(v.body) : v.body)
+    res.status(v.status).json(v.status === 200 ? decorate(v.body, req.user) : v.body)
 }
 
-router.get('/jobs/:jobId', (req, res) => {
+router.get('/jobs/:jobId', requirePermission('ai:use'), (req, res) => {
     const j = jobs.get(req.params.jobId)
     if (!j || j.owner !== req.user.orgId) return res.status(404).json({ error: 'This answer has expired — ask again' })
     const v = jobView(j)
-    res.status(v.status).json(v.status === 200 ? (j.decorate ? j.decorate(v.body) : v.body) : v.body)   // backend still checks permissions on apply
+    // decorated for the member who asks now (what THEY may do) — the backend still checks on apply
+    res.status(v.status).json(v.status === 200 ? (j.decorate ? j.decorate(v.body, req.user) : v.body) : v.body)
 })
 
 // ── Install Doctor ──
@@ -110,9 +111,9 @@ router.post('/explain/incident/:id', requirePermission('ai:use'), async (req, re
     const cluster = inc && await clusterById(inc.clusterId)
     const mine = inc && (req.user.role === 'superadmin' || (inc.orgId && inc.orgId === req.user.orgId) || (!inc.orgId && inc.ownerId === req.user.id))
     if (!inc || !mine || !cluster || !canSeeCluster(req.user, cluster) || !canOn(req.user, 'incident:view', cluster)) return res.status(404).json({ error: 'Incident not found' })
-    const canAct = canOn(req.user, 'incident:act', cluster)
+    // a suggested fix can be applied by a member who may act on incidents AND apply what the AI suggests
     await runJob(req, res, explainKey(inc), () => explainIncidentFull(req.user, inc, cluster, { fresh: !!req.body?.fresh }),
-        { fresh: !!req.body?.fresh, decorate: (v) => ({ ...v, canAct }) })
+        { fresh: !!req.body?.fresh, decorate: (v, u) => ({ ...v, canAct: canOn(u, 'incident:act', cluster) && canOn(u, 'ai:apply') }) })
 })
 
 // ── Ask AI (the web chat): the same answers as ChatOps, only about what this member may see ──
@@ -148,7 +149,7 @@ const storageOf = (cluster) => withTimeout(onCluster(cluster, (ssh) => ssh.execC
     .catch(() => null)
 const selectorOf = (cluster, namespace, kind, name) => withTimeout(onCluster(cluster, (ssh) => workloadSelector(ssh, namespace, kind, name)), 25000, 'timeout')
 // the user's own edits are checked the same way (no AI)
-router.post('/check-yaml', (req, res) => {
+router.post('/check-yaml', requirePermission('ai:use'), (req, res) => {
     try {
         const docs = parseManifests(req.body?.yaml)
         // "Auto-fix": pin images, add resources / probes / labels, fix units and apiVersions first
@@ -263,12 +264,12 @@ actionsRouter.get('/:id/ai-manifests', requirePermission('cluster:view'), (req, 
     if (!req.permissionCluster) return res.status(404).json({ error: 'Cluster not found' })
     res.json({ applied: manifestLog.list(req.user.orgId, req.permissionCluster.id).slice(0, 30).map(manifestView) })
 })
-actionsRouter.post('/:id/ai-manifests/preview', requirePermission('cluster:view'), async (req, res) => {
+actionsRouter.post('/:id/ai-manifests/preview', requirePermission('cluster:view'), requirePermission('ai:apply'), async (req, res) => {
     const ok = checkWrite(req, res); if (!ok) return
     try { res.json({ ...ok.checked, ...(await withTimeout(onCluster(ok.cluster, (ssh) => previewManifests(ssh, ok.checked.yaml, ok.checked.objects)), 60000, 'The cluster did not answer in time')) }) }
     catch (e) { fail(res, e) }
 })
-actionsRouter.post('/:id/ai-manifests', requirePermission('cluster:view'), requireApproval('ai:apply'), async (req, res) => {
+actionsRouter.post('/:id/ai-manifests', requirePermission('cluster:view'), requirePermission('ai:apply'), requireApproval('ai:apply'), async (req, res) => {
     const ok = checkWrite(req, res); if (!ok) return
     try {
         const rec = await withTimeout(onCluster(ok.cluster, async (ssh) => {
@@ -314,13 +315,13 @@ actionsRouter.get('/:id/ai-actions', requirePermission('incident:view'), (req, r
     res.json({ actions: actionLog.list(req.user.orgId, req.permissionCluster.id).slice(0, 50).map(view), types: ACTION_TYPES })
 })
 
-actionsRouter.post('/:id/ai-actions/preview', requirePermission('incident:act'), async (req, res) => {
+actionsRouter.post('/:id/ai-actions/preview', requirePermission('incident:act'), requirePermission('ai:apply'), async (req, res) => {
     const ok = checkAction(req, res); if (!ok) return
     try { const p = await withTimeout(onCluster(ok.cluster, (ssh) => planAction(ssh, ok.spec)), 60000, 'The cluster did not answer in time'); delete p.state; res.json(p) }
     catch (e) { fail(res, e) }
 })
 
-actionsRouter.post('/:id/ai-actions', requirePermission('incident:act'), requireApproval('ai:action'), async (req, res) => {
+actionsRouter.post('/:id/ai-actions', requirePermission('incident:act'), requirePermission('ai:apply'), requireApproval('ai:action'), async (req, res) => {
     const ok = checkAction(req, res); if (!ok) return
     const incidentId = typeof req.body?.incidentId === 'string' ? req.body.incidentId.slice(0, 40) : null
     const reason = String(req.body?.reason || '').slice(0, 300) || null

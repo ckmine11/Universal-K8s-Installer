@@ -11,7 +11,7 @@
 // A rule only decides the cluster permissions (CLUSTER_PERMISSIONS) — the
 // workspace ones (agents, alerts, audit…) always come from the main role.
 // Admins are never restricted: they run the workspace.
-import { PERMISSIONS, permissionsForRole, CLUSTER_PERMISSIONS, BUILTIN_KUBE_LEVEL, ROLES, KUBE_LEVELS } from '../config/permissions.js'
+import { PERMISSIONS, permissionsForRole, CLUSTER_PERMISSIONS, BUILTIN_KUBE_LEVEL, ROLES, KUBE_LEVELS, AI_ACCESS } from '../config/permissions.js'
 import { roleStore, customRoleId } from './roleStore.js'
 import { canAccessResource } from '../utils/access.js'
 import { approvalStore } from './approvalStore.js'
@@ -74,6 +74,8 @@ export function accessOn(user, cluster = null) {
         const real = rules.filter(r => r.role !== 'none')
         if (real.length && real.every(r => r.namespaces?.length)) namespaces = [...new Set(real.flatMap(r => r.namespaces))]
     }
+    // KubeEZ AI given to this member by an admin (on top of the role)
+    for (const p of AI_ACCESS[user.aiAccess]?.permissions || []) perms.add(p)
     // temporary elevation (approved, time-limited): the role is added on this
     // cluster — and on the whole cluster, namespaces too — until it ends
     let elevatedUntil = null

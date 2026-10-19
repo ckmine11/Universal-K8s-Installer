@@ -33,7 +33,9 @@ export const PERMISSIONS = {
     'compliance:manage':   ['admin'],
     'audit:view':          ['admin'],
     'access:approve':    ['admin'],
-    'ai:use':            ['admin', 'operator', 'viewer'],
+    // KubeEZ AI: admins by default; an admin gives it to members (Team & Roles → KubeEZ AI)
+    'ai:use':            ['admin'],
+    'ai:apply':          ['admin'],
     'ai:manage':         ['admin'],
 }
 

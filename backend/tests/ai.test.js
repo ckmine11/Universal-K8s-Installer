@@ -221,7 +221,27 @@ describe('/api/ai', () => {
     })
     after(() => srv?.stop())
 
-    test('members may see and use AI; only admins change it', async () => {
+    test('AI only for members an admin gave it to; only admins change it', async () => {
+        // not given yet: no AI at all
+        assert.equal((await api('GET', '/api/ai', viewer.token)).status, 403)
+        assert.equal((await api('POST', '/api/ai/ask', viewer.token, { question: 'What is a pod?' })).status, 403)
+        assert.equal((await api('POST', '/api/ai/chat', viewer.token, { text: 'hi' })).status, 403)
+        assert.equal((await api('POST', '/api/ai/check-yaml', viewer.token, { yaml: 'kind: ConfigMap' })).status, 403)
+        const team = (await api('GET', '/api/admin/users', owner.token)).data.users
+        assert.deepEqual(team.map(u => [u.username, u.ai]).sort(), [['aiboss', 'apply'], ['aiview', 'none']])
+        // only an admin gives it, never to an admin, only the known levels
+        assert.equal((await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, viewer.token, { aiAccess: 'ask' })).status, 403)
+        assert.equal((await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, owner.token, { aiAccess: 'all' })).status, 400)
+        assert.equal((await api('PUT', `/api/admin/users/${owner.user.id}/ai-access`, owner.token, { aiAccess: 'none' })).status, 400)
+        const given = await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, owner.token, { aiAccess: 'ask' })
+        assert.equal(given.status, 200, JSON.stringify(given.data))
+        assert.equal((await api('GET', '/api/admin/users', owner.token)).data.users.find(u => u.username === 'aiview').ai, 'ask')
+        // chosen while inviting
+        assert.equal((await api('POST', '/api/admin/users', owner.token, { username: 'aibad', password: 'secret123', role: 'viewer', aiAccess: 'everything' })).status, 400)
+        assert.equal((await api('POST', '/api/admin/users', owner.token, { username: 'aiop', password: 'secret123', email: 'aiop@example.com', role: 'operator', aiAccess: 'apply' })).status, 200)
+        assert.equal((await api('GET', '/api/admin/users', owner.token)).data.users.find(u => u.username === 'aiop').ai, 'apply')
+        const me = (await api('GET', '/api/rbac/me', viewer.token)).data
+        assert.ok(me.permissions.includes('ai:use') && !me.permissions.includes('ai:apply'), 'right away, without logging in again')
         const g = await api('GET', '/api/ai', viewer.token)
         assert.equal(g.status, 200)
         assert.equal(g.data.enabled, true)

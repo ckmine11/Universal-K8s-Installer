@@ -264,7 +264,10 @@ describe('API', () => {
     after(() => srv?.stop())
     const yaml = 'apiVersion: v1\nkind: ConfigMap\nmetadata: { name: cfg }\ndata: { a: b }\n'
 
-    test('YAML: anyone may check; only Kubernetes editors may apply; the kill switch stops it; Slack needs a signature', async () => {
+    test('YAML: members with AI may check; only Kubernetes editors may apply; the kill switch stops it; Slack needs a signature', async () => {
+        assert.equal((await api('POST', '/api/ai/check-yaml', viewer.token, { yaml, namespace: 'shop' })).status, 403, 'no AI given yet')
+        // "Ask & apply" does not let a viewer change a cluster — that still needs Kubernetes edit
+        assert.equal((await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, owner.token, { aiAccess: 'apply' })).status, 200)
         const c = await api('POST', '/api/ai/check-yaml', viewer.token, { yaml, namespace: 'shop' })
         assert.equal(c.status, 200); assert.equal(c.data.objects[0].namespace, 'shop')
         // Check & fix (also from Ask AI): a password left as a placeholder gets a random value

@@ -76,9 +76,18 @@ export const PERMISSIONS = {
     'audit:view':        ['admin'],               // the audit trail and terminal recordings
     'access:approve':    ['admin'],               // approve terminal access (just in time)
 
-    // KubeEZ AI
-    'ai:use':            ['admin', 'operator', 'viewer'],   // ask KubeEZ AI (it only explains / suggests)
-    'ai:manage':         ['admin']                // AI engines, routing, safety switches, activity
+    // KubeEZ AI — only admins by default; an admin gives it to a member
+    // (Team & Roles → AI access) or puts it in a custom role
+    'ai:use':            ['admin'],   // ask KubeEZ AI: Ask AI, explanations, summaries, Create YAML (it only explains / suggests)
+    'ai:apply':          ['admin'],   // apply what the AI wrote or suggested (YAML, fixes) — also needs Kubernetes edit on the cluster
+    'ai:manage':         ['admin']    // AI engines, routing, safety switches, activity, usage & cost
+}
+
+// What an admin can give a member on top of their role (Team & Roles → AI access)
+export const AI_ACCESS = {
+    none:  { label: 'No AI', permissions: [] },
+    ask:   { label: 'Ask AI', permissions: ['ai:use'] },
+    apply: { label: 'Ask & apply', permissions: ['ai:use', 'ai:apply'] }
 }
 
 // Human-readable grouping for the transparency matrix shown in the UI
@@ -118,8 +127,9 @@ export const PERMISSION_GROUPS = [
         { key: 'access:approve',    label: 'Approve terminal access requests' }
     ]},
     { group: 'KubeEZ AI', items: [
-        { key: 'ai:use',    label: 'Ask KubeEZ AI (explanations and suggestions)' },
-        { key: 'ai:manage', label: 'Manage AI engines, routing and safety' }
+        { key: 'ai:use',    label: 'Ask KubeEZ AI (Ask AI, explanations, summaries, Create YAML)' },
+        { key: 'ai:apply',  label: 'Apply AI-written YAML and AI fixes (with Kubernetes edit access)' },
+        { key: 'ai:manage', label: 'Manage AI engines, routing, safety, usage & cost' }
     ]}
 ]
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Loader2, ShieldCheck, Eye, Play, Undo2, CheckCircle2, XCircle, AlertTriangle, Boxes, FileCode2 } from 'lucide-react'
 import { apiFetch, useAuth } from '../../context/AuthContext'
-import { kubeLevel } from '../../config/permissions'
+import { kubeLevel, can } from '../../config/permissions'
 import { useToast } from '../ToastProvider'
 
 // YAML in an AI answer → applied from the chat, safely: Check & fix (KubeEZ's
@@ -30,7 +30,8 @@ export default function ChatYaml({ yaml: initial, question }) {
     const [busy, setBusy] = useState(null)
     const [error, setError] = useState(null)
     useEffect(() => { apiFetch('/api/clusters/list').then(r => r.ok ? r.json() : []).then(l => { const ok = (Array.isArray(l) ? l : []).filter(c => c.status !== 'failed'); setClusters(ok); if (ok.length === 1) setClusterId(ok[0].id) }).catch(() => setClusters([])) }, [])
-    const canEdit = clusterId && ['edit', 'admin'].includes(kubeLevel(user?.role, clusterId))
+    const mayApply = can(user?.role, 'ai:apply')
+    const canEdit = clusterId && mayApply && ['edit', 'admin'].includes(kubeLevel(user?.role, clusterId))
 
     const run = async (what, fn) => { setBusy(what); setError(null); try { await fn() } catch (e) { if (!/approval/i.test(e.message)) setError(e.message); else toast({ title: 'Waiting for approval', message: e.message, type: 'info' }) } finally { setBusy(null) } }
     const check = () => run('check', async () => { const r = await post('/api/ai/check-yaml', { yaml, namespace: ns, fix: true }); setYaml(r.yaml); setChecked(r); setPreview(null) })
@@ -53,11 +54,11 @@ export default function ChatYaml({ yaml: initial, question }) {
                     )}
                     {clusters.length > 0 && <input className="kz-input !w-36 !py-1 !text-xs font-mono" value={ns} onChange={e => { setNs(e.target.value.trim()); setPreview(null) }} aria-label="Namespace" title="Namespace" />}
                     <button onClick={check} disabled={!!busy} className="kz-btn-ghost !py-1 !text-xs">{busy === 'check' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />} Check & fix</button>
-                    {clusters.length > 0 && <button onClick={dryRun} disabled={!!busy || !clusterId || !canEdit || !checked || checked.blocked} className="kz-btn-ghost !py-1 !text-xs" title={!checked ? 'Check it first' : !canEdit && clusterId ? 'Needs Kubernetes edit access on this cluster' : ''}>{busy === 'dry' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Dry-run</button>}
+                    {clusters.length > 0 && <button onClick={dryRun} disabled={!!busy || !clusterId || !canEdit || !checked || checked.blocked} className="kz-btn-ghost !py-1 !text-xs" title={!checked ? 'Check it first' : !canEdit && clusterId ? (mayApply ? 'Needs Kubernetes edit access on this cluster' : 'Needs "Ask & apply" KubeEZ AI access') : ''}>{busy === 'dry' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Dry-run</button>}
                     {preview?.ok && <button onClick={apply} disabled={!!busy} className="kz-btn-primary !py-1 !text-xs">{busy === 'apply' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Apply</button>}
                 </div>
             )}
-            {clusterId && !canEdit && clusters?.length > 0 && <p className="text-[11px] text-slate-500">Applying needs Kubernetes edit access on this cluster.</p>}
+            {clusterId && !canEdit && clusters?.length > 0 && <p className="text-[11px] text-slate-500">{mayApply ? 'Applying needs Kubernetes edit access on this cluster.' : 'Applying needs "Ask & apply" KubeEZ AI access — an admin gives it in Team & Roles. You can still check and copy it.'}</p>}
             {checked && (
                 <div className="space-y-1 text-[11px]">
                     {checked.objects?.length > 0 && <p className="flex flex-wrap items-center gap-1 text-slate-300"><Boxes className="w-3.5 h-3.5 text-blue-300" />{checked.objects.map((o, i) => <span key={i} className="kz-chip font-mono">{o.kind} {o.name}</span>)}<span className="text-slate-500">in {ns}</span></p>}

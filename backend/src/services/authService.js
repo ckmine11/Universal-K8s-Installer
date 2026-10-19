@@ -237,7 +237,8 @@ class AuthService {
                 email: user.email,
                 role: user.role,
                 orgId: user.orgId,
-                clusterAccess: Array.isArray(user.clusterAccess) ? user.clusterAccess : []
+                clusterAccess: Array.isArray(user.clusterAccess) ? user.clusterAccess : [],
+                aiAccess: user.aiAccess || 'none'
             };
         } catch (error) {
             console.error('JWT Verification Failed:', error.message)

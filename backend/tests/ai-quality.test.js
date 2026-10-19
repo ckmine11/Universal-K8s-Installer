@@ -156,6 +156,8 @@ describe('API', () => {
         assert.equal(q.data.cases.length, EXAM.length)
         assert.equal(q.data.cases.filter(c => c.trap).length, 3)
         assert.equal((await api('POST', '/api/ai/quality/run', owner.token, { engineIds: ['nope'] })).status, 400)
+        assert.equal((await api('POST', '/api/ai/feedback', viewer.token, { traceId: 'abcdefabcdef', rating: 'up' })).status, 403, 'rating needs AI access')
+        assert.equal((await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, owner.token, { aiAccess: 'ask' })).status, 200)
         assert.equal((await api('POST', '/api/ai/feedback', viewer.token, { traceId: 'abcdefabcdef', rating: 'up' })).status, 404)
         assert.equal((await api('POST', '/api/ai/feedback', viewer.token, { traceId: 'x', rating: 'up' })).status, 400)
     })

@@ -6,7 +6,7 @@ import { PageTitle } from '../components/ui/PageHeader'
 import {
     Users, Shield, User, Trash2, Crown, RefreshCw, Loader2,
     ChevronRight, Lock, AlertTriangle, Check, Clock, Eye, Wrench,
-    KeyRound, Search, UserCheck, UserX, MoreVertical, X, Layers, Download, ShieldCheck
+    KeyRound, Search, UserCheck, UserX, MoreVertical, X, Layers, Download, ShieldCheck, Sparkles
 } from 'lucide-react'
 import RolesPanel from '../components/team/RolesPanel'
 import ClusterAccessDialog from '../components/team/ClusterAccessDialog'
@@ -23,6 +23,13 @@ const ASSIGNABLE_ROLES = ['admin', 'operator', 'viewer']
 
 // ─── Role Badge ───────────────────────────────────────────────────
 const CUSTOM_META = { icon: ShieldCheck, color: 'text-sky-200 bg-sky-500/10 border-sky-400/25' }
+// KubeEZ AI per member: only admins have it by default — an admin gives it
+const AI_LEVELS = [
+    { key: 'none', name: 'No AI', hint: 'KubeEZ AI is hidden for this member' },
+    { key: 'ask', name: 'Ask AI', hint: 'Ask AI, explanations, summaries, Create YAML — nothing is changed' },
+    { key: 'apply', name: 'Ask & apply', hint: 'Also applies AI-written YAML and AI fixes — only where their role has Kubernetes edit access' }
+]
+
 function RoleBadge({ role, name }) {
     const meta = ROLE_META[role] || { ...CUSTOM_META, label: name || 'Custom role' }
     const Icon = meta.icon
@@ -112,7 +119,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
 function CreateUserModal({ onClose, onSuccess, roleOptions }) {
     const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
-    const [formData, setFormData] = useState({ username: '', email: '', password: '', role: 'viewer' })
+    const [formData, setFormData] = useState({ username: '', email: '', password: '', role: 'viewer', aiAccess: 'none' })
     const [loading, setLoading] = useState(false)
 
     const handleCreate = async () => {
@@ -165,6 +172,15 @@ function CreateUserModal({ onClose, onSuccess, roleOptions }) {
                         </select>
                         <p className="text-[11px] text-slate-500 mt-1.5 px-1">{roleOptions.find(r => r.key === formData.role)?.description}</p>
                     </div>
+                    {formData.role !== 'admin' && (
+                        <div>
+                            <label htmlFor="new-ai" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1"><Sparkles className="w-3 h-3 text-violet-300" /> KubeEZ AI</label>
+                            <select id="new-ai" value={formData.aiAccess} onChange={e => setFormData({ ...formData, aiAccess: e.target.value })} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
+                                {AI_LEVELS.map(l => <option key={l.key} value={l.key} className="bg-slate-950">{l.name}</option>)}
+                            </select>
+                            <p className="text-[11px] text-slate-500 mt-1.5 px-1">{AI_LEVELS.find(l => l.key === formData.aiAccess)?.hint}</p>
+                        </div>
+                    )}
 
                     <div className="flex gap-3 pt-2">
                         <button onClick={onClose} className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-xs font-black uppercase tracking-wider text-slate-400 transition-all">Cancel</button>
@@ -179,6 +195,36 @@ function CreateUserModal({ onClose, onSuccess, roleOptions }) {
 }
 
 // ─── User Card ─────────────────────────────────────────────────────
+const AI_BADGE = { ask: 'AI: ask', apply: 'AI: ask & apply' }
+
+function AiAccess({ userItem, onRefresh }) {
+    const { toast } = useToast()
+    const [saving, setSaving] = useState(false)
+    const fromRole = userItem.ai !== 'none' && (userItem.aiAccess || 'none') === 'none'   // a custom role that includes AI
+    const change = async (level) => {
+        setSaving(true)
+        try {
+            const res = await apiFetch(`/api/admin/users/${userItem.id}/ai-access`, { method: 'PUT', body: JSON.stringify({ aiAccess: level }) })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error)
+            toast({ title: 'AI access updated', message: data.message, type: 'success' })
+            onRefresh()
+        } catch (err) { toast({ title: 'Error', message: err.message, type: 'error' }) } finally { setSaving(false) }
+    }
+    return (
+        <div className="mt-3 flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-violet-300 shrink-0" />
+            <label className="text-[11px] text-slate-400 shrink-0" htmlFor={`ai-${userItem.id}`}>KubeEZ AI</label>
+            <select id={`ai-${userItem.id}`} value={userItem.aiAccess || 'none'} disabled={saving} onChange={e => change(e.target.value)}
+                title={AI_LEVELS.find(l => l.key === (userItem.aiAccess || 'none'))?.hint}
+                className="flex-1 py-1.5 pl-2 pr-6 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 outline-none disabled:opacity-50">
+                {AI_LEVELS.map(l => <option key={l.key} value={l.key} className="bg-slate-950">{l.key === 'none' && fromRole ? `From their role (${userItem.ai === 'apply' ? 'Ask & apply' : 'Ask AI'})` : l.name}</option>)}
+            </select>
+            {saving && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+        </div>
+    )
+}
+
 function UserCard({ userItem, currentUser, onRefresh, roleOptions, onClusterAccess }) {
     const { toast } = useToast()
     const [menu, setMenu] = useState(false)
@@ -271,6 +317,11 @@ function UserCard({ userItem, currentUser, onRefresh, roleOptions, onClusterAcce
                                     <Layers className="w-3 h-3" /> {userItem.clusterAccess.length} cluster rule{userItem.clusterAccess.length > 1 ? 's' : ''}
                                 </span>
                             )}
+                            {AI_BADGE[userItem.ai] && (
+                                <span title={userItem.role === 'admin' ? 'Admins always have KubeEZ AI' : 'Can use KubeEZ AI'} className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-200 bg-violet-500/10 border border-violet-400/20 px-2 py-0.5 rounded-full">
+                                    <Sparkles className="w-3 h-3" /> {AI_BADGE[userItem.ai]}
+                                </span>
+                            )}
                             {userItem.isOwner && (
                                 <span title="Holds the plan and billing — other admins cannot change this account"
                                     className="text-[9px] font-black uppercase tracking-widest text-slate-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">Owner</span>
@@ -355,6 +406,7 @@ function UserCard({ userItem, currentUser, onRefresh, roleOptions, onClusterAcce
                         )}
                     </div>
                 )}
+                {!isSelf && !userItem.isOwner && userItem.role !== 'admin' && <AiAccess userItem={userItem} onRefresh={onRefresh} />}
             </div>
         </>
     )

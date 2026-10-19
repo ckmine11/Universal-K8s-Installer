@@ -272,6 +272,12 @@ describe('API', () => {
     test('who may preview / apply / see; unknown things are 404', async () => {
         assert.equal((await api('POST', '/api/clusters/c1/ai-actions/preview', viewer.token, { spec })).status, 403, 'viewers do not act')
         assert.equal((await api('GET', '/api/clusters/c1/ai-actions', viewer.token)).status, 200)
+        // an operator may act on incidents, but AI fixes only once an admin gives "Ask & apply"
+        const noAi = await api('POST', '/api/clusters/c1/ai-actions/preview', operator.token, { spec })
+        assert.equal(noAi.status, 403); assert.equal(noAi.data.requiredPermission, 'ai:apply')
+        assert.equal((await api('PUT', `/api/admin/users/${operator.user.id}/ai-access`, owner.token, { aiAccess: 'ask' })).status, 200)
+        assert.equal((await api('POST', '/api/clusters/c1/ai-actions/preview', operator.token, { spec })).status, 403, '"Ask AI" alone does not apply')
+        assert.equal((await api('PUT', `/api/admin/users/${operator.user.id}/ai-access`, owner.token, { aiAccess: 'apply' })).status, 200)
         assert.equal((await api('POST', '/api/clusters/c1/ai-actions/preview', operator.token, { spec: { ...spec, name: 'x;reboot' } })).status, 400)
         assert.equal((await api('GET', '/api/ai/changes/nope', owner.token)).status, 404)
         assert.equal((await api('POST', '/api/ai/explain/install/nope', owner.token)).status, 404)

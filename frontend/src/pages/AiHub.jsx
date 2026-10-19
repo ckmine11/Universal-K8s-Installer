@@ -84,7 +84,7 @@ function AskAi() {
                             {m.needsAi && can(user?.role, 'ai:manage') && <div className="mt-2 whitespace-normal"><Link to="/ai/settings" className="kz-btn-primary !py-1.5 !text-xs inline-flex"><Plug className="w-3.5 h-3.5" /> Connect AI</Link></div>}
                             {m.fix && <div className="mt-3 whitespace-normal">{m.fix.canAct
                                 ? <FixPreview clusterId={m.fix.clusterId} spec={m.fix.spec} />
-                                : <p className="text-[11px] text-slate-500">Suggested fix: {actionLabel(m.fix.spec)} — someone who may act on incidents can apply it.</p>}</div>}
+                                : <p className="text-[11px] text-slate-500">Suggested fix: {actionLabel(m.fix.spec)} — someone who may act on incidents and has "Ask & apply" AI access can apply it.</p>}</div>}
                         </div>
                     </div>
                 ))}
@@ -130,7 +130,7 @@ function ClusterTool({ tool }) {
                 </select>
                 <Link to={`/cluster/${id}`} className="text-xs text-blue-300 hover:underline">Open cluster →</Link>
             </div>
-            {tool === 'create' && <YamlStudio key={id} clusterId={id} canEdit={['edit', 'admin'].includes(kubeLevel(user?.role, id))} />}
+            {tool === 'create' && <YamlStudio key={id} clusterId={id} canEdit={['edit', 'admin'].includes(kubeLevel(user?.role, id)) && can(user?.role, 'ai:apply')} />}
             {tool === 'advisor' && <Advisor key={id} clusterId={id} />}
             {tool === 'changes' && <WhatChanged key={id} clusterId={id} />}
         </div>
@@ -144,7 +144,7 @@ export default function AiHub() {
     // an unknown /ai/… address: Fleet lives at /fleet, anything else is Ask AI
     if (tool && !t) return <Navigate to={tool === 'fleet' ? '/fleet' : '/ai'} replace />
     if (!can(user?.role, 'ai:use') && tool !== 'advisor' && tool !== 'changes') return (
-        <div className="max-w-3xl mx-auto kz-card p-6 text-sm text-slate-300">Your role may not use KubeEZ AI. Ask an admin to add the permission <code>ai:use</code> to your role.</div>
+        <div className="max-w-3xl mx-auto kz-card p-6 text-sm text-slate-300">You do not have KubeEZ AI yet. An admin of your workspace can give it to you in Team & Roles → KubeEZ AI.</div>
     )
     return (
         <div className="max-w-7xl mx-auto space-y-5">

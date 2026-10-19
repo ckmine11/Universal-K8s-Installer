@@ -688,7 +688,7 @@ export default function Docs() {
                             ['Trick text', 'Text inside logs or resources that tries to give the AI orders is marked as data and ignored, and flagged in the activity log.'],
                             ['Kill switch', <><B>AI actions allowed</B> off = AI can only explain. It is in the audit trail.</>],
                             ['Who decides', <><B>Suggest only</B>, <B>Ask first</B> (default — a person approves) or <B>Auto for low-risk</B>.</>],
-                            ['Who may use it', <>Permission <C>ai:use</C> (all built-in roles) and <C>ai:manage</C> for the settings (admins; can be given in a custom role).</>],
+                            ['Who may use it', <>Admins only, until an admin gives it: Team &amp; Roles → <B>KubeEZ AI</B> on a member — <B>Ask AI</B> (<C>ai:use</C>: Ask AI, explanations, summaries, Create YAML; nothing changes) or <B>Ask &amp; apply</B> (also <C>ai:apply</C>: apply AI-written YAML and AI fixes, only where their role has Kubernetes edit access). A custom role can include them too. Taking it away works at once — also for their MCP tokens. <C>ai:manage</C> (the AI settings) stays with admins.</>],
                             ['Records', 'Every question is in AI settings → Activity (masked) and in the audit trail. API keys are stored encrypted and never shown again.']
                         ]} />
                         <H4>Explain a failure (Install Doctor)</H4>

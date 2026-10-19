@@ -97,6 +97,8 @@ describe('MCP server, AI-BOM (API)', () => {
 
     test('MCP: a token, the handshake, the tools — read-only, the member\'s own clusters only', async () => {
         assert.equal((await mcp(null, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })).status, 401)
+        assert.equal((await api('POST', '/api/ai/mcp/tokens', viewer.token, { name: 'Claude Code', days: 30 })).status, 403, 'no AI given yet')
+        assert.equal((await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, owner.token, { aiAccess: 'ask' })).status, 200)
         assert.equal((await api('POST', '/api/ai/mcp/tokens', viewer.token, { name: 'x', days: 7 })).status, 400)
         const t = await api('POST', '/api/ai/mcp/tokens', viewer.token, { name: 'Claude Code', days: 30 })
         assert.equal(t.status, 200); assert.match(t.data.token, /^kzm_/)
@@ -123,6 +125,11 @@ describe('MCP server, AI-BOM (API)', () => {
         assert.equal((await fetch(`${srv.url}/api/mcp`)).status, 405)
         const audit = JSON.stringify((await api('GET', '/api/compliance/audit?limit=300', owner.token)).data)
         assert.match(audit, /ai\.mcp/)
+        // AI taken away: the token stops at once; given back: it works again
+        assert.equal((await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, owner.token, { aiAccess: 'none' })).status, 200)
+        assert.equal((await mcp(tok, { jsonrpc: '2.0', id: 6, method: 'ping' })).status, 403)
+        assert.equal((await api('PUT', `/api/admin/users/${viewer.user.id}/ai-access`, owner.token, { aiAccess: 'ask' })).status, 200)
+        assert.equal((await mcp(tok, { jsonrpc: '2.0', id: 6, method: 'ping' })).status, 200)
         assert.equal((await api('DELETE', `/api/ai/mcp/tokens/${t.data.id}`, viewer.token)).status, 200)
         assert.equal((await mcp(tok, { jsonrpc: '2.0', id: 6, method: 'ping' })).status, 401, 'revoked')
     })

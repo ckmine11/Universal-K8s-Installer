@@ -174,10 +174,10 @@ export default function YamlStudio({ clusterId, canEdit }) {
                     <div className="flex flex-wrap gap-2">
                         <button onClick={() => check(false)} disabled={!!busy} className="kz-btn-ghost !py-2">{busy === 'check' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Check</button>
                         <button onClick={() => check(true)} disabled={!!busy} className="kz-btn-ghost !py-2" title="Pin images, add resources, health checks and labels, fix units and apiVersions">{busy === 'fix' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wrench className="w-4 h-4" />} Auto-fix</button>
-                        <button onClick={doPreview} disabled={!!busy || !canEdit || checked?.blocked} className="kz-btn-ghost !py-2" title={!canEdit ? 'Needs Kubernetes edit access on this cluster' : ''}>{busy === 'preview' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />} Dry-run on the cluster</button>
+                        <button onClick={doPreview} disabled={!!busy || !canEdit || checked?.blocked} className="kz-btn-ghost !py-2" title={!canEdit ? 'Needs Kubernetes edit access on this cluster and "Ask & apply" AI access' : ''}>{busy === 'preview' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />} Dry-run on the cluster</button>
                         {preview?.ok && <button onClick={apply} disabled={!!busy} className="kz-btn-primary !py-2">{busy === 'apply' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Apply</button>}
                     </div>
-                    {!canEdit && <p className="text-[11px] text-slate-500">You can check and copy the YAML; applying needs Kubernetes edit access on this cluster.</p>}
+                    {!canEdit && <p className="text-[11px] text-slate-500">You can check and copy the YAML; applying needs Kubernetes edit access on this cluster and "Ask & apply" KubeEZ AI access (an admin gives it in Team & Roles).</p>}
                     {preview && (
                         <div className="space-y-2">
                             <p className={`flex items-center gap-1.5 text-xs ${preview.ok ? 'text-emerald-300' : 'text-red-300'}`}>{preview.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />} Dry-run on the cluster {preview.ok ? 'passed' : 'failed'}{preview.existing?.length ? ` — changes existing: ${preview.existing.join(', ')}` : ' — everything is new'}</p>
