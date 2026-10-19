@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { can, kubeLevel } from '../config/permissions'
@@ -28,7 +28,7 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package } from 'lucide-react'
+    Package, PlugZap } from 'lucide-react'
 import ClusterTopology3D from '../components/ClusterTopology3D'
 import OrbitalTerminal from '../components/OrbitalTerminal'
 import ResumeModal from '../components/ResumeModal'
@@ -62,14 +62,19 @@ export default function ClusterDetails({ onScaleCluster }) {
 
     // RBAC UI gating (backend enforces the real checks)
     // on THIS cluster — custom roles and cluster rules apply
-    const canUpgrade = can(user?.role, 'cluster:upgrade', id)
-    const canScale = can(user?.role, 'cluster:scale', id)
-    const canResume = can(user?.role, 'cluster:resume', id)
-    const canManageAddons = can(user?.role, 'addon:install', id)
-    const canKubeconfig = can(user?.role, 'kubeconfig:download', id)
-    const canTerminal = can(user?.role, 'terminal:access', id)
-    const isAdmin = ['admin', 'superadmin'].includes(user?.role)
     const [cluster, setCluster] = useState(null)
+    // an imported cluster (Connected clusters): no SSH — upgrades, nodes, etcd stay with its provider;
+    // changes inside it only with "Full manage"
+    const imported = !!cluster?.access?.mode && !(cluster?.masterNodes?.length)
+    const fullAccess = !imported || cluster?.access?.level === 'full'
+    const canUpgrade = can(user?.role, 'cluster:upgrade', id) && !imported
+    const canScale = can(user?.role, 'cluster:scale', id) && !imported
+    const canResume = can(user?.role, 'cluster:resume', id) && !imported
+    const canManageAddons = can(user?.role, 'addon:install', id) && fullAccess && !imported
+    const canKubeconfig = can(user?.role, 'kubeconfig:download', id) && !imported
+    const canTerminal = can(user?.role, 'terminal:access', id) && !imported
+    const canBackupVolumes = can(user?.role, 'cluster:upgrade', id) && fullAccess
+    const isAdmin = ['admin', 'superadmin'].includes(user?.role)
     const failedUpgrade = cluster?.status === 'failed' && cluster?.mode === 'upgrade'
     const [loading, setLoading] = useState(true)
     const [health, setHealth] = useState(null)
@@ -196,8 +201,10 @@ export default function ClusterDetails({ onScaleCluster }) {
     const masterNodes = cluster.masterNodes || []
     const workerNodes = cluster.workerNodes || []
     let allNodes = [...masterNodes.map(n => ({ ...n, role: 'master' })), ...workerNodes.map(n => ({ ...n, role: 'worker' }))]
+    // imported: the nodes as the cluster reports them (live first, then the last check)
+    if (imported) allNodes = (health?.nodes || (cluster.importedNodes || []).map(n => ({ name: n.name, status: n.ready ? 'Ready' : 'NotReady', role: n.role === 'control-plane' ? 'master' : 'worker', ip: n.ip }))).map(n => ({ ...n, hostname: n.name, ip: n.ip }))
 
-    if (health?.nodes && health.nodes.length) {
+    if (!imported && health?.nodes && health.nodes.length) {
         // Reliably map each configured node to its live kubectl status.
         // Old code matched on role ('worker') which mismapped multiple workers,
         // so a downed node could still show 'Ready'. Now: exact hostname match →
@@ -277,6 +284,11 @@ export default function ClusterDetails({ onScaleCluster }) {
                         <span>•</span>
                         <span>Created: {new Date(cluster.createdAt).toLocaleDateString()}</span>
                     </div>
+                    {imported && (
+                        <Link to={`/connect/cluster/${cluster.id}`} className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-500/20" title="Connected cluster — its connection settings">
+                            <PlugZap className="w-3 h-3" /> Imported · {cluster.provider || 'Kubernetes'} · {cluster.access.level === 'full' ? 'Full manage' : 'Read-only'}
+                        </Link>
+                    )}
                     <ClusterLabels cluster={cluster} canEdit={isAdmin} onSaved={(labels) => setCluster(c => ({ ...c, labels }))} />
                     <ElevationBar clusterId={cluster.id} clusterName={cluster.clusterName} />
                 </div>
@@ -302,7 +314,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                         </button>
                     )}
                     {!canKubeconfig && !canUpgrade && !canTerminal && !canScale && (
-                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Read-only — view access</span>
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{imported ? (fullAccess ? 'Imported — managed where it runs' : 'Imported — read-only') : 'Read-only — view access'}</span>
                     )}
                 </div>
             </div>
@@ -387,9 +399,11 @@ export default function ClusterDetails({ onScaleCluster }) {
                         </div>
                         <div className="glass p-6 rounded-2xl border border-white/5">
                             <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-2">API Endpoint</p>
-                            <p className="text-sm font-mono text-slate-300 truncate" title={`https://${masterNodes[0]?.ip}:6443`}>
-                                https://{masterNodes[0]?.ip}:6443
-                            </p>
+                            {imported
+                                ? <p className="text-sm font-mono text-slate-300 truncate" title={cluster.access.server}>{cluster.access.mode === 'agent' ? 'inside the cluster (KubeEZ agent)' : cluster.access.server}</p>
+                                : <p className="text-sm font-mono text-slate-300 truncate" title={`https://${masterNodes[0]?.ip}:6443`}>
+                                    https://{masterNodes[0]?.ip}:6443
+                                </p>}
                         </div>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -581,7 +595,7 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* ── Backups ──────────────────────────────────────────────── */}
             {tab === 'backups' && (
-                <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={canUpgrade} explorer={!!cluster.addons?.explorer} />
+                <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={imported ? canBackupVolumes : canUpgrade} explorer={!!cluster.addons?.explorer} imported={imported} provider={cluster.provider} />
             )}
 
             {/* ── What changed? ───────────────────────────────────────── */}

@@ -11,10 +11,8 @@ import { suggest as suggestRunbook } from './runbooks.js'
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms).unref?.())])
 
 export async function onCluster(cluster, fn) {
-    const { automationEngine } = await import('../automationEngine.js')
-    const master = cluster.masterNodes?.[0]
-    if (!master) throw Object.assign(new Error('No control-plane node saved for this cluster'), { status: 400 })
-    const ssh = await automationEngine.connectSSH({ ...master, ownerId: cluster.ownerId, orgId: cluster.orgId })
+    const { connectCluster } = await import('../clusterAccess.js')
+    const ssh = await connectCluster(cluster)
     try { return await fn(ssh) } finally { ssh.dispose?.() }
 }
 

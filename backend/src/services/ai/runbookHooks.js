@@ -10,10 +10,8 @@ import { onIncidentClosed, maybeAutoRun, sweep } from './runbooks.js'
 import { resolveWorkload } from './doctor.js'
 
 async function onCluster(cluster, fn) {
-    const { automationEngine } = await import('../automationEngine.js')
-    const master = cluster.masterNodes?.[0]
-    if (!master) throw new Error('No control-plane node saved for this cluster')
-    const ssh = await automationEngine.connectSSH({ ...master, ownerId: cluster.ownerId, orgId: cluster.orgId })
+    const { connectCluster } = await import('../clusterAccess.js')
+    const ssh = await connectCluster(cluster)
     try { return await fn(ssh) } finally { ssh.dispose?.() }
 }
 

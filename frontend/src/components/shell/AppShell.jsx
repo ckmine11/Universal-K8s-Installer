@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
     LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2,
-    Sparkles, Wand2, Coins, History, Bot
+    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
@@ -50,6 +50,15 @@ export function navSections(user, approvalsWaiting = 0) {
                 can(role, 'ai:manage') && { to: '/ai/settings', label: 'AI settings', icon: Bot },
             ].filter(Boolean)
         },
+        // existing clusters (cloud or on-prem) brought into KubeEZ
+        {
+            title: 'Connected clusters', items: [
+                can(role, 'cluster:create') && { to: '/connect/new', label: 'Add existing cluster', icon: PlusCircle },
+                { to: '/connect', label: 'Connected clusters', icon: PlugZap, end: true },
+                { to: '/connect/agents', label: 'Connection agents', icon: Radio },
+                { to: '/connect/guides', label: 'Setup guides', icon: BookMarked },
+            ].filter(Boolean)
+        },
         {
             title: 'Build', items: [
                 canDeploy && { to: '/install', label: 'Deploy cluster', icon: Rocket },
@@ -77,7 +86,7 @@ export function navSections(user, approvalsWaiting = 0) {
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
     [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'], [/^\/approvals/, 'Approvals'],
-    [/^\/settings/, 'Settings'], [/^\/ai\/settings/, 'AI settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
+    [/^\/settings/, 'Settings'], [/^\/ai\/settings/, 'AI settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/connect\/new/, 'Add existing cluster'], [/^\/connect\/agents/, 'Connection agents'], [/^\/connect\/guides/, 'Setup guides'], [/^\/connect/, 'Connected clusters'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }

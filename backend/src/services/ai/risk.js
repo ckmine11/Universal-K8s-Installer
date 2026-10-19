@@ -4,6 +4,10 @@
 // predictions, whether KubeEZ can watch it, backups, Kubernetes support,
 // control-plane redundancy, compliance.
 import { LATEST_K8S_MINOR } from '../complianceScanner.js'
+import { usesApi } from '../clusterAccess.js'
+import { providerById } from '../../config/clusterProviders.js'
+// a managed cloud control plane (EKS, AKS, GKE, OKE…) — not an on-prem distribution
+const isCloud = (c) => providerById(c.provider)?.group === 'cloud'
 
 const minorOf = (v) => Number((String(v || '').replace(/^v/, '').match(/^\d+\.(\d+)/) || [])[1]) || null
 const PREDICTIONS = new Set(['NodeDiskFilling', 'MemoryLeakSuspected', 'CertExpiring', 'RestartsRising', 'ControlPlaneDiskFull', 'NodeMemoryHigh', 'NodeCPUHigh'])
@@ -37,8 +41,9 @@ export function riskScore(f) {
     else good.push('Watched every few minutes')
     if (f.maintenanceUntil && Date.parse(f.maintenanceUntil) > now) add('maintenance', 5, 'In maintenance', `No checks, fixes or alerts until ${new Date(f.maintenanceUntil).toLocaleString()}.`, 'End maintenance when the work is done.', '/incidents')
 
-    // backups
-    if (f.snapshot) {
+    // backups (an imported cluster: its etcd is not KubeEZ's to back up — see below)
+    const api = usesApi(c)
+    if (f.snapshot && !api) {
         if (f.snapshot.error) add('backup-unknown', 5, 'Backups not checked', f.snapshot.error, 'Open Backups to check the snapshots.', `/cluster/${c.id}?tab=backups`)
         else if (!f.snapshot.newestAt) add('no-backup', 20, 'No etcd snapshot', 'If the control-plane is lost, the cluster cannot be restored.', 'Backups → Back up now (KubeEZ also takes one before every upgrade).', `/cluster/${c.id}?tab=backups`)
         else {
@@ -48,19 +53,22 @@ export function riskScore(f) {
             else good.push(`etcd snapshot ${ago(age)} old`)
         }
     }
-    if (f.offsite === false) add('no-offsite', 5, 'Snapshots only on the node', 'If the machine is lost, its snapshots are lost with it.', 'Connect offsite backups (S3 / MinIO / R2) in Backups.', `/cluster/${c.id}?tab=backups`)
+    if (api) good.push(isCloud(c) ? `Control plane and etcd managed by ${providerById(c.provider)?.name || 'the provider'}` : 'etcd backups: add SSH in the connection settings for KubeEZ to take them')
+    else if (f.offsite === false) add('no-offsite', 5, 'Snapshots only on the node', 'If the machine is lost, its snapshots are lost with it.', 'Connect offsite backups (S3 / MinIO / R2) in Backups.', `/cluster/${c.id}?tab=backups`)
     else if (f.offsite) good.push('Offsite backups connected')
 
     // Kubernetes support and redundancy
     const minor = minorOf(c.k8sVersion)
     if (minor) {
         const behind = LATEST_K8S_MINOR - minor
-        if (behind >= 3) add('unsupported', 15, `Kubernetes ${c.k8sVersion} is out of support`, `No more security fixes upstream (supported: 1.${LATEST_K8S_MINOR - 2}–1.${LATEST_K8S_MINOR}).`, 'Upgrade one minor version at a time — KubeEZ takes a snapshot first and rolls back on failure.', `/cluster/${c.id}`)
+        if (behind >= 3) add('unsupported', 15, `Kubernetes ${c.k8sVersion} is out of support`, `No more security fixes upstream (supported: 1.${LATEST_K8S_MINOR - 2}–1.${LATEST_K8S_MINOR}).`, api ? (isCloud(c) ? "Upgrade it in the provider's console or CLI (control plane first, then the node pools)." : 'Upgrade it with its own tooling (kubeadm, k3s, RKE2…) — or add SSH so KubeEZ can do it.') : 'Upgrade one minor version at a time — KubeEZ takes a snapshot first and rolls back on failure.', `/cluster/${c.id}`)
         else if (behind === 2) add('oldest-supported', 4, `Kubernetes ${c.k8sVersion} leaves support next`, 'It is the oldest supported minor version.', 'Plan the next upgrade.', `/cluster/${c.id}`)
         else good.push(`Kubernetes ${c.k8sVersion} is supported`)
     }
-    const cps = (c.masterNodes || []).length
-    if (cps <= 1) add('single-cp', 10, 'One control-plane', 'If that machine fails, the cluster cannot be managed until it is rebuilt.', 'For production: 3 control-planes behind a virtual IP (new cluster with HA in the wizard).')
+    // an imported cluster: the control-planes it reports (a cloud's managed control plane is not counted against it)
+    const cps = api ? (c.importedNodes || []).filter(n => n.role === 'control-plane').length : (c.masterNodes || []).length
+    if (api && isCloud(c)) { /* managed by the provider */ }
+    else if (cps <= 1) add('single-cp', 10, 'One control-plane', 'If that machine fails, the cluster cannot be managed until it is rebuilt.', api ? "For production: 3 control-planes, added with the cluster's own tooling." : 'For production: 3 control-planes behind a virtual IP (new cluster with HA in the wizard).')
     else good.push(`${cps} control-planes${c.controlPlaneVip ? ` behind ${c.controlPlaneVip}` : ''}`)
 
     // compliance
@@ -80,6 +88,8 @@ const snapCache = new Map()   // clusterId → { at, value }
 export const cachedSnapshot = (clusterId) => { const h = snapCache.get(clusterId); return h && Date.now() - h.at < 10 * 60e3 ? h.value : undefined }
 /** Newest etcd snapshot on the control-plane (read-only; cached 10 minutes). */
 export async function newestSnapshot(cluster, connect) {
+    // an imported cluster: no node access — and the command must never run on the KubeEZ server
+    if (usesApi(cluster)) return null
     const hit = snapCache.get(cluster.id)
     if (hit && Date.now() - hit.at < 10 * 60e3) return hit.value
     let value

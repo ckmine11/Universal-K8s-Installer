@@ -1,6 +1,7 @@
 import { automationEngine } from './automationEngine.js'
 import { HELM_ADDONS } from '../config/helmAddons.js'
 import { addonSettingsStore, availableUpdates } from './addonSettings.js'
+import { connectCluster } from './clusterAccess.js'
 
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 
@@ -61,7 +62,7 @@ class AddonManager {
 
     /** Live state of every add-on: installed?, health, pods. One SSH round-trip. */
     async getStatus(cluster) {
-        const ssh = await automationEngine.connectSSH(this.master(cluster))
+        const ssh = await connectCluster(cluster)
         try {
             const script = Object.entries(ADDON_REGISTRY).map(([key, a]) =>
                 `echo "@@ADDON ${key}"; ` +
@@ -123,7 +124,7 @@ class AddonManager {
         if (pod && !/^[a-z0-9][a-z0-9.-]{0,252}$/.test(pod)) throw Object.assign(new Error('Invalid pod name'), { status: 400 })
         const lines = Math.max(10, Math.min(2000, parseInt(tail, 10) || 200))
 
-        const ssh = await automationEngine.connectSSH(this.master(cluster))
+        const ssh = await connectCluster(cluster)
         try {
             const podsR = await run(ssh, `${KB} -n ${def.ns} get pods -o json 2>/dev/null`)
             let pods = []

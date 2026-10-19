@@ -26,6 +26,7 @@ import { autoFix } from '../services/ai/yamlBuilder.js'
 import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView, workloadSelector, fillSecrets } from '../services/ai/manifests.js'
 import { offsiteStore } from '../services/offsiteStore.js'
 import { complianceStore } from '../services/complianceService.js'
+import { capabilities } from '../services/clusterAccess.js'
 
 // KubeEZ AI operations: Install Doctor, incident explainer, "What changed?"
 // (mounted at /api/ai), and the safe fixes with dry-run and undo
@@ -44,10 +45,8 @@ async function visibleCluster(req, res, id) {
     return c
 }
 async function onCluster(cluster, fn) {
-    const { automationEngine } = await import('../services/automationEngine.js')
-    const master = cluster.masterNodes?.[0]
-    if (!master) throw Object.assign(new Error('No control-plane node saved for this cluster'), { status: 400 })
-    const ssh = await automationEngine.connectSSH({ ...master, ownerId: cluster.ownerId, orgId: cluster.orgId })
+    const { connectCluster } = await import('../services/clusterAccess.js')
+    const ssh = await connectCluster(cluster)
     try { return await fn(ssh) } finally { ssh.dispose?.() }
 }
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms).unref?.())])
@@ -249,6 +248,9 @@ function checkWrite(req, res) {
     const cluster = req.permissionCluster
     if (!cluster || !canSeeCluster(req.user, cluster)) { res.status(404).json({ error: 'Cluster not found' }); return null }
     if (!['edit', 'admin'].includes(kubeLevelOn(req.user, cluster))) { res.status(403).json({ error: 'Your role may not change things inside this cluster (needs Kubernetes edit access)' }); return null }
+    // an imported cluster connected read-only
+    const cap = capabilities(cluster).yamlApply
+    if (!cap.ok) { res.status(409).json({ error: cap.why, code: 'NOT_ON_IMPORTED' }); return null }
     let checked
     const namespace = String(req.body?.namespace || 'default')
     try { checked = checkManifests(parseManifests(req.body?.yaml), { namespace }) } catch (e) { res.status(e.status || 400).json({ error: e.message }); return null }
@@ -301,6 +303,9 @@ function checkAction(req, res) {
     try { spec = cleanSpec(req.body?.spec) } catch (e) { res.status(400).json({ error: e.message }); return null }
     const cluster = req.permissionCluster
     if (!cluster) { res.status(404).json({ error: 'Cluster not found' }); return null }
+    // an imported cluster connected read-only
+    const capA = capabilities(cluster).actions
+    if (!capA.ok) { res.status(409).json({ error: capA.why, code: 'NOT_ON_IMPORTED' }); return null }
     const nss = accessOn(req.user, cluster).namespaces
     if (nss && !nsMatches(nss, spec.namespace)) { res.status(403).json({ error: `You may only act in: ${nss.join(', ')}` }); return null }
     const risk = spec.type === 'scale' && spec.replicas === 0 ? 'high' : ACTION_TYPES[spec.type].risk

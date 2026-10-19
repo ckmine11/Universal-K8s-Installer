@@ -77,7 +77,32 @@ const sessionKey = (ip, username, password, privateKey) =>
     crypto.createHash('sha256').update([ip, username, password || '', privateKey || ''].join('\0')).digest('hex');
 let attempt = 0;
 // Capabilities this agent build offers (KubeEZ checks before using them)
-const CAPS = ['tcp'];
+// tcp: streams through an SSH session; tcp-direct: streams from this machine (imported clusters)
+const CAPS = ['tcp', 'tcp-direct'];
+// Inside an imported cluster (the KubeEZ agent Deployment): only the Kubernetes
+// API and the cluster's own Services may be reached — nothing else on the network
+const IN_CLUSTER = argMap.cluster === 'yes' || fileCfg.cluster === true || process.env.KUBEEZ_AGENT_IN_CLUSTER === '1';
+const SA_DIR = '/var/run/secrets/kubernetes.io/serviceaccount';
+let serviceIps = { at: 0, ips: new Set() };
+// the ClusterIPs of the cluster's Services (read with the agent's own ServiceAccount, kept a minute)
+function clusterServiceIps() {
+    if (Date.now() - serviceIps.at < 60000) return Promise.resolve(serviceIps.ips);
+    return new Promise((resolve) => {
+        let token = '', ca;
+        try { token = fs.readFileSync(path.join(SA_DIR, 'token'), 'utf8').trim(); ca = fs.readFileSync(path.join(SA_DIR, 'ca.crt')); } catch (_) { return resolve(serviceIps.ips); }
+        const req = require('https').get({ host: process.env.KUBERNETES_SERVICE_HOST, port: process.env.KUBERNETES_SERVICE_PORT || 443, path: '/api/v1/services', ca, servername: 'kubernetes.default.svc', headers: { Authorization: 'Bearer ' + token }, timeout: 10000 }, (res) => {
+            let b = ''; res.on('data', (d) => { b += d; }); res.on('end', () => {
+                try { const ips = new Set([process.env.KUBERNETES_SERVICE_HOST]); for (const s of JSON.parse(b).items || []) for (const ip of [s.spec?.clusterIP, ...(s.spec?.clusterIPs || [])]) if (ip && ip !== 'None') ips.add(ip); serviceIps = { at: Date.now(), ips }; } catch (_) { /* keep the last list */ }
+                resolve(serviceIps.ips);
+            });
+        });
+        req.on('error', () => resolve(serviceIps.ips)); req.on('timeout', () => req.destroy());
+    });
+}
+async function inClusterAllowed(host) {
+    if (/^kubernetes\.default(\.svc(\.cluster\.local)?)?$/.test(host) || /^[a-z0-9-]+\.[a-z0-9-]+\.svc(\.cluster\.local)?$/.test(host)) return true;
+    return (await clusterServiceIps()).has(host);
+}
 const tcpStreams = new Map();   // streamId → ssh forwarding channel
 
 // One SSH login per account+host, shared by commands and TCP streams
@@ -127,7 +152,16 @@ function connect() {
         attempt = 0;
         lastHeard = Date.now();
         log(`Connected to ${server} — bridging the local network`);
-        send({ type: 'register-ips', ips: ['gateway'], caps: CAPS });
+        send({ type: 'register-ips', ips: IN_CLUSTER ? [] : ['gateway'], caps: CAPS });
+        // Inside an imported cluster: the `kubeez` login KubeEZ uses for the
+        // Kubernetes API (its token Secret is mounted here), sent on every connect
+        // so a rotated token reaches KubeEZ by itself
+        if (IN_CLUSTER) {
+            try {
+                const dir = process.env.KUBEEZ_TOKEN_DIR || '/var/run/kubeez';
+                send({ type: 'cluster-hello', token: fs.readFileSync(path.join(dir, 'token'), 'utf8').trim(), ca: fs.readFileSync(path.join(dir, 'ca.crt')).toString('base64'), node: process.version });
+            } catch (e) { log('Cannot read the kubeez token yet:', e.message); }
+        }
         pingTimer = setInterval(() => {
             // A connection that died silently (NAT/proxy/Wi-Fi change) never fires
             // 'close' — notice the missing answers and reconnect.
@@ -147,8 +181,20 @@ function connect() {
         if (msg.type === 'tcp-open') {
             const { streamId, ip, username, password, privateKey, host, port } = msg;
             try {
-                const { ssh } = await getSession(ip, username, password, privateKey);
-                const ch = await ssh.forwardOut('127.0.0.1', 0, String(host), Number(port));
+                let ch;
+                if (!ip) {
+                    // no SSH: this machine connects itself (an imported cluster's API server or Service)
+                    if (IN_CLUSTER && !(await inClusterAllowed(String(host)))) throw new Error(`${host} is not part of this cluster`);
+                    ch = await new Promise((resolve, reject) => {
+                        const s = require('net').connect(Number(port), String(host));
+                        s.once('connect', () => resolve(s)); s.once('error', reject);
+                        s.setTimeout(20000, () => { s.destroy(new Error('connect timeout')); });
+                    });
+                    ch.setTimeout(0);
+                } else {
+                    const { ssh } = await getSession(ip, username, password, privateKey);
+                    ch = await ssh.forwardOut('127.0.0.1', 0, String(host), Number(port));
+                }
                 tcpStreams.set(streamId, ch);
                 ch.on('data', (d) => send({ type: 'tcp-data', streamId, data: d.toString('base64') }));
                 ch.on('close', () => { if (tcpStreams.delete(streamId)) send({ type: 'tcp-close', streamId }); });

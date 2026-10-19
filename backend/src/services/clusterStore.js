@@ -86,8 +86,9 @@ class ClusterStore {
             // let one tenant's install overwrite another tenant's record.
             const idx = rawClusters.findIndex(c =>
                 c.id === cluster.id ||
-                (sameTenant(c, cluster) && c.masterNodes && cluster.masterNodes &&
-                    c.masterNodes[0]?.ip === cluster.masterNodes[0]?.ip)
+                // (an imported cluster has no node IP — two of them must never match)
+                (sameTenant(c, cluster) && c.masterNodes?.[0]?.ip && cluster.masterNodes?.[0]?.ip &&
+                    c.masterNodes[0].ip === cluster.masterNodes[0].ip)
             )
 
             const encryptedArgs = {

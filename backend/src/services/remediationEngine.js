@@ -1,4 +1,8 @@
 import { automationEngine } from './automationEngine.js'
+import { connectCluster, usesApi } from './clusterAccess.js'
+import { providerById } from '../config/clusterProviders.js'
+// fixes that run on a node over SSH — not on an imported cluster
+const NODE_PLAYBOOKS = new Set(['NodeNotReady', 'DiskPressure', 'MemoryPressure', 'PIDPressure', 'ControlPlaneDown', 'ControlPlaneDiskFull', 'CertExpiring', 'NodeDiskFilling'])
 
 // The SSH user may not be root / have its own kubeconfig — use the admin one
 const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
@@ -54,6 +58,18 @@ class RemediationEngine {
                 await this._updateStatus(incident, 'unresolved', `Needs attention (diagnosis failed: ${e.message})`)
             }
             return
+        }
+
+        // an imported cluster: fixes only with "Full manage", and never the ones that need a node (SSH)
+        if (usesApi(cluster)) {
+            if (cluster.access?.level !== 'full') {
+                await this._updateStatus(incident, 'unresolved', `Alert only — ${cluster.clusterName || 'this cluster'} is connected read-only. Switch it to "Full manage" (Connected clusters) for automatic fixes.`)
+                return
+            }
+            if (NODE_PLAYBOOKS.has(event.reason)) {
+                await this._updateStatus(incident, 'unresolved', `Needs node access — fix it where the cluster is run${providerById(cluster.provider)?.group === 'cloud' ? ' (the provider\'s console: node pool / node repair)' : ', or add SSH in the connection settings'}.`)
+                return
+            }
         }
 
         const state = this.activeIncidents.get(key) || { lastAttempt: 0, retries: 0 }
@@ -143,6 +159,8 @@ function workloadRef(incident) {
 }
 
 async function onMaster(engine, cluster, fn) {
+    // an imported cluster: the Kubernetes API (no SSH)
+    if (usesApi(cluster)) { const ssh = await connectCluster(cluster); try { return await fn(ssh) } finally { ssh.dispose?.() } }
     const master = cluster.masterNodes?.[0]
     if (!master) throw new Error('No control-plane node saved for this cluster')
     const ssh = await engine.connectSSH(master)

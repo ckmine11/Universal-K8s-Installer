@@ -14,8 +14,7 @@ import { addonIcon } from '../config/addonIcons'
 import {
     Server, Zap, Plus, Cpu, Network, Trash2, Package, Loader2, CheckCircle2, BarChart3, LayoutDashboard, Shield,
     Database, GitBranch, Sparkles, Lock, Eye, HeartPulse, Compass, ArrowRight, Wifi, Bell, BookOpen, ShieldAlert,
-    Layers, Activity, X, Scaling, MoreHorizontal, Rocket
-} from 'lucide-react'
+    Layers, Activity, X, Scaling, MoreHorizontal, Rocket, PlugZap } from 'lucide-react'
 import useBackdropClose from '../components/ui/useBackdropClose'
 
 
@@ -118,12 +117,15 @@ export default function Home({ onStartNew, onScaleExisting }) {
 
     const openIncidents = incidents.filter(i => i.status !== 'resolved' && i.status !== 'cleared')
     const stats = useMemo(() => {
-        const nodes = savedClusters.reduce((n, c) => n + (c.masterNodes?.length || 0) + (c.workerNodes?.length || 0), 0)
+        // (an imported cluster: the nodes it reports)
+        const nodes = savedClusters.reduce((n, c) => n + ((c.masterNodes?.length || 0) + (c.workerNodes?.length || 0) || c.nodeCount || 0), 0)
         const healthy = savedClusters.filter(c => (c.status || 'healthy') === 'healthy').length
         return { clusters: savedClusters.length, nodes, healthy }
     }, [savedClusters])
     const statusOf = (c) => {
-        const s = c.status || 'healthy'
+        // an imported cluster KubeEZ cannot reach right now
+        if (c.access?.mode && c.access.lastError && (!c.access.lastOk || Date.parse(c.access.checkedAt || 0) >= Date.parse(c.access.lastOk))) return STATUS.attention
+        const s = c.status === 'completed' ? 'healthy' : (c.status || 'healthy')
         if (s === 'healthy' && openIncidents.some(i => i.clusterId === c.id)) return STATUS.attention
         return STATUS[s] || STATUS.installing
     }
@@ -189,7 +191,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                         {savedClusters.map((c, i) => (
                             <ClusterCard key={c.id} c={c} i={i} status={statusOf(c)} risk={risk[c.id]}
-                                canScale={can(user?.role, 'cluster:scale', c.id)} canAddons={can(user?.role, 'addon:install', c.id)} canDelete={can(user?.role, 'cluster:delete', c.id)}
+                                canScale={can(user?.role, 'cluster:scale', c.id) && !(c.access?.mode && !c.masterNodes?.length)} canAddons={can(user?.role, 'addon:install', c.id) && !(c.access?.mode && !c.masterNodes?.length)} canDelete={can(user?.role, 'cluster:delete', c.id)}
                                 onOpen={() => navigate(`/cluster/${c.id}`)}
                                 onAddons={() => { setSelectedClusterId(c.id); setAddonSelection({}); setIsAddonModalOpen(true) }}
                                 onScale={() => onScaleExisting(c)}
@@ -252,7 +254,10 @@ function Stat({ icon: Icon, label, value, of, color, onClick }) {
 }
 
 function ClusterCard({ c, i, status, risk, canScale, canAddons, canDelete, onOpen, onAddons, onScale, onDelete }) {
-    const masters = c.masterNodes || [], workers = c.workerNodes || []
+    // an imported cluster: its nodes as it reports them
+    const imported = !!c.access?.mode && !c.masterNodes?.length
+    const masters = imported ? (c.importedNodes || []).filter(n => n.role === 'control-plane').map(n => ({ ip: n.ip, hostname: n.name })) : (c.masterNodes || [])
+    const workers = imported ? (c.importedNodes || []).filter(n => n.role !== 'control-plane').map(n => ({ ip: n.ip, hostname: n.name })) : (c.workerNodes || [])
     const addons = Object.entries(c.addons || {}).filter(([, v]) => v).map(([k]) => ADDONS_LIST.find(a => a.key === k)?.name || k)
     return (
         <SpotlightCard onClick={onOpen} role="link" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpen() }}
@@ -271,7 +276,7 @@ function ClusterCard({ c, i, status, risk, canScale, canAddons, canDelete, onOpe
                     <div className="mt-1 flex items-center gap-3 text-xs text-slate-400 flex-wrap">
                         <span className="font-mono">v{c.k8sVersion}</span>
                         <span className="w-1 h-1 rounded-full bg-slate-600" />
-                        <span className="capitalize">{c.networkPlugin}</span>
+                        {imported ? <span className="inline-flex items-center gap-1 text-sky-200"><PlugZap className="w-3 h-3" />Imported · {c.provider || 'Kubernetes'}{c.access.level === 'full' ? '' : ' · read-only'}</span> : <span className="capitalize">{c.networkPlugin}</span>}
                         {c.controlPlaneVip && <><span className="w-1 h-1 rounded-full bg-slate-600" /><span className="font-mono">VIP {c.controlPlaneVip}</span></>}
                     </div>
                 </div>
@@ -291,7 +296,7 @@ function ClusterCard({ c, i, status, risk, canScale, canAddons, canDelete, onOpe
             <div className="mt-5 rounded-2xl border border-white/[0.06] bg-black/20 p-3">
                 <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
                     <span><b className="text-white">{masters.length}</b> control-plane · <b className="text-white">{workers.length}</b> worker{workers.length === 1 ? '' : 's'}</span>
-                    <span className="font-mono text-slate-500">{masters[0]?.ip}</span>
+                    <span className="font-mono text-slate-500">{imported ? (c.access.mode === 'agent' ? 'via KubeEZ agent' : '') : masters[0]?.ip}</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                     {masters.map((n, k) => <span key={`m${k}`} title={n.hostname || n.ip} className="h-2.5 w-7 rounded-full bg-gradient-to-r from-blue-400 to-indigo-400 shadow-[0_0_10px_rgba(128,105,251,.45)]" />)}

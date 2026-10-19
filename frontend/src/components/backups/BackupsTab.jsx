@@ -131,7 +131,31 @@ const TABS = [
  * Backups tab: how well is this cluster protected (score + four checks +
  * what to do next), then one section at a time.
  */
-export default function BackupsTab({ clusterId, clusterName, masterIp, canManage, explorer = false }) {
+export default function BackupsTab({ clusterId, clusterName, masterIp, canManage, explorer = false, imported = false, provider = null }) {
+    // an imported cluster: its etcd is backed up where it runs — volume backups (Velero) work as usual
+    if (imported) return <ImportedBackups clusterId={clusterId} clusterName={clusterName} canManage={canManage} provider={provider} />
+    return <InstalledBackups clusterId={clusterId} clusterName={clusterName} masterIp={masterIp} canManage={canManage} explorer={explorer} />
+}
+
+const CLOUD = new Set(['eks', 'aks', 'gke', 'oke', 'doks', 'lke', 'vke', 'iks', 'ack', 'tke', 'civo', 'scaleway', 'ovh', 'hetzner', 'cloud-other'])
+function ImportedBackups({ clusterId, clusterName, canManage, provider }) {
+    return (
+        <div className="space-y-6">
+            <div className="glass rounded-2xl border border-white/8 p-5 flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-sky-300 shrink-0 mt-0.5" />
+                <div className="text-sm text-slate-300 leading-relaxed">
+                    <p className="font-bold text-white">Cluster state (etcd)</p>
+                    {CLOUD.has(provider)
+                        ? <p className="mt-1 text-slate-400">The provider runs this cluster's control plane and backs up its etcd. KubeEZ protects what is <b className="text-slate-200">inside</b> the cluster: your workloads and their volumes, below (Velero).</p>
+                        : <p className="mt-1 text-slate-400">This on-prem cluster is connected without SSH, so KubeEZ cannot take etcd snapshots on its control-plane. Volume backups (below) work. SSH for etcd snapshots and upgrades comes with the next KubeEZ update.</p>}
+                </div>
+            </div>
+            <VolumeBackupPanel clusterId={clusterId} clusterName={clusterName} canManage={canManage} onData={() => { }} />
+        </div>
+    )
+}
+
+function InstalledBackups({ clusterId, clusterName, masterIp, canManage, explorer }) {
     const [etcd, setEtcd] = useState(null)
     const [vol, setVol] = useState(null)
     const [sub, setSub] = useState(() => {

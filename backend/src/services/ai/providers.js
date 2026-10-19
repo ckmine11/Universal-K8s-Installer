@@ -41,7 +41,8 @@ async function clusterConnection(p) {
     if (!cluster) throw new AiHttpError('The cluster of this AI engine is gone', { code: 'GONE' })
     let ip = svcCache.get(cluster.id)
     if (!ip || Date.now() - ip.at > 60e3) {
-        const ssh = await automationEngine.connectSSH({ ...cluster.masterNodes[0], ownerId: cluster.ownerId, orgId: cluster.orgId })
+        const { connectCluster } = await import('../clusterAccess.js')
+        const ssh = await connectCluster(cluster)
         try {
             const r = await ssh.execCommand(`sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n ${AI_NS} get svc ${AI_SVC} -o jsonpath='{.spec.clusterIP}' 2>/dev/null`)
             const v = (r.stdout || '').trim()

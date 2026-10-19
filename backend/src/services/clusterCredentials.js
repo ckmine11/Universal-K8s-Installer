@@ -10,7 +10,9 @@ export function stripCredentials(record) {
     const strip = (nodes) => (nodes || []).map(({ password, sshKey, ...n }) => ({
         ...n, hasPassword: !!password, hasSshKey: !!sshKey
     }))
-    return { ...record, masterNodes: strip(record.masterNodes), workerNodes: strip(record.workerNodes) }
+    // an imported cluster: how it is reached, never its token
+    const access = record.access ? (({ token, ca, ...a }) => ({ ...a, hasToken: !!token, hasCa: !!ca }))(record.access) : undefined
+    return { ...record, masterNodes: strip(record.masterNodes), workerNodes: strip(record.workerNodes), ...(access ? { access } : {}) }
 }
 
 /**

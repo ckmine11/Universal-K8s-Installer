@@ -85,6 +85,10 @@ import terminalRoutes from './routes/terminal.js'
 import approvalRoutes from './routes/approvals.js'
 import aiRoutes from './routes/ai.js'
 import aiOpsRoutes, { actionsRouter as aiActionsRoutes } from './routes/aiOps.js'
+import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
+import { startConnectionChecks } from './services/clusterImport.js'
+import { lockDownServerFiles } from './services/clusterAccess.js'
+import { DATA_DIR } from './utils/paths.js'
 import aiQualityRoutes from './routes/aiQuality.js'
 import { startApprovalSweeper } from './services/approvals.js'
 import { terminalAccess, terminalRecorder } from './services/terminalAccess.js'
@@ -311,6 +315,8 @@ app.use('/api/ai/mcp/tokens', requireAuth, mcpTokenRoutes)   // personal tokens 
 app.use('/api/mcp', mcpEndpoint)                             // MCP server (Bearer kzm_… token)
 app.use('/api/ai', requireAuth, aiQualityRoutes)             // quality test, model comparison, feedback
 app.use('/api/ai', requireAuth, aiOpsRoutes)                 // Install Doctor, incident explainer, What changed?
+app.use('/api/connect', requireAuth, clusterConnectRoutes)   // Connected clusters: add an existing cluster, its access
+app.use('/api/import', clusterImportPublic)                  // the connect command (its one-time code is the key)
 app.use('/api/clusters', requireAuth, aiActionsRoutes)       // safe fixes with dry-run and undo
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
@@ -536,6 +542,8 @@ server.listen(PORT, () => {
     startComplianceSchedule()     // monthly compliance reports (Pro)
     startApprovalSweeper()        // temporary access that ran out → RBAC re-synced
     startModelRefresh()           // every AI engine's model list, daily — new models show up by themselves
+    startConnectionChecks()       // imported clusters: still reachable? (every 5 minutes)
+    lockDownServerFiles(DATA_DIR) // scripts for imported clusters run sandboxed: KubeEZ's own files stay owner-only
     startAiDigest()               // the daily / weekly AI digest to the alert channels (AI settings)
     import('./services/ai/providers.js').then(m => m.ensureServerModel()).catch(() => { })   // KubeEZ AI server model (background)
     import('./services/ai/runbookHooks.js').then(m => m.startRunbooks()).catch(e => console.warn('[KubeEZ AI] runbooks not started:', e.message))   // learned runbooks

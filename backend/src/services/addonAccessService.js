@@ -1,4 +1,5 @@
 import { automationEngine } from './automationEngine.js'
+import { connectCluster, usesApi } from './clusterAccess.js'
 
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 
@@ -26,15 +27,15 @@ class AddonAccessService {
      * Ensures each addon UI is exposed via NodePort so it's reachable on the internal network.
      */
     async getAccessInfo(cluster) {
-        const master = cluster.masterNodes?.[0]
-        if (!master) throw new Error('No master node found for this cluster')
-
         // NodePort is reachable on every node IP; use the master's IP for the URL
-        const nodeIp = master.ip
+        // (an imported cluster: a node's address as the cluster reports it)
+        const master = cluster.masterNodes?.[0]
+        const nodeIp = master?.ip || (cluster.importedNodes || []).find(n => n.ip)?.ip || null
+        if (!master && !usesApi(cluster)) throw new Error('No master node found for this cluster')
 
         let ssh
         try {
-            ssh = await automationEngine.connectSSH(master)
+            ssh = await connectCluster(cluster)
         } catch (err) {
             throw new Error(`Cannot connect to cluster master ${nodeIp}: ${err.message}`)
         }

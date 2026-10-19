@@ -1,5 +1,18 @@
 # Backend Dockerfile
+#
+# kubectl, helm and bash for imported clusters (EKS, AKS, GKE, OKE, k3s… added
+# with a kubeconfig or the KubeEZ agent): KubeEZ runs the same scripts there
+# against the Kubernetes API, in a sandbox (services/clusterAccess.js). Taken
+# from the official images — no Alpine package CDN needed.
+FROM registry.k8s.io/kubectl:v1.34.1 AS kubectl
+FROM alpine/helm:3.16.4 AS helm
+FROM bash:5.2 AS bash
+
 FROM node:22-alpine
+COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
+COPY --from=helm /usr/bin/helm /usr/local/bin/helm
+COPY --from=bash /usr/local/bin/bash /usr/local/bin/bash
+COPY --from=bash /usr/lib/libncursesw.so.6* /usr/lib/
 
 # NOTE: No `apk add` — avoids dependency on the Alpine package CDN, which may be
 # blocked by firewalls/proxies on some servers. Healthchecks use node/wget

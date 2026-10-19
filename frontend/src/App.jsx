@@ -27,6 +27,7 @@ import Alerts from './pages/Alerts'
 import Compliance from './pages/Compliance'
 import Explorer from './pages/Explorer'
 import Approvals from './pages/Approvals'
+import ConnectHub from './pages/ConnectHub'
 // the public landing page (heavier: globe, motion) — only for visitors who are not signed in
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 
@@ -145,6 +146,7 @@ function AuthenticatedApp() {
                         element={<Incidents />}
                     />
                     <Route path="/fleet" element={<Fleet />} />
+                    <Route path="/connect/*" element={<ConnectHub />} />
                     <Route path="/ai" element={<AiHub />} />
                     <Route path="/ai/settings" element={<AiSettingsPage />} />
                     <Route path="/ai/:tool" element={<AiHub />} />

@@ -65,7 +65,8 @@ class AgentService {
     }
 
     // ─── Token / Registration ────────────────────────────────────
-    async generateToken(ownerId, ownerUsername, orgId, label = '') {
+    // extra: { kind: 'cluster', clusterId } — the KubeEZ agent inside an imported cluster
+    async generateToken(ownerId, ownerUsername, orgId, label = '', extra = {}) {
         const agentId = uuidv4()
         const token = uuidv4()
 
@@ -79,7 +80,8 @@ class AgentService {
             registeredNodeIps: [],
             status: 'pending', // pending | online | offline
             lastSeen: null,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            ...(extra.kind === 'cluster' ? { kind: 'cluster', clusterId: extra.clusterId } : {})
         }
 
         await this._mutate(agents => { agents.push(record) })
@@ -127,8 +129,14 @@ class AgentService {
 
     // ─── WebSocket Lifecycle ─────────────────────────────────────
     async onAgentConnect(ws, agentId, token) {
+        // the agent speaks first (its capabilities, an in-cluster agent's login) — keep what
+        // arrives while it is being looked up, and handle it once the handler is attached
+        const early = []
+        const keep = (m) => early.push(m)
+        ws.on('message', keep)
         const agent = await this.getAgentByToken(token)
         if (!agent || agent.agentId !== agentId) {
+            ws.off('message', keep)
             ws.close(4001, 'Invalid agent token')
             return false
         }
@@ -146,7 +154,8 @@ class AgentService {
         await this._updateAgentStatus(agentId, 'online')
 
         // Auto-register as gateway if not already marked — any connected agent can tunnel SSH
-        if (!agent.registeredNodeIps?.includes('gateway')) {
+        // (not the agent inside an imported cluster: it only reaches that cluster)
+        if (agent.kind !== 'cluster' && !agent.registeredNodeIps?.includes('gateway')) {
             await this._updateAgentIps(agentId, [...(agent.registeredNodeIps || []), 'gateway'])
         }
 
@@ -180,11 +189,18 @@ class AgentService {
                     await this._updateAgentIps(agentId, msg.ips || [])
                 } else if (msg.type === 'tcp-opened' || msg.type === 'tcp-data' || msg.type === 'tcp-close') {
                     this._onTcpMessage(agentId, msg)
+                } else if (msg.type === 'cluster-hello' && agent.kind === 'cluster') {
+                    // the agent inside an imported cluster: its API login (first connect finishes the import)
+                    const { onClusterHello } = await import('./clusterImport.js')
+                    onClusterHello(agent, msg).catch(e => console.error('[AgentService] cluster agent hello failed:', e.message))
                 }
             } catch (e) {
                 console.error('[AgentService] Failed to parse agent message:', e.message)
             }
         })
+
+        ws.off('message', keep)
+        for (const m of early) ws.emit('message', m)
 
         ws.on('close', async () => {
             clearInterval(watchdog)
@@ -239,14 +255,16 @@ class AgentService {
 
     // Find the online agent that has a given IP registered
     async findAgentForIp(ip, ownerId, role, orgId) {
-        const agents = await this.getAgentsByOwner(ownerId, role, orgId)
+        // an agent inside an imported cluster never relays SSH
+        const agents = (await this.getAgentsByOwner(ownerId, role, orgId)).filter(a => a.kind !== 'cluster')
         const onlineAgents = agents.filter(a => this.isAgentOnline(a.agentId))
         return onlineAgents.find(a => a.registeredNodeIps.includes(ip)) || null
     }
 
     // Get the first available Gateway agent for the user
     async getGatewayAgentForOwner(ownerId, role, orgId) {
-        const agents = await this.getAgentsByOwner(ownerId, role, orgId)
+        // Gateway Agents only — an agent inside an imported cluster is not one
+        const agents = (await this.getAgentsByOwner(ownerId, role, orgId)).filter(a => a.kind !== 'cluster')
         const onlineAgents = agents.filter(a => this.isAgentOnline(a.agentId))
         // Prefer explicitly registered gateway, fallback to any online agent
         return onlineAgents.find(a => a.registeredNodeIps?.includes('gateway'))
@@ -376,6 +394,10 @@ class AgentService {
     openTcp(agentId, nodeConfig, host, port, timeoutMs = 30000) {
         const ws = this.agentSockets.get(agentId)
         if (!ws) return Promise.reject(new Error(`Agent ${agentId} is not online`))
+        // without a node: the agent connects to host:port itself (an imported cluster's API server, or a Service from inside the cluster)
+        if (!nodeConfig && !this.agentSupports(agentId, 'tcp-direct')) {
+            return Promise.reject(Object.assign(new Error('This Gateway Agent is too old to reach a cluster added with a kubeconfig — reinstall it from the Gateway Agents page (one command, same token).'), { code: 'AGENT_OUTDATED' }))
+        }
         if (!this.agentSupports(agentId, 'tcp')) {
             return Promise.reject(Object.assign(new Error('This Gateway Agent is too old for in-cluster web tools — reinstall it from the Tunnels page (one command, same token).'), { code: 'AGENT_OUTDATED' }))
         }
@@ -408,7 +430,7 @@ class AgentService {
             entry.reject = reject
             send({
                 type: 'tcp-open', streamId, host, port,
-                ip: nodeConfig.ip, username: nodeConfig.username, password: nodeConfig.password, privateKey: nodeConfig.sshKey
+                ...(nodeConfig ? { ip: nodeConfig.ip, username: nodeConfig.username, password: nodeConfig.password, privateKey: nodeConfig.sshKey } : {})
             })
         })
     }

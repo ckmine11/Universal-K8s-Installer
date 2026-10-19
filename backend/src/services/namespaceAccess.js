@@ -19,6 +19,7 @@ import { accessOn, nsMatches } from './accessControl.js'
 import { authService } from './authService.js'
 import { installationManager } from './installationManager.js'
 import { automationEngine } from './automationEngine.js'
+import { connectCluster } from './clusterAccess.js'
 
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 export const ACCESS_NS = 'kubeez-access'
@@ -74,9 +75,8 @@ function manifests(d) {
 }
 
 async function withSSH(cluster, fn) {
-    const node = cluster.masterNodes?.[0]
-    if (!node) throw new Error('The cluster has no control-plane in KubeEZ')
-    const ssh = await automationEngine.connectSSH({ ...node, ownerId: cluster.ownerId, orgId: cluster.orgId })
+    // SSH to the control-plane, or the Kubernetes API for an imported cluster
+    const ssh = await connectCluster(cluster)
     try { return await fn(ssh) } finally { ssh.dispose?.() }
 }
 const run = async (ssh, cmd) => {

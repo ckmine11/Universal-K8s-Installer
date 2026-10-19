@@ -11,6 +11,7 @@ import { CATALOG, label } from '../config/incidentCatalog.js'
 import { RESOURCE_REASONS, HISTORY_MAX, parseResources, analyzeResources, resourceView } from './resourceForecast.js'
 import { redact } from './ai/redact.js'
 import { podFacts, containerMemory, recordMemory, memoryFindings, recordRestarts, restartFindings } from './predict.js'
+import { usesApi, apiShell } from './clusterAccess.js'
 
 const alertTarget = (inc) => inc.namespace ? `${inc.namespace}/${inc.target}` : inc.target
 
@@ -61,7 +62,7 @@ const RESYNC_MS = 60 * 1000
 const JOB_MODES = new Set(['upgrade', 'scale', 'addon-only', 'addon-uninstall', 'addon-reinstall'])
 const DISRUPTIVE_JOBS = new Set(['install', 'resume', 'upgrade', 'scale'])
 export function watchReason(c, runningJob = null) {
-    if (!c?.masterNodes?.length) return 'no control-plane node is saved for it'
+    if (!c?.masterNodes?.length && !usesApi(c)) return 'no control-plane node is saved for it'
     if (c.simulationMode) return 'it is a simulation'
     if (runningJob && DISRUPTIVE_JOBS.has(runningJob.mode || 'install')) {
         return `${runningJob.mode === 'upgrade' ? 'an upgrade' : runningJob.mode === 'scale' ? 'adding nodes' : 'the installation'} is running — watching resumes when it finishes`
@@ -385,7 +386,8 @@ class IncidentDetector {
                     continue
                 }
                 const prev = this.watched.get(c.id)
-                const moved = prev && prev.masterNodes?.[0]?.ip !== c.masterNodes?.[0]?.ip
+                // another control-plane, or (imported) another route / token: connect again
+                const moved = prev && (prev.masterNodes?.[0]?.ip !== c.masterNodes?.[0]?.ip || prev.access?.token !== c.access?.token || prev.access?.mode !== c.access?.mode || prev.access?.agentId !== c.access?.agentId)
                 if (moved) this.stopWatching(c.id)
                 if (!this.watched.has(c.id)) this.startWatching(c)
                 else this.watched.set(c.id, c)   // latest record (credentials, nodes)
@@ -408,17 +410,23 @@ class IncidentDetector {
         if (this.streams.has(cluster.id)) return // already watching
 
         const master = cluster.masterNodes?.[0]
-        if (!master) return
+        const api = usesApi(cluster)   // imported: watched through the Kubernetes API
+        if (!master && !api) return
         this.watched.set(cluster.id, cluster)
 
         // Gateway-Agent routing needs ownerId/orgId on the node
-        const node = { ...master, ownerId: cluster.ownerId, orgId: cluster.orgId }
+        const node = master ? { ...master, ownerId: cluster.ownerId, orgId: cluster.orgId } : null
         const attempt = this.reconnect.get(cluster.id) || 0
         console.log(`[AutoHealing] Connecting to ${cname(cluster)} (attempt ${attempt + 1})`)
 
         let ssh
         try {
-            ssh = await this.automationEngine.connectSSH(node)
+            if (api) {
+                ssh = apiShell(cluster)
+                // the API must answer before the pollers start (otherwise: unreachable)
+                const r = await ssh.execCommand(`kubectl get --raw /readyz --request-timeout=15s 2>&1 || kubectl version --request-timeout=15s 2>&1`, { timeoutMs: 40000 })
+                if (r.code !== 0) throw new Error((r.stderr || r.stdout || 'the API did not answer').trim().split('\n').pop())
+            } else ssh = await this.automationEngine.connectSSH(node)
         } catch (err) {
             console.error(`[AutoHealing] Connect failed for ${cname(cluster)}: ${err.message}`)
             this._unreachable(cluster, err.message)

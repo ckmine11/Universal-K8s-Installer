@@ -1,4 +1,5 @@
 import { automationEngine } from './automationEngine.js'
+import { connectCluster } from './clusterAccess.js'
 
 // Volume backups = Velero (a Helm add-on, config/addons/core.js). KubeEZ drives it
 // with the Velero CLI on the primary control-plane.
@@ -74,7 +75,8 @@ class VolumeBackupService {
     }
 
     async _ssh(cluster, fn) {
-        const ssh = await automationEngine.connectSSH(this.master(cluster))
+        // SSH to the control-plane, or the Kubernetes API for an imported cluster
+        const ssh = await connectCluster(cluster)
         try { return await fn(ssh) } finally { ssh.dispose?.() }
     }
 

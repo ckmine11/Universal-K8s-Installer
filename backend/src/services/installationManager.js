@@ -4,6 +4,7 @@ import { clusterStore } from './clusterStore.js'
 import { terminalService } from './terminalService.js'
 import { sameTenant } from '../utils/access.js'
 import { notifier } from './notifier.js'
+import { usesApi, apiShell } from './clusterAccess.js'
 
 // Day-2 jobs that touch one add-on of an existing cluster
 const ADDON_JOB_MODES = new Set(['addon-only', 'addon-uninstall', 'addon-reinstall'])
@@ -558,6 +559,11 @@ class InstallationManager {
             incidentDetector.stopWatching(id)
             const { addonSettingsStore } = await import('./addonSettings.js')
             addonSettingsStore.dropCluster(id)
+            // an imported cluster: its local API ports and its in-cluster agent
+            const { closeForwarders } = await import('./clusterAccess.js')
+            closeForwarders(id)
+            const { agentService } = await import('./agentService.js')
+            await agentService._mutate(list => { for (let i = list.length - 1; i >= 0; i--) if (list[i].kind === 'cluster' && list[i].clusterId === id) { try { agentService.agentSockets.get(list[i].agentId)?.close(1000, 'Cluster removed') } catch { } list.splice(i, 1) } }).catch(() => { })
         } catch (err) {
             console.warn(`[Cleanup] Warning during session cleanup for ${id}:`, err.message)
         }
@@ -595,6 +601,9 @@ users:
     client-certificate-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JS...
     client-key-data: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVkt...`
         }
+
+        // an imported cluster has no admin.conf KubeEZ could read (and must never read the KubeEZ server's own files)
+        if (usesApi(cluster)) throw Object.assign(new Error('An imported cluster has no admin kubeconfig in KubeEZ — use the kubeconfig you connected it with, or a scoped one from its Access page.'), { status: 409, code: 'NOT_ON_IMPORTED' })
 
         const masterNode = cluster.masterNodes[0]
         if (!masterNode) {
@@ -675,6 +684,9 @@ users:
             }
         }
 
+        // an imported cluster: the Kubernetes API (nodes, pods; CPU and memory from metrics-server when it runs)
+        if (usesApi(cluster)) return this._apiHealth(cluster)
+
         const masterNode = cluster.masterNodes[0]
         if (!masterNode) {
             throw new Error('No master node found configuration')
@@ -754,6 +766,24 @@ users:
                 step: 'commands'
             }
         }
+    }
+
+    async _apiHealth(cluster) {
+        const ssh = apiShell(cluster)
+        const r = await ssh.execCommand(`kubectl get nodes -o json --request-timeout=15s 2>&1; echo '==PODS=='; kubectl get pods -A --field-selector=status.phase=Running --no-headers --request-timeout=15s 2>/dev/null | wc -l; echo '==TOP=='; kubectl top nodes --no-headers --request-timeout=10s 2>/dev/null`, { timeoutMs: 40000 })
+        const [nodesOut, rest = ''] = r.stdout.split('==PODS==')
+        const [podsOut, topOut = ''] = rest.split('==TOP==')
+        let nodes
+        try { nodes = JSON.parse(nodesOut).items } catch { return { error: 'Cannot reach the Kubernetes API', details: (nodesOut || r.stderr || '').trim().split('\n').pop().slice(0, 300), step: 'connect' } }
+        const list = nodes.map(n => {
+            const l = n.metadata?.labels || {}
+            const ready = (n.status?.conditions || []).find(c => c.type === 'Ready')?.status === 'True'
+            return { name: n.metadata?.name, status: ready ? 'Ready' : 'NotReady', role: Object.keys(l).some(k => /node-role\.kubernetes\.io\/(control-plane|master)/.test(k)) ? 'master' : 'worker', ip: (n.status?.addresses || []).find(a => a.type === 'InternalIP')?.address }
+        })
+        // kubectl top: "name 250m 6% 1200Mi 31%" — the average over the nodes (metrics-server)
+        const top = topOut.split('\n').map(l => l.trim().split(/\s+/)).filter(p => p.length >= 5 && /%$/.test(p[2]))
+        const avg = (i) => top.length ? +(top.reduce((s, p) => s + parseFloat(p[i]), 0) / top.length).toFixed(1) : null
+        return { cpu: avg(2), mem: avg(4), disk: null, pods: parseInt((podsOut || '0').trim(), 10) || 0, nodes: list.length ? list : null, imported: true, metrics: top.length > 0, timestamp: new Date().toISOString() }
     }
 }
 

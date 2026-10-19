@@ -30,6 +30,7 @@ import { volumeBackupService } from '../services/volumeBackupService.js'
 import { canSeeCluster, canOn, kubeLevelOn, accessOn, LABEL_KEY, LABEL_VALUE } from '../services/accessControl.js'
 import { scopedKubeconfig } from '../services/namespaceAccess.js'
 import { requireApproval } from '../services/approvals.js'
+import { capabilities } from '../services/clusterAccess.js'
 
 
 const router = express.Router()
@@ -67,6 +68,18 @@ function clusterBusy(clusterId) {
 
 // ─── Tenant-isolation helpers ───────────────────────────────────────────────
 // Load a saved cluster and enforce workspace (org) ownership.
+// A feature an imported cluster does not have (etcd, upgrades, nodes…) or that
+// needs "Full manage" access: refused with the reason, before anything runs.
+const onlyWith = (feature) => async (req, res, next) => {
+    try {
+        const c = (await installationManager.getSavedClusters()).find(x => x.id === req.params.id)
+        // only for a cluster this member may see (others get the route's own 404)
+        const cap = c && canAccessResource(req.user, c) && canSeeCluster(req.user, c) && capabilities(c)[feature]
+        if (cap && !cap.ok) return res.status(409).json({ error: cap.why, code: 'NOT_ON_IMPORTED', feature })
+    } catch { /* the route itself reports a missing cluster */ }
+    next()
+}
+
 async function loadOwnedCluster(req, res) {
     const clusters = await installationManager.getSavedClusters()
     const cluster = clusters.find(c => c.id === req.params.id)
@@ -183,6 +196,9 @@ router.post('/install', requirePermission(req => req.body?.mode === 'scale' ? 'c
         let controlPlaneVip = req.body.controlPlaneVip || undefined
         if (mode === 'scale') {
             const existing = clusterId && (await clusterStore.getClusters()).find(c => c.id === clusterId)
+            // nodes of an imported cluster are added where it is run (node pools, own tooling)
+            const cap = existing && canAccessResource(req.user, existing) && capabilities(existing).scale
+            if (cap && !cap.ok) return res.status(409).json({ error: cap.why, code: 'NOT_ON_IMPORTED', feature: 'scale' })
             controlPlaneVip = existing?.controlPlaneVip
         } else {
             const vp = vipProblem(controlPlaneVip, masterNodes, workerNodes)
@@ -329,7 +345,7 @@ router.get('/:id/health', async (req, res) => {
 })
 
 // Get kubeconfig
-router.get('/:id/kubeconfig', requirePermission('kubeconfig:download'), async (req, res) => {
+router.get('/:id/kubeconfig', onlyWith('kubeconfig'), requirePermission('kubeconfig:download'), async (req, res) => {
     try {
         const cluster = await loadOwnedCluster(req, res)
         if (!cluster) return
@@ -436,7 +452,7 @@ router.post('/action/fix', requireAuth, requirePermission('cluster:create'), asy
 })
 
 // Retry a failed installation
-router.post('/:id/retry', requireAuth, requirePermission('cluster:create'), async (req, res) => {
+router.post('/:id/retry', onlyWith('resume'), requireAuth, requirePermission('cluster:create'), async (req, res) => {
     try {
         const oldInstallation = loadOwnedInstallation(req, res, req.params.id)
         if (!oldInstallation) return
@@ -550,7 +566,7 @@ router.get('/:id/addons/:key/logs', requireAuth, requirePermission('addon:instal
 
 // Uninstall (remove) or reinstall (remove, then install fresh) one add-on —
 // runs as a job with live logs, like an install
-router.post('/:id/addons/:key/:action(uninstall|reinstall)', requireAuth, requirePermission('addon:install'), requireApproval('addon:uninstall'), async (req, res) => {
+router.post('/:id/addons/:key/:action(uninstall|reinstall)', onlyWith('addons'), requireAuth, requirePermission('addon:install'), requireApproval('addon:uninstall'), async (req, res) => {
     try {
         const { key, action } = req.params
         const existingCluster = await loadOwnedCluster(req, res)
@@ -629,7 +645,7 @@ function planFromBody(req, cluster, key) {
     return buildPlan(key, cluster, { settings, advanced, version })
 }
 
-router.post('/:id/addons/:key/preview', requireAuth, requirePermission('addon:install'), async (req, res) => {
+router.post('/:id/addons/:key/preview', onlyWith('addons'), requireAuth, requirePermission('addon:install'), async (req, res) => {
     try {
         const key = helmKey(req, res); if (!key) return
         const cluster = await loadOwnedCluster(req, res); if (!cluster) return
@@ -643,7 +659,7 @@ router.post('/:id/addons/:key/preview', requireAuth, requirePermission('addon:in
     } catch (e) { res.status(e.status || 500).json({ error: e.message, ...(e.upgrade ? { upgrade: true } : {}) }) }
 })
 
-router.post('/:id/addons/:key/settings', requireAuth, requirePermission('addon:install'), async (req, res) => {
+router.post('/:id/addons/:key/settings', onlyWith('addons'), requireAuth, requirePermission('addon:install'), async (req, res) => {
     try {
         const key = helmKey(req, res); if (!key) return
         const cluster = await loadOwnedCluster(req, res); if (!cluster) return
@@ -678,7 +694,7 @@ router.post('/:id/addons/:key/settings', requireAuth, requirePermission('addon:i
 // Sealed Secrets: encrypt a Secret with this cluster's key (kubeseal runs on
 // the control-plane) — the result is safe to commit to Git
 const DNS1123 = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/
-router.post('/:id/addons/sealed-secrets/seal', requireAuth, requirePermission('addon:install'), async (req, res) => {
+router.post('/:id/addons/sealed-secrets/seal', onlyWith('addons'), requireAuth, requirePermission('addon:install'), async (req, res) => {
     try {
         const cluster = await loadOwnedCluster(req, res); if (!cluster) return
         const { name, namespace = 'default', scope = 'strict', data } = req.body || {}
@@ -783,7 +799,7 @@ function startEtcdJob(res, cluster, kind, fn, meta) {
 }
 
 // List etcd snapshots on the cluster (any org member who can view the cluster)
-router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
+router.get('/:id/etcd/backups', onlyWith('etcdBackup'), requireAuth, async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -812,7 +828,7 @@ router.get('/:id/etcd/backups', requireAuth, async (req, res) => {
 
 // Offsite backups only — no Kubernetes needed, so it also works on a freshly
 // installed replacement machine (disaster recovery); the listing runs there
-router.get('/:id/etcd/offsite', requireAuth, async (req, res) => {
+router.get('/:id/etcd/offsite', onlyWith('etcdBackup'), requireAuth, async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -827,7 +843,7 @@ router.get('/:id/etcd/offsite', requireAuth, async (req, res) => {
 
 // Take an on-demand etcd snapshot (control-plane maintenance → operator/admin).
 // Runs as a job: the offsite upload right after it can take minutes.
-router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/etcd/backups', onlyWith('etcdBackup'), requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -855,7 +871,7 @@ router.post('/:id/etcd/backups', requireAuth, requirePermission('cluster:upgrade
 })
 
 // Checksum + integrity check of one snapshot (read-only)
-router.post('/:id/etcd/verify', requireAuth, async (req, res) => {
+router.post('/:id/etcd/verify', onlyWith('etcdBackup'), requireAuth, async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -869,7 +885,7 @@ router.post('/:id/etcd/verify', requireAuth, async (req, res) => {
 })
 
 // What would a restore change? (read-only — a throw-away etcd reads the snapshot)
-router.get('/:id/etcd/preview', requireAuth, async (req, res) => {
+router.get('/:id/etcd/preview', onlyWith('etcdBackup'), requireAuth, async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -882,7 +898,7 @@ router.get('/:id/etcd/preview', requireAuth, async (req, res) => {
 
 // Restore etcd from a snapshot (DESTRUCTIVE → operator/admin). Works for HA
 // clusters too. source=offsite fetches the encrypted bundle first.
-router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade'), requireApproval('etcd:restore'), async (req, res) => {
+router.post('/:id/etcd/restore', onlyWith('etcdBackup'), requireAuth, requirePermission('cluster:upgrade'), requireApproval('etcd:restore'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -920,7 +936,7 @@ router.post('/:id/etcd/restore', requireAuth, requirePermission('cluster:upgrade
 
 // Bring an offsite-only snapshot back to the control-plane (decrypted,
 // checksummed) — then it can be previewed and restored like a local one
-router.post('/:id/etcd/offsite/fetch', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/etcd/offsite/fetch', onlyWith('etcdBackup'), requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -945,7 +961,7 @@ router.post('/:id/etcd/offsite/fetch', requireAuth, requirePermission('cluster:u
 })
 
 // Rebuild a LOST control-plane machine from an offsite backup (disaster recovery)
-router.post('/:id/etcd/recover', requireAuth, requirePermission('cluster:upgrade'), requireApproval('etcd:recover'), async (req, res) => {
+router.post('/:id/etcd/recover', onlyWith('etcdBackup'), requireAuth, requirePermission('cluster:upgrade'), requireApproval('etcd:recover'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -963,7 +979,7 @@ router.post('/:id/etcd/recover', requireAuth, requirePermission('cluster:upgrade
 })
 
 // Restart the kubelet on every worker again (after a restore some may have been offline)
-router.post('/:id/etcd/refresh-workers', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/etcd/refresh-workers', onlyWith('etcdBackup'), requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -976,7 +992,7 @@ router.post('/:id/etcd/refresh-workers', requireAuth, requirePermission('cluster
 })
 
 // Progress + log of a backup / restore / recovery job
-router.get('/:id/etcd/jobs/:jobId', requireAuth, async (req, res) => {
+router.get('/:id/etcd/jobs/:jobId', onlyWith('etcdBackup'), requireAuth, async (req, res) => {
     const cluster = await loadOwnedCluster(req, res)
     if (!cluster) return
     const job = etcdJobs.get(req.params.jobId)
@@ -985,7 +1001,7 @@ router.get('/:id/etcd/jobs/:jobId', requireAuth, async (req, res) => {
 })
 
 // Analyze failed cluster — detect what completed, what's missing, where to resume
-router.post('/:id/analyze', requireAuth, async (req, res) => {
+router.post('/:id/analyze', onlyWith('resume'), requireAuth, async (req, res) => {
     try {
         const cluster = await loadOwnedCluster(req, res)
         if (!cluster) return
@@ -1003,7 +1019,7 @@ router.post('/:id/analyze', requireAuth, async (req, res) => {
 })
 
 // Start resume from where installation failed
-router.post('/:id/resume', requireAuth, requirePermission('cluster:resume'), async (req, res) => {
+router.post('/:id/resume', onlyWith('resume'), requireAuth, requirePermission('cluster:resume'), async (req, res) => {
     try {
         const { id } = req.params
         const { analysis } = req.body  // Pass analysis result from /analyze call
@@ -1033,7 +1049,7 @@ router.post('/:id/resume', requireAuth, requirePermission('cluster:resume'), asy
 })
 
 // Install Add-ons to existing cluster
-router.post('/:id/addons', requireAuth, requirePermission('addon:install'), async (req, res) => {
+router.post('/:id/addons', onlyWith('addons'), requireAuth, requirePermission('addon:install'), async (req, res) => {
     try {
         const { addons } = req.body
 
@@ -1090,7 +1106,7 @@ router.post('/:id/addons', requireAuth, requirePermission('addon:install'), asyn
 })
 
 // Upgrade Cluster Version
-router.post('/:id/upgrade', requireAuth, requirePermission('cluster:upgrade'), requireApproval('cluster:upgrade'), async (req, res) => {
+router.post('/:id/upgrade', onlyWith('upgrade'), requireAuth, requirePermission('cluster:upgrade'), requireApproval('cluster:upgrade'), async (req, res) => {
     try {
         const { targetVersion } = req.body
 
@@ -1179,7 +1195,7 @@ router.get('/:id/volume-backups', requireAuth, async (req, res) => {
 
 // Save where backups go (own keys, or the workspace's offsite storage) and
 // install / update Velero with it. Keys → admin only (backup:manage).
-router.put('/:id/volume-backups/config', requireAuth, requirePermission('backup:manage'), async (req, res) => {
+router.put('/:id/volume-backups/config', onlyWith('backup'), requireAuth, requirePermission('backup:manage'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -1237,7 +1253,7 @@ function volumeBackupExcludes(cluster) {
 }
 
 // Back up now (all namespaces, or the chosen ones)
-router.post('/:id/volume-backups/backups', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.post('/:id/volume-backups/backups', onlyWith('backup'), requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -1248,7 +1264,7 @@ router.post('/:id/volume-backups/backups', requireAuth, requirePermission('clust
     }
 })
 
-router.delete('/:id/volume-backups/backups/:name', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.delete('/:id/volume-backups/backups/:name', onlyWith('backup'), requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -1260,7 +1276,7 @@ router.delete('/:id/volume-backups/backups/:name', requireAuth, requirePermissio
 
 // Restore (missing only / side-by-side copy / replace). Replace deletes the
 // namespaces first → typed cluster-name confirmation.
-router.post('/:id/volume-backups/restores', requireAuth, requirePermission('cluster:upgrade'), requireApproval('volume:restore'), async (req, res) => {
+router.post('/:id/volume-backups/restores', onlyWith('backup'), requireAuth, requirePermission('cluster:upgrade'), requireApproval('volume:restore'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
@@ -1272,7 +1288,7 @@ router.post('/:id/volume-backups/restores', requireAuth, requirePermission('clus
     }
 })
 
-router.put('/:id/volume-backups/schedule', requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
+router.put('/:id/volume-backups/schedule', onlyWith('backup'), requireAuth, requirePermission('cluster:upgrade'), async (req, res) => {
     try {
         const cluster = await etcdCluster(req, res)
         if (!cluster) return

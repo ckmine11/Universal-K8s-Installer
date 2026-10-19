@@ -1,6 +1,7 @@
 import http from 'http'
 import crypto from 'crypto'
 import { clusterTunnel } from './clusterTunnel.js'
+import { connectCluster } from './clusterAccess.js'
 import { automationEngine } from './automationEngine.js'
 import { installationManager } from './installationManager.js'
 import { authService } from './authService.js'
@@ -152,7 +153,7 @@ async function findCluster(user, clusterId) {
 async function target(cluster, fresh = false) {
     const t = targets.get(cluster.id)
     if (t && !fresh && Date.now() - t.at < TARGET_TTL) return t.ip
-    const ssh = await automationEngine.connectSSH({ ...cluster.masterNodes[0], ownerId: cluster.ownerId, orgId: cluster.orgId })
+    const ssh = await connectCluster(cluster)
     try {
         const r = await ssh.execCommand(SVCS.map(n => `${KB} -n ${EXPLORER_NS} get svc ${n} -o jsonpath='{.spec.clusterIP}' 2>/dev/null`).join(' || '))
         const ip = (r.stdout || '').trim()

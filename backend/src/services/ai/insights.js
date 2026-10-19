@@ -18,10 +18,8 @@ const CLOSED = new Set(['resolved', 'cleared'])
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms).unref?.())])
 
 async function sshTo(cluster) {
-    const { automationEngine } = await import('../automationEngine.js')
-    const master = cluster.masterNodes?.[0]
-    if (!master) throw new Error('No control-plane node saved for this cluster')
-    return automationEngine.connectSSH({ ...master, ownerId: cluster.ownerId, orgId: cluster.orgId })
+    const { connectCluster } = await import('../clusterAccess.js')
+    return connectCluster(cluster)
 }
 
 /** The clusters this member may see. */

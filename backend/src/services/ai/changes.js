@@ -158,10 +158,8 @@ export async function collectChanges(cluster, { hours = 24, from, to = Date.now(
 }
 
 async function defaultConnect(cluster) {
-    const { automationEngine } = await import('../automationEngine.js')
-    const master = cluster.masterNodes?.[0]
-    if (!master) throw new Error('No control-plane node saved for this cluster')
-    return automationEngine.connectSSH({ ...master, ownerId: cluster.ownerId, orgId: cluster.orgId })
+    const { connectCluster } = await import('../clusterAccess.js')
+    return connectCluster(cluster)
 }
 
 /** The changes as plain text lines (for the AI), newest first. */

@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { automationEngine } from './automationEngine.js'
 import { agentService } from './agentService.js'
+import { usesApi, openInCluster } from './clusterAccess.js'
 
 const IDLE_MS = 5 * 60 * 1000
 
@@ -50,6 +51,8 @@ class ClusterTunnel {
 
     /** A Duplex connected to host:port inside the cluster. */
     async open(cluster, host, port) {
+        // an imported cluster: through its agent, or a port-forward via the Kubernetes API
+        if (usesApi(cluster)) return openInCluster(cluster, host, port)
         const node = this.node(cluster)
         const agent = await agentService.getGatewayAgentForOwner(node.ownerId, 'admin', node.orgId)
         if (agent) return agentService.openTcp(agent.agentId, node, host, port)
