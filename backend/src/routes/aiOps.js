@@ -23,7 +23,7 @@ import { riskOf, fleetFor, advisorFor } from '../services/ai/insights.js'
 import { addonSettingsStore } from '../services/addonSettings.js'
 import { ADVISOR_SCRIPT, analyze as analyzeAdvisor, advisorText } from '../services/ai/advisor.js'
 import { autoFix } from '../services/ai/yamlBuilder.js'
-import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView, workloadSelector } from '../services/ai/manifests.js'
+import { generateManifests, parseManifests, checkManifests, previewManifests, applyManifests, undoManifests, manifestLog, manifestView, workloadSelector, fillSecrets } from '../services/ai/manifests.js'
 import { offsiteStore } from '../services/offsiteStore.js'
 import { complianceStore } from '../services/complianceService.js'
 
@@ -153,6 +153,8 @@ router.post('/check-yaml', (req, res) => {
         const docs = parseManifests(req.body?.yaml)
         // "Auto-fix": pin images, add resources / probes / labels, fix units and apiVersions first
         const f = req.body?.fix ? autoFix(docs) : { docs, fixes: [] }
+        // a password left as a placeholder (by a person or an AI) gets a random value
+        if (req.body?.fix) for (const k of fillSecrets(f.docs)) f.fixes.push(`${k}: a random value filled in`)
         res.json({ ...checkManifests(f.docs, { namespace: String(req.body?.namespace || 'default') }), fixes: f.fixes })
     } catch (e) { fail(res, e) }
 })

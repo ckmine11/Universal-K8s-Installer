@@ -10,6 +10,7 @@ import Advisor from '../components/ai/Advisor'
 import WhatChanged from '../components/ai/WhatChanged'
 import FixPreview, { actionLabel } from '../components/ai/FixPreview'
 import Markdown from '../components/ai/Markdown'
+import ChatYaml, { yamlBlocksOf } from '../components/ai/ChatYaml'
 
 // The AI section of the sidebar: Ask AI (chat about your clusters, in English,
 // Hindi or Hinglish; answers in English) and the per-cluster AI tools with a cluster picker.
@@ -78,6 +79,7 @@ function AskAi() {
                     <div key={i} className={`flex ${m.who === 'me' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${m.who === 'me' ? 'bg-blue-500/20 text-white' : 'bg-white/[0.04] border border-white/[0.07] text-slate-200'}`}>
                             {m.who === 'me' ? <span className="whitespace-pre-wrap"><Linkified text={m.text} /></span> : <Markdown text={m.text} />}
+                            {m.who === 'ai' && yamlBlocksOf(m.text).map((y, k) => <ChatYaml key={k} yaml={y} question={msgs[i - 1]?.text} />)}
                             {m.engine && <div className="mt-1.5 text-[10px] text-slate-500">Answered by {m.engine.provider}{m.engine.model ? ` · ${m.engine.model}` : ''} · live cluster data</div>}
                             {m.needsAi && can(user?.role, 'ai:manage') && <div className="mt-2 whitespace-normal"><Link to="/ai/settings" className="kz-btn-primary !py-1.5 !text-xs inline-flex"><Plug className="w-3.5 h-3.5" /> Connect AI</Link></div>}
                             {m.fix && <div className="mt-3 whitespace-normal">{m.fix.canAct

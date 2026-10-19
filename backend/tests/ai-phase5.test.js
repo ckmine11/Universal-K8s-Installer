@@ -267,6 +267,9 @@ describe('API', () => {
     test('YAML: anyone may check; only Kubernetes editors may apply; the kill switch stops it; Slack needs a signature', async () => {
         const c = await api('POST', '/api/ai/check-yaml', viewer.token, { yaml, namespace: 'shop' })
         assert.equal(c.status, 200); assert.equal(c.data.objects[0].namespace, 'shop')
+        // Check & fix (also from Ask AI): a password left as a placeholder gets a random value
+        const sec = await api('POST', '/api/ai/check-yaml', viewer.token, { yaml: 'apiVersion: v1\nkind: Secret\nmetadata: { name: db }\nstringData:\n  password: changeme\n', namespace: 'shop', fix: true })
+        assert.equal(sec.status, 200); assert.doesNotMatch(sec.data.yaml, /changeme/); assert.ok(sec.data.fixes.some(x => /random value/.test(x)), JSON.stringify(sec.data.fixes))
         assert.equal((await api('POST', '/api/clusters/c5/ai-manifests/preview', viewer.token, { yaml, namespace: 'shop' })).status, 403, 'viewers only see')
         assert.equal((await api('PUT', '/api/ai/settings', owner.token, { actionsEnabled: false })).status, 200)
         const k = await api('POST', '/api/clusters/c5/ai-manifests', owner.token, { yaml, namespace: 'shop' })

@@ -142,7 +142,7 @@ export async function workloadSelector(ssh, namespace, kind, name) {
 export const RANDOM = '__KUBEEZ_RANDOM__'
 const PLACEHOLDER = /^(__KUBEEZ_RANDOM__|hidden|\[hidden\]|change_?me|changeme|<[^>]*>|\$\{?[A-Z_]+\}?|your[-_ ]?password|password|secret|xxx+|\*+|)$/i
 /** Random values for every secret placeholder the AI left (or invented). → the keys filled */
-function fillSecrets(docs) {
+export function fillSecrets(docs) {
     const filled = []
     for (const o of docs) {
         if (o.kind !== 'Secret') continue
