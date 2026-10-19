@@ -6,7 +6,7 @@ import { PageTitle } from '../components/ui/PageHeader'
 import {
     Users, Shield, User, Trash2, Crown, RefreshCw, Loader2,
     ChevronRight, Lock, AlertTriangle, Check, Clock, Eye, Wrench,
-    KeyRound, Search, UserCheck, UserX, MoreVertical, X, Layers, Download, ShieldCheck, Sparkles
+    KeyRound, Search, UserCheck, UserX, MoreVertical, X, Layers, Download, ShieldCheck, Sparkles, EyeOff
 } from 'lucide-react'
 import RolesPanel from '../components/team/RolesPanel'
 import ClusterAccessDialog from '../components/team/ClusterAccessDialog'
@@ -43,9 +43,10 @@ function RoleBadge({ role, name }) {
 
 // ─── Reset Password Modal ─────────────────────────────────────────
 function ResetPasswordModal({ user, onClose, onSuccess }) {
-    const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
     const [password, setPassword] = useState('')
+    // a typed password is not lost to an Escape (meant for a browser popup) or a stray click
+    const backdrop = useBackdropClose(onClose, { keepOpen: () => !!password })
     const [loading, setLoading] = useState(false)
 
     const handleReset = async () => {
@@ -117,12 +118,17 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
 
 // ─── Create User Modal ─────────────────────────────────────────────
 function CreateUserModal({ onClose, onSuccess, roleOptions }) {
-    const backdrop = useBackdropClose(onClose)
     const { toast } = useToast()
     const [formData, setFormData] = useState({ username: '', email: '', password: '', role: 'viewer', aiAccess: 'none' })
     const [loading, setLoading] = useState(false)
+    const [showPwd, setShowPwd] = useState(false)
+    // once something is typed, only Cancel closes it (not Escape, not a click outside)
+    const backdrop = useBackdropClose(onClose, { keepOpen: () => !!(formData.username || formData.email || formData.password) })
+    // each field updates only itself — a password manager filling one field at the same moment cannot wipe another
+    const field = (k) => (e) => { const v = e.target.value; setFormData(f => ({ ...f, [k]: v })) }
 
-    const handleCreate = async () => {
+    const handleCreate = async (e) => {
+        e?.preventDefault?.()
         if (formData.password.length < 8) {
             toast({ title: 'Error', message: 'Password must be at least 8 characters', type: 'error' })
             return
@@ -160,12 +166,16 @@ function CreateUserModal({ onClose, onSuccess, roleOptions }) {
                         <p className="text-xs text-slate-500">Create a new user in your workspace</p>
                     </div>
                 </div>
-                <div className="space-y-3">
-                    <input type="text" name="new-member-username" autoComplete="off" spellCheck={false} placeholder="Username" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
-                    <input type="email" name="new-member-email" autoComplete="off" placeholder="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
-                    <input type="password" name="new-member-password" autoComplete="new-password" placeholder="Password (min 8 characters)" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                {/* not a login form: password managers are asked not to fill it with your own saved login */}
+                <form className="space-y-3" autoComplete="off" onSubmit={handleCreate} data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">
+                    <input type="text" name="new-member-username" aria-label="Username" autoComplete="off" spellCheck={false} placeholder="Username" value={formData.username} onChange={field('username')} data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                    <input type="email" name="new-member-email" aria-label="Email" autoComplete="off" placeholder="Email" value={formData.email} onChange={field('email')} data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                    <div className="relative">
+                        <input type={showPwd ? 'text' : 'password'} name="new-member-password" aria-label="Password" autoComplete="new-password" placeholder="Password (min 8 characters)" value={formData.password} onChange={field('password')} data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl pl-4 pr-11 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors" />
+                        <button type="button" onClick={() => setShowPwd(s => !s)} aria-label={showPwd ? 'Hide password' : 'Show password'} title={showPwd ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">{showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                    </div>
                     <div>
-                        <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
+                        <select value={formData.role} onChange={field('role')} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
                             {roleOptions.map(r => (
                                 <option key={r.key} value={r.key} className="bg-slate-950">{r.name}{r.custom ? ' (custom)' : ''}</option>
                             ))}
@@ -175,7 +185,7 @@ function CreateUserModal({ onClose, onSuccess, roleOptions }) {
                     {formData.role !== 'admin' && (
                         <div>
                             <label htmlFor="new-ai" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1"><Sparkles className="w-3 h-3 text-violet-300" /> KubeEZ AI</label>
-                            <select id="new-ai" value={formData.aiAccess} onChange={e => setFormData({ ...formData, aiAccess: e.target.value })} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
+                            <select id="new-ai" value={formData.aiAccess} onChange={field('aiAccess')} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
                                 {AI_LEVELS.map(l => <option key={l.key} value={l.key} className="bg-slate-950">{l.name}</option>)}
                             </select>
                             <p className="text-[11px] text-slate-500 mt-1.5 px-1">{AI_LEVELS.find(l => l.key === formData.aiAccess)?.hint}</p>
@@ -183,12 +193,12 @@ function CreateUserModal({ onClose, onSuccess, roleOptions }) {
                     )}
 
                     <div className="flex gap-3 pt-2">
-                        <button onClick={onClose} className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-xs font-black uppercase tracking-wider text-slate-400 transition-all">Cancel</button>
-                        <button onClick={handleCreate} disabled={loading} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center justify-center gap-2">
+                        <button type="button" onClick={onClose} className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-xs font-black uppercase tracking-wider text-slate-400 transition-all">Cancel</button>
+                        <button type="submit" disabled={loading} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center justify-center gap-2">
                             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Create'}
                         </button>
                     </div>
-                </div>
+                </form>
             </div>
         </div>
     )
