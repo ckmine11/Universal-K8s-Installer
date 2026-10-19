@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plug, FileBadge, Brain, MessageCircle, Coins, BookOpenCheck, GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
+import { Plug, BellRing, Wallet, FileBadge, Brain, MessageCircle, Coins, BookOpenCheck, GraduationCap, ThumbsUp, ThumbsDown, Bot, Plus, Pencil, Trash2, Loader2, PlugZap, Download, ArrowUp, ArrowDown, X, ShieldCheck, Route, Send, History, Power, CheckCircle2, AlertTriangle, EyeOff, Server, Cloud, Boxes } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import useBackdropClose from '../ui/useBackdropClose'
@@ -10,6 +10,7 @@ import { McpPanel, AiBomPanel, LearningPanel } from './Phase6Panels'
 import Feedback from './Feedback'
 import ConnectAi from './ConnectAi'
 import Markdown from './Markdown'
+import UsagePanel, { AlertsAiPanel } from './UsagePanel'
 
 // AI settings: the engines (models) KubeEZ AI may use, which engine does
 // which job (with fallbacks), the safety switches, a test box and the log.
@@ -362,6 +363,14 @@ export default function AiSettings() {
 
             <Section icon={MessageCircle} title="ChatOps" hint="Ask KubeEZ from your Telegram or Slack alert channel — ask in English, हिन्दी or Hinglish — answers are always in English.">
                 <ChatOpsPanel channels={data.chatops || []} onChanged={load} />
+            </Section>
+
+            <Section icon={BellRing} title="AI in alerts" hint="The connected AI in your alert channels: the likely cause and fix under each new alert, and a daily or weekly digest.">
+                <AlertsAiPanel data={data} save={saveSettings} />
+            </Section>
+
+            <Section icon={Wallet} title="Usage & cost" hint="Tokens and cost per AI engine, and a monthly budget for this workspace.">
+                <UsagePanel data={data} save={saveSettings} />
             </Section>
 
             <Section icon={Coins} title="Cost prices" hint="What a CPU core and a GiB of memory cost you a month — the Advisor uses them to estimate savings.">

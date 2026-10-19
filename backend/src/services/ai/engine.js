@@ -16,6 +16,8 @@ import { chat, serverModel } from './providers.js'
 import { redact } from './redact.js'
 import { wrapUntrusted, detectInjection, UNTRUSTED_RULES, clean } from './guard.js'
 import { auditLog } from '../auditLog.js'
+import { recordUse, overBudget } from './usage.js'
+import { isOffline } from './pricing.js'
 
 export class AiUnavailable extends Error {
     constructor(message, attempts = []) { super(message); this.code = 'AI_UNAVAILABLE'; this.attempts = attempts; this.status = 503 }
@@ -187,7 +189,10 @@ export async function ask(user, opts) {
     if (!route.length) throw Object.assign(new AiUnavailable('No AI is connected to this workspace yet — an admin can connect one in AI settings → Connect AI'), { none: true })
     const attempts = []
     let result = null
+    // the month's AI budget is used up: cloud engines wait for next month, own machines answer
+    const capped = overBudget(orgId)
     for (const p of route) {
+        if (capped && !isOffline(p)) { attempts.push({ provider: p.name, kind: p.kind, skipped: 'monthly AI budget reached' }); continue }
         if (!opts.only && breakerState(orgId, p).open) { const b = breakerState(orgId, p); attempts.push({ provider: p.name, kind: p.kind, skipped: b.reason ? `paused — ${b.reason}` : 'failing — paused for a moment', ...(b.account ? { account: true } : {}) }); continue }
         if (!opts.only && p.kind === 'server' && aiStore.usedToday(orgId) >= s.dailyLimit) { attempts.push({ provider: p.name, kind: p.kind, skipped: `daily limit (${s.dailyLimit}) reached` }); continue }
         const local = LOCAL_KINDS.has(p.kind) || !!p.offline   // a model on someone's own machine: slower, one at a time
@@ -221,7 +226,9 @@ export async function ask(user, opts) {
                         }
                         throw Object.assign(new Error(`answer rejected: ${why}`), { code: 'INVALID' })
                     }
-                    attempts.push({ provider: p.name, kind: p.kind, model: r.model, ms: Date.now() - a0, ok: true, tokensIn: r.tokensIn, tokensOut: r.tokensOut })
+                    // tokens and cost (estimated from the text when the engine does not say)
+                    const used = recordUse(orgId, p, r, { prompt: system + JSON.stringify(attempt === 1 || !redo ? messages : redo), answer: r.text })
+                    attempts.push({ provider: p.name, kind: p.kind, model: r.model, ms: Date.now() - a0, ok: true, tokensIn: used.tokensIn, tokensOut: used.tokensOut, ...(used.estimated ? { estimated: true } : {}), ...(used.usd ? { usd: +used.usd.toFixed(6) } : {}) })
                     if (!opts.only) { noteResult(orgId, p, true); if (p.kind === 'server') aiStore.countUse(orgId) }
                     result = { ...r, json, provider: p.name, providerId: p.id, providerKind: p.kind }
                     break
@@ -256,7 +263,8 @@ export async function ask(user, opts) {
     if (opts.trace !== false) auditLog.record({ orgId, actor: user, action: 'ai.ask', ok: !!result, target: opts.clusterId ? { clusterId: opts.clusterId, clusterName: opts.clusterName } : null,
         detail: `${opts.purpose || task} — ${result ? `${result.provider} (${result.model}), ${ms} ms` : 'no engine answered'}${masked ? `, ${masked} secret(s) masked` : ''}${hits.length ? ', trick text flagged' : ''}` })
 
-    if (!result) throw new AiUnavailable(attempts.some(a => a.skipped?.startsWith('daily limit')) && attempts.every(a => a.skipped || a.error) ? 'Today\'s AI limit is used up — tomorrow it resets, or add your own engine in AI settings' : 'No AI engine could answer right now', attempts)
+    if (!result) throw new AiUnavailable(attempts.length && attempts.every(a => a.skipped === 'monthly AI budget reached') ? 'This month\'s AI budget is used up — cloud AI engines are paused until next month. An admin can raise the budget in AI settings → Usage & cost, or connect a model on your own machine.'
+        : attempts.some(a => a.skipped?.startsWith('daily limit')) && attempts.every(a => a.skipped || a.error) ? 'Today\'s AI limit is used up — tomorrow it resets, or add your own engine in AI settings' : 'No AI engine could answer right now', attempts)
     return { text: result.text, json: result.json, provider: result.provider, providerId: result.providerId, providerKind: result.providerKind, model: result.model, ms, attempts, masked, suspicious: hits.length > 0, traceId }
 }
 

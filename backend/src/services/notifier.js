@@ -223,14 +223,16 @@ export async function telegramChats(botToken) {
 }
 
 /** One message, rendered for each channel. */
-function render(ev) {
+function render(ev, type = null) {
     const icon = ICON[ev.severity] || 'ℹ️'
     // Only an absolute link: Telegram refuses relative ones and Teams cards
     // become invalid. Without KUBEEZ_PUBLIC_URL the message has no link.
     const base = publicUrl()
     const link = ev.link && /^https?:\/\/[^/]/.test(base) ? `${base}${ev.link}` : ''
     let text = String(ev.text || '')
-    if (text.length > TEXT_MAX) text = text.slice(0, TEXT_MAX - 1) + '…'
+    // a long message (the AI digest) — but WhatsApp takes 1600 characters at most
+    const max = ev.long && type !== 'whatsapp' ? 3500 : TEXT_MAX
+    if (text.length > max) text = text.slice(0, max - 1) + '…'
     const lines = [ev.clusterName ? `Cluster: ${ev.clusterName}` : '', text].filter(Boolean)
     return { icon, link, title: `${icon} ${String(ev.title || '').slice(0, 200)}`, lines, actions: actionLinks(ev), ev }
 }
@@ -279,14 +281,17 @@ async function sendTelegram(c, m) {
     const html = [`<b>${esc(m.title)}</b>`, ...m.lines.map(esc), m.link ? `<a href="${esc(m.link)}">Open in KubeEZ</a>` : ''].filter(Boolean).join('\n')
     // buttons answered by this bot (KubeEZ polls it) — no public address needed
     const id = m.ev?.incidentId
-    const reply_markup = id && !m.ev.recovery ? { inline_keyboard: [[
+    const reply_markup = id && !m.ev.recovery && !m.ev.followUp ? { inline_keyboard: [[
         { text: '✅ Acknowledge', callback_data: `ack:${id}` },
         { text: '🔕 Mute 1 h', callback_data: `mute:${id}` },
         ...(m.ev.fixable ? [{ text: '🛠 Fix now', callback_data: `fix:${id}` }] : [])
     ]] } : undefined
     if (reply_markup) telegramPoller.start()
     try {
-        return await withRetry(() => postRequest(url, { chat_id: c.chatId, parse_mode: 'HTML', disable_web_page_preview: true, text: html, ...(reply_markup ? { reply_markup } : {}) }))
+        // the follow-up (AI cause & fix) is a reply under its alert
+        const reply = m.replyTo ? { reply_parameters: { message_id: m.replyTo, allow_sending_without_reply: true } } : {}
+        const r = await withRetry(() => postRequest(url, { chat_id: c.chatId, parse_mode: 'HTML', disable_web_page_preview: true, text: html, ...reply, ...(reply_markup ? { reply_markup } : {}) }))
+        return { ...r, messageId: jsonOf(r.text)?.result?.message_id || null }
     } catch (e) {
         // Formatting or a link Telegram dislikes: send it as plain text instead
         if (e.status === 400 && /can't parse entities|wrong http url|unsupported url|wrong url/i.test(String(e.body))) {
@@ -299,11 +304,11 @@ async function sendTelegram(c, m) {
 }
 
 async function deliver(ch, ev) {
-    const m = render(ev)
+    const m = render(ev, ch.type)
     const c = ch.config
     switch (ch.type) {
         case 'telegram':
-            return sendTelegram(c, m)
+            return sendTelegram(c, { ...m, replyTo: ev.replyTo?.[ch.id] || null })
         case 'slack': {
             if (!SLACK_HOSTS.test(new URL(c.webhookUrl).hostname)) throw new Error('Not a Slack webhook URL')
             const acts = m.actions.map(a => `<${a.url}|${a.label}>`).join(' · ')
@@ -409,7 +414,7 @@ class Notifier {
             if (lastSent.size > 5000) for (const [k, t] of lastSent) if (+now - t > 86400000) lastSent.delete(k)
             const results = {}
             await Promise.all(channels.map(async ch => {
-                try { await deliverWithin(plan, orgId, ch, ev); results[ch.id] = { ok: true } } catch (e) { results[ch.id] = { ok: false, error: String(e.message).slice(0, 300) } }
+                try { const r = await deliverWithin(plan, orgId, ch, ev); results[ch.id] = { ok: true, ...(r?.messageId ? { messageId: r.messageId } : {}) } } catch (e) { results[ch.id] = { ok: false, error: String(e.message).slice(0, 300) } }
             }))
             const okCount = Object.values(results).filter(r => r.ok).length
             // nothing got through: don't hold the next attempt back
@@ -421,6 +426,11 @@ class Notifier {
                 this._startDigest()
             }
             notificationStore.record(orgId, { ...pick(ev), outcome: `${okCount}/${channels.length} delivered`, failures: Object.entries(results).filter(([, r]) => !r.ok).map(([id, r]) => ({ id, error: r.error })) }, results)
+            // a new incident: the connected AI adds its likely cause and fix under the alert (AI settings)
+            if (okCount && ev.type === 'incident' && ev.incidentId && !ev.recovery) {
+                const sent = channels.filter(ch => results[ch.id]?.ok).map(ch => ({ channelId: ch.id, messageId: results[ch.id].messageId || null }))
+                import('./ai/alertExplain.js').then(m => m.afterAlert(orgId, ev, sent)).catch(e => console.error('[Alerts] AI follow-up failed:', e.message))
+            }
             return { sent: okCount, results }
         } catch (e) {
             console.error('[Alerts] notify failed:', e.message)
@@ -506,6 +516,30 @@ class Notifier {
 
     /** Fire-and-forget form for event hooks */
     emit(orgId, ev) { this.notify(orgId, ev).catch(() => { }) }
+
+    /**
+     * A message the workspace asked for itself — the AI follow-up under an alert,
+     * the AI digest: straight to these channels (or every usable one), without
+     * the alert rules (cooldown, quiet hours, routing). Paused channels and
+     * channels not on the plan still get nothing.
+     * targets: [{ channelId, messageId }] (a Telegram reply goes under messageId) | null
+     */
+    async sendTo(orgId, ev, targets = null) {
+        const plan = await alertPlanFor(orgId)
+        const all = notificationStore.channels(orgId)
+        const locked = lockedChannelIds(all, plan)
+        const want = targets ? new Map(targets.map(t => [t.channelId, t.messageId || null])) : null
+        const channels = all.filter(c => c.enabled !== false && !locked.has(c.id) && (!want || want.has(c.id)) && (!ev.types || ev.types.includes(c.type)))
+        if (!channels.length) { notificationStore.record(orgId, { ...pick(ev), outcome: 'not sent — no channel to send it to' }); return { sent: 0, reason: 'no channels' } }
+        const replyTo = want ? Object.fromEntries([...want].filter(([, id]) => id)) : {}
+        const results = {}
+        await Promise.all(channels.map(async ch => {
+            try { await deliverWithin(plan, orgId, ch, { ...ev, orgId, replyTo }); results[ch.id] = { ok: true } } catch (e) { results[ch.id] = { ok: false, error: String(e.message).slice(0, 300) } }
+        }))
+        const okCount = Object.values(results).filter(r => r.ok).length
+        notificationStore.record(orgId, { ...pick(ev), outcome: `${okCount}/${channels.length} delivered`, failures: Object.entries(results).filter(([, r]) => !r.ok).map(([id, r]) => ({ id, error: r.error })) }, results)
+        return { sent: okCount, results }
+    }
 
     async test(orgId, channelId) {
         const all = notificationStore.channels(orgId)

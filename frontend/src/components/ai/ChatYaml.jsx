@@ -42,8 +42,8 @@ export default function ChatYaml({ yaml: initial, question }) {
     return (
         <div className="mt-3 rounded-xl border border-violet-400/25 bg-violet-500/[0.05] p-3 space-y-2.5 whitespace-normal">
             <p className="flex items-center gap-1.5 text-xs font-semibold text-violet-200"><FileCode2 className="w-3.5 h-3.5" /> Use this YAML</p>
-            {clusters && !clusters.length && <p className="text-[11px] text-slate-400">No cluster to apply it to — you can still copy it.</p>}
-            {clusters?.length > 0 && !done && (
+            {clusters && !clusters.length && <p className="text-[11px] text-slate-400">No cluster to apply it to — check it here, then copy it.</p>}
+            {clusters && !done && (
                 <div className="flex flex-wrap items-end gap-2">
                     {clusters.length > 1 && (
                         <select className="kz-input !w-auto !py-1 !text-xs" value={clusterId} onChange={e => { setClusterId(e.target.value); setPreview(null) }} aria-label="Cluster">
@@ -51,9 +51,9 @@ export default function ChatYaml({ yaml: initial, question }) {
                             {clusters.map(c => <option key={c.id} value={c.id}>{c.clusterName}</option>)}
                         </select>
                     )}
-                    <input className="kz-input !w-36 !py-1 !text-xs font-mono" value={ns} onChange={e => { setNs(e.target.value.trim()); setPreview(null) }} aria-label="Namespace" title="Namespace" />
+                    {clusters.length > 0 && <input className="kz-input !w-36 !py-1 !text-xs font-mono" value={ns} onChange={e => { setNs(e.target.value.trim()); setPreview(null) }} aria-label="Namespace" title="Namespace" />}
                     <button onClick={check} disabled={!!busy} className="kz-btn-ghost !py-1 !text-xs">{busy === 'check' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />} Check & fix</button>
-                    <button onClick={dryRun} disabled={!!busy || !clusterId || !canEdit || !checked || checked.blocked} className="kz-btn-ghost !py-1 !text-xs" title={!checked ? 'Check it first' : !canEdit && clusterId ? 'Needs Kubernetes edit access on this cluster' : ''}>{busy === 'dry' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Dry-run</button>
+                    {clusters.length > 0 && <button onClick={dryRun} disabled={!!busy || !clusterId || !canEdit || !checked || checked.blocked} className="kz-btn-ghost !py-1 !text-xs" title={!checked ? 'Check it first' : !canEdit && clusterId ? 'Needs Kubernetes edit access on this cluster' : ''}>{busy === 'dry' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Dry-run</button>}
                     {preview?.ok && <button onClick={apply} disabled={!!busy} className="kz-btn-primary !py-1 !text-xs">{busy === 'apply' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Apply</button>}
                 </div>
             )}

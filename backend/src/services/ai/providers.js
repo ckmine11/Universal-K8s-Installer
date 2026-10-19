@@ -110,11 +110,21 @@ const toOpenAiMessages = (system, messages) => [...(system ? [{ role: 'system', 
 
 // servers that reject the JSON-mode field (some local runtimes) — asked without it from then on
 const noJsonMode = new Set()
+const noStreamUsage = new Set()
 async function openAiChat(base, key, model, req, extra = {}, via = null) {
     if (req.onToken && !req.json) {
-        const r = await streamVia(via, `${base}/chat/completions`, {
-            model, messages: toOpenAiMessages(req.system, req.messages), max_tokens: req.maxTokens, temperature: req.temperature ?? 0.2, stream: true
+        // the token counts arrive at the end of the stream (stream_options) — a server that rejects the field is asked without it
+        const stream = (usage) => streamVia(via, `${base}/chat/completions`, {
+            model, messages: toOpenAiMessages(req.system, req.messages), max_tokens: req.maxTokens, temperature: req.temperature ?? 0.2, stream: true,
+            ...(usage ? { stream_options: { include_usage: true } } : {})
         }, { headers: key ? { authorization: `Bearer ${key}` } : {}, timeoutMs: req.timeoutMs, ...extra, onDelta: (d, all) => req.onToken(all) })
+        let r
+        try { r = await stream(!noStreamUsage.has(base)) }
+        catch (e) {
+            if (noStreamUsage.has(base) || ![400, 422].includes(e.status) || !/stream_options|include_usage|extra|unknown|unrecognized/i.test(`${e.message} ${e.body || ''}`)) throw e
+            noStreamUsage.add(base)
+            r = await stream(false)
+        }
         if (!r.text.trim()) throw new AiHttpError('The model returned no text', { code: 'EMPTY', retryable: true })
         return { text: r.text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null, streamed: true }
     }

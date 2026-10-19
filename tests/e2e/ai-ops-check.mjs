@@ -212,6 +212,37 @@ await undoManifests(ssh, applied, USER)
 ok(await waitFor(() => K('-n shop get deploy hello').code !== 0 && K('-n shop get svc hello').code !== 0), 'undo deleted what was created')
 ok(K(`-n shop get cm site -o jsonpath='{.data.title}'`).out === 'old', 'undo put the old ConfigMap back')
 
+console.log('== Ask AI → Use this YAML: Check & fix (a placeholder password gets a random value), dry-run, apply, undo')
+{
+    const { autoFix } = await import('../../backend/src/services/ai/yamlBuilder.js')
+    const { fillSecrets } = await import('../../backend/src/services/ai/manifests.js')
+    const fromChat = `apiVersion: v1
+kind: Secret
+metadata:
+  name: chatdb
+stringData:
+  password: changeme
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chatcfg
+data:
+  mode: prod
+`
+    const f = autoFix(parseManifests(fromChat))
+    const filled = fillSecrets(f.docs)
+    const c = checkManifests(f.docs, { namespace: 'shop' })
+    ok(filled.includes('Secret/chatdb password') || filled.some(x => /chatdb/.test(x)), `Check & fix filled: ${filled.join(', ')}`)
+    const p = await previewManifests(ssh, c.yaml, c.objects)
+    ok(p.ok, `dry-run on the real cluster: ${p.dryRun.split('\n')[0]}`)
+    const a = await applyManifests(ssh, c, { orgId: C.orgId, cluster: C, user: USER, description: 'Ask AI: a database secret' })
+    const pw = Buffer.from(K(`-n shop get secret chatdb -o jsonpath='{.data.password}'`).out, 'base64').toString()
+    ok(a.created.join() === 'Secret/chatdb,ConfigMap/chatcfg' && pw.length >= 16 && pw !== 'changeme', `applied from the chat: ${a.created.join(', ')}; the password is random (${pw.length} characters)`)
+    await undoManifests(ssh, a, USER)
+    ok(await waitFor(() => K('-n shop get secret chatdb').code !== 0 && K('-n shop get cm chatcfg').code !== 0, 60), 'Undo removed both')
+}
+
 console.log('== text → YAML golden set: KubeEZ\'s draft (what the AI starts from) passes the real server-side dry-run')
 const { GOLDEN } = await import('../../backend/tests/helpers/yamlGolden.js')
 const { generateManifests, buildDraft } = await import('../../backend/src/services/ai/manifests.js')
@@ -367,6 +398,38 @@ if (process.env.GPU_IP) {
     const y = await writeYaml(USER, { description: 'nginx with 2 replicas and a service', namespace: 'golden' }).catch(e => ({ error: e.message }))
     const yp = y.yaml ? await dry(ssh, y.yaml, y.objects) : { ok: false, dryRun: y.error }
     ok(y.method === 'ai' && y.engine?.provider === 'Office GPU (OpenAI API)' && !y.blocked && yp.ok, `Create YAML written by the real AI in ${((Date.now() - t4) / 1000).toFixed(1)} s (${(y.objects || []).map(o => o.kind + '/' + o.name).join(', ')}), dry-run ${yp.ok ? 'passed' : 'failed: ' + String(yp.dryRun).slice(0, 160)}`)
+
+    console.log('== the real AI in the alert channels: cause & fix under a real incident, the digest; usage recorded')
+    {
+        const got = []
+        const hook = http.createServer((req, res) => { let b = ''; req.on('data', c => b += c); req.on('end', () => { got.push(JSON.parse(b || '{}')); res.end('{}') }) })
+        await new Promise(r => hook.listen(0, '127.0.0.1', r))
+        process.env.KUBEEZ_MODE = 'selfhosted'
+        const { authService } = await import('../../backend/src/services/authService.js')
+        authService.users.push({ id: 'u1', username: 'boss', orgId: C.orgId, role: 'admin', subscription: { plan: 'PRO' } })
+        const { notificationStore } = await import('../../backend/src/services/notificationStore.js')
+        const ch = notificationStore.saveChannel(C.orgId, { type: 'webhook', name: 'ops', config: { url: `http://127.0.0.1:${hook.address().port}/hook` } })
+        const { incidentDetector } = await import('../../backend/src/services/incidentDetector.js')
+        const pod = K(`-n shop get pod -l app=crasher -o jsonpath='{.items[0].metadata.name}'`).out
+        const now = new Date().toISOString()
+        const real = { id: 'e2e-inc-1', orgId: C.orgId, clusterId: C.id, clusterName: 'shopcluster', reason: 'CrashLoopBackOff', severity: 'warning', status: 'unresolved', target: pod, namespace: 'shop', owner: 'Deployment/crasher', message: `shop/${pod} in CrashLoopBackOff`, timestamp: now, lastSeen: now, timeline: [], evidence: [] }
+        incidentDetector.incidents.unshift(real)
+        const { afterAlert } = await import('../../backend/src/services/ai/alertExplain.js')
+        const saved = JSON.parse(fs.readFileSync(path.join(DATA, 'clusters.json'), 'utf8'))[0]
+        const t5 = Date.now()
+        const fu = await afterAlert(C.orgId, { type: 'incident', severity: 'warning', title: `Crash loop — shop/${pod}`, clusterId: C.id, clusterName: 'shopcluster', incidentId: real.id }, [{ channelId: ch }], { cluster: saved })
+        const msg = got.find(g => g.type === 'ai_explain')
+        ok(fu.sent === 1 && msg && /Likely cause:/.test(msg.text) && /Written by the connected AI · Office GPU/.test(msg.text), `the AI's cause & fix went to the channel in ${((Date.now() - t5) / 1000).toFixed(1)} s: ${(msg?.text || JSON.stringify(fu)).replace(/\n+/g, ' ').slice(0, 220)}`)
+        const { sendDigest } = await import('../../backend/src/services/ai/aiDigest.js')
+        const t6 = Date.now()
+        const dg = await sendDigest(C.orgId, { mode: 'daily' })
+        const dm = got.find(g => g.type === 'ai_digest')
+        ok(dg.sent === 1 && dg.engine && /^Office GPU/.test(dg.engine) && dm && /new incident/.test(dm.title), `the AI digest in ${((Date.now() - t6) / 1000).toFixed(1)} s — ${dm?.title}: ${(dg.text || dg.aiError || '').replace(/\n+/g, ' ').slice(0, 220)}`)
+        const { usageSummary } = await import('../../backend/src/services/ai/usage.js')
+        const u = usageSummary(C.orgId).engines.find(e => e.id === gen.id)
+        ok(u && u.calls >= 3 && u.tokensIn > 100 && u.tokensOut > 0 && u.cost === 0, `usage recorded for the office GPU: ${u?.calls} answers, ${u?.tokensIn} tokens in / ${u?.tokensOut} out (${u?.estimated} estimated), cost ${u?.costText} (own machine)`)
+        hook.closeAllConnections?.(); hook.close()
+    }
     aiStore.removeProvider(C.orgId, gen.id)
     process.env.KUBEEZ_MODE = prevMode
 } else ok(false, 'GPU_IP is not set — run through e2e.sh ai-ops, which starts the GPU server')

@@ -61,6 +61,15 @@ export const aiStore = {
         this.save(orgId, { providers: s.providers })
         return next
     },
+    /** an engine's price, US$ per million tokens — source: openrouter | estimate | manual | offline | unknown */
+    setPrice(orgId, id, { priceIn, priceOut, priceSource }) {
+        const s = this.get(orgId)
+        const i = s.providers.findIndex(p => p.id === id)
+        if (i < 0) throw Object.assign(new Error('AI engine not found'), { status: 404 })
+        s.providers[i] = { ...s.providers[i], priceIn, priceOut, priceSource, priceAt: new Date().toISOString() }
+        this.save(orgId, { providers: s.providers })
+        return s.providers[i]
+    },
     removeProvider(orgId, id) {
         const s = this.get(orgId)
         const routes = Object.fromEntries(Object.entries(s.routes).map(([t, ids]) => [t, (ids || []).filter(x => x !== id)]))

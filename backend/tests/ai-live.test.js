@@ -58,6 +58,9 @@ describe('answers as they are written', () => {
         assert.ok(parts.length >= 8, `arrived in pieces (${parts.length})`)
         assert.ok(parts.slice(1).every((p, i, a) => i === 0 || p.length >= a[i - 1].length), 'each piece adds to the last')
         assert.equal(parts.at(-1), r.text)
+        // the token counts come at the end of the stream — usage & cost are real, not estimated
+        assert.equal(seen[0].stream_options?.include_usage, true)
+        assert.deepEqual([r.attempts.at(-1).tokensIn, r.attempts.at(-1).tokensOut, r.attempts.at(-1).estimated], [50, 8, undefined])
     })
     test('JSON answers are not streamed (they are checked as a whole)', async () => {
         const org = 'org-stream'

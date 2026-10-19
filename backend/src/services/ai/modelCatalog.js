@@ -135,5 +135,6 @@ export function startModelRefresh({ everyMs = 24 * 3600e3, firstAfterMs = 3 * 60
             }
         }
     }
-    setTimeout(() => { run(); timer = setInterval(run, everyMs); timer.unref?.() }, firstAfterMs).unref?.()
+    const all = async () => { await run(); try { const { refreshPrices } = await import('./pricing.js'); await refreshPrices() } catch { } }   // prices follow the providers' list prices
+    setTimeout(() => { all(); timer = setInterval(all, everyMs); timer.unref?.() }, firstAfterMs).unref?.()
 }

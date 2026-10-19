@@ -13,6 +13,12 @@ import { PRESETS, presetOf, legacyPreset } from '../config/aiPresets.js'
 import { discover, modelsOf, newCount, OLLAMA_SUGGESTIONS } from '../services/ai/modelCatalog.js'
 import { startExam, isRunning } from '../services/ai/quality.js'
 import { startSignIn, finishSignIn, openRouterApi } from '../services/ai/openrouterAuth.js'
+import { autoPrice } from '../services/ai/pricing.js'
+import { usageSummary, CURRENCIES } from '../services/ai/usage.js'
+import { sendDigest, DIGEST_MODES } from '../services/ai/aiDigest.js'
+
+// an engine's price, looked up in the background (OpenRouter's list) — never holds up the answer
+const priceLater = (orgId, p) => { autoPrice(orgId, p).catch(() => { }) }
 
 // KubeEZ AI: engines (providers), routing per task, safety switches, a test
 // box and the activity log. Mounted at /api/ai behind requireAuth.
@@ -99,6 +105,7 @@ router.get('/', requirePermission('ai:use'), async (req, res) => {
     res.json({
         enabled: s.enabled, autonomy: s.autonomy, actionsEnabled: s.actionsEnabled, maskEmails: s.maskEmails, maskIps: s.maskIps,
         dailyLimit: s.dailyLimit, usedToday: aiStore.usedToday(req.user.orgId), costRates: s.costRates,
+        alertExplain: s.alertExplain !== false, digest: s.digest || 'off', digestHour: s.digestHour ?? 9, aiCost: { budget: 0, currency: '$', perUsd: 1, ...(s.aiCost || {}) },
         engines, routes: s.routes, effectiveRoutes: Object.fromEntries(Object.keys(TASKS).map(t => [t, routeFor(req.user.orgId, t).map(p => p.id)])),
         tasks: TASKS, kinds: KINDS, presets: PRESETS, ollamaSuggestions: OLLAMA_SUGGESTIONS, saas: process.env.KUBEEZ_MODE === 'saas', autonomyLevels: AUTONOMY, server: server ? { model: server.model } : null,
         clusters: (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => ({ id: c.id, name: c.clusterName, hasAi: !!c.addons?.['kubeez-ai'] })),
@@ -147,6 +154,17 @@ router.put('/settings', requirePermission('ai:manage'), (req, res) => {
             const n = (v, label) => { const x = Number(v); if (!Number.isFinite(x) || x < 0 || x > 1e6) throw bad(`${label}: a number from 0`); return x }
             if (!['₹', '$', '€', '£'].includes(r.currency)) throw bad('Currency: ₹, $, € or £')
             patch.costRates = { cpu: n(r.cpu, 'Price per CPU core a month'), memGb: n(r.memGb, 'Price per GiB of memory a month'), currency: r.currency }
+        }
+        if (b.alertExplain !== undefined) patch.alertExplain = !!b.alertExplain
+        if (b.digest !== undefined) { if (!DIGEST_MODES.includes(b.digest)) throw bad('Digest: off, daily or weekly'); patch.digest = b.digest }
+        if (b.digestHour !== undefined) { const h = Number(b.digestHour); if (!Number.isInteger(h) || h < 0 || h > 23) throw bad('Digest hour: 0 – 23'); patch.digestHour = h }
+        if (b.aiCost !== undefined) {
+            const c = b.aiCost || {}
+            const budget = Number(c.budget ?? 0), perUsd = c.currency === '$' ? 1 : Number(c.perUsd)
+            if (!Number.isFinite(budget) || budget < 0 || budget > 1e7) throw bad('Monthly AI budget: a number from 0 (0 = no budget)')
+            if (!CURRENCIES.includes(c.currency)) throw bad(`Currency: ${CURRENCIES.join(', ')}`)
+            if (!Number.isFinite(perUsd) || perUsd <= 0 || perUsd > 1e5) throw bad(`How many ${c.currency} make one US$: a number above 0`)
+            patch.aiCost = { budget, currency: c.currency, perUsd }
         }
         if (b.routes !== undefined) {
             const ids = new Set([...s.providers.map(p => p.id), 'server'])
@@ -215,6 +233,7 @@ router.get('/providers/:id/models', requirePermission('ai:manage'), async (req, 
 router.post('/providers', requirePermission('ai:manage'), async (req, res) => {
     try {
         const p = aiStore.addProvider(req.user.orgId, cleanProvider(req.body || {}, (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => c.id)))
+        priceLater(req.user.orgId, p)
         auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.engine_added', detail: `${p.name} (${p.preset || p.kind}${p.model ? `, ${p.model}` : ''})${p.viaClusterId ? ` at ${p.baseUrl} through cluster ${(await orgClusters(req)).find(c => c.id === p.viaClusterId)?.clusterName || p.viaClusterId}` : ''}` })
         // the quality test runs on its own, so a weak model is noticed before people rely on it
         let qualityCheck = null
@@ -231,12 +250,47 @@ router.put('/providers/:id', requirePermission('ai:manage'), async (req, res) =>
         if (!cur) return res.status(404).json({ error: 'AI engine not found' })
         resetBreaker(req.user.orgId, cur)   // a new key / model / address: try it again right away
         const p = aiStore.updateProvider(req.user.orgId, req.params.id, cleanProvider({ ...req.body, kind: cur.kind, _offline: cur.offline, _viaClusterId: cur.viaClusterId, _baseUrl: cur.baseUrl }, (await orgClusters(req)).filter(c => canSeeCluster(req.user, c)).map(c => c.id), true))
+        if (p.model !== cur.model) priceLater(req.user.orgId, p)   // another model, another price
         res.json(aiStore.view(p))
     } catch (e) { fail(res, e) }
 })
 router.delete('/providers/:id', requirePermission('ai:manage'), (req, res) => {
     aiStore.removeProvider(req.user.orgId, req.params.id)
     res.json({ success: true })
+})
+
+// ── Usage & cost ──
+router.get('/usage', requirePermission('ai:manage'), (req, res) => {
+    const s = aiStore.get(req.user.orgId)
+    res.json({ ...usageSummary(req.user.orgId, { days: Math.min(90, Math.max(7, Number(req.query.days) || 30)) }),
+        prices: s.providers.map(p => ({ id: p.id, name: p.name, model: p.model, priceIn: p.priceIn ?? null, priceOut: p.priceOut ?? null, priceSource: p.priceSource || null, priceAt: p.priceAt || null })) })
+})
+// a price typed by an admin ({ priceIn, priceOut } US$ per million tokens), or { auto: true } to look it up again
+router.put('/providers/:id/price', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const p = aiStore.get(req.user.orgId).providers.find(x => x.id === req.params.id)
+        if (!p) return res.status(404).json({ error: 'AI engine not found' })
+        let out
+        if (req.body?.auto) {
+            try { out = await autoPrice(req.user.orgId, p, { force: true }) }
+            catch (e) { return res.status(502).json({ error: `Could not read OpenRouter's price list: ${e.message}` }) }
+        } else {
+            const n = (v, label) => { const x = Number(v); if (v === '' || v == null || !Number.isFinite(x) || x < 0 || x > 10000) throw bad(`${label}: US$ per million tokens, 0 – 10000`); return x }
+            out = aiStore.setPrice(req.user.orgId, p.id, { priceIn: n(req.body?.priceIn, 'Price in'), priceOut: n(req.body?.priceOut, 'Price out'), priceSource: 'manual' })
+            auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.engine_price', detail: `${p.name}: $${out.priceIn} in / $${out.priceOut} out per million tokens` })
+        }
+        res.json(aiStore.view(out))
+    } catch (e) { fail(res, e) }
+})
+
+// ── The AI digest, now (to try it) ──
+router.post('/digest/send', requirePermission('ai:manage'), async (req, res) => {
+    try {
+        const mode = req.body?.mode === 'weekly' ? 'weekly' : 'daily'
+        const r = await sendDigest(req.user.orgId, { mode })
+        auditLog.record({ orgId: req.user.orgId, actor: req.user, ip: req.ip, action: 'ai.digest_sent', detail: `${mode} digest — ${r.sent} channel(s)` })
+        res.json(r)
+    } catch (e) { fail(res, e) }
 })
 
 const findEngine = (req) => req.params.id === 'server' ? SERVER() : aiStore.get(req.user.orgId).providers.find(p => p.id === req.params.id)
