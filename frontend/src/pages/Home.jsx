@@ -191,7 +191,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
                     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                         {savedClusters.map((c, i) => (
                             <ClusterCard key={c.id} c={c} i={i} status={statusOf(c)} risk={risk[c.id]}
-                                canScale={can(user?.role, 'cluster:scale', c.id) && !(c.access?.mode && !c.masterNodes?.length)} canAddons={can(user?.role, 'addon:install', c.id) && !(c.access?.mode && !c.masterNodes?.length)} canDelete={can(user?.role, 'cluster:delete', c.id)}
+                                canScale={can(user?.role, 'cluster:scale', c.id) && !(c.access?.mode && !c.masterNodes?.length)} canAddons={can(user?.role, 'addon:install', c.id) && !(c.access?.mode && !c.masterNodes?.length && c.access.level !== 'full')} canDelete={can(user?.role, 'cluster:delete', c.id)}
                                 onOpen={() => navigate(`/cluster/${c.id}`)}
                                 onAddons={() => { setSelectedClusterId(c.id); setAddonSelection({}); setIsAddonModalOpen(true) }}
                                 onScale={() => onScaleExisting(c)}

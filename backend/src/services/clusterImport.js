@@ -193,6 +193,34 @@ spec:
 `
 }
 
+// ── the same agent as a Helm chart ──────────────────────────────────────────
+// helm upgrade --install kubeez-agent <link>/agent-chart.tgz -n kubeez-system --create-namespace
+// (the Namespace comes from Helm then, so it is not in the chart)
+function tar(files) {
+    const blocks = []
+    const pad = (b) => Buffer.concat([b, Buffer.alloc((512 - (b.length % 512)) % 512)])
+    for (const [name, text] of files) {
+        const data = Buffer.from(text, 'utf8')
+        const h = Buffer.alloc(512)
+        const oct = (n, len) => n.toString(8).padStart(len - 1, '0') + '\0'
+        h.write(name.slice(0, 100), 0, 100, 'utf8')
+        h.write(oct(0o644, 8), 100, 8); h.write(oct(0, 8), 108, 8); h.write(oct(0, 8), 116, 8)
+        h.write(oct(data.length, 12), 124, 12); h.write(oct(Math.floor(Date.now() / 1000), 12), 136, 12)
+        h.write('        ', 148, 8); h.write('0', 156, 1); h.write('ustar\0', 257, 6); h.write('00', 263, 2)
+        let sum = 0; for (const b of h) sum += b
+        h.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 8)
+        blocks.push(h, pad(data))
+    }
+    blocks.push(Buffer.alloc(1024))
+    return Buffer.concat(blocks)
+}
+export async function agentChart(s, baseUrl) {
+    const { gzipSync } = await import('zlib')
+    const manifest = (await agentManifest(s, baseUrl)).split(/^---$/m).filter(doc => !/^kind: Namespace$/m.test(doc)).join('---')
+    const chart = `apiVersion: v2\nname: kubeez-agent\ndescription: The KubeEZ agent and its kubeez login — connects this cluster to KubeEZ (outbound only)\ntype: application\nversion: 1.0.0\nappVersion: "1"\n`
+    return gzipSync(tar([['kubeez-agent/Chart.yaml', chart], ['kubeez-agent/templates/kubeez.yaml', manifest]]))
+}
+
 /** The connect script: run where kubectl works for the cluster. */
 export function connectScript(s, baseUrl, shell = 'sh') {
     const access = `${baseUrl}/api/import/${s.code}/access.yaml`
@@ -352,7 +380,15 @@ export async function onClusterHello(agent, msg) {
         // a reconnect / a rotated token: keep the rest
         if (existing.orgId !== agent.orgId) return
         const same = (() => { try { return decrypt(existing.access?.token) === token } catch { return false } })()
-        if (!same || existing.access?.mode !== 'agent') { closeForwarders(existing.id); await clusterStore.saveCluster({ ...existing, access: { ...existing.access, ...access, level: existing.access?.level || 'read' } }) }
+        // a new token, another route, or a NEW agent (Reconnect → kubectl apply / helm upgrade) takes over
+        if (!same || existing.access?.mode !== 'agent' || existing.access?.agentId !== agent.agentId) {
+            closeForwarders(existing.id)
+            const now = new Date().toISOString()
+            // the session's access level when this agent came from a Reconnect / Full manage command
+            const s = Object.values(load()).find(x => x.agentId === agent.agentId)
+            await clusterStore.saveCluster({ ...existing, access: { ...existing.access, ...access, level: s?.level || existing.access?.level || 'read', lastOk: now, lastError: null, checkedAt: now } })
+            if (s) update(s.code, { status: 'connected', route: 'agent' })
+        }
         return
     }
     const s = Object.values(load()).find(x => x.agentId === agent.agentId)
@@ -502,6 +538,64 @@ echo "TOKEN=$T"`.replace('"$KZ_SECRET"', `'${Buffer.from(`apiVersion: v1\nkind: 
 export async function cleanupCluster(cluster) {
     const r = await runSandboxed(await apiTarget(cluster), `kubectl delete clusterrolebinding kubeez-read kubeez-view kubeez-full --ignore-not-found --request-timeout=20s; kubectl delete clusterrole kubeez-read --ignore-not-found --request-timeout=20s; kubectl delete namespace ${NS} --ignore-not-found --wait=false --request-timeout=20s`, { timeoutMs: 90000 })
     return r.code === 0
+}
+
+// ── SSH for an on-prem imported cluster ─────────────────────────────────────
+// Each node is checked before it is kept: SSH works, and its hostname is a node
+// of THIS cluster. A kubeadm cluster (admin.conf on its control-planes) then
+// works like one KubeEZ installed (etcd snapshots, upgrades, new nodes); any
+// other distribution keeps the Kubernetes API for everything and uses SSH only
+// for node shells and node checks.
+const HOST = /^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+export async function addSsh(cluster, input, user) {
+    const net = await import('net')
+    const nodes = (Array.isArray(input) ? input : []).slice(0, 100)
+    if (!nodes.length) throw bad('Add at least one node')
+    for (const n of nodes) {
+        if (!(net.isIP(String(n.ip || '')) || HOST.test(String(n.ip || '')))) throw bad(`"${String(n.ip || '').slice(0, 60)}" is not an IP address or hostname`)
+        if (!/^[a-z_][a-z0-9_.-]{0,31}$/i.test(String(n.username || ''))) throw bad(`Invalid SSH user for ${n.ip}`)
+        if (!n.password && !n.sshKey) throw bad(`A password or an SSH key for ${n.ip}`)
+    }
+    const { automationEngine } = await import('./automationEngine.js')
+    const known = (cluster.importedNodes || []).map(n => ({ ...n, lname: String(n.name || '').toLowerCase() }))
+    const checked = []
+    for (const n of nodes) {
+        let ssh
+        try { ssh = await automationEngine.connectSSH({ ip: n.ip, port: n.port || 22, username: n.username, password: n.password || undefined, sshKey: n.sshKey || undefined, ownerId: cluster.ownerId, orgId: cluster.orgId }) }
+        catch (e) { throw Object.assign(new Error(`${n.ip}: SSH failed — ${e.message}`), { status: 422 }) }
+        try {
+            const r = await ssh.execCommand(`hostname; (sudo -n test -f /etc/kubernetes/admin.conf && echo KUBEADM) 2>/dev/null; true`)
+            // (through a Gateway Agent a failed login shows here, as a command that did not run)
+            if (r.code !== 0 || !String(r.stdout || '').trim()) throw Object.assign(new Error(`${n.ip}: the SSH login failed — ${String(r.stderr || 'no answer').trim().split('\n').pop().slice(0, 200)}`), { status: 422 })
+            const [host, ...rest] = String(r.stdout || '').trim().split('\n')
+            const h = String(host || '').trim().toLowerCase()
+            const match = known.find(k => k.lname === h || k.lname.split('.')[0] === h.split('.')[0] || k.ip === n.ip)
+            if (!match) throw Object.assign(new Error(`${n.ip} (${host || '?'}) is not a node of ${cluster.clusterName} — its nodes are ${known.map(k => k.name).slice(0, 8).join(', ')}`), { status: 422 })
+            checked.push({ ip: n.ip, port: n.port || 22, username: n.username, ...(n.password ? { password: n.password } : {}), ...(n.sshKey ? { sshKey: n.sshKey } : {}), hostname: match.name, role: match.role, kubeadm: rest.includes('KUBEADM') })
+        } finally { ssh.dispose?.() }
+    }
+    const cps = checked.filter(n => n.role === 'control-plane')
+    const kubeadm = cluster.distro === 'kubeadm' && cps.length > 0 && cps.every(n => n.kubeadm)
+    const strip = ({ kubeadm: _k, role: _r, ...n }) => n
+    const { clusterStore } = await import('./clusterStore.js')
+    const next = kubeadm
+        // like a cluster KubeEZ installed: SSH for everything (first: a control-plane)
+        ? { ...cluster, masterNodes: cps.map(strip), workerNodes: checked.filter(n => n.role !== 'control-plane').map(strip), sshNodes: [] }
+        : { ...cluster, sshNodes: checked.map(n => ({ ...strip(n), role: n.role })) }
+    closeForwarders(cluster.id)
+    await clusterStore.saveCluster(next)
+    const { auditLog } = await import('./auditLog.js')
+    auditLog.record({ orgId: cluster.orgId, actor: user, action: 'cluster.ssh_added', target: { clusterId: cluster.id, clusterName: cluster.clusterName }, detail: `${checked.map(n => `${n.hostname} (${n.ip})`).join(', ')} — ${kubeadm ? 'kubeadm: etcd snapshots, upgrades and new nodes over SSH' : 'node shells and node checks over SSH'}` })
+    return { nodes: checked.map(n => ({ ip: n.ip, hostname: n.hostname, role: n.role })), mode: kubeadm ? 'kubeadm' : 'nodes-only' }
+}
+
+/** Forget the SSH logins: back to the Kubernetes API for everything. */
+export async function removeSsh(cluster, user) {
+    const { clusterStore } = await import('./clusterStore.js')
+    await clusterStore.saveCluster({ ...cluster, masterNodes: [], workerNodes: [], sshNodes: [] })
+    closeForwarders(cluster.id)
+    const { auditLog } = await import('./auditLog.js')
+    auditLog.record({ orgId: cluster.orgId, actor: user, action: 'cluster.ssh_removed', target: { clusterId: cluster.id, clusterName: cluster.clusterName } })
 }
 
 let timer = null

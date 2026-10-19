@@ -19,7 +19,7 @@ import { accessOn, nsMatches } from './accessControl.js'
 import { authService } from './authService.js'
 import { installationManager } from './installationManager.js'
 import { automationEngine } from './automationEngine.js'
-import { connectCluster } from './clusterAccess.js'
+import { connectCluster, usesApi } from './clusterAccess.js'
 
 const KB = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl'
 export const ACCESS_NS = 'kubeez-access'
@@ -39,8 +39,14 @@ const saveStatus = () => { try { fs.mkdirSync(DATA_DIR, { recursive: true }); wr
 /** Who needs what on this cluster (pure — tested without a cluster). */
 export function desiredState(cluster, members, namespaces) {
     const roleBindings = [], saBindings = [], serviceAccounts = []
+    // an imported cluster has no admin.conf to hand out (and KubeEZ's own login is
+    // never handed out): admins get their own account there too, as cluster-admin
+    const api = usesApi(cluster)
     for (const m of members) {
-        if (m.role === 'admin' || m.role === 'superadmin') continue
+        if (m.role === 'admin' || m.role === 'superadmin') {
+            if (api) { saBindings.push({ name: `kubeez-sa-${userHash(m.id)}`, role: 'cluster-admin', sa: saName(m.id), user: m.username }); serviceAccounts.push({ name: saName(m.id), user: m.username }) }
+            continue
+        }
         const a = accessOn(m, cluster)
         if (!a.permissions.has('cluster:view') || a.kube === 'none') continue
         const sa = saName(m.id)
@@ -53,10 +59,10 @@ export function desiredState(cluster, members, namespaces) {
                 roleBindings.push({ ns, name: `kubeez-${userHash(m.id)}`, role: ROLE_FOR[a.kube] || 'view', subjects, user: m.username })
             }
             serviceAccounts.push({ name: sa, user: m.username })
-        } else if (a.kube !== 'admin') {
+        } else if (a.kube !== 'admin' || api) {
             // cluster-wide but limited: the Explorer identity already gets its group;
-            // the kubeconfig service account needs the same level
-            saBindings.push({ name: `kubeez-sa-${userHash(m.id)}`, role: ROLE_FOR[a.kube] || 'view', sa, user: m.username })
+            // the kubeconfig service account needs the same level (imported: also for admin level)
+            saBindings.push({ name: `kubeez-sa-${userHash(m.id)}`, role: a.kube === 'admin' ? 'cluster-admin' : (ROLE_FOR[a.kube] || 'view'), sa, user: m.username })
             serviceAccounts.push({ name: sa, user: m.username })
         }
     }
@@ -93,6 +99,8 @@ export async function syncCluster(clusterId, { force = false } = {}) {
     const p = (async () => {
         const cluster = (await installationManager.getSavedClusters()).find(c => c.id === clusterId)
         if (!cluster) return { skipped: 'gone' }
+        // an imported cluster connected read-only: KubeEZ may not create accounts there
+        if (usesApi(cluster) && cluster.access?.level !== 'full') return { skipped: 'read-only connection' }
         const members = authService.getUsersByOrgId(cluster.orgId).map(u => ({ ...u, clusterAccess: u.clusterAccess || [] }))
         const st = status[clusterId] || {}
         // nothing to keep and nothing left behind → no need to touch the cluster

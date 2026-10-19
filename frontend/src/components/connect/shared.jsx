@@ -42,8 +42,8 @@ export function StatusDot({ status }) {
     return <span className="inline-flex items-center gap-1.5 text-xs text-slate-300"><span className={`w-2 h-2 rounded-full ${m[0]} ${status === 'live' ? 'animate-pulse' : ''}`} />{m[1]}</span>
 }
 
-const FEATURE_NAMES = { etcdBackup: 'etcd backups', upgrade: 'Kubernetes upgrades', scale: 'Add / remove nodes', nodeTerminal: 'Shell on the nodes', resume: 'Resume an install', certRotation: 'Control-plane certificates', addons: 'Install add-ons', healing: 'Automatic fixes', actions: 'AI fixes', yamlApply: 'Apply YAML', backup: 'Volume backups (Velero)', namespaceAccess: 'Per-namespace access', terminal: 'Cluster terminal', kubeconfig: 'Scoped kubeconfig' }
-const ALWAYS = ['Dashboard & health', 'Explorer (read)', 'Incidents & alerts', 'KubeEZ AI: Ask, explain, summaries', 'Advisor', 'What changed', 'Fleet & risk score', 'Compliance (Kubernetes checks)', 'Team roles & cluster rules']
+const FEATURE_NAMES = { etcdBackup: 'etcd backups', upgrade: 'Kubernetes upgrades', scale: 'Add / remove nodes', nodeTerminal: 'Shell on the nodes', resume: 'Resume an install', certRotation: 'Control-plane certificates', addons: 'Add-ons and the KubeEZ Explorer', healing: 'Automatic fixes', actions: 'AI fixes', yamlApply: 'Apply YAML', backup: 'Volume backups (Velero)', namespaceAccess: 'Per-namespace access', terminal: 'Cluster terminal', kubeconfig: 'Scoped kubeconfig' }
+const ALWAYS = ['Dashboard & health', 'Incidents & alerts', 'KubeEZ AI: Ask, explain, summaries', 'Advisor', 'What changed', 'Fleet & risk score', 'Compliance (Kubernetes checks)', 'Team roles & cluster rules']
 export function FeatureList({ features, compact = false }) {
     const entries = Object.entries(features || {})
     const ok = entries.filter(([, v]) => v.ok), no = entries.filter(([, v]) => !v.ok)

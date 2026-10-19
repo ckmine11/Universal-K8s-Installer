@@ -155,7 +155,7 @@ export default function AddCluster({ providers, saas }) {
                 <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
                     <div className="kz-card p-5 space-y-4">
                         <h3 className="text-sm font-semibold text-white">{method === 'kubeconfig' ? 'Paste the kubeconfig' : 'Run this where kubectl works for the cluster'}</h3>
-                        {method === 'agent' && <CopyBlock text={session.commands.agent} label="kubectl" />}
+                        {method === 'agent' && <><CopyBlock text={session.commands.agent} label="kubectl" /><p className="text-center text-[10px] uppercase tracking-wider text-slate-600">or with Helm</p><CopyBlock text={session.commands.helm} label="helm" /></>}
                         {method === 'auto' && <><CopyBlock text={session.commands.connect.sh} label="Linux / macOS" /><CopyBlock text={session.commands.connect.ps1} label="Windows PowerShell" /></>}
                         {method === 'kubeconfig' && (
                             <div className="space-y-2">

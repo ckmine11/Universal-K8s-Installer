@@ -12,7 +12,7 @@ export function stripCredentials(record) {
     }))
     // an imported cluster: how it is reached, never its token
     const access = record.access ? (({ token, ca, ...a }) => ({ ...a, hasToken: !!token, hasCa: !!ca }))(record.access) : undefined
-    return { ...record, masterNodes: strip(record.masterNodes), workerNodes: strip(record.workerNodes), ...(access ? { access } : {}) }
+    return { ...record, masterNodes: strip(record.masterNodes), workerNodes: strip(record.workerNodes), ...(record.sshNodes ? { sshNodes: strip(record.sshNodes) } : {}), ...(access ? { access } : {}) }
 }
 
 /**

@@ -2,7 +2,8 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { PROVIDERS, providerById } from '../config/clusterProviders.js'
-import { startSession, getSession, sessionView, accessManifest, agentManifest, connectScript, receiveCredentials, importKubeconfig, checkConnection, lowerToRead, rotateToken, cleanupCluster, CLEANUP, NS } from '../services/clusterImport.js'
+import { addSsh, removeSsh } from '../services/clusterImport.js'
+import { startSession, getSession, sessionView, accessManifest, agentManifest, agentChart, connectScript, receiveCredentials, importKubeconfig, checkConnection, lowerToRead, rotateToken, cleanupCluster, CLEANUP, NS } from '../services/clusterImport.js'
 import { capabilities, isImported, usesApi, closeForwarders } from '../services/clusterAccess.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { canSeeCluster } from '../services/accessControl.js'
@@ -24,7 +25,8 @@ function commandsFor(s, base) {
     const sh = `curl -fsSL "${base}/api/import/${s.code}/connect.sh" | sh`
     const ps1 = `irm "${base}/api/import/${s.code}/connect.ps1" | iex`
     const agent = `kubectl apply -f "${base}/api/import/${s.code}/agent.yaml"`
-    return { connect: { sh, ps1 }, agent, manifest: `${base}/api/import/${s.code}/access.yaml`, agentManifest: `${base}/api/import/${s.code}/agent.yaml`, cleanup: CLEANUP, namespace: NS }
+    const helm = `helm upgrade --install kubeez-agent "${base}/api/import/${s.code}/agent-chart.tgz" --namespace kubeez-system --create-namespace`
+    return { connect: { sh, ps1 }, agent, helm, manifest: `${base}/api/import/${s.code}/access.yaml`, agentManifest: `${base}/api/import/${s.code}/agent.yaml`, cleanup: CLEANUP, namespace: NS }
 }
 const ownSession = (req, res) => {
     const s = getSession(req.params.code)
@@ -62,7 +64,9 @@ async function view(c) {
     return {
         id: c.id, name: c.clusterName, provider: c.provider || null, providerName: providerById(c.provider)?.name || c.provider || 'Kubernetes', distro: c.distro || null,
         version: c.k8sVersion || null, nodeCount: c.nodeCount ?? ((c.masterNodes?.length || 0) + (c.workerNodes?.length || 0)), nodes: c.importedNodes || [],
-        method: a.mode || 'ssh', level: a.level || 'full', server: a.mode === 'agent' ? null : (a.server || null), sshAdded: !!c.masterNodes?.length,
+        method: a.mode || 'ssh', level: a.level || 'full', server: a.mode === 'agent' ? null : (a.server || null), sshAdded: !!(c.masterNodes?.length || c.sshNodes?.length),
+        sshMode: c.masterNodes?.length ? 'kubeadm' : c.sshNodes?.length ? 'nodes-only' : null,
+        sshNodes: [...(c.masterNodes || []).map(n => ({ ...n, role: 'control-plane' })), ...(c.workerNodes || []).map(n => ({ ...n, role: 'worker' })), ...(c.sshNodes || [])].map(n => ({ ip: n.ip, hostname: n.hostname || null, role: n.role, username: n.username })),
         status, lastOk: a.lastOk || null, checkedAt: a.checkedAt || null, lastError: a.lastError || null, lastHint: a.lastHint || null,
         connectedAt: a.connectedAt || c.importedAt || null, agentId: a.agentId || null, agentOnline, labels: c.labels || {},
         features: capabilities(c)
@@ -157,6 +161,18 @@ router.delete('/clusters/:id', requirePermission('cluster:delete'), async (req, 
     } catch (e) { fail(res, e) }
 })
 
+// SSH for an on-prem cluster (each node checked: it must be a node of this cluster)
+router.put('/clusters/:id/ssh', requirePermission('cluster:delete'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    if (providerById(c.provider)?.group === 'cloud') return res.status(400).json({ error: 'A cloud provider runs this cluster\'s control plane — there is nothing for KubeEZ to SSH to.' })
+    try { const r = await addSsh(c, req.body?.nodes, req.user); res.json({ ...r, ...(await view((await clusterStore.getClusters()).find(x => x.id === c.id))) }) }
+    catch (e) { fail(res, e) }
+})
+router.delete('/clusters/:id/ssh', requirePermission('cluster:delete'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    try { await removeSsh(c, req.user); res.json(await view((await clusterStore.getClusters()).find(x => x.id === c.id))) } catch (e) { fail(res, e) }
+})
+
 // the KubeEZ agents running inside imported clusters
 router.get('/agents', requirePermission('cluster:view'), async (req, res) => {
     const { agentService } = await import('../services/agentService.js')
@@ -190,6 +206,7 @@ const session = (req, res) => {
 }
 publicRouter.get('/:code/access.yaml', (req, res) => { const s = session(req, res); if (!s) return; res.type('text/yaml').send(accessManifest(s.level)) })
 publicRouter.get('/:code/agent.yaml', async (req, res) => { const s = session(req, res); if (!s) return; try { res.type('text/yaml').send(await agentManifest(s, baseUrlOf(req))) } catch (e) { res.status(500).type('text/plain').send(e.message) } })
+publicRouter.get('/:code/agent-chart.tgz', async (req, res) => { const s = session(req, res); if (!s) return; try { res.type('application/gzip').send(await agentChart(s, baseUrlOf(req))) } catch (e) { res.status(500).type('text/plain').send(e.message) } })
 publicRouter.get('/:code/connect.sh', (req, res) => { const s = session(req, res); if (!s) return; res.type('text/x-shellscript').send(connectScript(s, baseUrlOf(req), 'sh')) })
 publicRouter.get('/:code/connect.ps1', (req, res) => { const s = session(req, res); if (!s) return; res.type('text/plain').send(connectScript(s, baseUrlOf(req), 'ps1')) })
 publicRouter.post('/:code/credentials', express.json({ limit: '64kb' }), async (req, res) => {

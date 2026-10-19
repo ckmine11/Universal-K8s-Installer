@@ -56,7 +56,8 @@ class ClusterStore {
             return clusters.map(c => ({
                 ...c,
                 masterNodes: this._decryptNodes(c.masterNodes).map(tag(c)),
-                workerNodes: this._decryptNodes(c.workerNodes).map(tag(c))
+                workerNodes: this._decryptNodes(c.workerNodes).map(tag(c)),
+                ...(c.sshNodes ? { sshNodes: this._decryptNodes(c.sshNodes).map(tag(c)) } : {})
             }))
         } catch (error) {
             console.error('Error reading clusters:', error)
@@ -95,6 +96,7 @@ class ClusterStore {
                 ...cluster,
                 masterNodes: this._encryptNodes(cluster.masterNodes),
                 workerNodes: this._encryptNodes(cluster.workerNodes),
+                ...(cluster.sshNodes ? { sshNodes: this._encryptNodes(cluster.sshNodes) } : {}),
                 updatedAt: new Date().toISOString()
             }
 

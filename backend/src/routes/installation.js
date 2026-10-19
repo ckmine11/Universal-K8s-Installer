@@ -30,7 +30,7 @@ import { volumeBackupService } from '../services/volumeBackupService.js'
 import { canSeeCluster, canOn, kubeLevelOn, accessOn, LABEL_KEY, LABEL_VALUE } from '../services/accessControl.js'
 import { scopedKubeconfig } from '../services/namespaceAccess.js'
 import { requireApproval } from '../services/approvals.js'
-import { capabilities } from '../services/clusterAccess.js'
+import { capabilities, usesApi, addonProblem, isImported } from '../services/clusterAccess.js'
 
 
 const router = express.Router()
@@ -143,7 +143,8 @@ router.get('/list', async (req, res) => {
         const clusters = await installationManager.getSavedClusters()
         // Strict Isolation: Users only see clusters from their own Workspace (orgId)
         const filtered = clusters.filter(c => canSeeCluster(req.user, c))
-        res.json(filtered.map(c => redactForRole(req, c)))
+        // an imported cluster: what works on it (the cluster page follows it)
+        res.json(filtered.map(c => ({ ...redactForRole(req, c), ...(isImported(c) ? { features: capabilities(c) } : {}) })))
     } catch (error) {
         console.error('List clusters error:', error)
         res.status(500).json({ error: 'Failed to retrieve clusters' })
@@ -355,9 +356,14 @@ router.get('/:id/kubeconfig', onlyWith('kubeconfig'), requirePermission('kubecon
         // their own service account — never more than the role allows.
         const access = accessOn(req.user, cluster)
         if (access.kube === 'none') return res.status(403).json({ error: 'Your role has no Kubernetes access on this cluster.' })
-        let kubeconfig = await installationManager.getKubeconfig(cluster.id)
+        // an imported cluster: always the member's own account (KubeEZ's login is never handed out),
+        // at the address KubeEZ knows — through the agent there is none a laptop could use
+        const api = usesApi(cluster)
+        if (api && cluster.access.mode === 'agent') return res.status(409).json({ error: 'This cluster is connected through the KubeEZ agent — KubeEZ has no API address your machine could use. Use the kubeconfig from the provider (its setup guide shows the command).', code: 'NOT_ON_IMPORTED', feature: 'kubeconfig' })
+        if (api && !cluster.access.ca) return res.status(409).json({ error: 'KubeEZ has no CA for this cluster\'s API server — use the provider\'s kubeconfig.', code: 'NOT_ON_IMPORTED', feature: 'kubeconfig' })
+        let kubeconfig = api ? `server: ${cluster.access.server}\ncertificate-authority-data: ${cluster.access.ca}\n` : await installationManager.getKubeconfig(cluster.id)
         let scoped = false
-        if (access.kube !== 'admin' || access.namespaces?.length) {
+        if (api || access.kube !== 'admin' || access.namespaces?.length) {
             const member = authService.getUserById(req.user.id)
             kubeconfig = await scopedKubeconfig(cluster, { ...member, clusterAccess: member?.clusterAccess || [] }, kubeconfig)
             scoped = true
@@ -1063,6 +1069,12 @@ router.post('/:id/addons', onlyWith('addons'), requireAuth, requirePermission('a
         const addonCheck = checkAddonPlan(addons, authService.getOrgPlan(req.user.orgId))
         if (!addonCheck.allowed) {
             return res.status(402).json({ error: addonCheck.error, limitExceeded: true, blockedAddons: addonCheck.blocked })
+        }
+
+        // an imported cluster: add-ons that prepare the nodes themselves are not possible there
+        for (const key of Object.keys(addons || {}).filter(k => addons[k])) {
+            const why = addonProblem(existingCluster, normAddonKey(key))
+            if (why) return res.status(409).json({ error: `${HELM_ADDONS[normAddonKey(key)]?.label || key}: ${why}`, code: 'NOT_ON_IMPORTED', addon: key })
         }
 
         // Helm add-ons install with their saved settings (or the defaults) — a

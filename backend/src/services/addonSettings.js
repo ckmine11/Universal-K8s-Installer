@@ -278,9 +278,10 @@ function chartFiles(name, sub = '') {
 }
 
 /** One shell command that writes the plan files on the node (base64 — no quoting issues) */
-export function writePlanCommand(key, files) {
+// sandbox: an imported cluster — the plan goes to its connection's session folder ($KUBEEZ_ROOT)
+export function writePlanCommand(key, files, { sandbox = false } = {}) {
     if (!/^[a-z0-9-]+$/.test(key)) throw new Error('bad key')
-    const dir = `/etc/kubeez/addons/${key}`
+    const dir = sandbox ? `"$KUBEEZ_ROOT"/etc/kubeez/addons/${key}` : `/etc/kubeez/addons/${key}`
     const parts = [`sudo rm -rf ${dir} && sudo mkdir -p ${dir}`]
     const dirs = new Set()
     for (const name of Object.keys(files)) {

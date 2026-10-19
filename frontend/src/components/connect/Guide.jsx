@@ -69,6 +69,7 @@ export default function Guide({ provider, commands = null, method = 'agent', com
     if (!provider) return null
     const x = EXTRA[provider.id] || { before: [], trouble: [] }
     const agentCmd = commands?.agent || 'kubectl apply -f "<the agent link from Add existing cluster>"'
+    const helmCmd = commands?.helm || 'helm upgrade --install kubeez-agent "<the chart link from Add existing cluster>" --namespace kubeez-system --create-namespace'
     const connectCmd = commands?.connect?.sh || 'curl -fsSL "<the connect link from Add existing cluster>" | sh'
     const ps1 = commands?.connect?.ps1 || 'irm "<the connect link from Add existing cluster>" | iex'
     return (
@@ -86,6 +87,7 @@ export default function Guide({ provider, commands = null, method = 'agent', com
             <Step n={3} icon={PlugZap} title="Connect it to KubeEZ">
                 {method === 'agent' ? <>
                     <CopyBlock text={agentCmd} label="Run where kubectl works" />
+                    {!compact && <CopyBlock text={helmCmd} label="Or with Helm" />}
                     <p>This creates the namespace <code>kubeez-system</code> with the <code>kubeez</code> login (its permissions as you chose) and the KubeEZ agent, which connects out to KubeEZ.</p>
                 </> : <>
                     <CopyBlock text={connectCmd} label="Linux / macOS (sh)" />

@@ -8,6 +8,7 @@ import { HELM_ADDONS, isHelmAddon, normAddonKey } from '../config/helmAddons.js'
 import { addonSettingsStore, buildPlan, planFiles, writePlanCommand } from './addonSettings.js'
 import { fileURLToPath } from 'url'
 import { agentService } from './agentService.js'
+import { usesApi, connectCluster } from './clusterAccess.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -59,11 +60,41 @@ class AutomationEngine {
         }
     }
 
+    // executeScript for the sandbox of an imported cluster: same arguments check,
+    // the same progress / failure lines, live output
+    async _runApiScript(ssh, scriptContent, scriptPath, args, onLog, options = {}) {
+        const safeArgs = args.map(arg => { const s = String(arg); if (!/^[\w\-\.\:\/\s]+$/.test(s)) throw new Error(`Invalid argument detected (security check): ${s}`); return `'${s}'` }).join(' ')
+        onLog('info', `Script execution started: ${scriptPath.split(/[\\/]/).pop()}`)
+        const buf = { out: '', err: '' }
+        const handle = (line) => {
+            if (!line.trim()) return
+            const p = line.indexOf('KUBEEZ_PROGRESS|'); if (p >= 0) { const [, pct, label] = line.slice(p).split('|'); options.onStageProgress?.(Number(pct), label); return }
+            if (line.includes('KUBEEZ_FAIL|')) return
+            onLog('info', line)
+        }
+        const feed = (k) => (chunk) => { buf[k] += chunk.toString(); const lines = buf[k].split('\n'); buf[k] = lines.pop(); lines.forEach(handle) }
+        const r = await ssh.execCommand(`bash -s -- ${safeArgs}`, { stdin: scriptContent, timeoutMs: options.timeoutMs || 30 * 60e3, onStdout: feed('out'), onStderr: feed('err') })
+        handle(buf.out); handle(buf.err)
+        if (r.code !== 0) {
+            // the same failure screen as on a node: the script's own reason + fix first
+            const combined = ((r.stderr || '') + '\n' + (r.stdout || '')).trim()
+            const structured = this.parseScriptFailure(combined)
+            const e = new Error(structured ? structured.message : (combined.split('\n').slice(-3).join(' ') || `exit ${r.code}`))
+            e.diagnosis = structured || this.analyzeError(combined)
+            e.rawOutput = combined
+            throw e
+        }
+        return r
+    }
+
     async executeScript(ssh, scriptPath, args = [], onLog, options = {}) {
         let remotePath
         try {
             // Read script content
             const scriptContent = readFileSync(scriptPath, 'utf8')
+
+            // an imported cluster (the sandbox): the script arrives on stdin — nothing is written to a shared /tmp
+            if (ssh.api) return await this._runApiScript(ssh, scriptContent, scriptPath, args, onLog, options)
 
             // Upload script to remote node
             remotePath = `/tmp/kubeez-${Date.now()}.sh`
@@ -169,7 +200,7 @@ class AutomationEngine {
             VB_PREFIX: cfg.prefix, VB_ACCESS: cfg.accessKey, VB_SECRET: cfg.secretKey, VB_INSECURE: cfg.insecureTls ? '1' : '0'
         }).map(([k, v]) => `${k}=${Buffer.from(String(v ?? ''), 'utf8').toString('base64')}`).join('\n') + '\n'
         const payload = Buffer.from(lines, 'utf8').toString('base64')
-        const r = await ssh.execCommand(`sudo mkdir -p /etc/kubeez && echo ${payload} | base64 -d | sudo bash -c 'umask 077; cat > /etc/kubeez/velero.env'`)
+        const r = await ssh.execCommand(`${ssh.api ? 'mkdir -p "$KUBEEZ_ROOT/etc/kubeez" && ' : 'sudo mkdir -p /etc/kubeez && '}echo ${payload} | base64 -d | ${ssh.api ? 'bash -c \'umask 077; cat > "$KUBEEZ_ROOT/etc/kubeez/velero.env"\'' : "sudo bash -c 'umask 077; cat > /etc/kubeez/velero.env'"}`)
         if (r.code !== 0) throw new Error(`Could not hand the volume backup settings to the node: ${(r.stderr || r.stdout || '').trim()}`)
     }
 
@@ -545,7 +576,7 @@ class AutomationEngine {
                         }))
                     ],
                     nodeCount: installation.masterNodes.length + (installation.workerNodes?.length || 0),
-                    endpoint: `https://${installation.controlPlaneVip || installation.masterNodes[0].ip}:6443`,
+                    endpoint: installation.access?.server || `https://${installation.controlPlaneVip || installation.masterNodes[0]?.ip}:6443`,
                     simulationMode: installation.simulationMode
                 }
 
@@ -566,7 +597,7 @@ class AutomationEngine {
                 await this.validateConnectivity(installation, onLog)
 
                 if (!installation.simulationMode) {
-                    const ssh = await this.connectSSH(installation.masterNodes[0])
+                    const ssh = usesApi(installation) ? await connectCluster(installation) : await this.connectSSH(installation.masterNodes[0])
                     try {
                         const span = reinstall ? 0.4 : 0.85
                         await this.executeScript(ssh, join(__dirname, '../automation/addon-uninstall.sh'),
@@ -591,7 +622,7 @@ class AutomationEngine {
                 onComplete({
                     name: installation.clusterName,
                     version: installation.k8sVersion,
-                    endpoint: `https://${installation.controlPlaneVip || installation.masterNodes[0].ip}:6443`,
+                    endpoint: installation.access?.server || `https://${installation.controlPlaneVip || installation.masterNodes[0]?.ip}:6443`,
                     simulationMode: installation.simulationMode
                 })
                 return
@@ -730,7 +761,7 @@ class AutomationEngine {
                     }))
                 ],
                 nodeCount: installation.masterNodes.length + (installation.workerNodes?.length || 0),
-                endpoint: `https://${installation.controlPlaneVip || installation.masterNodes[0].ip}:6443`,
+                endpoint: installation.access?.server || `https://${installation.controlPlaneVip || installation.masterNodes[0]?.ip}:6443`,
                 simulationMode: installation.simulationMode
             }
 
@@ -742,7 +773,18 @@ class AutomationEngine {
         }
     }
 
+    // an imported cluster: is its Kubernetes API answering (no nodes to SSH to)?
+    async _apiReady(installation, onLog) {
+        const sh = await connectCluster(installation)
+        try {
+            const r = await sh.execCommand('kubectl get --raw=/readyz --request-timeout=15s 2>&1', { timeoutMs: 40000 })
+            if (r.code !== 0) throw new Error((r.stdout || r.stderr || 'the Kubernetes API did not answer').trim().split('\n').pop())
+            onLog('success', "✓ The cluster's Kubernetes API answers (imported cluster)")
+        } finally { sh.dispose?.() }
+    }
+
     async detectRealNodes(installation, onLog) {
+        if (usesApi(installation)) { try { await this._apiReady(installation, onLog); return true } catch (e) { onLog('warning', `⚠️ ${e.message}`); return false } }
         // Try to connect to first master node
         const masterNode = installation.masterNodes[0]
 
@@ -780,6 +822,7 @@ class AutomationEngine {
             return
         }
 
+        if (usesApi(installation)) return this._apiReady(installation, onLog)
         onLog('info', 'Checking SSH connectivity to all nodes...')
 
         const allNodes = [
@@ -1103,7 +1146,7 @@ class AutomationEngine {
             const { complianceStore } = await import('./complianceService.js')
             const scan = complianceStore.org(installation.orgId).addonScan || 'off'
             if (scan !== 'off') onLog('info', `Images are scanned for critical vulnerabilities before the install (${scan === 'block' ? 'blocks the install' : 'warns'})`)
-            const w = await ssh.execCommand(writePlanCommand(key, { ...planFiles(plan), ...(scan !== 'off' ? { scan } : {}) }))
+            const w = await ssh.execCommand(writePlanCommand(key, { ...planFiles(plan), ...(scan !== 'off' ? { scan } : {}) }, { sandbox: !!ssh.api }))
             if (w.code !== 0) throw new Error(`Could not hand the settings to the node: ${(w.stderr || w.stdout || '').trim()}`)
             if (def.prepare === 'velero') await this.writeVeleroSettings(ssh, clusterId, installation.orgId)
             await this.executeScript(ssh, join(__dirname, '../automation/addons/helm-addon.sh'), [key], onLog, opts)
@@ -1135,8 +1178,9 @@ class AutomationEngine {
             return
         }
 
+        // an imported cluster: the Kubernetes API (its sandbox) instead of SSH
         const masterNode = installation.masterNodes[0]
-        const ssh = await this.connectSSH(masterNode)
+        const ssh = usesApi(installation) ? await connectCluster(installation) : await this.connectSSH(masterNode)
 
         try {
             // Every add-on is installed with Helm and its settings (config/helmAddons.js),

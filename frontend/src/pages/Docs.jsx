@@ -4,8 +4,7 @@ import {
     Bell, BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
     Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse, Search,
     LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass, ShieldCheck, Rocket,
-    HelpCircle, Lock, Settings as SettingsIcon, X, Bot
-} from 'lucide-react'
+    HelpCircle, Lock, Settings as SettingsIcon, X, Bot, PlugZap } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 // ── Small building blocks ────────────────────────────────────────────────────
@@ -118,6 +117,7 @@ const NAV = [
     ] },
     { title: 'Clusters', items: [
         { id: 'deploy', label: 'Deploy a Cluster', k: 'install create new ha virtual ip control plane' },
+        { id: 'connect', label: 'Connect an Existing Cluster', k: 'import existing connect eks aks gke oke digitalocean linode vultr ibm alibaba tencent civo scaleway ovh hetzner kubeadm k3s rke2 rancher openshift okd microk8s k0s tanzu talos eks anywhere arc kubeconfig agent helm private endpoint read-only full manage token serviceaccount gateway ssh' },
         { id: 'cluster-page', label: 'The Cluster Page', k: 'overview tabs' },
         { id: 'access', label: 'kubectl & Terminal', k: 'kubeconfig shell ssh node command' },
         { id: 'scale', label: 'Add Worker Nodes', k: 'scale join worker' },
@@ -359,6 +359,30 @@ export default function Docs() {
                         <H4>High availability</H4>
                         <P>With 2 or more control-planes, enter a <B>virtual IP</B>: a free address in their network. One control-plane holds it, and another takes it over within seconds if that server dies. kubectl, workers and KubeEZ all use the virtual IP.</P>
                         <Note>Use <B>3 control-planes</B> for real high availability: the cluster keeps running while 2 of 3 are up. With 2, losing either one stops the cluster API. The virtual IP must be unused, outside your DHCP range, and in the same network as the control-planes.</Note>
+                    </Section>
+
+                    <Section id="connect" Icon={PlugZap} color="text-sky-400" title="Connect an Existing Cluster"
+                        intro="Bring the Kubernetes you already run into KubeEZ — EKS, AKS, GKE, OKE, DigitalOcean, Linode, k3s, RKE2, OpenShift, kubeadm or any other — without reinstalling anything.">
+                        <P>Sidebar → <B>Connected clusters</B> → <B>Add existing cluster</B>. Pick where it runs (Cloud / On-prem / Other) and the provider, give it a name, choose what KubeEZ may do, and run the one command shown — wherever <C>kubectl</C> already works for the cluster (your laptop, a bastion, a node). Every provider has a setup guide (Connected clusters → <B>Setup guides</B>) with the exact commands and troubleshooting.</P>
+                        <H4>Three ways in</H4>
+                        <Table head={['', '']} rows={[
+                            [<B>KubeEZ agent (recommended)</B>, <>One <C>kubectl apply</C> (or <C>helm upgrade --install</C>). A small agent runs in the namespace <C>kubeez-system</C> and connects <B>out</B> to KubeEZ over HTTPS — nothing is opened towards the cluster. Works for private endpoints (EKS / AKS / GKE private clusters), firewalls and on-prem clusters behind NAT. It reaches only that cluster's API and Services.</>],
+                            [<B>Connect command</B>, <>A short script (<C>sh</C> or PowerShell) creates KubeEZ's own login in the cluster and sends KubeEZ only the API address, its CA and that login's token. Your <C>aws</C> / <C>gcloud</C> / <C>kubelogin</C> sign-in never leaves your machine. KubeEZ then reaches the API directly (public endpoints, or self-hosted KubeEZ in the same network) or through your <B>Gateway Agent</B> for on-prem clusters.</>],
+                            [<B>Paste a kubeconfig</B>, <>KubeEZ uses it <B>once</B> to create its own login and forgets it — only that token is kept. Not for kubeconfigs that sign in through a cloud CLI (use the connect command), and with <C>kubectl config view --raw --minify --flatten</C> so the certificates are inline.</>]
+                        ]} />
+                        <Note>KubeEZ Cloud never connects to a private address itself: a private API server is reached through your Gateway Agent or the KubeEZ agent.</Note>
+                        <H4>Read-only or Full manage</H4>
+                        <P><B>Read-only</B> (the default): KubeEZ watches, alerts, explains and advises — and changes nothing. It never reads Secrets. <B>Full manage</B>: KubeEZ may also install add-ons, run fixes and backups, apply YAML, give members their own scoped kubeconfig and open the cluster terminal (it gets cluster-admin; every action is audited and follows your team roles). Switch any time in the cluster's connection settings: going down is immediate, going up asks you to run the command again as a cluster admin.</P>
+                        <H4>What works on an imported cluster</H4>
+                        <Table head={['', '']} rows={[
+                            ['Always', 'Dashboard and health, incidents and alerts, the risk score, Fleet, KubeEZ AI (Ask AI, explanations, summaries), Advisor, What changed, compliance (the Kubernetes checks), team roles and cluster rules.'],
+                            ['With Full manage', 'Add-ons (except Longhorn and Harbor, which prepare the nodes themselves), the KubeEZ Explorer, volume backups (Velero), automatic and AI fixes, applying YAML, per-member kubeconfigs, and the cluster terminal — kubectl and helm run as you, with your role, no pipes or other programs.'],
+                            ['Done by the provider', 'etcd backups, Kubernetes upgrades and adding nodes — the cloud runs the control plane. KubeEZ shows the version and the risk, and tells you why.'],
+                            ['On-prem with SSH', <>Connection settings → <B>Add SSH</B>: every node is checked (SSH works, it is a node of this cluster). On <B>kubeadm</B> clusters KubeEZ then takes etcd snapshots, upgrades (with SSH on every node) and adds nodes like on its own clusters; on k3s, RKE2 and others it opens node shells and runs the node checks.</>]
+                        ]} />
+                        <H4>Manage the connection</H4>
+                        <P>Connected clusters lists every imported cluster with how it is reached, its access, its nodes and the last check (every 5 minutes). Per cluster: <B>Check now</B>, <B>Renew the token</B>, switch the access, <B>Reconnect</B> or <B>Move to the KubeEZ agent</B>, <B>Add SSH</B> (on-prem) and <B>Disconnect</B> — with Full manage KubeEZ also removes its own login and agent from the cluster; otherwise it shows the cleanup command. The agent updates itself when it restarts: <C>kubectl -n kubeez-system rollout restart deploy/kubeez-agent</C>.</P>
+                        <Note kind="warn">The login KubeEZ keeps is a token of its own ServiceAccount (<C>kubeez</C> in <C>kubeez-system</C>), stored encrypted and never shown. Commands for imported clusters run on the KubeEZ server in a sandbox: a separate user for each cluster, no access to KubeEZ's own files, and only kubectl and helm — the node tools (df, systemctl, kubeadm…) answer "not available" instead of looking at the KubeEZ server.</Note>
                     </Section>
 
                     <Section id="cluster-page" Icon={LayoutGrid} color="text-sky-400" title="The Cluster Page"

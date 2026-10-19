@@ -363,8 +363,11 @@ export const PLATFORM_ADDONS = {
             const opts = s.nfsVersion === 'auto' ? '' : `-o nfsvers=${s.nfsVersion} `
             const sc = `${s.reclaimPolicy}|${s.archiveOnDelete}`
             return [
+                // (an imported cluster: KubeEZ is outside its network — the provisioner's pod shows it instead)
+                'if [ -n "${KUBEEZ_IMPORTED:-}" ]; then log "Imported cluster: the NFS server is reached by the provisioner from the nodes (its pod shows a mount error if not)"; else',
                 `timeout 5 bash -c "</dev/tcp/${s.server}/2049" 2>/dev/null \\`,
                 `    || fail NFS_UNREACHABLE "The NFS server ${s.server} does not answer on port 2049 from this control-plane." "Check the address, that the NFS service runs and that the firewall allows port 2049 from every node."`,
+                'fi',
                 'kubectl get ns nfs-provisioner >/dev/null 2>&1 || kubectl create ns nfs-provisioner >/dev/null',
                 ...(s.installClient ? [
                     'log "Installing the NFS client on every node (if missing)..."',

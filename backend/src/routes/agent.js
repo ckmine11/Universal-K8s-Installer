@@ -54,7 +54,8 @@ router.post('/agent/token', requireAuth, requirePermission('agent:manage'), asyn
 // List all agents for current user (admin sees all)
 router.get('/agent/list', requireAuth, async (req, res) => {
     try {
-        const agents = await agentService.getAgentsByOwner(req.user.id, req.user.role, req.user.orgId)
+        // Gateway Agents only — the KubeEZ agents inside imported clusters are under Connected clusters
+        const agents = (await agentService.getAgentsByOwner(req.user.id, req.user.role, req.user.orgId)).filter(a => a.kind !== 'cluster')
 
         // Enrich with live connection status
         const enriched = agents.map(a => ({
@@ -78,7 +79,7 @@ router.get('/agent/list', requireAuth, async (req, res) => {
 // Check if any agent is online (simple boolean check for wizard prerequisite gate)
 router.get('/agent/has-online', requireAuth, async (req, res) => {
     try {
-        const agents = await agentService.getAgentsByOwner(req.user.id, req.user.role, req.user.orgId)
+        const agents = (await agentService.getAgentsByOwner(req.user.id, req.user.role, req.user.orgId)).filter(a => a.kind !== 'cluster')
         const hasOnline = agents.some(a => agentService.isAgentOnline(a.agentId))
         res.json({ hasOnline, total: agents.length })
     } catch (error) {
@@ -114,6 +115,9 @@ router.get('/agent/:agentId/install-command', requireAuth, requirePermission('ag
 // Delete an agent
 router.delete('/agent/:agentId', requireAuth, requirePermission('agent:manage'), async (req, res) => {
     try {
+        // the agent inside an imported cluster is removed from Connected clusters (it is that cluster's connection)
+        const a = await agentService.getAgentById(req.params.agentId)
+        if (a?.kind === 'cluster' && a.orgId === req.user.orgId) return res.status(409).json({ error: 'This is the KubeEZ agent of an imported cluster — remove it under Connected clusters → Connection agents (or disconnect the cluster).' })
         await agentService.deleteAgent(req.params.agentId, req.user.id, req.user.role, req.user.orgId)
         res.json({ success: true, message: 'Agent removed successfully' })
     } catch (error) {

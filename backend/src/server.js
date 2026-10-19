@@ -87,7 +87,7 @@ import aiRoutes from './routes/ai.js'
 import aiOpsRoutes, { actionsRouter as aiActionsRoutes } from './routes/aiOps.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
-import { lockDownServerFiles } from './services/clusterAccess.js'
+import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
 import { DATA_DIR } from './utils/paths.js'
 import aiQualityRoutes from './routes/aiQuality.js'
 import { startApprovalSweeper } from './services/approvals.js'
@@ -432,7 +432,8 @@ wss.on('connection', (ws, req) => {
             if (!cluster || !canSeeCluster(user, cluster)) return ws.close(4004, 'Cluster not found')
             if (!canOn(user, 'terminal:access', cluster)) return forbid()
             return openNodeShell({
-                ws, user, cluster: { ...cluster, masterNodes: (cluster.masterNodes || []).map(n => ({ ...n, ownerId: cluster.ownerId, orgId: cluster.orgId })) },
+                // (an imported cluster: the nodes SSH was given for)
+                ws, user, cluster: { ...cluster, masterNodes: [...(cluster.masterNodes || []), ...(cluster.sshNodes || [])].map(n => ({ ...n, ownerId: cluster.ownerId, orgId: cluster.orgId })) },
                 nodeIp: url.searchParams.get('node'), cols: Number(url.searchParams.get('cols')) || 120, rows: Number(url.searchParams.get('rows')) || 32,
                 ip: (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null
             })
@@ -476,6 +477,21 @@ wss.on('connection', (ws, req) => {
                 if (!grant) {
                     if (recording) { terminalRecorder.end(recording, 'access ended'); recording = null }
                     return send({ type: 'access-required', content: 'No current terminal access for this cluster — request access (reason and time limit).' })
+                }
+
+                // an imported cluster: kubectl / helm as the member (no nodes to run on)
+                if (usesApi(cluster)) {
+                    const cap = capabilities(cluster).terminal
+                    if (!cap.ok) return send({ type: 'terminal-output', nodeIp: 'cluster', streamType: 'error', content: `${cap.why}\n` })
+                    if (!recording) recording = terminalRecorder.start({ orgId: cluster.orgId || null, clusterId: cluster.id, clusterName: cluster.clusterName, user: { id: current.id, username: current.username, role: current.role }, grantId: grant.id, reason: grant.reason, ip })
+                    terminalRecorder.command(recording, ['cluster'], data.command)
+                    const out = (type) => (chunk) => { const text = chunk.toString(); terminalRecorder.output(recording, 'cluster', type, text); send({ type: 'terminal-output', nodeIp: 'cluster', streamType: type, content: text }) }
+                    try {
+                        const member = authService.getUserById(current.id)
+                        const r = await runMemberCommand(cluster, { ...member, clusterAccess: member?.clusterAccess || [] }, data.command, { onStdout: out('stdout'), onStderr: out('stderr') })
+                        if (r.code) send({ type: 'terminal-output', nodeIp: 'cluster', streamType: 'stderr', content: `(exit ${r.code})\n` })
+                    } catch (e) { out('error')(`${e.message}\n`) }
+                    return
                 }
 
                 const requestedIps = new Set((Array.isArray(data.nodes) ? data.nodes : [])

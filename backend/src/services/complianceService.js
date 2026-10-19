@@ -133,7 +133,11 @@ export async function runScan(cluster, { by = 'KubeEZ', cis = true, onProgress =
     onProgress(75, 'Collecting backups, alerts, incidents and accounts')
     const kubeez = await kubeezEvidence(cluster, now)
     const org = complianceStore.org(cluster.orgId)
-    const evidence = { ...cp, nodes, kubeez: { ...kubeez, addonScan: org.addonScan || 'off' }, attestations: org.attestations, now, latestMinor: LATEST_K8S_MINOR }
+    // an imported cluster: which controls its provider covers (config/compliance.js HOST_CONTROLS)
+    const { usesApi } = await import('./clusterAccess.js')
+    const { providerById } = await import('../config/clusterProviders.js')
+    const imported = usesApi(cluster) ? { provider: providerById(cluster.provider)?.name || cluster.provider || 'the provider', cloud: providerById(cluster.provider)?.group === 'cloud' } : null
+    const evidence = { ...cp, nodes, kubeez: { ...kubeez, addonScan: org.addonScan || 'off' }, attestations: org.attestations, now, latestMinor: LATEST_K8S_MINOR, ...(imported ? { imported } : {}) }
     onProgress(90, 'Scoring')
     const ev = evaluateControls(evidence)
     const prev = complianceStore.reports(cluster.id)[0] || null

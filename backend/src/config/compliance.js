@@ -384,10 +384,16 @@ const WEIGHT = { high: 3, medium: 2, low: 1 }
 const VALUE = { pass: 1, partial: 0.5, fail: 0, todo: 0 }
 
 /** Evaluate every control on the evidence; scores overall and per framework (0–100) */
+// Controls that need the nodes / the control-plane host (files, flags, kubeadm,
+// SSH, OS packages, etcd). On an imported cluster KubeEZ has no node access:
+// they do not count — its provider (cloud) or its own tooling (on-prem) covers them.
+export const HOST_CONTROLS = new Set(['TIME-1', 'LOG-1', 'LOG-2', 'BCK-1', 'BCK-2', 'BCK-3', 'ENC-1', 'ENC-3', 'ACC-3', 'VUL-2', 'CIS-1'])
+
 export function evaluateControls(ev) {
     const results = CONTROLS.map(c => {
         let r
-        try { r = c.evaluate(ev) } catch (e) { r = { status: 'fail', evidence: `Could not be evaluated: ${e.message}` } }
+        if (ev.imported && HOST_CONTROLS.has(c.id)) r = { status: 'na', evidence: ev.imported.cloud ? `Managed by ${ev.imported.provider} (control plane, etcd, nodes) — check it in the provider's console. KubeEZ checks what runs inside the cluster.` : 'Needs access to the nodes, which KubeEZ does not have for this imported cluster.' }
+        else try { r = c.evaluate(ev) } catch (e) { r = { status: 'fail', evidence: `Could not be evaluated: ${e.message}` } }
         return { id: c.id, domain: c.domain, severity: c.severity, title: c.title, refs: c.refs, attestation: c.attestation || null, fixAction: c.fixAction || null, ...r }
     })
     const score = (rows) => {

@@ -73,7 +73,8 @@ process.on('unhandledRejection', (e) => log('Unhandled rejection (continuing):',
 const sshSessions = new Map();
 const connecting = new Map();   // key → login in progress (shared by concurrent commands)
 const crypto = require('crypto');
-const sessionKey = (ip, username, password, privateKey) =>
+// (port: the node's SSH port — 22 unless KubeEZ sends another)
+const sessionKey = (ip, username, password, privateKey, port = 22) => String(port) + '|' +
     crypto.createHash('sha256').update([ip, username, password || '', privateKey || ''].join('\0')).digest('hex');
 let attempt = 0;
 // Capabilities this agent build offers (KubeEZ checks before using them)
@@ -106,8 +107,8 @@ async function inClusterAllowed(host) {
 const tcpStreams = new Map();   // streamId → ssh forwarding channel
 
 // One SSH login per account+host, shared by commands and TCP streams
-async function getSession(ip, username, password, privateKey) {
-    const key = sessionKey(ip, username, password, privateKey);
+async function getSession(ip, username, password, privateKey, port = 22) {
+    const key = sessionKey(ip, username, password, privateKey, port);
     let ssh = sshSessions.get(key);
     if (ssh && ssh.isConnected()) return { ssh, key };
     // Several requests arrive at once (live metrics sends 5): share ONE login
@@ -116,7 +117,7 @@ async function getSession(ip, username, password, privateKey) {
     if (!pending) {
         pending = (async () => {
             const s = new NodeSSH();
-            await s.connect({ host: ip, username, password, privateKey, tryKeyboard: true, readyTimeout: 60000 });
+            await s.connect({ host: ip, port: Number(port) || 22, username, password, privateKey, tryKeyboard: true, readyTimeout: 60000 });
             sshSessions.set(key, s);
             log(`SSH connected to ${ip}`);
             return s;
@@ -179,7 +180,7 @@ function connect() {
         try { msg = JSON.parse(data); } catch (e) { return log('Ignoring malformed message:', e.message); }
         // ── TCP streams: KubeEZ ⇄ (this agent) ⇄ SSH session ⇄ host:port ──
         if (msg.type === 'tcp-open') {
-            const { streamId, ip, username, password, privateKey, host, port } = msg;
+            const { streamId, ip, username, password, privateKey, host, port, sshPort } = msg;
             try {
                 let ch;
                 if (!ip) {
@@ -192,7 +193,7 @@ function connect() {
                     });
                     ch.setTimeout(0);
                 } else {
-                    const { ssh } = await getSession(ip, username, password, privateKey);
+                    const { ssh } = await getSession(ip, username, password, privateKey, sshPort || 22);
                     ch = await ssh.forwardOut('127.0.0.1', 0, String(host), Number(port));
                 }
                 tcpStreams.set(streamId, ch);
@@ -217,10 +218,10 @@ function connect() {
         }
         if (msg.type !== 'execute-ssh') return;
 
-        const { commandId, ip, username, password, command, privateKey } = msg;
+        const { commandId, ip, username, password, command, privateKey, port } = msg;
         const key = sessionKey(ip, username, password, privateKey);
         try {
-            const { ssh } = await getSession(ip, username, password, privateKey);
+            const { ssh } = await getSession(ip, username, password, privateKey, port || 22);
             log(`Running on ${ip}: ${String(command).substring(0, 50)}...`);
             const result = await ssh.execCommand(command, { options: { pty: true } });
             // code is null when the process was killed by a signal — that's a failure, not success
@@ -239,6 +240,12 @@ function connect() {
         const why = String(reason || '');
         if (code === 4001) {
             log(`KubeEZ rejected this agent (${why || 'invalid token'}) — it was removed or its token was changed.`);
+            if (IN_CLUSTER) {
+                // in a Deployment an exit is restarted forever (a crash loop): wait instead
+                log('Reconnect this cluster in KubeEZ (Connected clusters → Reconnect), or remove the agent: kubectl delete namespace kubeez-system');
+                setInterval(() => { }, 3600e3);
+                return;
+            }
             log('Install a new agent from the KubeEZ "Tunnels" page. Stopping.');
             process.exit(EXIT_REVOKED);
         }

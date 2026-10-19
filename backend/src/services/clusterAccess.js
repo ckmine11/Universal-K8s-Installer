@@ -42,6 +42,18 @@ const NODE_FEATURES = {
 // Features that change things inside the cluster — need "Full manage" access
 const WRITE_FEATURES = ['addons', 'healing', 'actions', 'yamlApply', 'backup', 'namespaceAccess', 'terminal', 'kubeconfig']
 
+// Add-ons that prepare or check the NODES themselves (kernel modules, mounts,
+// containerd) — not without node access
+export const NODE_ADDONS = {
+    longhorn: 'Longhorn checks and prepares every node (iSCSI, shared mounts) — that needs node access. Use the provider\'s storage class, or the NFS provisioner.',
+    harbor: 'Harbor sets up containerd on every node to trust it — that needs node access. Use the provider\'s registry, or add Harbor with its own Helm chart.'
+}
+export function addonProblem(cluster, key) {
+    if (!usesApi(cluster)) return null
+    if (cluster.access?.level !== 'full') return capabilities(cluster).addons.why
+    return NODE_ADDONS[key] || null
+}
+
 /**
  * What KubeEZ can do on this cluster → { feature: { ok, why? } }. Clusters
  * KubeEZ installed can do everything.
@@ -52,6 +64,25 @@ export function capabilities(c) {
     const read = c?.access?.level !== 'full'
     for (const [k, why] of Object.entries(NODE_FEATURES)) out[k] = api ? { ok: false, why } : { ok: true }
     for (const k of WRITE_FEATURES) out[k] = api && read ? { ok: false, why: 'This cluster is connected read-only — switch it to "Full manage" in its connection settings.' } : { ok: true }
+    // SSH given, but not a kubeadm cluster: node shells and checks — etcd / upgrades stay with its own tooling
+    if (api && c.sshNodes?.length) {
+        const own = `KubeEZ's etcd and upgrade tooling is for kubeadm clusters — ${c.distro || 'this distribution'} has its own (e.g. k3s etcd-snapshot, the RKE2 / k3s upgrade controller).`
+        out.nodeTerminal = { ok: true }
+        for (const k of ['etcdBackup', 'upgrade', 'scale', 'certRotation']) out[k] = { ok: false, why: own }
+    }
+    // an imported on-prem cluster with SSH given: node features as far as KubeEZ's
+    // tooling goes — etcd snapshots, upgrades and new nodes are kubeadm-based
+    if (!api && isImported(c)) {
+        const kubeadm = c.distro === 'kubeadm'
+        const other = `KubeEZ's etcd and upgrade tooling is for kubeadm clusters — ${c.distro || 'this distribution'} has its own (e.g. k3s etcd-snapshot, the RKE2 / k3s upgrade controller).`
+        const sshNodes = new Set([...(c.masterNodes || []), ...(c.workerNodes || [])].map(n => n.ip))
+        const missing = (c.importedNodes || []).filter(n => n.ip && !sshNodes.has(n.ip)).map(n => n.name)
+        out.etcdBackup = kubeadm ? { ok: true } : { ok: false, why: other }
+        out.certRotation = kubeadm ? { ok: true } : { ok: false, why: other }
+        out.upgrade = !kubeadm ? { ok: false, why: other } : missing.length ? { ok: false, why: `An upgrade goes over every node — add SSH for ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''} too.` } : { ok: true }
+        out.scale = kubeadm ? { ok: true } : { ok: false, why: other }
+        out.resume = { ok: false, why: NODE_FEATURES.resume }
+    }
     return out
 }
 export const can = (c, feature) => capabilities(c)[feature]?.ok !== false
@@ -89,9 +120,26 @@ export function lockDownServerFiles(dataDir) {
     }
 }
 const NODE_TOOLS = ['df', 'du', 'kubeadm', 'kubelet', 'systemctl', 'service', 'journalctl', 'crictl', 'ctr', 'containerd', 'docker', 'etcdctl', 'etcdutl', 'curl', 'wget', 'hostname', 'ip', 'ss', 'netstat', 'mount', 'findmnt', 'lsblk', 'free', 'uptime', 'nproc', 'top', 'vmstat', 'iostat', 'lscpu', 'dmidecode', 'swapon', 'swapoff', 'modprobe', 'sysctl', 'iptables', 'apt-get', 'yum', 'dnf', 'k3s', 'rke2', 'microk8s']
+// kubectl / helm always talk to THIS cluster: a --kubeconfig the script passes
+// (e.g. /etc/kubernetes/admin.conf on a node) is dropped — up to a "--"
+const pinned = (bin) => `#!/bin/sh
+n=$#; seen=0
+while [ $n -gt 0 ]; do
+  a="$1"; shift; n=$((n-1))
+  if [ $seen -eq 0 ]; then
+    case "$a" in
+      --) seen=1; set -- "$@" "$a" ;;
+      --kubeconfig) shift; n=$((n-1)) ;;
+      --kubeconfig=*) ;;
+      *) set -- "$@" "$a" ;;
+    esac
+  else set -- "$@" "$a"; fi
+done
+exec "${bin}" --kubeconfig "$KZ_KUBECONFIG" "$@"
+`
 const SHIMS = {
-    kubectl: '#!/bin/sh\nexec "$KZ_KUBECTL" --kubeconfig "$KZ_KUBECONFIG" "$@"\n',
-    helm: '#!/bin/sh\nexec "$KZ_HELM" --kubeconfig "$KZ_KUBECONFIG" "$@"\n',
+    kubectl: pinned('$KZ_KUBECTL'),
+    helm: pinned('$KZ_HELM'),
     // `sudo [-n -E …] [VAR=value …] cmd …` → the same command, without sudo
     sudo: '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -u|-g|-C|-h|-p|-U) shift 2;; --) shift; break;; -*) shift;; *) break;; esac; done\n[ $# -eq 0 ] && exit 0\nexec env "$@"\n',
     ...Object.fromEntries(NODE_TOOLS.map(t => [t, `#!/bin/sh\necho "${t}: not available on an imported cluster (no node access)" >&2\nexit 127\n`]))
@@ -121,18 +169,27 @@ export function kubeconfigFor({ server, ca, token, clientCert = null, clientKey 
  * Run a script against a target in the sandbox → { stdout, stderr, code }.
  * target: { server, ca, token, tlsServerName }
  */
-export async function runSandboxed(target, script, { stdin = null, timeoutMs = 10 * 60e3, maxBytes = 48 << 20, keepAlive = null } = {}) {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kz-run-'))
+// root: a folder kept between the calls of one connection (an add-on job writes
+// its plan there in one call and runs it in the next) — "/etc/kubeez/…" on a
+// node is "$KUBEEZ_ROOT/etc/kubeez/…" here. onStdout / onStderr: live output.
+export async function sessionRoot(uidKey) {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kz-session-'))
+    if (dropPrivileges()) { const uid = sandboxUid(uidKey); await fs.promises.chown(dir, uid, uid) }
+    return dir
+}
+export async function runSandboxed(target, script, { stdin = null, timeoutMs = 10 * 60e3, maxBytes = 48 << 20, keepAlive = null, root = null, onStdout = null, onStderr = null } = {}) {
+    const dir = await fs.promises.mkdtemp(path.join(root || os.tmpdir(), 'kz-run-'))
     const kc = path.join(dir, 'kubeconfig')
     await fs.promises.writeFile(kc, JSON.stringify(kubeconfigFor(target)), { mode: 0o600 })
     const drop = dropPrivileges()
     const uid = sandboxUid(target.uidKey || target.server)
     if (drop) { await fs.promises.chown(dir, uid, uid); await fs.promises.chown(kc, uid, uid) }
+    const home = root || dir
     const env = {
-        PATH: `${shims()}:/usr/local/bin:/usr/bin:/bin`, HOME: dir, TMPDIR: dir, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
+        PATH: `${shims()}:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMPDIR: dir, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
         KZ_KUBECONFIG: kc, KUBECONFIG: kc, KZ_KUBECTL: BIN.kubectl, KZ_HELM: BIN.helm,
-        HELM_CACHE_HOME: path.join(dir, '.helm-cache'), HELM_CONFIG_HOME: path.join(dir, '.helm-config'), HELM_DATA_HOME: path.join(dir, '.helm-data'),
-        KUBEEZ_IMPORTED: '1'
+        HELM_CACHE_HOME: path.join(home, '.helm-cache'), HELM_CONFIG_HOME: path.join(home, '.helm-config'), HELM_DATA_HOME: path.join(home, '.helm-data'),
+        KUBEEZ_IMPORTED: '1', KUBEEZ_ROOT: home
     }
     return new Promise((resolve) => {
         let out = [], err = [], size = 0, done = false
@@ -146,8 +203,8 @@ export async function runSandboxed(target, script, { stdin = null, timeoutMs = 1
         const kill = () => { try { process.platform === 'win32' ? child.kill() : process.kill(-child.pid, 'SIGKILL') } catch { try { child.kill('SIGKILL') } catch { } } }
         const timer = setTimeout(() => { err.push(Buffer.from(`\n(timed out after ${Math.round(timeoutMs / 1000)} s)`)); kill(); finish(124) }, timeoutMs)
         timer.unref?.()
-        const take = (arr) => (d) => { size += d.length; if (size <= maxBytes) arr.push(d); else if (!done) { err.push(Buffer.from('\n(output too large — stopped)')); kill(); finish(1) } }
-        child.stdout.on('data', take(out)); child.stderr.on('data', take(err))
+        const take = (arr, live) => (d) => { try { live?.(d) } catch { } size += d.length; if (size <= maxBytes) arr.push(d); else if (!done) { err.push(Buffer.from('\n(output too large — stopped)')); kill(); finish(1) } }
+        child.stdout.on('data', take(out, onStdout)); child.stderr.on('data', take(err, onStderr))
         child.on('error', (e) => { err.push(Buffer.from(String(e.message))); finish(127) })
         child.on('close', (code) => finish(code ?? 1))
         if (stdin != null) child.stdin.end(stdin); else child.stdin.end()
@@ -225,6 +282,7 @@ export async function apiTarget(cluster) {
 
 /** An SSH-like connection running scripts against the cluster's API. */
 export function apiShell(cluster) {
+    let root = null
     return {
         api: true,
         isConnected: () => true,
@@ -232,9 +290,10 @@ export function apiShell(cluster) {
             // looked up on every call: a local port that was closed (reconnect, new token) is opened again
             let t
             try { t = await apiTarget(cluster) } catch (e) { return { stdout: '', stderr: e.message, code: 255 } }
-            return runSandboxed(t, String(cmd), { stdin: opts.stdin ?? null, timeoutMs: opts.timeoutMs })
+            root ||= await sessionRoot(t.uidKey)
+            return runSandboxed(t, String(cmd), { stdin: opts.stdin ?? null, timeoutMs: opts.timeoutMs, root, onStdout: opts.onStdout, onStderr: opts.onStderr })
         },
-        dispose() { }
+        dispose() { if (root) { fs.promises.rm(root, { recursive: true, force: true }).catch(() => { }); root = null } }
     }
 }
 
@@ -243,7 +302,8 @@ export function apiShell(cluster) {
  * API shell for an imported cluster. opts are passed to SSH.
  */
 export async function connectCluster(cluster, opts) {
-    if (usesApi(cluster)) return apiShell(cluster)
+    // (a job record carries the cluster's id as originalClusterId)
+    if (usesApi(cluster)) return apiShell(cluster.originalClusterId ? { ...cluster, id: cluster.originalClusterId } : cluster)
     const master = cluster?.masterNodes?.[0]
     if (!master) throw Object.assign(new Error('No control-plane node saved for this cluster'), { status: 400 })
     const { automationEngine } = await import('./automationEngine.js')
@@ -307,4 +367,54 @@ export async function openInCluster(cluster, host, port) {
     return net.connect(local, '127.0.0.1')
 }
 
-export const _test = { SHIMS, NODE_TOOLS, BIN, randomBytes }
+// ── the cluster terminal of an imported cluster: kubectl / helm only ────────
+// Run as the MEMBER's own account (their role and namespaces decide — never
+// KubeEZ's kubeez login), parsed into words and quoted (no shell: no pipes,
+// redirects or other programs), identity / connection flags refused.
+const FORBIDDEN_FLAGS = /^--?(token|as|as-group|as-uid|kubeconfig|server|s|insecure-skip-tls-verify|certificate-authority|client-certificate|client-key|user|username|password|context|cluster|tls-server-name|kube-token|kube-as-user|kube-as-group|kube-apiserver|kube-ca-file|kube-context|kube-insecure-skip-tls-verify|kube-tls-server-name|plugin-dir|exec-command)(=|$)/
+export function parseTerminalCommand(line) {
+    const words = []
+    let cur = '', q = null, any = false
+    const s = String(line || '').trim()
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i]
+        if (q) { if (ch === q) q = null; else if (ch === '\\' && q === '"' && i + 1 < s.length) cur += s[++i]; else cur += ch; continue }
+        if (ch === "'" || ch === '"') { q = ch; any = true; continue }
+        if (ch === '\\' && i + 1 < s.length) { cur += s[++i]; any = true; continue }
+        if (/\s/.test(ch)) { if (cur || any) words.push(cur); cur = ''; any = false; continue }
+        if ('|;&<>`$(){}'.includes(ch)) throw Object.assign(new Error('Only kubectl and helm commands here — no pipes, redirects or other programs (an imported cluster has no node shell).'), { status: 400 })
+        cur += ch; any = true
+    }
+    if (q) throw Object.assign(new Error('A quote is not closed'), { status: 400 })
+    if (cur || any) words.push(cur)
+    if (!words.length) throw Object.assign(new Error('Type a kubectl or helm command'), { status: 400 })
+    const bin = words[0] === 'k' ? 'kubectl' : words[0]
+    if (!['kubectl', 'helm'].includes(bin)) throw Object.assign(new Error(`"${words[0]}" is not available — this terminal runs kubectl and helm on the imported cluster (as you, with your role's access).`), { status: 400 })
+    const bad = words.slice(1).find(w => FORBIDDEN_FLAGS.test(w))
+    if (bad) throw Object.assign(new Error(`${bad.split('=')[0]} cannot be used here — the terminal always acts as you on this cluster.`), { status: 400 })
+    return [bin, ...words.slice(1)]
+}
+const quote = (w) => `'${String(w).replace(/'/g, `'\\''`)}'`
+
+const memberTokens = new Map()   // `${clusterId}|${userId}` → { token, until }
+async function memberToken(cluster, member) {
+    const key = `${cluster.id}|${member.id}`
+    const hit = memberTokens.get(key)
+    if (hit && hit.until > Date.now() + 60e3) return hit.token
+    const { syncCluster, saName, ACCESS_NS } = await import('./namespaceAccess.js')
+    await syncCluster(cluster.id, { force: true })
+    const r = await runSandboxed(await apiTarget(cluster), `kubectl -n ${ACCESS_NS} create token ${saName(member.id)} --duration=1h --request-timeout=20s`, { timeoutMs: 40000 })
+    const token = r.stdout.trim()
+    if (r.code !== 0 || !/^[A-Za-z0-9._-]+$/.test(token)) throw Object.assign(new Error(`Could not get your Kubernetes account on this cluster: ${(r.stderr || 'no token').trim().split('\n').pop()}`), { status: 502 })
+    memberTokens.set(key, { token, until: Date.now() + 55 * 60e3 })
+    return token
+}
+
+/** One terminal command on an imported cluster, as the member → { code } (output streamed) */
+export async function runMemberCommand(cluster, member, line, { onStdout, onStderr } = {}) {
+    const words = parseTerminalCommand(line)
+    const target = { ...(await apiTarget(cluster)), token: await memberToken(cluster, member), uidKey: `${cluster.id}|${member.id}` }
+    return runSandboxed(target, words.map(quote).join(' '), { timeoutMs: 5 * 60e3, onStdout, onStderr, maxBytes: 8 << 20 })
+}
+
+export const _test = { SHIMS, NODE_TOOLS, BIN, randomBytes, quote }

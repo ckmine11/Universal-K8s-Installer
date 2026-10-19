@@ -6,6 +6,7 @@ import { can } from '../../config/permissions'
 import { useToast } from '../ToastProvider'
 import { call, CopyBlock, ProviderBadge, StatusDot, FeatureList, METHOD_LABEL, LEVEL_LABEL, ago } from './shared'
 import Guide from './Guide'
+import SshNodes from './SshNodes'
 
 const groupOf = (providers, id) => providers.find(p => p.id === id)?.group || 'other'
 
@@ -126,7 +127,7 @@ export function ClusterConnection({ providers }) {
                 <div className="kz-card p-5 space-y-3 ring-1 ring-blue-400/40">
                     <p className="text-sm font-semibold text-white">{command.title}</p>
                     {command.cleanup ? <CopyBlock text={command.cleanup} multiline /> : command.session.method === 'agent'
-                        ? <CopyBlock text={command.session.commands.agent} label="kubectl" />
+                        ? <><CopyBlock text={command.session.commands.agent} label="kubectl" /><CopyBlock text={command.session.commands.helm} label="or helm" /></>
                         : <><CopyBlock text={command.session.commands.connect.sh} label="Linux / macOS" /><CopyBlock text={command.session.commands.connect.ps1} label="Windows PowerShell" /></>}
                     <p className="text-[11px] text-slate-500">{command.cleanup ? 'Run it where kubectl works for the cluster.' : 'Run it where kubectl works for the cluster; this page updates when KubeEZ has checked it.'}</p>
                     <div className="flex gap-2">
@@ -158,7 +159,9 @@ export function ClusterConnection({ providers }) {
                         </div>
                         <div className="space-y-2">
                             <p className="text-[11px] uppercase tracking-wider text-slate-500">Nodes</p>
-                            <p className="flex items-start gap-1.5 text-[11px] text-slate-400"><Server className="w-3.5 h-3.5 mt-0.5 shrink-0" />{groupOf(providers, c.provider) === 'cloud' ? 'The provider runs the control plane — etcd backups and upgrades happen there.' : 'On-prem: SSH to a control-plane unlocks etcd backups and upgrades (coming in the next KubeEZ update).'}</p>
+                            {groupOf(providers, c.provider) === 'cloud'
+                                ? <p className="flex items-start gap-1.5 text-[11px] text-slate-400"><Server className="w-3.5 h-3.5 mt-0.5 shrink-0" />The provider runs the control plane — etcd backups and upgrades happen there.</p>
+                                : <SshNodes c={c} onChanged={load} />}
                         </div>
                         <div className="space-y-2 border-t border-white/5 pt-4">
                             {!confirmDel ? <button type="button" onClick={() => setConfirmDel(true)} className="kz-btn-ghost !text-xs !text-red-300 w-full justify-start"><Trash2 className="w-3.5 h-3.5" /> Disconnect</button> : (

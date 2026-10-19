@@ -301,6 +301,7 @@ class AgentService {
             type: 'execute-ssh', 
             commandId, 
             ip: nodeConfig.ip,
+            ...(nodeConfig.port && Number(nodeConfig.port) !== 22 ? { port: Number(nodeConfig.port) } : {}),
             username: nodeConfig.username,
             password: nodeConfig.password,
             privateKey: nodeConfig.sshKey,
@@ -430,7 +431,7 @@ class AgentService {
             entry.reject = reject
             send({
                 type: 'tcp-open', streamId, host, port,
-                ...(nodeConfig ? { ip: nodeConfig.ip, username: nodeConfig.username, password: nodeConfig.password, privateKey: nodeConfig.sshKey } : {})
+                ...(nodeConfig ? { ip: nodeConfig.ip, ...(nodeConfig.port && Number(nodeConfig.port) !== 22 ? { sshPort: Number(nodeConfig.port) } : {}), username: nodeConfig.username, password: nodeConfig.password, privateKey: nodeConfig.sshKey } : {})
             })
         })
     }

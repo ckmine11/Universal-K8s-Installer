@@ -42,7 +42,8 @@ function NodeShell({ clusterId, node, visible, onState }) {
 }
 
 // Run one command on several nodes at once (the former Orbital Terminal)
-function Broadcast({ clusterId, nodes, visible }) {
+// kubectlOnly: an imported cluster — kubectl / helm as you (no nodes, no shell)
+function Broadcast({ clusterId, nodes, visible, kubectlOnly = false }) {
     const box = useRef(null);
     const term = useRef(null);
     const ws = useRef(null);
@@ -53,14 +54,14 @@ function Broadcast({ clusterId, nodes, visible }) {
         const f = new FitAddon();
         t.loadAddon(f); t.open(box.current); try { f.fit(); } catch { }
         term.current = t;
-        t.writeln('\x1b[1;34mRun one command on the selected nodes\x1b[0m \x1b[90m(output is prefixed with the node)\x1b[0m');
+        t.writeln(kubectlOnly ? '\x1b[1;34mkubectl / helm on this cluster\x1b[0m \x1b[90m(runs as you, with your role — e.g. kubectl get pods -A, helm list -A)\x1b[0m' : '\x1b[1;34mRun one command on the selected nodes\x1b[0m \x1b[90m(output is prefixed with the node)\x1b[0m');
         const s = new WebSocket(`${wsBase()}/ws/orbital/${clusterId}`);
         ws.current = s;
         s.onmessage = (e) => {
             const d = JSON.parse(e.data);
             if (d.type === 'access-required') return t.writeln('\r\n\x1b[1;31m[ACCESS] ' + d.content + '\x1b[0m');
             if (d.type === 'terminal-output') {
-                const p = `\x1b[1;36m[${d.nodeIp}]\x1b[0m `;
+                const p = kubectlOnly ? '' : `\x1b[1;36m[${d.nodeIp}]\x1b[0m `;
                 t.write(p + d.content.replace(/\n/g, '\r\n' + p));
             }
         };
@@ -70,14 +71,14 @@ function Broadcast({ clusterId, nodes, visible }) {
     }, [clusterId]);
     const run = (e) => {
         e.preventDefault();
-        if (!command.trim() || !selected.size) return;
-        term.current.writeln(`\r\n\x1b[1;33m$ ${command}\x1b[0m \x1b[90m(${selected.size} node${selected.size === 1 ? '' : 's'})\x1b[0m`);
+        if (!command.trim() || (!kubectlOnly && !selected.size)) return;
+        term.current.writeln(kubectlOnly ? `\r\n\x1b[1;33m$ ${command}\x1b[0m` : `\r\n\x1b[1;33m$ ${command}\x1b[0m \x1b[90m(${selected.size} node${selected.size === 1 ? '' : 's'})\x1b[0m`);
         ws.current?.send(JSON.stringify({ type: 'command', clusterId, nodes: nodes.filter(n => selected.has(n.ip)), command }));
         setCommand('');
     };
     return (
         <div className={`absolute inset-0 flex flex-col ${visible ? '' : 'invisible'}`}>
-            <div className="flex flex-wrap gap-2 p-2 text-xs">
+            <div className={`flex flex-wrap gap-2 p-2 text-xs ${kubectlOnly ? 'hidden' : ''}`}>
                 {nodes.map(n => (
                     <label key={n.ip} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer ${selected.has(n.ip) ? 'border-blue-400/40 bg-blue-500/10 text-blue-100' : 'border-white/10 text-slate-400'}`}>
                         <input type="checkbox" checked={selected.has(n.ip)} onChange={() => setSelected(s => { const x = new Set(s); x.has(n.ip) ? x.delete(n.ip) : x.add(n.ip); return x; })} />
@@ -88,15 +89,15 @@ function Broadcast({ clusterId, nodes, visible }) {
             <div ref={box} className="flex-1 min-h-0 px-2" />
             <form onSubmit={run} className="p-2 relative">
                 <Command size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-blue-400" />
-                <input value={command} onChange={e => setCommand(e.target.value)} placeholder="Command for the selected nodes (e.g. uptime, df -h)…"
+                <input value={command} onChange={e => setCommand(e.target.value)} placeholder={kubectlOnly ? 'kubectl get pods -A   ·   helm list -A   (no pipes — runs as you)' : 'Command for the selected nodes (e.g. uptime, df -h)…'}
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-24 text-blue-100 font-mono text-sm focus:outline-none focus:border-blue-500/50" />
-                <button disabled={!command.trim() || !selected.size} className="absolute right-4 top-3.5 bottom-3.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1"><Zap size={14} /> Run</button>
+                <button disabled={!command.trim() || (!kubectlOnly && !selected.size)} className="absolute right-4 top-3.5 bottom-3.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1"><Zap size={14} /> Run</button>
             </form>
         </div>
     );
 }
 
-const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
+const OrbitalTerminal = ({ clusterId, nodes, onClose, kubectlOnly = false }) => {
     // Just-in-time access: a grant (reason + time limit) for this cluster
     const [access, setAccess] = useState(null);
     const [reason, setReason] = useState('');
@@ -139,6 +140,8 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
         autoTried.current = Date.now();
         askAccess(null, { clusterId });
     }, [access, active, pending, asking]);
+    // an imported cluster: the kubectl terminal opens by itself
+    useEffect(() => { if (kubectlOnly && active && !tabs.length) open(null) }, [kubectlOnly, active]);
 
     const open = (node) => {
         const key = node ? node.ip : 'broadcast';
@@ -164,7 +167,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                         <div>
                             <h2 className="text-lg font-black text-white">Cluster terminal</h2>
                             {active ? <p className="flex items-center gap-2 text-[11px] text-amber-200"><Circle className="w-2.5 h-2.5 fill-red-500 text-red-500" /> Recorded · access ends in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')} · {active.reason}</p>
-                                : <p className="text-[11px] text-slate-400">Pick a node to open its shell</p>}
+                                : <p className="text-[11px] text-slate-400">{kubectlOnly ? 'kubectl and helm, as you' : 'Pick a node to open its shell'}</p>}
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl text-slate-400 hover:text-white" aria-label="Close"><X className="w-5 h-5" /></button>
@@ -172,10 +175,10 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
 
                 <div className="flex-1 flex min-h-0">
                     {/* Nodes */}
-                    <div className="w-60 shrink-0 border-r border-white/5 bg-black/20 p-3 overflow-y-auto">
+                    <div className={`w-60 shrink-0 border-r border-white/5 bg-black/20 p-3 overflow-y-auto ${kubectlOnly && !nodes.some(n => n.ip !== 'cluster') ? 'hidden' : ''}`}>
                         <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Nodes</div>
                         <div className="space-y-2">
-                            {nodes.map(n => {
+                            {nodes.filter(n => n.ip !== 'cluster').map(n => {
                                 const st = states[n.ip];
                                 const isOpen = tabs.some(t => t.key === n.ip);
                                 return (
@@ -193,9 +196,9 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                                 );
                             })}
                         </div>
-                        {nodes.length > 1 && (
+                        {(kubectlOnly || nodes.length > 1) && (
                             <button disabled={!active} onClick={() => open(null)} className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-slate-200">
-                                <Radio className="w-3.5 h-3.5" /> Run on several nodes
+                                <Radio className="w-3.5 h-3.5" /> {kubectlOnly ? 'kubectl / helm' : 'Run on several nodes'}
                             </button>
                         )}
                     </div>
@@ -228,7 +231,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                                 {tabs.map(t => (
                                     <div key={t.key} onClick={() => setCurrent(t.key)} className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer ${current === t.key ? 'bg-[#0e0e13] text-white' : 'text-slate-400 hover:text-white'}`}>
                                         {t.node ? <Server className="w-3 h-3" /> : <Radio className="w-3 h-3" />}
-                                        {t.node ? label(t.node) : 'Several nodes'}
+                                        {t.node ? label(t.node) : kubectlOnly ? 'kubectl' : 'Several nodes'}
                                         {t.node && states[t.key] === 'connected' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                                         <button onClick={(e) => { e.stopPropagation(); closeTab(t.key); }} className="text-slate-500 hover:text-white" aria-label="Close tab"><X className="w-3 h-3" /></button>
                                     </div>
@@ -244,7 +247,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose }) => {
                             )}
                             {active && tabs.map(t => t.node
                                 ? <NodeShell key={t.key} clusterId={clusterId} node={t.node} visible={current === t.key} onState={(s) => setStates(x => ({ ...x, [t.key]: s }))} />
-                                : <Broadcast key={t.key} clusterId={clusterId} nodes={nodes} visible={current === t.key} />)}
+                                : <Broadcast key={t.key} clusterId={clusterId} nodes={nodes} visible={current === t.key} kubectlOnly={kubectlOnly} />)}
                         </div>
                     </div>
                 </div>

@@ -67,12 +67,14 @@ export default function ClusterDetails({ onScaleCluster }) {
     // changes inside it only with "Full manage"
     const imported = !!cluster?.access?.mode && !(cluster?.masterNodes?.length)
     const fullAccess = !imported || cluster?.access?.level === 'full'
-    const canUpgrade = can(user?.role, 'cluster:upgrade', id) && !imported
-    const canScale = can(user?.role, 'cluster:scale', id) && !imported
+    // (an imported cluster with SSH: as far as the server says it works — features)
+    const featureOk = (k) => cluster?.features?.[k]?.ok !== false
+    const canUpgrade = can(user?.role, 'cluster:upgrade', id) && !imported && featureOk('upgrade')
+    const canScale = can(user?.role, 'cluster:scale', id) && !imported && featureOk('scale')
     const canResume = can(user?.role, 'cluster:resume', id) && !imported
-    const canManageAddons = can(user?.role, 'addon:install', id) && fullAccess && !imported
-    const canKubeconfig = can(user?.role, 'kubeconfig:download', id) && !imported
-    const canTerminal = can(user?.role, 'terminal:access', id) && !imported
+    const canManageAddons = can(user?.role, 'addon:install', id) && fullAccess
+    const canKubeconfig = can(user?.role, 'kubeconfig:download', id) && fullAccess && !(imported && cluster?.access?.mode === 'agent')
+    const canTerminal = can(user?.role, 'terminal:access', id) && fullAccess
     const canBackupVolumes = can(user?.role, 'cluster:upgrade', id) && fullAccess
     const isAdmin = ['admin', 'superadmin'].includes(user?.role)
     const failedUpgrade = cluster?.status === 'failed' && cluster?.mode === 'upgrade'
@@ -595,7 +597,7 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* ── Backups ──────────────────────────────────────────────── */}
             {tab === 'backups' && (
-                <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={imported ? canBackupVolumes : canUpgrade} explorer={!!cluster.addons?.explorer} imported={imported} provider={cluster.provider} />
+                <BackupsTab clusterId={id} clusterName={cluster.clusterName} masterIp={cluster.masterNodes?.[0]?.ip} canManage={imported ? canBackupVolumes : can(user?.role, 'cluster:upgrade', id) && featureOk('etcdBackup')} explorer={!!cluster.addons?.explorer} imported={imported} provider={cluster.provider} />
             )}
 
             {/* ── What changed? ───────────────────────────────────────── */}
@@ -669,7 +671,8 @@ export default function ClusterDetails({ onScaleCluster }) {
             {isTerminalOpen && (
                 <OrbitalTerminal
                     clusterId={id}
-                    nodes={allNodes}
+                    nodes={imported ? [{ ip: 'cluster', hostname: 'kubectl' }, ...(cluster.sshNodes || []).map(n => ({ ...n, hostname: n.hostname || n.ip }))] : allNodes}
+                    kubectlOnly={imported}
                     onClose={() => setIsTerminalOpen(false)}
                 />
             )}

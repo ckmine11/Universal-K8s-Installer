@@ -5,7 +5,7 @@
 # against the Kubernetes API, in a sandbox (services/clusterAccess.js). Taken
 # from the official images — no Alpine package CDN needed.
 FROM registry.k8s.io/kubectl:v1.34.1 AS kubectl
-FROM alpine/helm:3.16.4 AS helm
+FROM alpine/helm:3.19.0 AS helm
 FROM bash:5.2 AS bash
 
 FROM node:22-alpine

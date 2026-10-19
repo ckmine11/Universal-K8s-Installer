@@ -1,5 +1,6 @@
 import { automationEngine } from './automationEngine.js'
 import { HELM_ADDONS, SYSTEM_NAMESPACES } from '../config/helmAddons.js'
+import { usesApi, connectCluster } from './clusterAccess.js'
 
 // Evidence for the compliance report, collected live:
 //   control-plane (one SSH round-trip): API server flags, certificates, RBAC,
@@ -233,6 +234,9 @@ async function onNode(node, script, timeoutMs) {
 }
 
 export async function scanNodes(cluster, onProgress = () => { }) {
+    // an imported cluster: its SSH nodes if any were given (otherwise its node controls do not count)
+    if (usesApi(cluster) && !cluster.sshNodes?.length) return []
+    if (usesApi(cluster)) cluster = { ...cluster, masterNodes: cluster.sshNodes.filter(n => n.role === 'control-plane'), workerNodes: cluster.sshNodes.filter(n => n.role !== 'control-plane') }
     const nodes = [...(cluster.masterNodes || []).map(n => ({ ...n, role: 'control-plane' })), ...(cluster.workerNodes || []).map(n => ({ ...n, role: 'worker' }))]
     const out = []
     for (let i = 0; i < nodes.length; i += 4) {
@@ -253,6 +257,15 @@ export async function scanNodes(cluster, onProgress = () => { }) {
 }
 
 export async function scanControlPlane(cluster, { cis = true } = {}) {
+    // an imported cluster: the Kubernetes checks through its API (no host files, no kube-bench)
+    if (usesApi(cluster)) {
+        const sh = await connectCluster(cluster)
+        try {
+            const r = await sh.execCommand(masterScript({ cis: false }), { timeoutMs: 120e3 })
+            if (!String(r.stdout).includes('@@APISERVER')) throw new Error(`The cluster did not answer the scan: ${(r.stderr || '').trim().split('\n').pop() || 'no answer'}`)
+            return { ...parseMaster(r.stdout), apiserver: null, certs: null, kubeBench: { ran: false, error: 'not on an imported cluster' } }
+        } finally { sh.dispose?.() }
+    }
     const master = cluster.masterNodes?.[0]
     if (!master) throw new Error('This cluster has no control-plane node')
     const text = await onNode(master, masterScript({ cis }), cis ? 360e3 : 120e3)

@@ -261,7 +261,7 @@ const velero = {
     },
     // the keys KubeEZ handed over (/etc/kubeez/velero.env) → the cluster Secret
     pre: () => [
-        'CFG=/etc/kubeez/velero.env',
+        'CFG=${KUBEEZ_ROOT:-}/etc/kubeez/velero.env',
         '[ -f "$CFG" ] || fail NOT_CONFIGURED "Volume backups have no storage settings on this node." "Save the settings again under Backups → Volume Backups."',
         'while IFS= read -r line; do k="${line%%=*}"; v="${line#*=}"; case "$k" in VB_ACCESS|VB_SECRET) printf -v "$k" "%s" "$(printf "%s" "$v" | base64 -d 2>/dev/null)" ;; esac; done < "$CFG"',
         'rm -f "$CFG"',
@@ -620,7 +620,8 @@ const explorer = {
         script: [
             `BP="/api/clusters/${ctx.clusterId}/explorer"`,
             'IP=$(kubectl -n kubeez-explorer get svc kubeez-explorer -o jsonpath=\'{.spec.clusterIP}\' 2>/dev/null); CODE=""',
-            'for _ in $(seq 1 24); do CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 5 "http://$IP:9280${BP}/api/health" 2>/dev/null); [ "$CODE" = "200" ] && break; sleep 5; done',
+            // (an imported cluster: KubeEZ is outside the cluster network — asked through the API server)
+            'for _ in $(seq 1 24); do if [ -n "${KUBEEZ_IMPORTED:-}" ]; then kubectl get --raw "/api/v1/namespaces/kubeez-explorer/services/http:kubeez-explorer:9280/proxy${BP}/api/health" >/dev/null 2>&1 && CODE=200; else CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 5 "http://$IP:9280${BP}/api/health" 2>/dev/null); fi; [ "$CODE" = "200" ] && break; sleep 5; done',
             '[ "$CODE" = "200" ] || fail NOT_READY "The Explorer runs but does not answer on ${IP}:9280 (HTTP ${CODE:-none})." "Check \'kubectl -n kubeez-explorer logs deploy/kubeez-explorer\', then Repair."',
             'log "✓ Explorer answers — open it from the cluster page (Explorer tab)"'
         ].join('\n')

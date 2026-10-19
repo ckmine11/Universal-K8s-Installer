@@ -30,7 +30,8 @@ KEY="${1:-}"
 export KUBECONFIG=/etc/kubernetes/admin.conf
 export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
 HELM_VERSION=${HELM_VERSION:-v4.3.0}
-DIR="/etc/kubeez/addons/$KEY"
+# (an imported cluster: KubeEZ's sandbox for it — KUBEEZ_ROOT is its session folder)
+DIR="${KUBEEZ_ROOT:-}/etc/kubeez/addons/$KEY"
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 fail() { echo "KUBEEZ_FAIL|$1|$(printf '%s' "$2" | tr '|\n' '/ ')|$(printf '%s' "$3" | tr '|\n' '/ ')"; exit 1; }
@@ -83,7 +84,11 @@ fi
 
 # ── 2b. Images scanned for critical vulnerabilities (optional: "scan" = warn | block) ──
 TRIVY_VERSION=${TRIVY_VERSION:-0.75.0}
-if [ -f "$DIR/scan" ]; then
+if [ -f "$DIR/scan" ] && [ -n "${KUBEEZ_IMPORTED:-}" ]; then
+    # no node to run Trivy on
+    [ "$(head -1 "$DIR/scan")" = block ] && fail SCAN_UNAVAILABLE "Images cannot be scanned before installing on an imported cluster (Trivy runs on a node), and the scan blocks installs." "Set the add-on scan to Warn under Compliance, or scan the images in your registry."
+    log "⚠ Images are not scanned on an imported cluster (Trivy runs on a node)"
+elif [ -f "$DIR/scan" ]; then
     SCAN_MODE=$(head -1 "$DIR/scan")
     progress 12 "Scanning the add-on's images"
     TRIVY=/usr/local/lib/kubeez/trivy
