@@ -135,10 +135,7 @@ export default function Home({ onStartNew, onScaleExisting }) {
     return (
         <div className="space-y-8">
             {/* Greeting + actions */}
-            <section className="relative overflow-hidden rounded-[28px] kz-card p-6 sm:p-8">
-                <div className="absolute -top-40 left-1/3 w-[520px] h-[300px] rounded-full bg-[radial-gradient(closest-side,rgba(128,105,251,.28),transparent)] blur-2xl pointer-events-none" />
-                <div className="absolute -bottom-32 -right-10 w-80 h-80 rounded-full bg-[radial-gradient(closest-side,rgba(56,189,248,.14),transparent)] blur-2xl pointer-events-none" />
-                <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,.06)_1px,transparent_1px)] [background-size:20px_20px] [mask-image:linear-gradient(to_bottom,#000,transparent_70%)] pointer-events-none" />
+            <section className="relative overflow-hidden kz-card p-6 sm:p-8">
                 <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
                     <div>
                         <p className="kz-eyebrow">{greeting()}, {user?.username}</p>
@@ -243,7 +240,6 @@ export default function Home({ onStartNew, onScaleExisting }) {
 function Stat({ icon: Icon, label, value, of, color, onClick }) {
     return (
         <SpotlightCard as={onClick ? 'button' : 'div'} onClick={onClick} color={color} className="!rounded-2xl text-left p-4 w-full">
-            <div className="absolute -top-12 -right-10 w-32 h-32 rounded-full blur-2xl pointer-events-none" style={{ background: `radial-gradient(closest-side, rgba(${color},.28), transparent)` }} />
             <Icon className="relative w-4 h-4" style={{ color: `rgb(${color})` }} />
             <div className="relative mt-3 text-[32px] leading-none font-semibold tracking-tight text-white tabular-nums">
                 <CountUp value={value} duration={1.2} colorScheme="custom" />{of != null && <span className="text-lg text-slate-500">/{of}</span>}

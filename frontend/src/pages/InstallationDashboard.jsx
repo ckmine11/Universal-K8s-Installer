@@ -995,7 +995,6 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
                     {/* Node Health Monitor */}
                     <div className="glass rounded-[32px] p-8 border border-white/5 relative overflow-hidden">
-                        <div className="absolute -top-10 -right-10 w-40 h-40 bg-green-500/10 blur-3xl rounded-full"></div>
                         <div className="flex items-center justify-between mb-8">
                             <div className="flex items-center space-x-3">
                                 <div className="p-2 bg-green-500/20 rounded-lg">

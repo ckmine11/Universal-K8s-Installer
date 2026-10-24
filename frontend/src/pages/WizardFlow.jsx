@@ -346,7 +346,6 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
         return (
             <div className="max-w-2xl mx-auto py-16 px-4">
                 <div className="kz-card relative overflow-hidden rounded-[32px] p-10 text-center">
-                    <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[460px] h-[260px] rounded-full bg-[radial-gradient(closest-side,rgba(128,105,251,.3),transparent)] blur-2xl pointer-events-none" />
                     <div className="relative inline-flex p-4 rounded-2xl border border-white/10 bg-[#15151c] shadow-[inset_0_1px_0_rgba(255,255,255,.08),0_12px_30px_-12px_rgba(128,105,251,.7)] mb-6">
                         <Wifi className="w-9 h-9 text-blue-300" />
                     </div>

@@ -53,7 +53,6 @@ function CopyButton({ text, className = '' }) {
 function PrerequisiteBanner() {
     return (
         <div className="kz-card relative overflow-hidden rounded-3xl p-6 mb-8">
-            <div className="absolute -top-24 -left-10 w-80 h-48 rounded-full bg-[radial-gradient(closest-side,rgba(128,105,251,.22),transparent)] blur-2xl pointer-events-none" />
             <div className="relative flex items-start gap-4">
                 <div className="p-2.5 rounded-2xl border border-white/10 bg-[#15151c] shadow-[inset_0_1px_0_rgba(255,255,255,.08)] shrink-0 mt-0.5">
                     <Info className="w-5 h-5 text-blue-300" />
@@ -510,7 +509,6 @@ export default function AgentNodes() {
                 <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="relative glass rounded-3xl border border-emerald-500/20 bg-gradient-to-r from-emerald-500/5 via-blue-500/5 to-purple-500/5 p-8 overflow-hidden">
                         {/* Animated glow */}
-                        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" />
                         <div className="absolute bottom-0 left-0 w-60 h-60 bg-blue-500/10 rounded-full blur-[80px] pointer-events-none" />
 
                         <div className="relative z-10 flex items-center justify-between">

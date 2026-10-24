@@ -178,8 +178,6 @@ function InstalledBackups({ clusterId, clusterName, masterIp, canManage, explore
         <div className="space-y-6">
             {/* ── Overview ── */}
             <div className="glass rounded-2xl border border-white/8 p-6 relative overflow-hidden">
-                <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-24 -left-16 w-72 h-72 rounded-full bg-violet-500/10 blur-3xl pointer-events-none" />
                 <div className="relative flex flex-col lg:flex-row gap-6">
                     <div className="flex items-center gap-5 lg:w-80 shrink-0">
                         <ScoreRing score={score} />

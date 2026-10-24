@@ -65,7 +65,6 @@ export default function ExplorerTab({ clusterId, installed, canInstall, level = 
     if (state === 'absent' || (state === 'error' && !installed)) {
         return (
             <div className="glass rounded-2xl border border-white/8 p-8 relative overflow-hidden">
-                <div className="absolute -top-24 -right-20 w-80 h-80 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
                 <div className="relative max-w-3xl">
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20"><Compass className="w-6 h-6 text-cyan-400" /></div>

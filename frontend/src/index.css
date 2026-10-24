@@ -12,17 +12,17 @@
    public pages; the console stays light and fast.
    ════════════════════════════════════════════════════════════════════ */
 :root {
-  --kz-bg: #08080b;
-  --kz-surface: rgba(20, 20, 26, 0.66);
-  --kz-surface-strong: rgba(22, 22, 29, 0.9);
-  --kz-border: rgba(255, 255, 255, 0.07);
+  --kz-bg: #08090a;
+  --kz-surface: #0f1012;
+  --kz-surface-strong: #141518;
+  --kz-border: rgba(255, 255, 255, 0.075);
   --kz-border-strong: rgba(255, 255, 255, 0.12);
-  --kz-highlight: rgba(255, 255, 255, 0.07);
+  --kz-highlight: rgba(255, 255, 255, 0.05);
   --kz-iris: #8069fb;
   --kz-sapphire: #4f7dff;
   --kz-aqua: #38bdf8;
-  --kz-text: #ededf1;
-  --kz-muted: #90909f;
+  --kz-text: #eeeff1;
+  --kz-muted: #8f949c;
 
   /* kept for older components */
   --kz-cyan: var(--kz-aqua);
@@ -56,6 +56,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* keyboard focus: always visible, never on mouse clicks */
+:focus-visible { outline: 2px solid #9a87ff; outline-offset: 2px; }
+.kz-input:focus-visible { outline: none; }
+
 ::selection { background: rgba(128, 105, 251, 0.35); color: #fff; }
 
 h1, h2, h3, .heading-font {
@@ -68,13 +72,20 @@ code, pre, kbd, .font-mono { font-family: 'Geist Mono Variable', 'Geist Mono', '
 /* the italic serif accent of the public pages ("calm as a cloud") */
 .kz-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
 
-/* ── Page background (rendered once in <AuroraBackground/>) ───────────── */
+/* ── Page background (rendered once in <AuroraBackground/>) ─────────────
+   Console: one still, faint light at the top — calm and free to draw.
+   .kz-aurora-vivid (sign-in page): the moving iris light. */
 .kz-aurora {
   position: fixed;
   inset: 0;
   z-index: -10;
   overflow: hidden;
   pointer-events: none;
+  background:
+    radial-gradient(1100px 380px at 50% -160px, rgba(128, 105, 251, 0.10), transparent 70%),
+    var(--kz-bg);
+}
+.kz-aurora-vivid {
   background:
     radial-gradient(900px 480px at 50% -12%, rgba(128, 105, 251, 0.16), transparent 70%),
     radial-gradient(700px 420px at 92% 0%, rgba(79, 125, 255, 0.08), transparent 70%),
@@ -116,60 +127,54 @@ code, pre, kbd, .font-mono { font-family: 'Geist Mono Variable', 'Geist Mono', '
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); background-clip: padding-box; }
 
-/* ── Glass surfaces ────────────────────────────────────────────────────── */
+/* ── Surfaces ──────────────────────────────────────────────────────────
+   Solid, not frosted: a near-black page, a slightly lighter surface, a crisp
+   1px border and a faint top highlight. (No backdrop blur — it was drawn for
+   every card on every scroll frame.) */
 .glass {
   background: var(--kz-surface);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
-  backdrop-filter: blur(16px) saturate(130%);
   border: 1px solid var(--kz-border);
-  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 24px 60px -30px rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 16px 40px -28px rgba(0, 0, 0, 0.9);
 }
 
 .glass-card {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.01) 100%), var(--kz-surface);
-  -webkit-backdrop-filter: blur(14px) saturate(130%);
-  backdrop-filter: blur(14px) saturate(130%);
+  background: var(--kz-surface);
   border: 1px solid var(--kz-border);
-  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 16px 40px -24px rgba(0, 0, 0, 0.8);
-  transition: transform .35s cubic-bezier(.2, .8, .2, 1), border-color .35s, box-shadow .35s;
+  box-shadow: inset 0 1px 0 0 var(--kz-highlight);
+  transition: border-color .2s, background-color .2s;
 }
 
 .glass-card:hover {
-  border-color: rgba(128, 105, 251, 0.3);
-  transform: translateY(-3px);
-  box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 0 0 1px rgba(128, 105, 251, .08), 0 24px 60px -24px rgba(128, 105, 251, 0.35);
+  border-color: var(--kz-border-strong);
+  background: var(--kz-surface-strong);
 }
 
 @layer components {
-  /* Card: matte glass, hairline highlight on the top edge */
+  /* Card: a solid surface with a crisp border */
   .kz-card {
-    @apply relative rounded-3xl;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.008)), var(--kz-surface);
-    -webkit-backdrop-filter: blur(16px) saturate(130%);
-    backdrop-filter: blur(16px) saturate(130%);
+    @apply relative rounded-2xl;
+    background: var(--kz-surface);
     border: 1px solid var(--kz-border);
-    box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 20px 50px -28px rgba(0, 0, 0, 0.85);
+    box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 12px 32px -24px rgba(0, 0, 0, 0.9);
   }
   .kz-card-hover {
-    @apply transition-all duration-300;
+    @apply transition-colors duration-200;
   }
   .kz-card-hover:hover {
-    border-color: rgba(128, 105, 251, 0.3);
-    box-shadow: inset 0 1px 0 0 var(--kz-highlight), 0 24px 60px -24px rgba(128, 105, 251, 0.3);
-    transform: translateY(-2px);
+    border-color: var(--kz-border-strong);
+    background: var(--kz-surface-strong);
   }
 
   .kz-btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[.97] disabled:opacity-50 disabled:pointer-events-none;
   }
+  /* flat, solid: the one colourful thing on a screen is the action */
   .kz-btn-primary {
     @apply kz-btn text-white;
-    background: linear-gradient(135deg, #8069fb 0%, #5d74ff 60%, #3f8cff 100%);
-    background-size: 160% 160%;
-    background-position: 0% 50%;
-    box-shadow: 0 10px 30px -12px rgba(128, 105, 251, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    background: #6b4ff0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.4);
   }
-  .kz-btn-primary:hover { background-position: 100% 50%; box-shadow: 0 12px 36px -10px rgba(128, 105, 251, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
+  .kz-btn-primary:hover { background: #7a62f7; }
   /* the bright "cinematic" call to action of the public pages */
   .kz-btn-light {
     @apply kz-btn text-[#0b0b0f];
@@ -182,14 +187,15 @@ code, pre, kbd, .font-mono { font-family: 'Geist Mono Variable', 'Geist Mono', '
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--kz-border-strong);
   }
-  .kz-btn-ghost:hover { background: rgba(255, 255, 255, 0.08); }
+  .kz-btn-ghost:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.18); }
 
   .kz-input {
     @apply w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition-all;
-    background: rgba(0, 0, 0, 0.35);
+    background: #0b0c0e;
     border: 1px solid var(--kz-border-strong);
   }
-  .kz-input:focus { border-color: rgba(128, 105, 251, 0.65); box-shadow: 0 0 0 4px rgba(128, 105, 251, 0.14); }
+  .kz-input:hover { border-color: rgba(255, 255, 255, 0.18); }
+  .kz-input:focus { border-color: #8069fb; box-shadow: 0 0 0 3px rgba(128, 105, 251, 0.22); }
 
   .kz-label { @apply block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 mb-1.5; }
   .kz-chip { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold; border: 1px solid var(--kz-border-strong); background: rgba(255,255,255,.04); }

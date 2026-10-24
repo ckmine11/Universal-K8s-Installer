@@ -153,9 +153,9 @@ export default function AppShell({ children }) {
 
     const sidebar = (mobile) => (
         <div className={`flex h-full flex-col ${mobile ? 'w-72' : collapsed ? 'w-[76px]' : 'w-64'} transition-[width] duration-300`}>
-            <div className={`flex items-center gap-3 px-4 h-16 shrink-0 ${collapsed && !mobile ? 'justify-center px-0' : ''}`}>
+            <div className={`flex items-center gap-3 px-4 h-14 shrink-0 ${collapsed && !mobile ? 'justify-center px-0' : ''}`}>
                 <Link to="/" className="flex items-center gap-2.5 group" aria-label="KubeEZ home">
-                    <LogoMark className="w-9 h-9 drop-shadow-[0_0_18px_rgba(128,105,251,.55)] group-hover:rotate-[30deg] transition-transform duration-700" />
+                    <LogoMark className="w-8 h-8 group-hover:rotate-[30deg] transition-transform duration-700" />
                     {(!collapsed || mobile) && <LogoWord className="text-lg" />}
                 </Link>
                 {mobile && <button onClick={() => setMobileOpen(false)} className="ml-auto p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" aria-label="Close menu"><X className="w-5 h-5" /></button>}
@@ -170,10 +170,10 @@ export default function AppShell({ children }) {
                 </button>
             )}
 
-            <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-5" aria-label="Main">
+            <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-4" aria-label="Main">
                 {sections.map(s => (
                     <div key={s.title}>
-                        {(!collapsed || mobile) ? <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-600">{s.title}</div> : <div className="kz-divider mx-2 mb-2" />}
+                        {(!collapsed || mobile) ? <div className="px-2.5 pb-1 text-[11.5px] font-medium text-slate-500">{s.title}</div> : <div className="kz-divider mx-2 mb-2" />}
                         <ul className="space-y-1">
                             {s.items.map(it => <SideLink key={it.label} item={it} compact={collapsed && !mobile} location={location} />)}
                         </ul>
@@ -197,8 +197,8 @@ export default function AppShell({ children }) {
         <div className="min-h-screen flex">
             <AuroraBackground />
             {/* Desktop sidebar */}
-            <aside className="hidden lg:block sticky top-0 h-screen shrink-0 p-3 pr-0 z-40">
-                <div className="h-full rounded-[22px] border border-white/[0.07] bg-[#0e0e13]/75 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,.06),0_30px_80px_-40px_rgba(0,0,0,.9)]">
+            <aside className="hidden lg:block sticky top-0 h-screen shrink-0 z-40">
+                <div className="h-full border-r border-white/[0.07] bg-[#0b0c0e]">
                     {sidebar(false)}
                 </div>
             </aside>
@@ -207,7 +207,7 @@ export default function AppShell({ children }) {
             {mobileOpen && (
                 <div className="lg:hidden fixed inset-0 z-[60]">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-                    <aside className="absolute inset-y-0 left-0 border-r border-white/[0.08] bg-[#0b0b0f]/95 backdrop-blur-2xl kz-rise">
+                    <aside className="absolute inset-y-0 left-0 border-r border-white/[0.08] bg-[#0b0c0e] kz-rise">
                         {sidebar(true)}
                     </aside>
                 </div>
@@ -215,13 +215,13 @@ export default function AppShell({ children }) {
 
             <div className="flex-1 min-w-0 flex flex-col">
                 {/* Top bar */}
-                <header className="sticky top-0 z-30 h-16 flex items-center gap-3 px-4 sm:px-6 lg:px-8 bg-[#08080b]/55 backdrop-blur-2xl [mask-image:linear-gradient(#000_85%,transparent)]">
+                <header className="sticky top-0 z-30 h-14 flex items-center gap-3 px-4 sm:px-6 lg:px-8 border-b border-white/[0.06] bg-[#08090a]/85 backdrop-blur-md">
                     <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 -ml-2 rounded-lg text-slate-300 hover:bg-white/5" aria-label="Open menu"><Menu className="w-5 h-5" /></button>
                     <Link to="/" className="lg:hidden" aria-label="KubeEZ home"><LogoMark className="w-8 h-8" /></Link>
                     <h1 className="hidden sm:block font-display text-[15px] font-medium text-slate-300 truncate">{title}</h1>
 
                     <button onClick={() => setPaletteOpen(true)}
-                        className="ml-auto sm:ml-6 flex items-center gap-2.5 rounded-full border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/15 px-4 py-2 text-sm text-slate-500 transition w-full max-w-xs min-w-0"
+                        className="ml-auto sm:ml-6 flex items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/15 px-3 py-1.5 text-[13px] text-slate-500 transition w-full max-w-xs min-w-0"
                         aria-label="Search">
                         <Search className="w-4 h-4" />
                         <span className="flex-1 text-left truncate">Search clusters, pages…</span>
@@ -261,15 +261,14 @@ function SideLink({ item, compact, location }) {
             <NavLink to={item.to} end={item.end} title={compact ? item.label : undefined}
                 className={({ isActive }) => {
                     const active = custom ?? isActive
-                    return `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${compact ? 'justify-center px-0' : ''} ${active
-                        ? 'text-white bg-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,.06),inset_0_0_0_1px_rgba(255,255,255,.05)]'
-                        : 'text-slate-400 hover:text-white hover:bg-white/[0.035]'}`
+                    return `group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13.5px] font-medium transition-colors ${compact ? 'justify-center px-0' : ''} ${active
+                        ? 'text-white bg-white/[0.07]'
+                        : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.04]'}`
                 }}>
                 {({ isActive }) => {
                     const active = custom ?? isActive
                     return <>
-                        {active && <span className="absolute -left-[10px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-blue-400 shadow-[0_0_12px_2px_rgba(128,105,251,.7)]" />}
-                        <Icon className={`w-[18px] h-[18px] shrink-0 transition-colors ${active ? 'text-blue-300 drop-shadow-[0_0_8px_rgba(128,105,251,.6)]' : 'text-slate-500 group-hover:text-slate-300'}`} />
+                                                <Icon className={`w-4 h-4 shrink-0 transition-colors ${active ? 'text-blue-300' : 'text-slate-500 group-hover:text-slate-300'}`} />
                         {!compact && <span className="truncate">{item.label}</span>}
                         {!!item.badge && <span className={`${compact ? 'absolute top-1 right-1' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-[10px] font-bold text-white flex items-center justify-center`}>{item.badge > 9 ? '9+' : item.badge}</span>}
                     </>

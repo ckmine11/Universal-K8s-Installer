@@ -274,7 +274,6 @@ export default function Incidents() {
 function Stat({ icon: Icon, label, value, sub, tone }) {
     return (
         <div className="relative overflow-hidden kz-card !rounded-2xl p-4">
-            <div className={`absolute -top-10 -right-8 w-28 h-28 rounded-full bg-gradient-to-br ${tone} to-transparent blur-2xl`} />
             <Icon className="relative w-4 h-4 text-slate-400" />
             <div className="relative mt-3 font-display text-3xl font-bold text-white tabular-nums">{value}</div>
             <div className="relative text-xs font-semibold text-slate-300">{label}</div>

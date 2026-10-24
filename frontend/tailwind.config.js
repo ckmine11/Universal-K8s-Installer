@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 
-// KubeEZ "Obsidian Iris" theme.
+// KubeEZ "Midnight" theme (after Linear / Vercel: neutral near-black, crisp
+// borders, colour only where it means something).
 // The whole app is built with Tailwind's colour names, so the theme remaps
 // them in one place: `blue` becomes iris (the brand violet-blue), `slate`
 // becomes graphite (a neutral grey on near-black). Emerald / amber / red keep
@@ -19,17 +20,18 @@ const iris = {
     950: '#221852',
 }
 const graphite = {
-    50: '#f7f7f9',
-    100: '#ededf1',
-    200: '#dadae1',
-    300: '#babac6',
-    400: '#90909f',
-    500: '#6d6d7b',
-    600: '#51515d',
-    700: '#3a3a44',
-    800: '#25252d',
-    900: '#16161b',
-    950: '#0b0b0f',
+    // neutral (untinted) greys, Linear-style; 400 on the page = 6:1, 500 = 4.5:1
+    50: '#f7f8f8',
+    100: '#eeeff1',
+    200: '#d6d8dc',
+    300: '#b6b9bf',
+    400: '#8f949c',
+    500: '#71757d',
+    600: '#4f5258',
+    700: '#36383d',
+    800: '#232428',
+    900: '#151619',
+    950: '#0c0d0f',
 }
 
 export default {
@@ -52,7 +54,7 @@ export default {
                 primarylw: iris[500],
                 secondary: { DEFAULT: graphite[400], foreground: graphite[100] },
                 foreground: graphite[100],
-                background: '#08080b',
+                background: '#08090a',
                 k8s: {
                     blue: '#326CE5',
                     lightblue: '#4A90E2',
