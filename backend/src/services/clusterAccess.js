@@ -83,8 +83,18 @@ export function capabilities(c) {
         out.scale = kubeadm ? { ok: true } : { ok: false, why: other }
         out.resume = { ok: false, why: NODE_FEATURES.resume }
     }
+    // a managed cloud cluster: node pools and upgrades through its provider's API
+    if (isImported(c) && CLOUD_POOLS.includes(c.provider)) {
+        out.cloudPools = c.cloud?.creds ? { ok: true } : { ok: false, why: 'Connect the cloud account (Connected clusters → this cluster → Node pools & upgrades) to see and scale node pools and upgrade Kubernetes from KubeEZ.' }
+        if (api) {
+            out.upgrade = { ok: false, why: c.cloud?.creds ? 'This cluster is upgraded through its cloud account: Connected clusters → this cluster → Node pools & upgrades.' : 'Upgrade it from KubeEZ by connecting its cloud account (Connected clusters → this cluster → Node pools & upgrades), or in the provider console.', cloud: true }
+            out.scale = { ok: false, why: c.cloud?.creds ? 'Nodes come from the node pools: Connected clusters → this cluster → Node pools & upgrades.' : 'Scale its node pools from KubeEZ by connecting its cloud account (Connected clusters → this cluster → Node pools & upgrades), or in the provider console.', cloud: true }
+        }
+    }
     return out
 }
+// managed Kubernetes whose API KubeEZ speaks (services/cloud/providers.js)
+const CLOUD_POOLS = ['eks', 'aks', 'gke', 'oke', 'doks', 'lke']
 export const can = (c, feature) => capabilities(c)[feature]?.ok !== false
 export function requireCapability(c, feature) {
     const cap = capabilities(c)[feature]

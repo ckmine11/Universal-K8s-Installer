@@ -7,6 +7,7 @@ import { useToast } from '../ToastProvider'
 import { call, CopyBlock, ProviderBadge, StatusDot, FeatureList, METHOD_LABEL, LEVEL_LABEL, ago } from './shared'
 import Guide from './Guide'
 import SshNodes from './SshNodes'
+import CloudAccount from './CloudAccount'
 
 const groupOf = (providers, id) => providers.find(p => p.id === id)?.group || 'other'
 
@@ -160,7 +161,7 @@ export function ClusterConnection({ providers }) {
                         <div className="space-y-2">
                             <p className="text-[11px] uppercase tracking-wider text-slate-500">Nodes</p>
                             {groupOf(providers, c.provider) === 'cloud'
-                                ? <p className="flex items-start gap-1.5 text-[11px] text-slate-400"><Server className="w-3.5 h-3.5 mt-0.5 shrink-0" />The provider runs the control plane — etcd backups and upgrades happen there.</p>
+                                ? <p className="flex items-start gap-1.5 text-[11px] text-slate-400"><Server className="w-3.5 h-3.5 mt-0.5 shrink-0" />{c.cloud?.supported ? 'The provider runs the control plane and etcd. Node pools and upgrades: the cloud account below.' : 'The provider runs the control plane — etcd backups, upgrades and node pools happen in its console.'}</p>
                                 : <SshNodes c={c} onChanged={load} />}
                         </div>
                         <div className="space-y-2 border-t border-white/5 pt-4">
@@ -175,6 +176,7 @@ export function ClusterConnection({ providers }) {
                     </div>
                 )}
             </div>
+            <CloudAccount c={c} onChanged={load} />
             {c.nodes?.length > 0 && (
                 <div className="kz-card p-5 overflow-x-auto">
                     <h3 className="mb-3 text-sm font-semibold text-white">Nodes (as the cluster reports them)</h3>

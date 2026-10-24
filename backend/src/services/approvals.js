@@ -19,7 +19,7 @@ import { scheduleOrg } from './namespaceAccess.js'
 // the actions that can need a second person — and the route that does each
 export const PROTECTED_ACTIONS = {
     'cluster:delete':  { label: 'Remove a cluster from KubeEZ', permission: 'cluster:delete', route: (id) => new RegExp(`^DELETE /api/clusters/${id}$`) },
-    'cluster:upgrade': { label: 'Upgrade Kubernetes', permission: 'cluster:upgrade', route: (id) => new RegExp(`^POST /api/clusters/${id}/upgrade$`) },
+    'cluster:upgrade': { label: 'Upgrade Kubernetes', permission: 'cluster:upgrade', route: (id) => new RegExp(`^POST /api/(clusters/${id}/upgrade|connect/clusters/${id}/cloud/upgrade|connect/clusters/${id}/cloud/pools/[^/]+/upgrade)$`) },
     'etcd:restore':    { label: 'Restore an etcd snapshot', permission: 'cluster:upgrade', route: (id) => new RegExp(`^POST /api/clusters/${id}/etcd/restore$`) },
     'etcd:recover':    { label: 'Rebuild a lost control-plane', permission: 'cluster:upgrade', route: (id) => new RegExp(`^POST /api/clusters/${id}/etcd/recover$`) },
     'addon:uninstall': { label: 'Uninstall or reinstall an add-on', permission: 'addon:install', route: (id) => new RegExp(`^POST /api/clusters/${id}/addons/[a-z0-9-]+/(uninstall|reinstall)$`) },
@@ -40,7 +40,11 @@ const pathOf = (url) => String(url || '').split('?')[0]
 function summaryOf(action, cluster, path, body) {
     const name = cluster?.clusterName || cluster?.id
     switch (action) {
-        case 'cluster:upgrade': return `Upgrade ${name} to Kubernetes ${body?.targetVersion || 'the next version'}`
+        case 'cluster:upgrade': {
+            const pool = path.match(/\/cloud\/pools\/([^/]+)\/upgrade$/)
+            if (pool) return `Upgrade node pool ${decodeURIComponent(pool[1])} of ${name}${body?.targetVersion ? ` to Kubernetes ${body.targetVersion}` : ''}`
+            return `Upgrade ${name} to Kubernetes ${body?.targetVersion || 'the next version'}`
+        }
         case 'etcd:restore': return `Restore ${name} from ${body?.filename || 'a snapshot'}`
         case 'etcd:recover': return `Rebuild the control-plane of ${name}${body?.filename ? ` from ${body.filename}` : ''}`
         case 'addon:uninstall': { const m = path.match(/addons\/([a-z0-9-]+)\/(uninstall|reinstall)/); return `${m?.[2] === 'reinstall' ? 'Reinstall' : 'Uninstall'} ${m?.[1] || 'an add-on'} on ${name}` }

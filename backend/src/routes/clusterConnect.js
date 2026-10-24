@@ -10,6 +10,8 @@ import { canSeeCluster } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
 import { encrypt } from '../utils/cryptoUtils.js'
 import { auditLog } from '../services/auditLog.js'
+import { requireApproval } from '../services/approvals.js'
+import { cloudView, connectCloud, disconnectCloud, cloudOverview, scalePool, upgradeCluster, upgradePool } from '../services/cloud/cloudAccount.js'
 
 // "Connected clusters": add an existing cluster (cloud or on-prem), see how
 // each one is reached, change its access, reconnect or disconnect it.
@@ -69,7 +71,7 @@ async function view(c) {
         sshNodes: [...(c.masterNodes || []).map(n => ({ ...n, role: 'control-plane' })), ...(c.workerNodes || []).map(n => ({ ...n, role: 'worker' })), ...(c.sshNodes || [])].map(n => ({ ip: n.ip, hostname: n.hostname || null, role: n.role, username: n.username })),
         status, lastOk: a.lastOk || null, checkedAt: a.checkedAt || null, lastError: a.lastError || null, lastHint: a.lastHint || null,
         connectedAt: a.connectedAt || c.importedAt || null, agentId: a.agentId || null, agentOnline, labels: c.labels || {},
-        features: capabilities(c)
+        features: capabilities(c), cloud: cloudView(c)
     }
 }
 async function ownCluster(req, res) {
@@ -171,6 +173,36 @@ router.put('/clusters/:id/ssh', requirePermission('cluster:delete'), async (req,
 router.delete('/clusters/:id/ssh', requirePermission('cluster:delete'), async (req, res) => {
     const c = await ownCluster(req, res); if (!c) return
     try { await removeSsh(c, req.user); res.json(await view((await clusterStore.getClusters()).find(x => x.id === c.id))) } catch (e) { fail(res, e) }
+})
+
+// ── the cloud account: node pools and upgrades through the provider's API ──
+router.get('/clusters/:id/cloud', requirePermission('cluster:view'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    res.json(cloudView(c))
+})
+router.put('/clusters/:id/cloud', requirePermission('cluster:delete'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    try { await connectCloud(c, req.body, { ...req.user, ip: req.ip }); res.json(cloudView((await clusterStore.getClusters()).find(x => x.id === c.id))) } catch (e) { fail(res, e) }
+})
+router.delete('/clusters/:id/cloud', requirePermission('cluster:delete'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    try { await disconnectCloud(c, req.user); res.json(cloudView((await clusterStore.getClusters()).find(x => x.id === c.id))) } catch (e) { fail(res, e) }
+})
+router.get('/clusters/:id/cloud/overview', requirePermission('cluster:view'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    try { res.json(await cloudOverview(c)) } catch (e) { fail(res, e) }
+})
+router.post('/clusters/:id/cloud/pools/:pool/scale', requirePermission('cluster:scale'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    try { res.json(await scalePool(c, req.params.pool, req.body, req.user)) } catch (e) { fail(res, e) }
+})
+router.post('/clusters/:id/cloud/upgrade', requirePermission('cluster:upgrade'), requireApproval('cluster:upgrade'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    try { res.json(await upgradeCluster(c, req.body?.targetVersion, req.user)) } catch (e) { fail(res, e) }
+})
+router.post('/clusters/:id/cloud/pools/:pool/upgrade', requirePermission('cluster:upgrade'), requireApproval('cluster:upgrade'), async (req, res) => {
+    const c = await ownCluster(req, res); if (!c) return
+    try { res.json(await upgradePool(c, req.params.pool, req.body?.targetVersion, req.user)) } catch (e) { fail(res, e) }
 })
 
 // the KubeEZ agents running inside imported clusters
