@@ -76,3 +76,8 @@ temp/
 
 # Built by backend/build-agent.js (Dockerfile / tests) — never commit
 backend/public/agent-bundle.js
+
+# Local only: runtime data (master.key, users, clusters), Claude Code settings, launch-video output
+backend/data/
+.claude/
+brag-output/
