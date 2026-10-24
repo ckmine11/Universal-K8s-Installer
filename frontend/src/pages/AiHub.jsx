@@ -126,7 +126,7 @@ function ClusterTool({ tool }) {
                 <Server className="w-4 h-4 text-slate-400" />
                 <label className="text-xs text-slate-400" htmlFor="ai-cluster-pick">Cluster</label>
                 <select id="ai-cluster-pick" className="kz-input !w-auto !py-1.5" value={id} onChange={e => setParams({ cluster: e.target.value }, { replace: true })}>
-                    {clusters.map(c => <option key={c.id} value={c.id}>{c.clusterName} · v{c.k8sVersion}</option>)}
+                    {clusters.map(c => <option key={c.id} value={c.id}>{c.clusterName} · v{String(c.k8sVersion || "").replace(/^v/, "")}</option>)}
                 </select>
                 <Link to={`/cluster/${id}`} className="text-xs text-blue-300 hover:underline">Open cluster →</Link>
             </div>

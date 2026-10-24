@@ -333,3 +333,26 @@ button.uppercase.font-black, a.uppercase[class*="py-"].font-black { font-weight:
 
 /* search inputs: no browser clear button (the pages have their own) */
 input[type="search"]::-webkit-search-cancel-button, input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+
+/* ── landing page effects (all stop under prefers-reduced-motion) ── */
+.kz-hero { --mx: 50%; --my: 30%; }
+.kz-hero-glow { background: radial-gradient(600px circle at var(--mx) var(--my), rgba(128, 105, 251, 0.13), transparent 60%); transition: background 0.2s; }
+.kz-ecg { stroke-dasharray: 320; stroke-dashoffset: 320; animation: kzEcg 2.6s linear infinite; filter: drop-shadow(0 0 6px currentColor); }
+@keyframes kzEcg { to { stroke-dashoffset: -320; } }
+.kz-tab-timer { animation: kzTabTimer 7.5s linear forwards; }
+@keyframes kzTabTimer { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.kz-flow { animation: kzFlow 1.8s linear infinite; }
+@keyframes kzFlow { from { left: -35%; } to { left: 100%; } }
+.kz-beam { position: absolute; top: -200px; width: 1px; height: 200px; background: linear-gradient(to bottom, transparent, rgba(182, 168, 255, 0.7), transparent); animation: kzBeam 7s ease-in infinite; opacity: 0; }
+@keyframes kzBeam { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; } 70% { opacity: 1; } 100% { transform: translateY(1100px); opacity: 0; } }
+.kz-shine { position: relative; overflow: hidden; }
+.kz-shine::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%); transform: translateX(-120%); animation: kzShine 3.8s ease-in-out infinite; pointer-events: none; }
+@keyframes kzShine { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+@property --kz-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+.kz-conic { background: conic-gradient(from var(--kz-angle), rgba(128, 105, 251, 0.15), #8069fb, #38bdf8, rgba(56, 189, 248, 0.15), rgba(128, 105, 251, 0.15)); animation: kzSpin 6s linear infinite; }
+@keyframes kzSpin { to { --kz-angle: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .kz-ecg { stroke-dashoffset: 0; animation: none; }
+  .kz-beam, .kz-shine::after { display: none; }
+  .kz-conic, .kz-flow, .kz-tab-timer { animation: none; }
+}

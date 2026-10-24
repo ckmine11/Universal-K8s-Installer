@@ -274,7 +274,7 @@ function ClusterCard({ c, i, status, risk, canScale, canAddons, canDelete, onOpe
                         {risk && <span title={risk.top ? `Biggest risk: ${risk.top}` : 'No known risk'} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${RISK_TONE[risk.level]?.chip || ''}`}>{RISK_TONE[risk.level]?.label} · {risk.score}</span>}
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-xs text-slate-400 flex-wrap">
-                        <span className="font-mono">v{c.k8sVersion}</span>
+                        <span className="font-mono">v{String(c.k8sVersion || "").replace(/^v/, "")}</span>
                         <span className="w-1 h-1 rounded-full bg-slate-600" />
                         {imported ? <span className="inline-flex items-center gap-1 text-sky-200"><PlugZap className="w-3 h-3" />Imported · {c.provider || 'Kubernetes'}{c.access.level === 'full' ? '' : ' · read-only'}</span> : <span className="capitalize">{c.networkPlugin}</span>}
                         {c.controlPlaneVip && <><span className="w-1 h-1 rounded-full bg-slate-600" /><span className="font-mono">VIP {c.controlPlaneVip}</span></>}

@@ -49,7 +49,7 @@ export default function Pricing() {
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-blue-500/20 rounded-full blur-[120px] pointer-events-none" />
                 <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-300/80 mb-3 relative z-10">Plans</div>
                 <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight mb-4 relative z-10">
-                    Simple, <span className="aurora-text">honest pricing</span>
+                    Simple, <span className="kz-serif aurora-text pr-1">honest pricing.</span>
                 </h1>
                 <p className="text-lg text-slate-400 max-w-2xl mx-auto relative z-10">
                     Production Kubernetes on any VPS — no DevOps engineer needed.
@@ -158,7 +158,7 @@ export default function Pricing() {
 
                     {/* Savings callout */}
                     <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl mb-4">
-                        <span className="text-emerald-400 text-xs font-black">💰 Save $200/mo vs AWS EKS</span>
+                        <span className="inline-flex items-center gap-1.5 text-emerald-400 text-xs font-black"><Zap className="w-3.5 h-3.5" aria-hidden="true" />Save $200/mo vs AWS EKS</span>
                     </div>
 
                     {isPro ? (

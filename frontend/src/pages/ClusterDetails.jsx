@@ -374,7 +374,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                             <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-2">Kubernetes Version</p>
                             <p className="text-xl font-bold text-white flex items-center">
                                 <Layers className="w-6 h-6 mr-2 text-blue-400" />
-                                v{cluster.k8sVersion}
+                                v{String(cluster.k8sVersion || "").replace(/^v/, "")}
                             </p>
                             {availableUpgrades.length > 0 && (
                                 <div className="absolute top-4 right-4">
@@ -619,7 +619,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Current Version</label>
                                 <div className="p-3 bg-white/5 rounded-xl text-white font-mono text-sm border border-white/5">
-                                    v{cluster.k8sVersion}
+                                    v{String(cluster.k8sVersion || "").replace(/^v/, "")}
                                 </div>
                             </div>
 

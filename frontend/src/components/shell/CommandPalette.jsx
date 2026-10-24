@@ -24,7 +24,7 @@ export default function CommandPalette({ open, onClose, sections, onLogout }) {
         const pages = sections.flatMap(s => s.items.map(i => ({ kind: 'Pages', label: i.label, hint: s.title, icon: i.icon, run: () => navigate(i.to) })))
         const cl = clusters.map(c => ({
             kind: 'Clusters', label: c.clusterName || c.name || c.id, icon: Server,
-            hint: [c.k8sVersion && `v${c.k8sVersion}`, c.status].filter(Boolean).join(' · '),
+            hint: [c.k8sVersion && `v${String(c.k8sVersion).replace(/^v/, "")}`, c.status].filter(Boolean).join(' · '),
             run: () => navigate(`/cluster/${c.id}`)
         }))
         const actions = [
