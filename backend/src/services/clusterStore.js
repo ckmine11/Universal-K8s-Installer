@@ -44,10 +44,33 @@ class ClusterStore {
         }))
     }
 
+    // Nearly every request reads the clusters (the permission check, then the
+    // route), and decrypting every node's login each time blocked the event
+    // loop ~9 ms per read at 50 clusters. The decrypted list is kept until the
+    // file changes (our own writes clear it; any other writer changes its
+    // mtime or size); each caller gets its own copy.
+    async _write(json) {
+        this._cache = null
+        await writeFileAtomic(CLUSTERS_FILE, json)
+        this._cache = null
+    }
+
     async getClusters() {
         try {
-            const data = await fs.promises.readFile(CLUSTERS_FILE, 'utf8')
-            const clusters = JSON.parse(data)
+            const st = await fs.promises.stat(CLUSTERS_FILE)
+            const c = this._cache
+            if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return structuredClone(c.data)
+            const data = this._decryptAll(await fs.promises.readFile(CLUSTERS_FILE, 'utf8'))
+            this._cache = { mtimeMs: st.mtimeMs, size: st.size, data }
+            return structuredClone(data)
+        } catch (error) {
+            console.error('Error reading clusters:', error)
+            return []
+        }
+    }
+
+    _decryptAll(text) {
+        const clusters = JSON.parse(text)
 
             // Decrypt sensitive data on load. Every node also carries its
             // cluster's ownerId/orgId so SSH (upgrade, etcd, health, add-ons…)
@@ -59,10 +82,6 @@ class ClusterStore {
                 workerNodes: this._decryptNodes(c.workerNodes).map(tag(c)),
                 ...(c.sshNodes ? { sshNodes: this._decryptNodes(c.sshNodes).map(tag(c)) } : {})
             }))
-        } catch (error) {
-            console.error('Error reading clusters:', error)
-            return []
-        }
     }
 
     // Serialize every read-modify-write of clusters.json (also used by
@@ -107,7 +126,7 @@ class ClusterStore {
                 rawClusters.push(encryptedArgs)
             }
 
-            await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(rawClusters, null, 2))
+            await this._write(JSON.stringify(rawClusters, null, 2))
             return true
 
         } catch (error) {
@@ -130,7 +149,7 @@ class ClusterStore {
                 if (orgId) { c.orgId = orgId; changed++ }
             }
             if (changed > 0) {
-                await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(rawClusters, null, 2))
+                await this._write(JSON.stringify(rawClusters, null, 2))
                 console.log(`[ClusterStore] Backfilled orgId on ${changed} legacy cluster(s)`)
             }
             return changed
@@ -146,7 +165,7 @@ class ClusterStore {
             if (!c) return null
             if (Object.keys(labels).length) c.labels = labels; else delete c.labels
             c.updatedAt = new Date().toISOString()
-            await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(raw, null, 2))
+            await this._write(JSON.stringify(raw, null, 2))
             return c.labels || {}
         })
     }
@@ -165,7 +184,7 @@ class ClusterStore {
             const newClusters = rawClusters.filter(c => c.id !== id)
 
             // Write back the raw (still encrypted) data
-            await writeFileAtomic(CLUSTERS_FILE, JSON.stringify(newClusters, null, 2))
+            await this._write(JSON.stringify(newClusters, null, 2))
             return true
         } catch (error) {
             console.error('Error deleting cluster:', error)

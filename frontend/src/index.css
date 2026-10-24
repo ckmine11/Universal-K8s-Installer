@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..900&family=Geist+Mono:wght@400..700&family=Instrument+Serif:ital@0;1&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -47,7 +46,7 @@
 html { -webkit-text-size-adjust: 100%; }
 
 body {
-  font-family: 'Geist', 'Inter', system-ui, sans-serif;
+  font-family: 'Geist Variable', 'Geist', 'Inter', system-ui, sans-serif;
   background-color: var(--kz-bg);
   color: var(--kz-text);
   min-height: 100vh;
@@ -60,11 +59,11 @@ body {
 ::selection { background: rgba(128, 105, 251, 0.35); color: #fff; }
 
 h1, h2, h3, .heading-font {
-  font-family: 'Geist', 'Inter', sans-serif;
+  font-family: 'Geist Variable', 'Geist', 'Inter', sans-serif;
   letter-spacing: -0.025em;
 }
 
-code, pre, kbd, .font-mono { font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; }
+code, pre, kbd, .font-mono { font-family: 'Geist Mono Variable', 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; }
 
 /* the italic serif accent of the public pages ("calm as a cloud") */
 .kz-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
@@ -238,7 +237,7 @@ code, pre, kbd, .font-mono { font-family: 'Geist Mono', 'JetBrains Mono', ui-mon
 
 /* Terminal */
 .terminal {
-  font-family: 'Geist Mono', 'JetBrains Mono', monospace;
+  font-family: 'Geist Mono Variable', 'Geist Mono', 'JetBrains Mono', monospace;
   background: #060609;
   border: 1px solid var(--kz-border-strong);
   box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6);

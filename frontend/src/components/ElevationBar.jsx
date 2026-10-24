@@ -4,6 +4,7 @@ import { Timer, Loader2, X, Ban, KeyRound } from 'lucide-react'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { useToast } from './ToastProvider'
 import useBackdropClose from './ui/useBackdropClose'
+import { whenVisible } from '../utils/whenVisible'
 
 // Temporary access on this cluster (members, not admins): ask for a role for
 // some minutes; see it waiting / active with its end; end it early.
@@ -90,7 +91,7 @@ export default function ElevationBar({ clusterId, clusterName }) {
             return list
         })
     }, [clusterId, user?.id])
-    useEffect(() => { if (!isAdmin) { load(); const t = setInterval(load, 15000); return () => clearInterval(t) } }, [load, isAdmin])
+    useEffect(() => { if (!isAdmin) { load(); const t = setInterval(whenVisible(load), 15000); return () => clearInterval(t) } }, [load, isAdmin])
 
     if (isAdmin) return null
     const active = mine.find(x => x.status === 'active')

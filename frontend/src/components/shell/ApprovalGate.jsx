@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { UserCheck, Loader2, X, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import useBackdropClose from '../ui/useBackdropClose'
+import { whenVisible } from '../../utils/whenVisible'
 
 // Two-person rule, in one place: when an action answers "needs a second
 // admin's approval" (428), this dialog asks for it (with a reason), waits for
@@ -51,7 +52,7 @@ export default function ApprovalGate() {
             if (d.status === 'approved') { setReq(d); setPhase('running'); run(ctx, d.id) }
             else if (['denied', 'expired', 'cancelled'].includes(d.status)) { setReq(d); setPhase('denied') }
         }
-        timer.current = setInterval(check, 3000)
+        timer.current = setInterval(whenVisible(check), 3000)
         return () => clearInterval(timer.current)
     }, [phase, req?.id])
 

@@ -60,10 +60,10 @@ export default {
                 }
             },
             fontFamily: {
-                sans: ['Geist', 'Inter', 'system-ui', 'sans-serif'],
-                display: ['Geist', 'Inter', 'sans-serif'],
+                sans: ['"Geist Variable"', 'Geist', 'Inter', 'system-ui', 'sans-serif'],
+                display: ['"Geist Variable"', 'Geist', 'Inter', 'sans-serif'],
                 serif: ['"Instrument Serif"', 'Georgia', 'serif'],
-                mono: ['"Geist Mono"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
+                mono: ['"Geist Mono Variable"', '"Geist Mono"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
             },
             opacity: { 3: '0.03', 8: '0.08' },
             boxShadow: {

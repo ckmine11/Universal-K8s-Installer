@@ -14,6 +14,7 @@ import UpdatesMenu from './UpdatesMenu'
 import AuroraBackground from './AuroraBackground'
 import ChangePasswordDialog from './ChangePasswordDialog'
 import ApprovalGate from './ApprovalGate'
+import { whenVisible } from '../../utils/whenVisible'
 
 const ROLE_META = {
     superadmin: { label: 'Super Admin', icon: Crown, tone: 'text-violet-300 bg-violet-500/10 border-violet-400/20' },
@@ -131,7 +132,7 @@ export default function AppShell({ children }) {
             } catch { }
         }
         load()
-        const t = setInterval(load, 30000)
+        const t = setInterval(whenVisible(load), 30000)
         return () => { stop = true; clearInterval(t) }
     }, [user?.id, location.pathname])
 
@@ -146,7 +147,7 @@ export default function AppShell({ children }) {
             } catch { }
         }
         load()
-        const t = setInterval(load, 30000)
+        const t = setInterval(whenVisible(load), 30000)
         return () => { stop = true; clearInterval(t) }
     }, [])
 

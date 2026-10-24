@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Sparkles, ArrowRight } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
+import { whenVisible } from '../../utils/whenVisible'
 
 // Top bar: new add-on versions on the user's clusters. KubeEZ looks them up in
 // the chart repositories every 12 hours; nothing is updated until the user
@@ -23,7 +24,7 @@ export default function UpdatesMenu() {
             } catch { }
         }
         load()
-        const t = setInterval(load, 10 * 60 * 1000)
+        const t = setInterval(whenVisible(load), 10 * 60 * 1000)
         return () => { stop = true; clearInterval(t) }
     }, [])
 

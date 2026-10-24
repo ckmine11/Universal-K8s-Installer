@@ -345,9 +345,26 @@ const BENTO = [
     { Icon: Wifi, title: 'No inbound ports', text: 'The Gateway Agent connects out from your network. Private data centres, no VPN.', color: '125,211,252', Viz: OutboundViz },
 ]
 
+// the globe is decoration: start it once the page has loaded and the browser is
+// idle, so it never competes with the first paint or the first click
+function useIdleReady(enabled) {
+    const [ready, setReady] = useState(false)
+    useEffect(() => {
+        if (!enabled) return
+        let idle, t
+        const go = () => { idle = 'requestIdleCallback' in window ? window.requestIdleCallback(() => setReady(true), { timeout: 3000 }) : setTimeout(() => setReady(true), 1200) }
+        if (document.readyState === 'complete') t = setTimeout(go, 400)
+        else window.addEventListener('load', go, { once: true })
+        return () => { window.removeEventListener('load', go); clearTimeout(t); if (idle && 'cancelIdleCallback' in window) window.cancelIdleCallback(idle) }
+    }, [enabled])
+    return ready
+}
+
 // ══ the page ═════════════════════════════════════════════════════════════════
 export default function LandingPage() {
     const reduce = useReducedMotion()
+    // not on phones: it sits behind the product window there and costs the most on low-power devices
+    const showGlobe = useIdleReady(!reduce && typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches)
     const [scrolled, setScrolled] = useState(false)
     const hero = useRef(null)
     useEffect(() => {
@@ -416,12 +433,12 @@ export default function LandingPage() {
                     <motion.span initial={reduce ? false : { opacity: 0, filter: 'blur(12px)' }} animate={{ opacity: 1, filter: 'blur(0px)' }} transition={{ duration: 1.1, delay: .55, ease: EASE }}
                         className="kz-serif aurora-text inline-block pr-2 text-[52px] sm:text-[88px] lg:text-[110px] leading-none">calm as a cloud.</motion.span>
                 </h1>
-                <Reveal delay={.5}>
+                <Reveal delay={.15}>
                     <p className="mx-auto mt-7 max-w-2xl text-base sm:text-lg text-slate-400 leading-relaxed">
                         KubeEZ installs production Kubernetes on servers you own — or connects the clusters you already run — then upgrades, backs up, heals and audits them for you.
                     </p>
                 </Reveal>
-                <Reveal delay={.6}>
+                <Reveal delay={.25}>
                     <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
                         <Link to="/login?mode=register" className="kz-btn-light kz-shine !rounded-full !px-7 !py-3.5 text-[15px] group">
                             Start free <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
@@ -436,11 +453,11 @@ export default function LandingPage() {
                 {/* globe + product */}
                 <div id="product" className="relative mx-auto mt-16 max-w-6xl scroll-mt-28">
                     <div aria-hidden="true" className="absolute left-1/2 -translate-x-1/2 -top-16 sm:-top-24 w-[480px] h-[480px] sm:w-[760px] sm:h-[760px] max-w-[120vw] opacity-70 [mask-image:radial-gradient(closest-side,#000_55%,transparent)]">
-                        <Suspense fallback={null}>
-                            <Globe className="!min-h-0 h-full" dark={1} diffuse={1.1} mapSamples={16000} mapBrightness={5} scale={1}
+                        {showGlobe && <Suspense fallback={null}>
+                            <Globe className="!min-h-0 h-full" dark={1} diffuse={1.1} mapSamples={10000} mapBrightness={5} scale={1}
                                 baseColor={[0.22, 0.2, 0.32]} markerColor={[0.62, 0.55, 1]} glowColor={[0.32, 0.27, 0.62]}
                                 markers={MARKERS} enableZoom={false} autoRotateSpeed={0.0025} theta={0.3} />
-                        </Suspense>
+                        </Suspense>}
                     </div>
                     <motion.div initial={reduce ? false : { opacity: 0, y: 60, rotateX: 18 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} transition={{ duration: 1.3, delay: .7, ease: EASE }}
                         style={{ transformPerspective: 1400 }} className="relative pt-[200px] sm:pt-[340px] text-left">

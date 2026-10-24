@@ -1,35 +1,74 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { InstallationTrackerProvider } from './context/InstallationTrackerContext'
 import ActiveInstallationIndicator from './components/ActiveInstallationIndicator'
 import IncidentNotifier from './components/IncidentNotifier'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import Login from './pages/Login'
 import AppShell from './components/shell/AppShell'
 import AuroraBackground from './components/shell/AuroraBackground'
 import { LogoMark } from './components/shell/Logo'
-import Home from './pages/Home'
-import WizardFlow from './pages/WizardFlow'
-import InstallationDashboard from './pages/InstallationDashboard'
-import ClusterDetails from './pages/ClusterDetails'
-import Docs from './pages/Docs'
-import Settings from './pages/Settings'
-import AgentNodes from './pages/AgentNodes'
-import AdminUsers from './pages/AdminUsers'
-import AdminConsole from './pages/AdminConsole'
-import Pricing from './pages/Pricing'
-import VendorPortal from './pages/VendorPortal'
-import Incidents from './pages/Incidents'
-import Fleet from './pages/Fleet'
-import AiHub from './pages/AiHub'
-import AiSettingsPage from './pages/AiSettingsPage'
-import Alerts from './pages/Alerts'
-import Compliance from './pages/Compliance'
-import Explorer from './pages/Explorer'
-import Approvals from './pages/Approvals'
-import ConnectHub from './pages/ConnectHub'
-// the public landing page (heavier: globe, motion) — only for visitors who are not signed in
+// Every page is its own chunk: a visitor downloads the landing page, a member
+// the page they open. While signed in, the everyday pages are fetched when the
+// browser is idle, so moving around stays instant.
 const LandingPage = lazy(() => import('./pages/LandingPage'))
+const Login = lazy(() => import('./pages/Login'))
+const PAGES = {
+    Home: () => import('./pages/Home'),
+    WizardFlow: () => import('./pages/WizardFlow'),
+    InstallationDashboard: () => import('./pages/InstallationDashboard'),
+    ClusterDetails: () => import('./pages/ClusterDetails'),
+    Docs: () => import('./pages/Docs'),
+    Settings: () => import('./pages/Settings'),
+    AgentNodes: () => import('./pages/AgentNodes'),
+    AdminUsers: () => import('./pages/AdminUsers'),
+    AdminConsole: () => import('./pages/AdminConsole'),
+    Pricing: () => import('./pages/Pricing'),
+    VendorPortal: () => import('./pages/VendorPortal'),
+    Incidents: () => import('./pages/Incidents'),
+    Fleet: () => import('./pages/Fleet'),
+    AiHub: () => import('./pages/AiHub'),
+    AiSettingsPage: () => import('./pages/AiSettingsPage'),
+    Alerts: () => import('./pages/Alerts'),
+    Compliance: () => import('./pages/Compliance'),
+    Explorer: () => import('./pages/Explorer'),
+    Approvals: () => import('./pages/Approvals'),
+    ConnectHub: () => import('./pages/ConnectHub'),
+}
+const page = (name) => lazy(PAGES[name])
+const Home = page('Home')
+const WizardFlow = page('WizardFlow')
+const InstallationDashboard = page('InstallationDashboard')
+const ClusterDetails = page('ClusterDetails')
+const Docs = page('Docs')
+const Settings = page('Settings')
+const AgentNodes = page('AgentNodes')
+const AdminUsers = page('AdminUsers')
+const AdminConsole = page('AdminConsole')
+const Pricing = page('Pricing')
+const VendorPortal = page('VendorPortal')
+const Incidents = page('Incidents')
+const Fleet = page('Fleet')
+const AiHub = page('AiHub')
+const AiSettingsPage = page('AiSettingsPage')
+const Alerts = page('Alerts')
+const Compliance = page('Compliance')
+const Explorer = page('Explorer')
+const Approvals = page('Approvals')
+const ConnectHub = page('ConnectHub')
+
+function prefetchPages() {
+    const run = () => ['Home', 'ClusterDetails', 'ConnectHub', 'Incidents', 'Fleet', 'AiHub', 'Explorer'].forEach(n => PAGES[n]().catch(() => { }))
+    if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 })
+    else setTimeout(run, 2500)
+}
+
+// shown in the content area for the moment a page chunk takes to arrive
+const PageFallback = () => (
+    <div className="space-y-4 animate-pulse" aria-busy="true" aria-label="Loading">
+        <div className="h-28 rounded-3xl bg-white/[0.03] border border-white/[0.05]" />
+        <div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map(i => <div key={i} className="h-36 rounded-3xl bg-white/[0.03] border border-white/[0.05]" />)}</div>
+    </div>
+)
 
 function AuthenticatedApp() {
     const navigate = useNavigate()
@@ -37,6 +76,7 @@ function AuthenticatedApp() {
     const [initialData, setInitialData] = useState(null)
     const { isAuthenticated, isLoading } = useAuth()
     const location = useLocation()
+    useEffect(() => { if (isAuthenticated) prefetchPages() }, [isAuthenticated])
 
     if (isLoading) {
         return (
@@ -53,7 +93,7 @@ function AuthenticatedApp() {
     if (!isAuthenticated) {
         // "/" is the public landing page; every other address (deep links) asks to sign in
         if (location.pathname === '/') return <Suspense fallback={<div className="min-h-screen bg-[#060608]" />}><LandingPage /></Suspense>
-        return <Login />
+        return <Suspense fallback={<div className="min-h-screen bg-[#060608]" />}><Login /></Suspense>
     }
 
     const startInstallation = (id) => {
@@ -87,6 +127,7 @@ function AuthenticatedApp() {
             <ActiveInstallationIndicator />
             <IncidentNotifier />
 
+            <Suspense fallback={<PageFallback />}>
                 <Routes>
                     <Route
                         path="/"
@@ -175,6 +216,7 @@ function AuthenticatedApp() {
                         </div>
                     } />
                 </Routes>
+            </Suspense>
         </AppShell>
     )
 }

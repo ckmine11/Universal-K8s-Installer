@@ -29,8 +29,7 @@ import {
     Database,
     LayoutGrid,
     Package, PlugZap } from 'lucide-react'
-import ClusterTopology3D from '../components/ClusterTopology3D'
-import OrbitalTerminal from '../components/OrbitalTerminal'
+import { ClusterTopology3D, OrbitalTerminal } from '../components/LazyHeavy'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
 import AddonManagerPanel from '../components/AddonManagerPanel'

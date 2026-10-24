@@ -42,11 +42,11 @@ export default function Pricing() {
     }
 
     return (
-        <div className="pb-16">
+        <div className="pb-16 overflow-x-clip">
 
             {/* Header */}
             <div className="max-w-5xl mx-auto text-center mb-10 relative">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-blue-500/20 rounded-full blur-[120px] pointer-events-none" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(600px,100%)] h-[300px] bg-blue-500/20 rounded-full blur-[120px] pointer-events-none" />
                 <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-300/80 mb-3 relative z-10">Plans</div>
                 <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight mb-4 relative z-10">
                     Simple, <span className="kz-serif aurora-text pr-1">honest pricing.</span>

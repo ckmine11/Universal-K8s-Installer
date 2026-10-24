@@ -59,7 +59,7 @@ function AccountForm({ c, onDone, onCancel }) {
         : <input type={f.secret ? 'password' : 'text'} autoComplete="off" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={cloud.connected && f.secret ? 'kept — type to replace' : f.placeholder || ''} className="kz-input mt-1 w-full !text-xs" />
     return (
         <div className="grid gap-5 lg:grid-cols-2">
-            <form onSubmit={save} className="space-y-3">
+            <form onSubmit={save} className="min-w-0 space-y-3">
                 <p className="text-xs text-slate-400">Give KubeEZ a cloud login that may only read and update this cluster. It is checked against {c.name} before it is kept, stored encrypted, and never shown again.</p>
                 <p className="text-[11px] uppercase tracking-wider text-slate-500">Where the cluster is</p>
                 {cloud.fields.ref.map(f => <label key={f.key} className="block text-xs text-slate-300">{f.label}{f.optional ? '' : ' *'}{input(f, ref[f.key], v => setRef(r => ({ ...r, [f.key]: v })))}</label>)}
@@ -72,7 +72,7 @@ function AccountForm({ c, onDone, onCancel }) {
                     {cloud.connected && <button type="button" disabled={busy} onClick={disconnect} className="kz-btn-ghost !text-xs !text-red-300 ml-auto"><Trash2 className="w-3.5 h-3.5" /> Remove account</button>}
                 </div>
             </form>
-            <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="min-w-0 space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
                 <p className="flex items-center gap-1.5 text-xs font-semibold text-white"><Info className="w-3.5 h-3.5 text-sky-300" /> Create the login in {cloud.providerName}</p>
                 {setup.intro && <p className="text-xs text-slate-400">{setup.intro}</p>}
                 {(setup.commands || []).map((cmd, i) => <CopyBlock key={i} text={cmd} multiline={cmd.includes('\n') || cmd.length > 90} />)}

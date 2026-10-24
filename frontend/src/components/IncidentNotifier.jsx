@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useToast } from './ToastProvider'
 import { useAuth, apiFetch } from '../context/AuthContext'
+import { whenVisible } from '../utils/whenVisible'
 
 // Human-friendly titles for incident reasons
 const REASON_LABEL = {
@@ -107,7 +108,7 @@ export default function IncidentNotifier() {
         }
 
         tick()
-        const timer = setInterval(tick, POLL_MS)
+        const timer = setInterval(whenVisible(tick), POLL_MS)
         return () => { cancelled = true; clearInterval(timer) }
     }, [isAuthenticated])
 

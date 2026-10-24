@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { apiFetch, useAuth } from './AuthContext'
+import { whenVisible } from '../utils/whenVisible'
 
 const InstallationTrackerContext = createContext()
 const STORAGE_KEY = 'kubeez_active_installations'
@@ -135,7 +136,7 @@ export function InstallationTrackerProvider({ children }) {
         syncFromBackend()
 
         // Poll every 4s so progress stays fresh even when not on the dashboard
-        pollRef.current = setInterval(syncFromBackend, 4000)
+        pollRef.current = setInterval(whenVisible(syncFromBackend), 4000)
         return () => { cancelled = true; clearInterval(pollRef.current) }
     }, [isAuthenticated])
 

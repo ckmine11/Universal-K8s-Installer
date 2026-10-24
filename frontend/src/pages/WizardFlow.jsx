@@ -416,13 +416,13 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                     <div className="absolute -inset-1 bg-blue-500 blur-md opacity-20 animate-pulse rounded-xl"></div>
                                 )}
                             </div>
-                            <span className={`absolute -bottom-8 text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${currentStep >= step.id ? 'text-blue-400' : 'text-slate-500'
+                            <span className={`absolute -bottom-8 hidden sm:block text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${currentStep >= step.id ? 'text-blue-400' : 'text-slate-500'
                                 }`}>
                                 {step.title}
                             </span>
                         </div>
                         {idx < steps.length - 1 && (
-                            <div className={`w-16 md:w-24 h-px mx-4 transition-colors duration-500 ${currentStep > step.id ? 'bg-blue-500' : 'bg-white/10'
+                            <div className={`w-5 sm:w-16 md:w-24 h-px mx-1.5 sm:mx-4 transition-colors duration-500 ${currentStep > step.id ? 'bg-blue-500' : 'bg-white/10'
                                 }`} />
                         )}
                     </div>

@@ -295,13 +295,13 @@ export default function AlertsPanel() {
                         ))}
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
-                        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
+                        <div className="min-w-0 rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
                             <label className="flex items-center gap-2 text-sm font-bold text-white mb-2 cursor-pointer">
                                 <input type="checkbox" checked={rules.quietHours.enabled} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, enabled: e.target.checked } }))} />
                                 <Moon className="w-4 h-4 text-indigo-300" /> Quiet hours
                             </label>
                             <p className="text-[11px] text-slate-500 mb-2">Only critical alerts (node or control plane down, failures) go out during these hours. The others are held and arrive as <b className="text-slate-300">one summary</b> when quiet hours end.</p>
-                            <div className="flex items-center gap-2 text-xs text-slate-300">
+                            <div className="flex items-center gap-2 text-xs text-slate-300 [&>input]:min-w-0 [&>input]:flex-1">
                                 <input type="time" aria-label="Quiet hours start" value={rules.quietHours.start} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, start: e.target.value } }))} className={`${input} !py-1.5 !w-36`} />
                                 to
                                 <input type="time" aria-label="Quiet hours end" value={rules.quietHours.end} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, end: e.target.value } }))} className={`${input} !py-1.5 !w-36`} />
@@ -312,14 +312,14 @@ export default function AlertsPanel() {
                             {rules.quietHours.enabled && rules.quietHours.start === rules.quietHours.end && <p className="mt-1.5 text-[11px] text-red-300">Start and end are the same time — quiet hours would never apply.</p>}
                             {rules.quietHours.enabled && <p className="mt-1.5 text-[11px] text-slate-500">Now in {rules.quietHours.timezone.replace(/_/g, ' ')}: {nowIn(rules.quietHours.timezone)}</p>}
                         </div>
-                        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
+                        <div className="min-w-0 rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
                             <p className="flex items-center gap-2 text-sm font-bold text-white mb-2"><Clock className="w-4 h-4 text-amber-300" /> Don't repeat the same alert for</p>
-                            <div className="flex items-center gap-2 text-xs text-slate-300">
+                            <div className="flex items-center gap-2 text-xs text-slate-300 [&>input]:min-w-0 [&>input]:flex-1">
                                 <input type="number" min="0" max="1440" aria-label="Cooldown minutes" value={rules.cooldownMinutes} onChange={e => setRules(r => ({ ...r, cooldownMinutes: e.target.value }))} className={`${input} !py-1.5 !w-24`} /> minutes
                             </div>
                             <p className="mt-2 text-[11px] text-slate-500">{Number(rules.cooldownMinutes) === 0 ? 'Every repeat is sent.' : 'The same alert for the same cluster is sent at most once in this time. Different problems are never held back.'}</p>
                             <p className="flex items-center gap-2 text-sm font-bold text-white mt-4 mb-2"><Clock className="w-4 h-4 text-blue-300" /> Report a Gateway Agent offline after</p>
-                            <div className="flex items-center gap-2 text-xs text-slate-300">
+                            <div className="flex items-center gap-2 text-xs text-slate-300 [&>input]:min-w-0 [&>input]:flex-1">
                                 <input type="number" min="1" max="60" aria-label="Gateway Agent offline minutes" value={rules.agentOfflineMinutes ?? 2} onChange={e => setRules(r => ({ ...r, agentOfflineMinutes: e.target.value }))} className={`${input} !py-1.5 !w-24`} /> minutes
                             </div>
                             <p className="mt-2 text-[11px] text-slate-500">Shorter drops (restarts, network blips) stay quiet. “Back online” follows when it reconnects.</p>

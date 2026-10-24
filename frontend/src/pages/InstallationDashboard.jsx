@@ -8,7 +8,7 @@ import { HealthSkeleton } from '../components/Skeleton'
 import { ADDONS_LIST, WIZARD_ADDONS } from '../config/addons'
 import { addonIcon } from '../config/addonIcons'
 import { K8S_VERSIONS } from '../config/versions'
-import ClusterTopology3D from '../components/ClusterTopology3D'
+import { ClusterTopology3D } from '../components/LazyHeavy'
 import AiExplain from '../components/ai/AiExplain'
 import {
     CheckCircle2,
