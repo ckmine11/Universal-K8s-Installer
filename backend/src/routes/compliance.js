@@ -114,9 +114,11 @@ router.post('/clusters/:id/fix/:action', requirePermission('compliance:manage'),
     } catch (e) { fail(res, e) }
 })
 
-router.get('/jobs/:id', (req, res) => {
+router.get('/jobs/:id', async (req, res) => {
     const j = complianceJobs.get(req.params.id)
-    if (!j) return res.status(404).json({ error: 'Job not found (finished jobs are kept one hour)' })
+    // only a job on a cluster of this workspace
+    const c = j && (await clusterStore.getClusters()).find(x => x.id === j.clusterId)
+    if (!j || !c || !canSeeCluster(req.user, c)) return res.status(404).json({ error: 'Job not found (finished jobs are kept one hour)' })
     res.json(j)
 })
 
@@ -176,7 +178,9 @@ router.get('/audit', requirePermission('audit:view'), (req, res) => {
     res.json({ entries: auditLog.query(auditQuery(req)), coverage: auditLog.coverage(req.user.orgId), chain: auditLog.verify() })
 })
 router.get('/audit.csv', requirePermission('audit:view'), (req, res) => {
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    // a cell starting with = + - @ is shown as text, never run as a spreadsheet
+    // formula (failed sign-ins record the username an attacker typed)
+    const esc = (v) => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; return `"${s.replace(/"/g, '""')}"` }
     const rows = auditLog.query({ ...auditQuery(req), limit: 50000 })
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="kubeez-audit-${new Date().toISOString().slice(0, 10)}.csv"`)

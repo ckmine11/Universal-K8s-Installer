@@ -41,6 +41,11 @@ services:
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO}
       - STRIPE_PRICE_UNLIMITED=${STRIPE_PRICE_UNLIMITED}
+      # "I am human" check on sign-up / forgot password (Cloudflare Turnstile; empty = off)
+      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}
+      # self-hosted only: let anyone who reaches the login page create a workspace (default: admins add members)
+      - KUBEEZ_OPEN_SIGNUP=${KUBEEZ_OPEN_SIGNUP:-}
       # Email: password reset codes + email alerts (empty = no email)
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-465}

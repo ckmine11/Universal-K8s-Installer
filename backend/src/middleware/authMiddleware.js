@@ -16,10 +16,8 @@ export const requireAuth = (req, res, next) => {
         if (authHeader?.startsWith('Bearer ')) {
             token = authHeader.split(' ')[1];
         }
-        // Query param (file downloads only)
-        else if (req.query?.token) {
-            token = req.query.token;
-        }
+        // Never from the address (?token=): URLs end up in proxy logs, browser
+        // history and Referer headers. Downloads carry the cookie.
     }
 
     if (!token) return res.status(401).json({ error: 'No token provided' });

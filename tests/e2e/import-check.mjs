@@ -67,7 +67,7 @@ ok([402, 409].includes(lh.status), `Longhorn refused: ${String(lh.data.error).sl
 // the terminal: kubectl as the member, recorded
 await api('POST', '/api/terminal/grants', { clusterId: c.id, reason: 'e2e check', minutes: 15 })
 const term = (cmd) => new Promise((resolve) => {
-    const ws = new WebSocket(`${B.replace(/^http/, 'ws')}/ws/orbital/${c.id}?token=${TOK}`)
+    const ws = new WebSocket(`${B.replace(/^http/, 'ws')}/ws/orbital/${c.id}`, { headers: { Authorization: `Bearer ${TOK}` } })
     let out = ''
     ws.on('open', () => ws.send(JSON.stringify({ type: 'command', clusterId: c.id, command: cmd })))
     ws.on('message', (m) => { out += JSON.parse(m).content || '' })

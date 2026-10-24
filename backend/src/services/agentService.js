@@ -2,9 +2,10 @@ import { Duplex } from 'stream'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { randomUUID as uuidv4 } from 'crypto'
+import crypto, { randomUUID as uuidv4 } from 'crypto'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomic } from '../utils/atomicWrite.js'
+import { encrypt, decrypt } from '../utils/cryptoUtils.js'
 import { notifier } from './notifier.js'
 // KUBEEZ_AGENT_OFFLINE_ALERT_MS overrides the workspace rule (tests)
 const AGENT_OFFLINE_ALERT_MS = Number(process.env.KUBEEZ_AGENT_OFFLINE_ALERT_MS) || 0
@@ -17,6 +18,8 @@ const AGENTS_FILE = path.join(DATA_DIR, 'agents.json')
 // No message from an agent for this long → its connection is dead
 const AGENT_DEAD_AFTER_MS = Number(process.env.KUBEEZ_AGENT_DEAD_AFTER_MS) || 60000
 
+const tokenHash = (t) => crypto.createHash('sha256').update(String(t)).digest('hex')
+
 class AgentService {
     constructor() {
         this.agentSockets = new Map() // agentId -> WebSocket
@@ -25,6 +28,8 @@ class AgentService {
         this.offlineAlerts = new Map()   // agentId -> { timer, alerted }
         this.tcpStreams = new Map()      // streamId -> { agentId, duplex, opened }
         this.ensureDataDir()
+        // agents.json written before tokens were encrypted: convert it now
+        this._mutate(() => { }).catch(() => { })
     }
 
     ensureDataDir() {
@@ -37,17 +42,24 @@ class AgentService {
     }
 
     // ─── Persistence ───────────────────────────────────────────
+    // On disk an agent's token is never in clear: a hash to find the agent by
+    // (tokenHash) and the token encrypted with the server key (tokenEnc) for
+    // its reinstall command. In memory the records carry `token` as before.
     async _readAgents() {
         try {
             const raw = await fs.promises.readFile(AGENTS_FILE, 'utf8')
-            return JSON.parse(raw)
+            return JSON.parse(raw).map(({ tokenEnc, tokenHash, ...a }) => {
+                if (tokenEnc) { try { a.token = decrypt(tokenEnc) } catch { a.token = null } }
+                return a
+            })
         } catch {
             return []
         }
     }
 
     async _writeAgents(agents) {
-        await writeFileAtomic(AGENTS_FILE, JSON.stringify(agents, null, 2))
+        const stored = agents.map(({ token, ...a }) => token ? { ...a, tokenHash: tokenHash(token), tokenEnc: encrypt(token) } : a)
+        await writeFileAtomic(AGENTS_FILE, JSON.stringify(stored, null, 2), { mode: 0o600 })
     }
 
     // Serialize every read-modify-write of agents.json. Pings arrive every 20s
@@ -90,7 +102,9 @@ class AgentService {
 
     async getAgentByToken(token) {
         const agents = await this._readAgents()
-        return agents.find(a => a.token === token) || null
+        if (typeof token !== 'string' || !token) return null
+        const want = Buffer.from(tokenHash(token), 'hex')
+        return agents.find(a => a.token && crypto.timingSafeEqual(Buffer.from(tokenHash(a.token), 'hex'), want)) || null
     }
 
     async getAgentById(agentId) {

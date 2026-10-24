@@ -41,8 +41,9 @@ test('self-hosted: nobody can register before the initial setup', async () => {
         assert.equal((await call('POST', '/api/auth/register', null, { username: 'early', password: 'earlypass1', email: 'e@example.com' })).status, 403)
         const setup = await call('POST', '/api/auth/setup', null, { username: 'owner', password: 'ownerpass1', email: 'o@example.com' })
         assert.equal(setup.data.user.role, 'superadmin')
+        // after it, members are added by the admin — public sign-up stays closed
         const later = await call('POST', '/api/auth/register', null, { username: 'later', password: 'laterpass1', email: 'l@example.com' })
-        assert.equal(later.data.user.role, 'admin')
+        assert.equal(later.status, 403)
     } finally { await sh.stop() }
 })
 
@@ -97,7 +98,7 @@ test('members see the WORKSPACE plan', async () => {
 
 test('WebSocket from a foreign web page is refused', async () => {
     const code = await new Promise(resolve => {
-        const s = new WebSocket(`${srv.url.replace('http', 'ws')}/ws/installation/x?token=${alice.token}`, { headers: { Origin: 'https://evil.example' } })
+        const s = new WebSocket(`${srv.url.replace('http', 'ws')}/ws/installation/x`, { headers: { Origin: 'https://evil.example', Authorization: `Bearer ${alice.token}` } })
         s.on('unexpected-response', (req, res) => resolve(res.statusCode))
         s.on('open', () => { s.close(); resolve('opened') })
         s.on('error', () => resolve('error'))

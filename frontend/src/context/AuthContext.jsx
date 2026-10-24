@@ -127,12 +127,12 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(true);
     };
 
-    const register = async (username, password, email) => {
+    const register = async (username, password, email, captchaToken) => {
         const res = await fetch(`${API_URL}/api/auth/register`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, email })
+            body: JSON.stringify({ username, password, email, captchaToken })
         });
 
         const data = await res.json().catch(() => ({}));
@@ -173,12 +173,12 @@ export const AuthProvider = ({ children }) => {
         setIsSetupRequired(false);
     };
 
-    const forgotPassword = async (identifier) => {
+    const forgotPassword = async (identifier, captchaToken) => {
         const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identifier })
+            body: JSON.stringify({ identifier, captchaToken })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Failed to send reset email');

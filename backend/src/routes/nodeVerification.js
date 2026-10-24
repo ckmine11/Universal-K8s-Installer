@@ -2,11 +2,26 @@ import express from 'express'
 import { nodeVerifier } from '../services/nodeVerifier.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 import { fillStoredCredentials } from '../services/clusterCredentials.js'
+import { canOn } from '../services/accessControl.js'
+import { clusterStore } from '../services/clusterStore.js'
+import { canAccessResource } from '../utils/access.js'
 
 const router = express.Router()
 
+// Verifying makes the KubeEZ server open SSH to the address given — only for
+// members who may add servers (a new cluster, more nodes, SSH for an imported
+// one), never a viewer using the server to probe other machines.
+const NODE_PERMS = ['cluster:create', 'cluster:scale', 'cluster:upgrade']
+async function mayVerifyNodes(req, res, next) {
+    // nodes for a cluster of this workspace: its cluster rules count too
+    const id = req.body?.clusterId
+    const cluster = typeof id === 'string' && id ? (await clusterStore.getClusters().catch(() => [])).find(c => c.id === id && canAccessResource(req.user, c)) : null
+    if (NODE_PERMS.some(p => canOn(req.user, p, cluster || null))) return next()
+    res.status(403).json({ error: 'Your role does not have permission to add servers.', requiredPermission: NODE_PERMS[0] })
+}
+
 // Verify a single node
-router.post('/verify', requireAuth, async (req, res) => {
+router.post('/verify', requireAuth, mayVerifyNodes, async (req, res) => {
     try {
         // Re-verifying a node of an existing cluster: no password from the browser —
         // use the stored one (only for a cluster this user may access)
@@ -43,7 +58,7 @@ router.post('/verify', requireAuth, async (req, res) => {
 })
 
 // Verify multiple nodes
-router.post('/verify-batch', requireAuth, async (req, res) => {
+router.post('/verify-batch', requireAuth, mayVerifyNodes, async (req, res) => {
     try {
         const { nodes } = req.body
 

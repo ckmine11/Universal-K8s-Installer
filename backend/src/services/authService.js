@@ -19,6 +19,7 @@ const __dirname = path.dirname(__filename);
 
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const REVOKED_FILE = path.join(DATA_DIR, 'revoked-sessions.json');
 const JWT_SECRET = getJwtSecret();
 const RESET_CODE_TTL_MS = 15 * 60 * 1000;
 // bcrypt hash of a random string — compared against when the username does not exist
@@ -39,6 +40,28 @@ class AuthService {
         this.users = [];
         this._failures = new Map(); // username → { count, until } (login lockout)
         this.loadUsers();
+        this._revoked = this._loadRevoked(); // sha256(token) → expiry (ms): signed-out sessions
+    }
+
+    // ─── Signed-out sessions ──────────────────────────────────────────
+    // A token stays valid until it expires (24h); signing out lists its hash
+    // here until then, so a copied token stops working at once. Kept on disk
+    // (survives a restart), pruned as the tokens expire.
+    _loadRevoked() {
+        try {
+            const now = Date.now();
+            return new Map(Object.entries(JSON.parse(fs.readFileSync(REVOKED_FILE, 'utf8'))).filter(([, exp]) => exp > now));
+        } catch { return new Map(); }
+    }
+    _tokenHash(token) { return crypto.createHash('sha256').update(String(token)).digest('hex'); }
+    isRevoked(token) { return this._revoked.size > 0 && this._revoked.has(this._tokenHash(token)); }
+    revokeToken(token) {
+        const d = jwt.decode(String(token || ''));
+        if (!d?.exp) return;
+        const now = Date.now();
+        for (const [h, exp] of this._revoked) if (exp <= now) this._revoked.delete(h);
+        this._revoked.set(this._tokenHash(token), d.exp * 1000);
+        try { writeFileAtomicSync(REVOKED_FILE, JSON.stringify(Object.fromEntries(this._revoked)), { mode: 0o600 }); } catch (e) { console.error('Could not save signed-out sessions:', e.message); }
     }
 
     loadUsers() {
@@ -221,7 +244,8 @@ class AuthService {
 
     verifyToken(token) {
         try {
-            const decoded = jwt.verify(token, JWT_SECRET);
+            const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+            if (this.isRevoked(token)) return null;   // signed out
             const user = this.getUserById(decoded.id);
             if (!user || user.isSuspended) {
                 return null;

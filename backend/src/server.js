@@ -63,6 +63,7 @@ const wss = new WebSocketServer({
 
 import { authService } from './services/authService.js'
 import { mailConfigured } from './utils/mailer.js'
+import { requireCaptcha, captchaSiteKey } from './utils/captcha.js'
 import { requireAuth } from './middleware/authMiddleware.js'
 import { explorerHttp, explorerUpgrade, EXPLORER_PATH } from './services/explorerProxy.js'
 import { canSeeCluster, canOn } from './services/accessControl.js'
@@ -165,6 +166,9 @@ app.get('/api/auth/status', (req, res) => {
 // Shared signup validation (setup + register + reset)
 // Same rule for setup, register, reset, change-password and team members
 const validatePassword = passwordProblem
+// Public sign-up: always on KubeEZ cloud; on a self-hosted server only when
+// the operator opens it (KUBEEZ_OPEN_SIGNUP=true)
+const signupOpen = () => process.env.KUBEEZ_MODE === 'saas' || process.env.KUBEEZ_OPEN_SIGNUP === 'true'
 function validateUsername(username) {
     if (typeof username !== 'string' || username.length < 3 || username.length > 32) return 'Username must be 3-32 characters'
     if (!/^[a-zA-Z0-9_.-]+$/.test(username)) return 'Username can only contain letters, numbers, ".", "-" and "_"'
@@ -194,13 +198,18 @@ app.post('/api/auth/setup', async (req, res) => {
     }
 })
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', requireCaptcha, async (req, res) => {
     try {
         const { username, password, email } = req.body
         // While no account exists, only /setup may create the first one (it becomes the
         // platform super admin) — otherwise any visitor of a fresh server could take it over.
         if (authService.isSetupRequired()) {
             return res.status(403).json({ error: 'This server is not set up yet. The administrator must complete the initial setup first.' })
+        }
+        // A self-hosted server is one company's: members are added by an admin
+        // (Team), not by whoever can reach the login page
+        if (!signupOpen()) {
+            return res.status(403).json({ error: 'Sign-up is closed on this server. Ask your KubeEZ administrator to add you (Team → Add member).' })
         }
         if (!username || !password || !email) return res.status(400).json({ error: 'Username, password, and email are required' })
         const inputError = validateUsername(username) || validatePassword(password)
@@ -223,10 +232,10 @@ app.post('/api/auth/register', async (req, res) => {
 // What the login page can offer (no secrets): reset by email only when this
 // server can actually send email
 app.get('/api/auth/options', (req, res) => {
-    res.json({ emailReset: mailConfigured(), selfHosted: process.env.KUBEEZ_MODE !== 'saas' })
+    res.json({ emailReset: mailConfigured(), selfHosted: process.env.KUBEEZ_MODE !== 'saas', signup: signupOpen(), captchaSiteKey: captchaSiteKey() })
 })
 
-app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
+app.post('/api/auth/forgot-password', authLimiter, requireCaptcha, async (req, res) => {
     try {
         const identifier = String(req.body?.identifier || req.body?.email || '').trim();
         if (!identifier) return res.status(400).json({ error: 'Enter your email address or username' });
@@ -286,8 +295,12 @@ app.post('/api/auth/login', async (req, res) => {
 })
 
 app.post('/api/auth/logout', (req, res) => {
-    const who = authService.verifyToken(req.cookies?.token || '')
-    if (who) auditLog.record({ orgId: who.orgId || null, actor: who, ip: req.ip, action: 'auth.logout' })
+    const token = req.cookies?.token || (/^Bearer\s+/i.test(req.headers.authorization || '') ? req.headers.authorization.replace(/^Bearer\s+/i, '').trim() : '')
+    const who = authService.verifyToken(token)
+    if (who) {
+        auditLog.record({ orgId: who.orgId || null, actor: who, ip: req.ip, action: 'auth.logout' })
+        authService.revokeToken(token)   // a copied token stops working too
+    }
     res.clearCookie('token', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' })
     res.json({ message: 'Logged out' })
 })
@@ -356,11 +369,12 @@ wss.on('connection', (ws, req) => {
     // Expected path: /ws/installation/:id or similar
     // Authentication Check
     const url = new URL(req.url, `http://${req.headers.host}`)
-    let token = url.searchParams.get('token')
     const pathname = url.pathname
-
-    if (!token) {
-        // Try cookie
+    // Members: the session cookie (or an Authorization header) — never the
+    // address, which ends up in proxy logs. Only Gateway Agents installed
+    // before 2026-10-14 still send theirs as ?token= (see /ws/agent below).
+    let token = null
+    {
         const cookieHeader = req.headers.cookie || ''
         const cookieToken = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('token='))?.split('=')[1]
         if (cookieToken) token = cookieToken
@@ -370,7 +384,7 @@ wss.on('connection', (ws, req) => {
         token = req.headers.authorization.replace(/^Bearer\s+/i, '').trim()
     }
 
-    if (!token) {
+    if (!token && !(pathname.startsWith('/ws/agent') && url.searchParams.get('token'))) {
         console.log('WebSocket connection rejected: No token provided')
         ws.close(4001, 'Unauthorized: Check credentials')
         return
@@ -521,7 +535,7 @@ wss.on('connection', (ws, req) => {
     else if (pathname.startsWith('/ws/agent')) {
         // Reverse tunnel agent connection
         const agentId = pathname.split('/').pop()
-        const agentToken = url.searchParams.get('token') || token
+        const agentToken = token || url.searchParams.get('token')   // header; ?token= = an older agent
         console.log(`WebSocket: Agent tunnel connecting for ${agentId}`);
         (async () => {
             await agentService.onAgentConnect(ws, agentId, agentToken)
@@ -537,7 +551,11 @@ import { incidentDetector } from './services/incidentDetector.js'
 // Global error handler — always return JSON, never HTML (prevents CORS errors becoming HTML pages)
 app.use((err, req, res, next) => {
     const status = err.status || err.statusCode || 500
-    res.status(status).json({ error: err.message || 'Internal server error' })
+    // an unexpected failure: the details go to the server log, not to the
+    // browser (paths, library internals) — in production
+    if (status >= 500) console.error(`[${req.method} ${req.originalUrl.split('?')[0]}]`, err)
+    const hide = status >= 500 && process.env.NODE_ENV === 'production'
+    res.status(status).json({ error: hide ? 'Internal server error' : (err.message || 'Internal server error') })
 })
 
 const PORT = process.env.PORT || 3000

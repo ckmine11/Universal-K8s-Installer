@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import AuroraBackground from '../components/shell/AuroraBackground';
 import { LogoMark, LogoWord } from '../components/shell/Logo';
 import FeatureTicker from '../components/auth/FeatureTicker';
+import Turnstile from '../components/Turnstile';
 import { Eye, EyeOff,
     Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key, CheckCircle2,
     ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users, HardDrive, Compass
@@ -61,11 +62,15 @@ export default function Login() {
     const [showPw, setShowPw] = useState(false);
     const [emailReset, setEmailReset] = useState(true);
     const [selfHosted, setSelfHosted] = useState(false);   // can this server email a reset code?
+    const [signupOpen, setSignupOpen] = useState(true);    // a self-hosted server: members are added by an admin
+    const [captchaKey, setCaptchaKey] = useState(null);    // the "I am human" check, when the server has it on
+    const [captcha, setCaptcha] = useState({ token: '', n: 0 }); // n: remount for a fresh one-try token
+    const freshCaptcha = () => setCaptcha(c => ({ token: '', n: c.n + 1 }));
     const [resendIn, setResendIn] = useState(0);
 
     useEffect(() => {
         setMounted(true);
-        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) { setEmailReset(!!o.emailReset); setSelfHosted(!!o.selfHosted) } }).catch(() => { });
+        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) { setEmailReset(!!o.emailReset); setSelfHosted(!!o.selfHosted); setCaptchaKey(o.captchaSiteKey || null); if (o.signup === false) { setSignupOpen(false); setAuthMode(m => m === 'register' ? 'login' : m) } } }).catch(() => { });
     }, []);
     useEffect(() => {
         if (resendIn <= 0) return;
@@ -75,7 +80,7 @@ export default function Login() {
     const go = (mode) => { setAuthMode(mode); setError(''); setSuccessMessage(''); setShowPw(false); };
 
     const sendCode = async () => {
-        await forgotPassword(formData.identifier.trim());
+        try { await forgotPassword(formData.identifier.trim(), captcha.token); } finally { freshCaptcha(); }
         setSuccessMessage('If this account exists, a 6-digit code was sent to its email address. Check your inbox (and spam).');
         setResendIn(60);
     };
@@ -90,7 +95,7 @@ export default function Login() {
             if (isSetupRequired) {
                 await setup(formData.username, formData.password, formData.email);
             } else if (authMode === 'register') {
-                await register(formData.username, formData.password, formData.email);
+                try { await register(formData.username, formData.password, formData.email, captcha.token); } finally { freshCaptcha(); }
             } else if (authMode === 'forgot') {
                 await sendCode();
                 setAuthMode('verify');
@@ -176,7 +181,7 @@ export default function Login() {
                         
                         
                         <div className="relative z-10 mb-7">
-                            {!isSetupRequired && (authMode === 'login' || authMode === 'register') && (
+                            {!isSetupRequired && signupOpen && (authMode === 'login' || authMode === 'register') && (
                                 <div className="mb-7 grid grid-cols-2 rounded-2xl border border-white/10 bg-black/30 p-1" role="tablist">
                                     {[['login', 'Sign in'], ['register', 'Create account']].map(([m, label]) => (
                                         <button key={m} type="button" role="tab" aria-selected={authMode === m} onClick={() => go(m)}
@@ -353,6 +358,9 @@ export default function Login() {
                                 </div>
                             )}
 
+                            {captchaKey && !isSetupRequired && (authMode === 'register' || ((authMode === 'forgot' || authMode === 'verify') && emailReset)) && (
+                                <div className="pt-5"><Turnstile key={`${authMode}-${captcha.n}`} siteKey={captchaKey} onToken={(token) => setCaptcha(c => ({ ...c, token }))} /></div>
+                            )}
                             <div className={`pt-6 ${authMode === 'forgot' && !emailReset && !isSetupRequired ? 'hidden' : ''}`}>
                                 <button
                                     type="submit"

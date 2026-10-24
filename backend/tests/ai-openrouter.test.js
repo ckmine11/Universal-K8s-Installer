@@ -41,7 +41,7 @@ const approve = (authUrl) => {
 let srv, api, boss, other
 before(async () => {
     await new Promise(r => fake.listen(0, '127.0.0.1', r))
-    srv = await startServer({ KUBEEZ_MODE: 'selfhosted', NO_SUPERADMIN: '1', KUBEEZ_OPENROUTER_URL: `http://127.0.0.1:${fake.address().port}` })
+    srv = await startServer({ KUBEEZ_MODE: 'selfhosted', KUBEEZ_OPEN_SIGNUP: 'true', NO_SUPERADMIN: '1', KUBEEZ_OPENROUTER_URL: `http://127.0.0.1:${fake.address().port}` })
     api = client(srv)
     boss = (await api('POST', '/api/auth/setup', null, { username: 'orboss', password: 'bosspass123', email: 'orboss@example.com' })).data
     other = (await api('POST', '/api/auth/register', null, { username: 'orother', password: 'otherpass123', email: 'orother@example.com' })).data

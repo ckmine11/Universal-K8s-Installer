@@ -24,7 +24,7 @@ after(() => srv?.stop?.())
 
 function ws(p, token, send, ms = 2500) {
     return new Promise(resolve => {
-        const sock = new WebSocket(`${srv.url.replace('http', 'ws')}${p}?token=${token}`)
+        const sock = new WebSocket(`${srv.url.replace('http', 'ws')}${p}`, { headers: { Authorization: `Bearer ${token}` } })
         const msgs = []
         sock.on('open', () => { if (send) sock.send(JSON.stringify(send)) })
         sock.on('message', m => msgs.push(JSON.parse(m)))

@@ -857,6 +857,8 @@ export default function Docs() {
                             <Table head={['Setting', 'What it is for']} rows={[
                                 [<C key="s">SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM</C>, 'Emails: password reset, welcome, alert and report emails. For Gmail use an App Password.'],
                                 [<C key="u">KUBEEZ_PUBLIC_URL</C>, 'The address people open KubeEZ at, so links in alerts and emails go to the right place.'],
+                                [<C key="o">KUBEEZ_OPEN_SIGNUP</C>, 'Leave empty: only the admin adds people (Team → Add member) and the login page shows no "Create account". Set to true to let anyone who can open the login page create their own workspace.'],
+                                [<C key="t">TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY</C>, 'An "I am human" check (Cloudflare Turnstile) on sign-up and forgot password, against bots. Create a widget in the Cloudflare dashboard → Turnstile and paste both keys; empty = off.'],
                                 ['HTTPS', 'Put KubeEZ behind HTTPS before using Gateway Agents for real servers.']
                             ]} />
                             <P>Reset a password from the server when nobody can sign in (in the backend container):</P>
