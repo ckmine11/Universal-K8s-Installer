@@ -111,7 +111,8 @@ test('Pro: every event, every channel, saved rules apply', async () => {
 })
 
 test('API: Free limits answer 402 with an upgrade hint; Pro unlocks them', async () => {
-    const srv = await startServer({ KUBEEZ_MODE: 'selfhosted', KUBEEZ_OPEN_SIGNUP: 'true', NO_SUPERADMIN: '1' })
+    // no email for this server (an earlier test set SMTP on this process): sign-up opens at once
+    const srv = await startServer({ KUBEEZ_MODE: 'selfhosted', KUBEEZ_OPEN_SIGNUP: 'true', NO_SUPERADMIN: '1', SMTP_USER: '', SMTP_PASS: '' })
     const api = client(srv)
     try {
         // self-hosted: the first account is set up as super admin; the second is a normal Free workspace

@@ -130,7 +130,12 @@ test('welcome email on sign-up; team invite email without the password', async (
     const seen = (re) => mails.find(m => re.test(m.replace(/=\r?\n/g, '')))
     const waitFor = async (re) => { for (let i = 0; i < 40 && !seen(re); i++) await new Promise(r => setTimeout(r, 100)); return seen(re) }
     try {
-        const ann = (await api('POST', '/api/auth/register', null, { username: 'annw', password: 'annpass12345', email: 'ann.w@example.com' })).data
+        // with email set up, sign-up confirms the address first; the welcome follows the code
+        const reg = (await api('POST', '/api/auth/register', null, { username: 'annw', password: 'annpass12345', email: 'ann.w@example.com' })).data
+        assert.equal(reg.verificationRequired, true)
+        const conf = await waitFor(/To: ann\.w@example\.com[\s\S]*confirmation code is: \d{6}/i)
+        assert.ok(conf, 'confirmation code sent')
+        const ann = (await api('POST', '/api/auth/verify-email', null, { identifier: 'annw', code: conf.replace(/=\r?\n/g, '').match(/confirmation code is: (\d{6})/)[1] })).data
         assert.ok(ann.token)
         const w = await waitFor(/To: ann\.w@example\.com[\s\S]*Welcome/i)
         assert.ok(w, 'welcome email sent')

@@ -81,6 +81,18 @@ export const AuthProvider = ({ children }) => {
 
             // Try to restore user from localStorage, then verify with /api/auth/me
             const storedUser = localStorage.getItem('user');
+            // back from "Continue with Google / GitHub": a session cookie, no stored user yet
+            if (!storedUser && new URLSearchParams(window.location.search).get('signed_in') === '1') {
+                const meRes = await apiFetch(`${API_URL}/api/auth/me`).catch(() => null);
+                if (meRes?.ok) {
+                    const me = await meRes.json();
+                    const info = { id: me.id, username: me.username, role: me.role, orgId: me.orgId };
+                    localStorage.setItem('user', JSON.stringify(info));
+                    setUser({ ...info, ...me });
+                    setIsAuthenticated(true);
+                }
+                window.history.replaceState(null, '', window.location.pathname);
+            }
             if (storedUser) {
                 try {
                     const parsed = JSON.parse(storedUser);
@@ -114,7 +126,8 @@ export const AuthProvider = ({ children }) => {
         });
 
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Login failed');
+        // the email of this sign-up is not confirmed yet: the page asks for the code
+        if (!res.ok) throw Object.assign(new Error(data.error || 'Login failed'), { code: data.code, identifier: data.identifier });
 
         const userInfo = {
             id: data.user?.id,
@@ -137,6 +150,8 @@ export const AuthProvider = ({ children }) => {
 
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Registration failed');
+        // a code went to the email; the workspace opens once it is entered
+        if (data.verificationRequired) return { verificationRequired: true, identifier: data.identifier, email: data.email };
 
         const userInfo = {
             id: data.user?.id,
@@ -148,6 +163,30 @@ export const AuthProvider = ({ children }) => {
         setUser(userInfo);
         setIsAuthenticated(true);
         setIsSetupRequired(false);
+    };
+
+    // the emailed 6-digit code of a new sign-up → signed in
+    const verifyEmail = async (identifier, code) => {
+        const res = await fetch(`${API_URL}/api/auth/verify-email`, {
+            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identifier, code })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw Object.assign(new Error(data.error || 'Could not confirm the email'), { code: data.code });
+        const userInfo = { id: data.user?.id, username: data.user?.username || identifier, role: data.user?.role || 'admin', orgId: data.user?.orgId };
+        localStorage.setItem('user', JSON.stringify(userInfo));
+        setUser(userInfo);
+        setIsAuthenticated(true);
+        setIsSetupRequired(false);
+    };
+
+    const resendVerification = async (identifier, captchaToken) => {
+        const res = await fetch(`${API_URL}/api/auth/resend-verification`, {
+            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identifier, captchaToken })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Could not send a new code');
     };
 
     const setup = async (username, password, email) => {
@@ -209,7 +248,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout, forgotPassword, verifyResetCode, resetPassword, access, refreshAccess }}>
+        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, isSetupRequired, login, register, setup, logout, forgotPassword, verifyResetCode, resetPassword, access, refreshAccess, verifyEmail, resendVerification }}>
             {children}
         </AuthContext.Provider>
     );

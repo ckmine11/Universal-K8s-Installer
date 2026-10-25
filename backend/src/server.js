@@ -64,6 +64,8 @@ const wss = new WebSocketServer({
 import { authService } from './services/authService.js'
 import { mailConfigured } from './utils/mailer.js'
 import { requireCaptcha, captchaSiteKey } from './utils/captcha.js'
+import { signupOpen } from './utils/signup.js'
+import oauthRoutes, { oauthProviders } from './routes/oauth.js'
 import { requireAuth } from './middleware/authMiddleware.js'
 import { explorerHttp, explorerUpgrade, EXPLORER_PATH } from './services/explorerProxy.js'
 import { canSeeCluster, canOn } from './services/accessControl.js'
@@ -166,9 +168,8 @@ app.get('/api/auth/status', (req, res) => {
 // Shared signup validation (setup + register + reset)
 // Same rule for setup, register, reset, change-password and team members
 const validatePassword = passwordProblem
-// Public sign-up: always on KubeEZ cloud; on a self-hosted server only when
-// the operator opens it (KUBEEZ_OPEN_SIGNUP=true)
-const signupOpen = () => process.env.KUBEEZ_MODE === 'saas' || process.env.KUBEEZ_OPEN_SIGNUP === 'true'
+// a@example.com → a••••@example.com (shown back after sign-up)
+const maskEmail = (e) => String(e || '').replace(/^(.)[^@]*(@.*)$/, '$1••••$2')
 function validateUsername(username) {
     if (typeof username !== 'string' || username.length < 3 || username.length > 32) return 'Username must be 3-32 characters'
     if (!/^[a-zA-Z0-9_.-]+$/.test(username)) return 'Username can only contain letters, numbers, ".", "-" and "_"'
@@ -216,6 +217,10 @@ app.post('/api/auth/register', requireCaptcha, async (req, res) => {
             || (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'Please enter a valid email address' : null)
         if (inputError) return res.status(400).json({ error: inputError })
         const token = await authService.registerUser(username, password, email)
+        if (!token) {
+            // a code went to the email: the account opens once it is entered
+            return res.json({ verificationRequired: true, identifier: username, email: maskEmail(email) })
+        }
         const decoded = authService.verifyToken(token)
         res.cookie('token', token, {
             httpOnly: true,
@@ -232,7 +237,7 @@ app.post('/api/auth/register', requireCaptcha, async (req, res) => {
 // What the login page can offer (no secrets): reset by email only when this
 // server can actually send email
 app.get('/api/auth/options', (req, res) => {
-    res.json({ emailReset: mailConfigured(), selfHosted: process.env.KUBEEZ_MODE !== 'saas', signup: signupOpen(), captchaSiteKey: captchaSiteKey() })
+    res.json({ emailReset: mailConfigured(), selfHosted: process.env.KUBEEZ_MODE !== 'saas', signup: signupOpen(), captchaSiteKey: captchaSiteKey(), oauth: oauthProviders() })
 })
 
 app.post('/api/auth/forgot-password', authLimiter, requireCaptcha, async (req, res) => {
@@ -290,9 +295,40 @@ app.post('/api/auth/login', async (req, res) => {
         // failed sign-ins of a known account land in its workspace's trail
         const known = authService.findByLogin(req.body?.username)
         auditLog.record({ orgId: known?.orgId || null, actor: known ? { id: known.id, username: known.username, role: known.role } : { username: String(req.body?.username || '').slice(0, 80) }, ip: req.ip, action: 'auth.login_failed', ok: false, detail: e.message })
+        if (e.code === 'EMAIL_UNVERIFIED') {
+            authService.resendVerification(e.identifier).catch(() => { })   // a fresh code (at most one a minute)
+            return res.status(403).json({ error: e.message, code: e.code, identifier: e.identifier })
+        }
         res.status(401).json({ error: e.message })
     }
 })
+
+// Email confirmation for password sign-ups: the 6-digit code → signed in
+app.post('/api/auth/verify-email', authLimiter, (req, res) => {
+    try {
+        const identifier = String(req.body?.identifier || '').trim()
+        const code = String(req.body?.code || '').trim()
+        if (!identifier || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter the 6-digit code from the email' })
+        const token = authService.verifyEmail(identifier, code)
+        const decoded = authService.verifyToken(token)
+        auditLog.record({ orgId: decoded?.orgId || null, actor: decoded, ip: req.ip, action: 'auth.email_verified' })
+        res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 24 * 60 * 60 * 1000 })
+        res.json({ token, user: { id: decoded?.id, username: decoded?.username, email: decoded?.email, role: decoded?.role, orgId: decoded?.orgId } })
+    } catch (e) {
+        res.status(400).json({ error: e.message, code: e.code, attemptsLeft: e.attemptsLeft })
+    }
+})
+app.post('/api/auth/resend-verification', authLimiter, requireCaptcha, async (req, res) => {
+    try {
+        await authService.resendVerification(String(req.body?.identifier || '').trim())
+        res.json({ message: 'If this sign-up is waiting for confirmation, a new code was sent to its email.' })
+    } catch (e) {
+        res.status(e.code === 'MAIL_FAILED' ? 503 : 400).json({ error: e.message, code: e.code })
+    }
+})
+
+// Sign in with Google / GitHub (public: the provider's redirect comes here)
+app.use('/api/auth/oauth', authLimiter, oauthRoutes)
 
 app.post('/api/auth/logout', (req, res) => {
     const token = req.cookies?.token || (/^Bearer\s+/i.test(req.headers.authorization || '') ? req.headers.authorization.replace(/^Bearer\s+/i, '').trim() : '')

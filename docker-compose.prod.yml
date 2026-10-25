@@ -46,6 +46,12 @@ services:
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}
       # self-hosted only: let anyone who reaches the login page create a workspace (default: admins add members)
       - KUBEEZ_OPEN_SIGNUP=${KUBEEZ_OPEN_SIGNUP:-}
+      # "Continue with Google / GitHub" (empty = button hidden). Callback URL to register with the provider:
+      #   <KUBEEZ_PUBLIC_URL>/api/auth/oauth/google/callback  and  .../github/callback
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       # Email: password reset codes + email alerts (empty = no email)
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-465}

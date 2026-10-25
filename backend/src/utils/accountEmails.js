@@ -102,6 +102,21 @@ export function resetCodeEmail(user, code) {
     }
 }
 
+export function verifyEmailCode(user, code) {
+    return {
+        subject: 'Confirm your email for KubeEZ',
+        text: `Hi ${user.username},\n\nYour KubeEZ email confirmation code is: ${code}\n\nIt is valid for 15 minutes. If you did not sign up for KubeEZ, ignore this email.`,
+        html: layout({
+            preheader: "Enter this code to finish creating your workspace.",
+            heading: 'Confirm your email',
+            intro: `Hi <b>${esc(user.username)}</b>, enter this code on the KubeEZ page to finish creating your workspace:`,
+            body: `<div style="background:#f4f4f5;padding:14px 20px;text-align:center;letter-spacing:10px;font-size:30px;font-weight:800;color:#111827;border-radius:10px;margin:8px 0">${esc(code)}</div>
+                <p style="margin:8px 0 0;color:#6b7280;font-size:13px">Valid for 15 minutes and for one use.</p>`,
+            footer: 'If you did not sign up for KubeEZ, ignore this email — no account is opened without this code.'
+        })
+    }
+}
+
 export function passwordChangedEmail(user) {
     const url = siteUrl()
     return {

@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../utils/cryptoUtils.js';
 import { randomUUID as uuidv4 } from 'crypto';
 import { mailConfigured, mailError } from '../utils/mailer.js';
-import { welcomeEmail, resetCodeEmail, passwordChangedEmail, sendAccountEmail, sendAccountEmailLater } from '../utils/accountEmails.js';
+import { welcomeEmail, resetCodeEmail, passwordChangedEmail, verifyEmailCode, sendAccountEmail, sendAccountEmailLater } from '../utils/accountEmails.js';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { DATA_DIR } from '../utils/paths.js';
@@ -108,7 +108,7 @@ class AuthService {
     // server — that first account becomes the platform Super Admin. Every other
     // sign-up is the admin of its own new workspace. SaaS Super Admins are made
     // with scripts/make-superadmin.js, never by signing up.
-    async registerUser(username, password, email, { setup = false } = {}) {
+    async registerUser(username, password, email, { setup = false, verified = false } = {}) {
         const existing = this.users.find(u => u.username.toLowerCase() === username.toLowerCase() || (u.email && email && u.email.toLowerCase() === email.toLowerCase()));
         if (existing) {
             throw new Error('Username or email is already taken');
@@ -129,14 +129,101 @@ class AuthService {
             password: hashedPassword,
             role,
             subscription: { plan: 'FREE', maxClusters: 1, maxNodes: 2, maxMembers: 1 },
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            // a password sign-up confirms its email first when this server can send email
+            ...(!setup && !verified && mailConfigured() ? { emailVerified: false } : verified ? { emailVerified: true } : {})
         };
 
         this.users.push(newUser);
         this.saveUsers();
+        if (newUser.emailVerified === false) {
+            try { await this.sendVerificationCode(newUser, { force: true }); }
+            catch (e) { this.users = this.users.filter(u => u.id !== newUser.id); this.saveUsers(); throw e; }
+            return null;   // no session until the email is confirmed
+        }
         sendAccountEmailLater(email, welcomeEmail(newUser), 'welcome');
 
         return this.generateToken(newUser);
+    }
+
+    // ─── Email confirmation (password sign-ups) ───────────────────────
+    // Same rules as the reset code: random 6 digits, only the hash stored,
+    // 15 minutes, 5 tries, a new code at most once a minute.
+    async sendVerificationCode(user, { force = false } = {}) {
+        if (!user || user.emailVerified !== false) return true;
+        if (!force && user.verifyRequestedAt && Date.now() - user.verifyRequestedAt < RESET_RESEND_MS) return true;
+        const code = crypto.randomInt(100000, 1000000).toString();
+        Object.assign(user, { verifyCode: hashResetCode(code), verifyCodeExpiry: Date.now() + RESET_CODE_TTL_MS, verifyAttempts: 0, verifyRequestedAt: Date.now() });
+        this.saveUsers();
+        try {
+            await sendAccountEmail(user.email, verifyEmailCode(user, code));
+        } catch (error) {
+            Object.assign(user, { verifyCode: undefined, verifyCodeExpiry: undefined, verifyAttempts: undefined, verifyRequestedAt: undefined });
+            this.saveUsers();
+            console.error('[auth] verification email failed:', mailError(error));
+            throw Object.assign(new Error('The confirmation email could not be sent right now. Please try again in a few minutes.'), { code: 'MAIL_FAILED' });
+        }
+        return true;
+    }
+
+    async resendVerification(identifier) {
+        return this.sendVerificationCode(this.findByLogin(identifier));
+    }
+
+    /** The emailed code is right → the email is confirmed and the person is signed in. */
+    verifyEmail(identifier, code) {
+        const user = this.findByLogin(identifier);
+        const invalid = Object.assign(new Error('Wrong or expired code — check the latest email, or send a new code.'), { code: 'BAD_CODE' });
+        if (!user || user.emailVerified !== false || !user.verifyCode || !(user.verifyCodeExpiry > Date.now())) throw invalid;
+        const given = Buffer.from(hashResetCode(String(code ?? '').trim()), 'hex');
+        const stored = Buffer.from(user.verifyCode, 'hex');
+        if (given.length !== stored.length || !crypto.timingSafeEqual(given, stored)) {
+            user.verifyAttempts = (user.verifyAttempts || 0) + 1;
+            const left = MAX_RESET_ATTEMPTS - user.verifyAttempts;
+            if (left <= 0) {
+                Object.assign(user, { verifyCode: undefined, verifyCodeExpiry: undefined, verifyAttempts: undefined });
+                this.saveUsers();
+                throw Object.assign(new Error('Too many wrong codes — this code no longer works. Send a new code.'), { code: 'CODE_BURNED' });
+            }
+            this.saveUsers();
+            throw Object.assign(invalid, { attemptsLeft: left });
+        }
+        Object.assign(user, { emailVerified: true, emailVerifiedAt: new Date().toISOString(), verifyCode: undefined, verifyCodeExpiry: undefined, verifyAttempts: undefined, verifyRequestedAt: undefined, lastLoginAt: new Date().toISOString() });
+        this.saveUsers();
+        sendAccountEmailLater(user.email, welcomeEmail(user), 'welcome');
+        return this.generateToken(user);
+    }
+
+    // ─── Sign in with Google / GitHub ─────────────────────────────────
+    // The provider has checked the email. A linked identity signs in; else an
+    // account with that email is linked (the provider proved the person owns
+    // it); else a new workspace is opened — only where sign-up is open.
+    async signInWithProvider({ provider, subject, email, name }, { allowSignup }) {
+        const sub = String(subject);
+        let user = this.users.find(u => u.oauth?.[provider] === sub);
+        if (!user && email) {
+            user = this.users.find(u => u.email && u.email.toLowerCase() === String(email).toLowerCase());
+            if (user) {
+                user.oauth = { ...(user.oauth || {}), [provider]: sub };
+                if (user.emailVerified === false) Object.assign(user, { emailVerified: true, emailVerifiedAt: new Date().toISOString(), verifyCode: undefined, verifyCodeExpiry: undefined, verifyAttempts: undefined });
+            }
+        }
+        if (!user) {
+            if (this.isSetupRequired()) throw Object.assign(new Error('This server is not set up yet.'), { code: 'SETUP_REQUIRED' });
+            if (!allowSignup) throw Object.assign(new Error('There is no KubeEZ account with that email here, and sign-up is closed. Ask your administrator to add you.'), { code: 'SIGNUP_CLOSED' });
+            const base = (String(name || '').trim() || String(email).split('@')[0]).toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 24) || 'user';
+            const first = base.length >= 3 ? base : `${base}-user`;
+            let username = first;
+            for (let i = 2; this.users.some(u => u.username.toLowerCase() === username.toLowerCase()); i++) username = `${first}-${i}`;
+            await this.registerUser(username, crypto.randomBytes(32).toString('hex'), email, { verified: true });
+            user = this.users.find(u => u.username === username);
+            user.oauth = { [provider]: sub };
+            user.passwordSet = false;   // signs in with the provider (or sets one with "forgot password")
+        }
+        if (user.isSuspended) throw Object.assign(new Error('This account is suspended. Contact your administrator.'), { code: 'SUSPENDED' });
+        user.lastLoginAt = new Date().toISOString();
+        this.saveUsers();
+        return this.generateToken(user);
     }
 
     async createTeamMember(adminOrgId, username, password, email, role = 'viewer') {
@@ -219,6 +306,8 @@ class AuthService {
         }
         this._failures.delete(lockKey);
         if (user.isSuspended) throw new Error('This account is suspended. Contact your administrator.');
+        // unconfirmed sign-up: said only after the password was right
+        if (user.emailVerified === false) throw Object.assign(new Error('Confirm your email first — enter the code we emailed you.'), { code: 'EMAIL_UNVERIFIED', identifier: user.username });
 
         user.lastLoginAt = new Date().toISOString();   // inactive accounts show up in the compliance report
         this.saveUsers();
@@ -274,13 +363,13 @@ class AuthService {
 
     // Strip password hash + reset state before anything leaves the service
     toSafeUser(u) {
-        const { password, resetToken, resetTokenExpiry, resetAttempts, ...safeUser } = u;
+        const { password, resetToken, resetTokenExpiry, resetAttempts, verifyCode, verifyCodeExpiry, verifyAttempts, ...safeUser } = u;
         return safeUser;
     }
 
     getAllUsers() {
         return this.users.map(u => {
-            const { password, resetToken, resetTokenExpiry, ...safeUser } = u;
+            const { password, resetToken, resetTokenExpiry, verifyCode, verifyCodeExpiry, verifyAttempts, ...safeUser } = u;
             return safeUser;
         });
     }

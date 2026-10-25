@@ -6,6 +6,7 @@ import AuroraBackground from '../components/shell/AuroraBackground';
 import { LogoMark, LogoWord } from '../components/shell/Logo';
 import FeatureTicker from '../components/auth/FeatureTicker';
 import Turnstile from '../components/Turnstile';
+import OAuthButtons from '../components/auth/OAuthButtons';
 import { Eye, EyeOff,
     Lock, User, ArrowRight, Shield, Activity, Cloud, Zap, Mail, Key, CheckCircle2,
     ArrowUpCircle, RotateCcw, Puzzle, HeartPulse, TerminalSquare, DatabaseBackup, Users, HardDrive, Compass
@@ -50,7 +51,7 @@ const FEATURE_GROUPS = [
 
 
 export default function Login() {
-    const { login, setup, register, forgotPassword, verifyResetCode, resetPassword, isSetupRequired } = useAuth();
+    const { login, setup, register, forgotPassword, verifyResetCode, resetPassword, verifyEmail, resendVerification, isSetupRequired } = useAuth();
     // ?mode=register (from the landing page) opens on Create account
     const [authMode, setAuthMode] = useState(() => new URLSearchParams(window.location.search).get('mode') === 'register' ? 'register' : 'login'); // 'login', 'register', 'forgot' → 'verify' → 'reset'
     const [ticket, setTicket] = useState('');   // from a verified code, for the new password
@@ -67,10 +68,16 @@ export default function Login() {
     const [captcha, setCaptcha] = useState({ token: '', n: 0 }); // n: remount for a fresh one-try token
     const freshCaptcha = () => setCaptcha(c => ({ token: '', n: c.n + 1 }));
     const [resendIn, setResendIn] = useState(0);
+    const [oauth, setOauth] = useState([]);                 // "Continue with Google / GitHub" (when set up)
+    const [confirmFor, setConfirmFor] = useState({ identifier: '', email: '' });   // a sign-up waiting for its email code
 
     useEffect(() => {
         setMounted(true);
-        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) { setEmailReset(!!o.emailReset); setSelfHosted(!!o.selfHosted); setCaptchaKey(o.captchaSiteKey || null); if (o.signup === false) { setSignupOpen(false); setAuthMode(m => m === 'register' ? 'login' : m) } } }).catch(() => { });
+        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) { setEmailReset(!!o.emailReset); setSelfHosted(!!o.selfHosted); setCaptchaKey(o.captchaSiteKey || null); setOauth(Array.isArray(o.oauth) ? o.oauth : []); if (o.signup === false) { setSignupOpen(false); setAuthMode(m => m === 'register' ? 'login' : m) } } }).catch(() => { });
+    }, []);
+    useEffect(() => {
+        const q = new URLSearchParams(window.location.search);
+        if (q.get('oauth_error')) { setError(q.get('message') || 'Sign-in with that provider failed — please try again.'); window.history.replaceState(null, '', window.location.pathname); }
     }, []);
     useEffect(() => {
         if (resendIn <= 0) return;
@@ -85,6 +92,19 @@ export default function Login() {
         setResendIn(60);
     };
 
+    const askForCode = (identifier, email) => {
+        setConfirmFor({ identifier, email: email || '' });
+        setFormData(d => ({ ...d, resetCode: '' }));
+        go('confirm');
+        setResendIn(60);
+    };
+    const resendConfirm = async () => {
+        setError(''); setLoading(true);
+        try { await resendVerification(confirmFor.identifier, captcha.token); setSuccessMessage('A new code is on its way — check your inbox (and spam).'); setResendIn(60); }
+        catch (err) { setError(err.message); }
+        finally { freshCaptcha(); setLoading(false); }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
@@ -95,7 +115,11 @@ export default function Login() {
             if (isSetupRequired) {
                 await setup(formData.username, formData.password, formData.email);
             } else if (authMode === 'register') {
-                try { await register(formData.username, formData.password, formData.email, captcha.token); } finally { freshCaptcha(); }
+                let r;
+                try { r = await register(formData.username, formData.password, formData.email, captcha.token); } finally { freshCaptcha(); }
+                if (r?.verificationRequired) askForCode(r.identifier, r.email);
+            } else if (authMode === 'confirm') {
+                await verifyEmail(confirmFor.identifier, formData.resetCode.trim());
             } else if (authMode === 'forgot') {
                 await sendCode();
                 setAuthMode('verify');
@@ -115,6 +139,8 @@ export default function Login() {
                 await login(formData.username, formData.password);
             }
         } catch (err) {
+            if (err.code === 'EMAIL_UNVERIFIED') { askForCode(err.identifier || formData.username, ''); setSuccessMessage('Your email is not confirmed yet — we sent a new code.'); return; }
+            if (err.code === 'CODE_BURNED' && authMode === 'confirm') { setFormData(d => ({ ...d, resetCode: '' })); }
             // fetch() itself failed (offline, blocked): say so instead of "Failed to fetch"
             if (err.code === 'BAD_TICKET' || err.code === 'CODE_BURNED') { setTicket(''); setFormData(d => ({ ...d, resetCode: '' })); setAuthMode(err.code === 'BAD_TICKET' ? 'forgot' : 'verify'); }
             setError(err instanceof TypeError ? 'Could not reach the KubeEZ server — check your connection and try again.' : err.message);
@@ -198,12 +224,16 @@ export default function Login() {
                                 </div>
                             )}
                             <h2 className="text-[30px] font-semibold tracking-[-0.035em] gradient-text">
-                                {isSetupRequired ? 'Set up KubeEZ' : authMode === 'register' ? 'Create your workspace' : authMode === 'forgot' ? 'Forgot your password?' : authMode === 'verify' ? 'Check your email' : authMode === 'reset' ? 'Choose a new password' : 'Welcome back'}
+                                {isSetupRequired ? 'Set up KubeEZ' : authMode === 'register' ? 'Create your workspace' : authMode === 'forgot' ? 'Forgot your password?' : authMode === 'verify' ? 'Check your email' : authMode === 'reset' ? 'Choose a new password' : authMode === 'confirm' ? 'Confirm your email' : 'Welcome back'}
                             </h2>
                             <p className="mt-1.5 text-sm text-slate-400">
-                                {isSetupRequired ? 'Create the first administrator account.' : authMode === 'register' ? 'Free to start — your own isolated workspace.' : authMode === 'forgot' ? 'Step 1 of 3 — we email you a 6-digit code.' : authMode === 'verify' ? 'Step 2 of 3 — enter the code from the email.' : authMode === 'reset' ? 'Step 3 of 3 — at least 8 characters.' : 'Sign in to your clusters.'}
+                                {isSetupRequired ? 'Create the first administrator account.' : authMode === 'register' ? 'Free to start — your own isolated workspace.' : authMode === 'forgot' ? 'Step 1 of 3 — we email you a 6-digit code.' : authMode === 'verify' ? 'Step 2 of 3 — enter the code from the email.' : authMode === 'reset' ? 'Step 3 of 3 — at least 8 characters.' : authMode === 'confirm' ? 'One last step — enter the code we emailed you.' : 'Sign in to your clusters.'}
                             </p>
                         </div>
+
+                        {!isSetupRequired && (authMode === 'login' || (authMode === 'register' && signupOpen)) && oauth.length > 0 && (
+                            <OAuthButtons providers={oauth} verb={authMode === 'register' ? 'Sign up' : 'Continue'} />
+                        )}
 
                         <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
                             {error && (
@@ -239,6 +269,15 @@ export default function Login() {
                                 </div>
                             )}
 
+                            {authMode === 'confirm' && (
+                                <p className="text-[11px] text-slate-400 leading-relaxed">
+                                    We emailed a 6-digit code{confirmFor.email ? <> to <b className="text-white">{confirmFor.email}</b></> : null} (valid 15 minutes — check spam too). Your workspace opens once it is entered.{' '}
+                                    <button type="button" disabled={resendIn > 0 || loading} className="font-bold text-blue-400 hover:text-blue-300 disabled:text-slate-600" onClick={resendConfirm}>
+                                        {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                                    </button>
+                                </p>
+                            )}
+
                             {authMode === 'verify' && (
                                 <p className="text-[11px] text-slate-400 leading-relaxed">
                                     We emailed a 6-digit code for <b className="text-white">{formData.identifier}</b> (valid 15 minutes — check spam too).{' '}
@@ -268,7 +307,7 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {authMode === 'verify' && (
+                            {(authMode === 'verify' || authMode === 'confirm') && (
                                 <div className="space-y-1">
                                     <div className="relative group">
                                         <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-20">
@@ -358,7 +397,7 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {captchaKey && !isSetupRequired && (authMode === 'register' || ((authMode === 'forgot' || authMode === 'verify') && emailReset)) && (
+                            {captchaKey && !isSetupRequired && (authMode === 'register' || authMode === 'confirm' || ((authMode === 'forgot' || authMode === 'verify') && emailReset)) && (
                                 <div className="pt-5"><Turnstile key={`${authMode}-${captcha.n}`} siteKey={captchaKey} onToken={(token) => setCaptcha(c => ({ ...c, token }))} /></div>
                             )}
                             <div className={`pt-6 ${authMode === 'forgot' && !emailReset && !isSetupRequired ? 'hidden' : ''}`}>
@@ -376,7 +415,7 @@ export default function Login() {
                                                 <span>
                                                     {isSetupRequired ? 'Create admin account' : 
                                                      authMode === 'register' ? 'Create account' : 
-                                                     authMode === 'forgot' ? 'Send code' : authMode === 'verify' ? 'Verify code' : 
+                                                     authMode === 'forgot' ? 'Send code' : authMode === 'verify' ? 'Verify code' : authMode === 'confirm' ? 'Confirm and open workspace' : 
                                                      authMode === 'reset' ? 'Save new password' : 'Sign in'}
                                                 </span>
                                                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

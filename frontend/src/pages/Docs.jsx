@@ -855,9 +855,10 @@ export default function Docs() {
                         <Section id="server-setup" Icon={SettingsIcon} color="text-slate-300" title="Server Setup (self-hosted)"
                             intro="For whoever runs the KubeEZ server. Set these in the server's environment and restart KubeEZ.">
                             <Table head={['Setting', 'What it is for']} rows={[
-                                [<C key="s">SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM</C>, 'Emails: password reset, welcome, alert and report emails. For Gmail use an App Password.'],
+                                [<C key="s">SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM</C>, 'Emails: sign-up confirmation codes, password reset, welcome, alert and report emails. With email set up, a new password sign-up confirms its address with a 6-digit code before the workspace opens. For Gmail use an App Password.'],
                                 [<C key="u">KUBEEZ_PUBLIC_URL</C>, 'The address people open KubeEZ at, so links in alerts and emails go to the right place.'],
                                 [<C key="o">KUBEEZ_OPEN_SIGNUP</C>, 'Leave empty: only the admin adds people (Team → Add member) and the login page shows no "Create account". Set to true to let anyone who can open the login page create their own workspace.'],
+                                [<C key="g">GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET</C>, 'The "Continue with Google / GitHub" buttons on the sign-in page (each appears once its two keys are set). Create an OAuth app with the provider and register the callback URL <KUBEEZ_PUBLIC_URL>/api/auth/oauth/google/callback (or …/github/callback). Only a verified email is accepted; an account with that email is linked, otherwise a new workspace opens (where sign-up is open).'],
                                 [<C key="t">TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY</C>, 'An "I am human" check (Cloudflare Turnstile) on sign-up and forgot password, against bots. Create a widget in the Cloudflare dashboard → Turnstile and paste both keys; empty = off.'],
                                 ['HTTPS', 'Put KubeEZ behind HTTPS before using Gateway Agents for real servers.']
                             ]} />
