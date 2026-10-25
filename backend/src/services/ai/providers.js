@@ -109,43 +109,76 @@ async function tunnelTo(p, url) {
 
 const toOpenAiMessages = (system, messages) => [...(system ? [{ role: 'system', content: system }] : []), ...messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))]
 
-// servers that reject the JSON-mode field (some local runtimes) — asked without it from then on
-const noJsonMode = new Set()
-const noStreamUsage = new Set()
+// What an OpenAI-compatible engine does not accept, learned from its own error
+// messages and remembered per server + model, so every engine works without
+// settings: newer OpenAI models (o1/o3/o4, GPT-5) want max_completion_tokens
+// and no custom temperature; small local models / vLLM cap the answer length to
+// their context; some servers cannot stream or reject the JSON-mode / usage fields.
+const quirks = new Map()   // `${base}|${model}` → { completionTokens, noTemperature, maxTokens, noStream, noJson, noUsage }
+const quirksOf = (base, model) => { const k = `${base}|${model}`; let q = quirks.get(k); if (!q) { q = {}; quirks.set(k, q) } return q }
+export function _resetQuirks() { quirks.clear() }
+// the newest OpenAI reasoning models are known to need it, before any error
+const REASONING_MODEL = /(^|\/)(o[1-9](-|$)|gpt-5)/i
+
+/** The engine's error → what to change for the next try (null: nothing to learn). */
+export function learnFrom(e, q, want) {
+    const msg = `${e?.message || ''} ${e?.body || ''}`
+    if (![400, 404, 405, 415, 422, 500, 501].includes(e?.status)) return null
+    if (!q.completionTokens && /max_completion_tokens|unsupported parameter[^.]*max_tokens|max_tokens[^.]*not supported/i.test(msg)) return { completionTokens: true }
+    if (!q.noTemperature && /temperature/i.test(msg) && /unsupported|not support|only (the )?default|does not support|must be 1|invalid/i.test(msg)) return { noTemperature: true }
+    if (/maximum context|context length|context window|max_model_len|too many tokens|max_tokens|max_completion_tokens|max_new_tokens|maxoutputtokens|max_output_tokens|output tokens/i.test(msg)) {
+        // vLLM / OpenAI: "maximum context length is 4096 tokens … (900 in the messages, …)" → what is left
+        const ctx = msg.match(/context length is (\d+)/i), used = msg.match(/(\d+) in the messages/i)
+        const room = ctx && used ? Number(ctx[1]) - Number(used[1]) - 64 : 0
+        // else "max_tokens: 8000 > 4096", "must be less than or equal to 4096": the largest limit below the ask
+        // (asked again with less if that is still too much)
+        const nums = [...msg.matchAll(/\b(\d{3,6})\b/g)].map(m => Number(m[1])).filter(n => n >= 256 && n < want)
+        const next = room >= 256 && room < want ? room : nums.length ? Math.max(...nums) : want > 2048 ? 2048 : want > 1024 ? 1024 : 0
+        if (next && next < want) return { maxTokens: next }
+    }
+    if (!q.noStream && /stream/i.test(msg)) return { noStream: true }
+    if (!q.noJson && /response_format|json|grammar|unsupported|not supported|unknown|extra (fields|inputs)/i.test(msg)) return { noJson: true }
+    if (!q.noUsage && /stream_options|include_usage/i.test(msg)) return { noUsage: true }
+    return null
+}
+
 async function openAiChat(base, key, model, req, extra = {}, via = null) {
-    if (req.onToken && !req.json) {
-        // the token counts arrive at the end of the stream (stream_options) — a server that rejects the field is asked without it
-        const stream = (usage) => streamVia(via, `${base}/chat/completions`, {
-            model, messages: toOpenAiMessages(req.system, req.messages), max_tokens: req.maxTokens, temperature: req.temperature ?? 0.2, stream: true,
-            ...(usage ? { stream_options: { include_usage: true } } : {})
-        }, { headers: key ? { authorization: `Bearer ${key}` } : {}, timeoutMs: req.timeoutMs, ...extra, onDelta: (d, all) => req.onToken(all) })
-        let r
-        try { r = await stream(!noStreamUsage.has(base)) }
-        catch (e) {
-            if (noStreamUsage.has(base) || ![400, 422].includes(e.status) || !/stream_options|include_usage|extra|unknown|unrecognized/i.test(`${e.message} ${e.body || ''}`)) throw e
-            noStreamUsage.add(base)
-            r = await stream(false)
+    const q = quirksOf(base, model)
+    if (REASONING_MODEL.test(model) && q.completionTokens === undefined) { q.completionTokens = true; q.noTemperature = true }
+    const headers = key ? { authorization: `Bearer ${key}` } : {}
+    const body = (stream) => {
+        const tokens = Math.min(req.maxTokens || 1500, q.maxTokens || Infinity)
+        return {
+            model, messages: toOpenAiMessages(req.system, req.messages),
+            ...(q.completionTokens ? { max_completion_tokens: tokens } : { max_tokens: tokens }),
+            ...(q.noTemperature ? {} : { temperature: req.temperature ?? 0.2 }),
+            ...(stream ? { stream: true, ...(q.noUsage ? {} : { stream_options: { include_usage: true } }) } : {}),
+            ...(!stream && req.json && !q.noJson ? { response_format: { type: 'json_object' } } : {})
         }
-        if (!r.text.trim()) throw new AiHttpError('The model returned no text', { code: 'EMPTY', retryable: true })
-        return { text: r.text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null, streamed: true }
     }
-    const send = (jsonMode) => requestVia(via, 'POST', `${base}/chat/completions`, {
-        model, messages: toOpenAiMessages(req.system, req.messages),
-        max_tokens: req.maxTokens, temperature: req.temperature ?? 0.2,
-        ...(jsonMode ? { response_format: { type: 'json_object' } } : {})
-    }, { headers: key ? { authorization: `Bearer ${key}` } : {}, timeoutMs: req.timeoutMs, ...extra })
-    const jsonMode = !!req.json && !noJsonMode.has(base)
-    let r
-    try { r = await send(jsonMode) }
-    catch (e) {
-        // the JSON answer is still asked for in the prompt and checked by KubeEZ
-        if (!jsonMode || ![400, 404, 415, 422, 500, 501].includes(e.status) || !/response_format|json|grammar|unsupported|not supported|unknown|extra (fields|inputs)/i.test(`${e.message} ${e.body || ''}`)) throw e
-        noJsonMode.add(base)
-        r = await send(false)
+    // up to 4 adjustments, each learned from the engine's own answer
+    for (let tries = 0; ; tries++) {
+        const live = !!req.onToken && !req.json && !q.noStream
+        try {
+            if (live) {
+                const r = await streamVia(via, `${base}/chat/completions`, body(true), { headers, timeoutMs: req.timeoutMs, ...extra, onDelta: (d, all) => req.onToken(all) })
+                if (!r.text.trim()) throw new AiHttpError('The model returned no text', { code: 'EMPTY', retryable: true })
+                return { text: r.text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null, streamed: true }
+            }
+            const r = await requestVia(via, 'POST', `${base}/chat/completions`, body(false), { headers, timeoutMs: req.timeoutMs, ...extra })
+            const text = r?.choices?.[0]?.message?.content
+            if (typeof text !== 'string') throw new AiHttpError('The model returned no text', { code: 'EMPTY', retryable: true })
+            // an engine that cannot stream still answers in full (the page shows it at once)
+            if (req.onToken && !req.json) try { req.onToken(text) } catch { }
+            return { text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null }
+        } catch (e) {
+            const change = tries < 4 && learnFrom(e, q, Math.min(req.maxTokens || 1500, q.maxTokens || Infinity))
+            if (!change) throw e
+            // a stream that was refused for its usage field: try the plain stream first
+            if (change.noStream && live && !q.noUsage && /stream_options|include_usage/i.test(`${e.message} ${e.body || ''}`)) { q.noUsage = true; continue }
+            Object.assign(q, change)
+        }
     }
-    const text = r?.choices?.[0]?.message?.content
-    if (typeof text !== 'string') throw new AiHttpError('The model returned no text', { code: 'EMPTY', retryable: true })
-    return { text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null }
 }
 
 // tests only: a local fake of the Gemini API
@@ -159,6 +192,17 @@ async function geminiChat(p, key, req) {
         contents: req.messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
         generationConfig: { maxOutputTokens: req.maxTokens, temperature: req.temperature ?? 0.2, ...(req.json ? { responseMimeType: 'application/json' } : {}) }
     }
+    const gq = quirksOf('gemini', p.model)
+    if (gq.maxTokens) body.generationConfig.maxOutputTokens = Math.min(body.generationConfig.maxOutputTokens || gq.maxTokens, gq.maxTokens)
+    try { return await geminiOnce(p, key, req, model, body) }
+    catch (e) {
+        const change = learnFrom(e, gq, body.generationConfig.maxOutputTokens || 8192)
+        if (!change?.maxTokens) throw e
+        Object.assign(gq, change); body.generationConfig.maxOutputTokens = change.maxTokens
+        return geminiOnce(p, key, req, model, body)
+    }
+}
+async function geminiOnce(p, key, req, model, body) {
     if (req.onToken && !req.json) {
         // the answer as it is written (Server-Sent Events, one GenerateContentResponse per piece)
         let block = null

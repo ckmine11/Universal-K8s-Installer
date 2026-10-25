@@ -48,6 +48,10 @@ export async function anthropicChat(p, key, req) {
         if (!text) throw new AiHttpError('Claude returned no text', { code: 'EMPTY', retryable: true })
         return { text, model: response.model || model, tokensIn: response.usage?.input_tokens ?? null, tokensOut: response.usage?.output_tokens ?? null }
     } catch (e) {
+        // an older model with a lower output ceiling says its number: ask again within it
+        const m = e instanceof Anthropic.BadRequestError && !req._capped && /max_tokens/i.test(e.message) && e.message.match(/>\s*(\d{3,6})|maximum[^\d]{0,40}(\d{3,6})/i)
+        const cap = m && Number(m[1] || m[2])
+        if (cap && cap < params.max_tokens) return anthropicChat(p, key, { ...req, maxTokens: cap, _capped: true })
         throw e instanceof AiHttpError ? e : mapError(e)
     }
 }
