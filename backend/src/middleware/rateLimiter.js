@@ -18,9 +18,12 @@ export const apiLimiter = rateLimit({
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     // Skip lightweight, high-frequency polling + health endpoints
-    skip: (req) => req.path === '/api/health'
-        || req.path === '/api/incidents'
-        || req.path === '/api/clusters/installations/active'
+    // (the full path: mounted at /api/, req.path would be "/health" and never match)
+    // AI answers being written are polled a few times a second while they stream
+    skip: (req) => {
+        const p = String(req.originalUrl || '').split('?')[0]
+        return p === '/api/health' || p === '/api/incidents' || p === '/api/clusters/installations/active' || p.startsWith('/api/ai/jobs/')
+    }
 });
 
 /**

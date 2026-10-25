@@ -41,10 +41,11 @@ const publicUrl = () => (process.env.KUBEEZ_PUBLIC_URL || process.env.FRONTEND_U
 const link = (path) => publicUrl() ? `${publicUrl()}${path}` : null
 
 export const CHAT_SYSTEM = [
-    'You are KubeEZ AI, a helpful assistant in the KubeEZ console.',
-    '1. A question about the user\'s clusters — namespaces, pods, nodes, apps, services, problems, versions, counts, health: the live facts given to you contain the answer. Read them and answer from them. When a block says "KubeEZ counted", give exactly that number and those names. Never say the data does not contain it when it is there.',
-    '2. Any other question — Kubernetes in general, DevOps, code, or any topic: answer from your own knowledge. Never refuse because it is not about the clusters.',
-    'Answer exactly what was asked, directly. About the clusters: short and to the point. Other questions: as fully as needed (code in fenced blocks; no tables). Never claim you changed anything — from here you can only explain. Open problems are numbered: the user can reply "why N" for the cause or "fix N" for a fix.'
+    'You are KubeEZ AI, an expert Kubernetes, cloud and DevOps engineer inside the KubeEZ console. Answer the way the best assistants (Claude, ChatGPT) do: complete, accurate, clearly structured and easy to act on.',
+    '1. A question about the user\'s clusters — namespaces, pods, nodes, apps, services, problems, versions, counts, health: the live facts given to you contain the answer. Answer from them, quote the real names and numbers, and never invent ones that are not there. When a block says "KubeEZ counted", use exactly that number and those names. Never say the data does not contain it when it is there; if something is genuinely missing, say exactly what and how to get it.',
+    '2. Any other question — Kubernetes in general, DevOps, cloud, Linux, code, or any topic: answer fully from your own knowledge. Never refuse because it is not about the clusters.',
+    'How to answer: start with the direct answer in the first line or two, then the detail that makes it useful — the why, the exact commands or YAML, what to check next. Match the depth to the question: a quick fact gets a short answer; "how", "why", "explain", troubleshooting and setup questions get a thorough one with steps. Use Markdown: short headings for longer answers, numbered steps for procedures, bullet lists, tables when comparing things or listing resources, and fenced code blocks with a language (bash, yaml, json) for every command and manifest. Bold the key names and values.',
+    'Never claim you changed anything — from here you can only explain and suggest. Open problems are numbered: the user can reply "why N" for the cause or "fix N" for a fix.'
 ].join('\n')
 
 // ── answers are always in English (questions may be English, Hindi or Hinglish) ──
@@ -66,6 +67,20 @@ export function intentOf(raw) {
     if (/\b(incidents?|problems?|issues?|alerts?|dikkat|gadbad)\b|kya (problem|dikkat|gadbad)|समस्या/.test(t)) return { kind: 'incidents', text }
     if (/\b(status|health|haal)\b|sab (theek|thik|ok|badhiya)|kaisa (hai|chal)|how (is|are) (the |my )?(cluster|everything)|सब ठीक/.test(t)) return { kind: 'status', text }
     return { kind: 'ask', text }
+}
+
+// A question about Kubernetes / DevOps in general, not about this workspace's clusters:
+// it needs no live cluster read. Anything that sounds like "my / our / the cluster",
+// asks for live state, or names a cluster is read live as before.
+const LIVE = /\b(my|mine|our|ours|mere|meri|mera|hamare|hamara|hamari|apne|apna|apni|this cluster|the cluster|clusters?|running|deployed|status|health|healthy|crash\w*|failing|failed|down|logs?|events?|how many|kitne|kitna|kitni|which|kaun\w*|list|show|dikha\w*|batao|current|right now|abhi|open problems?|incidents?|alerts?|restarts?|pending|not ready|pods?|nodes?|namespaces?|deployments?|services?|ingress\w*|pvcs?|usage|cpu|memory)\b/i
+const GENERAL = /^\s*(what is|what are|what's|whats|why do|why does|why is|how do|how does|how to|how can|explain|difference|compare|vs\b|when should|should i|best practices?|tutorial|example of|write|create a|generate|give me|can you explain|tell me about|define|kya hai|kya hota|kaise|samjhao|batao ki)/i
+export function isGeneralQuestion(text, clusters = []) {
+    const t = String(text || '').toLowerCase()
+    if (clusters.some(c => c.clusterName && t.includes(String(c.clusterName).toLowerCase()))) return false
+    // Hinglish puts the question word last: "ingress kya hota hai", "helm chart kaise banaye"
+    if (!GENERAL.test(t) && !/(kya (hota|hoti|hote) (hai|h)|kya (hai|h)|kaise (kare|karen|karte|banaye|banate|likhe|likhte|use kare)|samjhao|ka matlab|difference between)/.test(t)) return false
+    // "how do I fix my pod", "what is wrong with the cluster" → live; "what is a pod" → general
+    return !/\b(my|mine|our|ours|mere|meri|mera|hamare|hamara|hamari|apne|apna|apni|this cluster|the cluster|is wrong|went wrong|failing|crash\w*|down|not ready|pending|right now|abhi|current)\b/i.test(t)
 }
 
 // ── per chat: the numbered list and the rate limit ──
@@ -134,7 +149,7 @@ export async function handleChat(ctx) {
     if (Date.now() - state.lastAt > MEMORY_MS) { state.history = []; state.lastTarget = null }
     const r = await answer(ctx)
     if (r?.remember !== false && r?.engine && r.reply) {
-        state.history.push({ role: 'user', content: String(ctx.text).slice(0, 2000) }, { role: 'assistant', content: String(r.reply).slice(0, 2000) })
+        state.history.push({ role: 'user', content: String(ctx.text).slice(0, 4000) }, { role: 'assistant', content: String(r.reply).slice(0, 8000) })
         state.history = state.history.slice(-MEMORY_TURNS)
     }
     state.lastAt = Date.now()
@@ -205,9 +220,12 @@ async function answer(ctx) {
             default: {
                 await ctx.send?.(L.looking)
                 const clusters = await clustersOf(sc)
-                // the clusters this is about: the one named, else all of them (up to 5) — read live
+                // the clusters this is about: the one named, else all of them (up to 5) — read live.
+                // A general question ("what is a DaemonSet?") goes straight to the AI, like Claude / ChatGPT.
                 const named = clusters.filter(c => new RegExp(`(^|[^a-z0-9-])${String(c.clusterName).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9-])`).test(intent.text.toLowerCase()))
-                const about = (named.length ? named : clusters).slice(0, 5)
+                const general = !named.length && !(state.lastTarget && REFERS.test(intent.text.toLowerCase())) && isGeneralQuestion(intent.text, clusters)
+                const about = general ? [] : (named.length ? named : clusters).slice(0, 5)
+                if (about.length) ctx.stage?.('Reading your clusters…')
                 const snaps = await Promise.all(about.map(c => within(snapshotOf(c), 20e3).then(snap => ({ c, snap: limitSnapshot(snap, nsFilter(sc, u, c)) })).catch(e => ({ c, error: e.message }))))
                 // a pod or app named in the question ("web-2", "api deployment"), or "the crashing pod": its logs, describe, events
                 let found = snaps.map(x => x.snap && { ...x, t: targetOf(intent.text, x.snap) }).find(x => x?.t)
@@ -242,8 +260,10 @@ async function answer(ctx) {
                     if (cmd) { const d = await within(onCluster(found.c, (ssh) => ssh.execCommand(cmd)), 25e3).then(r => String(r.stdout || r.stderr || ''), () => ''); if (d) blocks.push({ label: `kubectl describe ${found.t.kind} ${found.t.ns}/${found.t.name} (live)`, text: d.slice(0, 6000) }) }
                 }
                 ctx.stage?.('Asking the AI…')
-                const r = await ask(u, { task: 'chat', purpose: `chat (${source})`, maxTokens: 1200, system: CHAT_SYSTEM, data: blocks, question: intent.text, history: state.history, ...(ctx.onToken ? { onToken: ctx.onToken } : {}) })
-                return { reply: r.text.trim().slice(0, 3800), engine: { provider: r.provider, model: r.model } }
+                const web = source === 'Web'
+                const r = await ask(u, { task: 'chat', purpose: `chat (${source})`, maxTokens: web ? 8000 : 1500, system: CHAT_SYSTEM, data: blocks, question: intent.text, history: state.history, ...(ctx.onToken ? { onToken: ctx.onToken } : {}) })
+                // Telegram / Slack messages have a size limit; the web chat shows the whole answer
+                return { reply: web ? r.text.trim() : r.text.trim().slice(0, 3800), engine: { provider: r.provider, model: r.model } }
             }
         }
     } catch (e) {

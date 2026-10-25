@@ -3,9 +3,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { AiHttpError } from './http.js'
 
-export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5'
+export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5'
 // models whose refusals the API can hand to another Claude model itself
-const FALLBACK_MODELS = new Set(['claude-opus-5', 'claude-fable-5-1'])
+const FALLBACK_MODELS = new Set(['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-fable-5-1'])
 
 const clientFor = (key, timeoutMs) => new Anthropic({ apiKey: key, maxRetries: 0, timeout: timeoutMs || 60000 })
 
@@ -30,11 +30,19 @@ export async function anthropicChat(p, key, req) {
         ...(req.system ? { system: req.system } : {}),
         messages: req.messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))
     }
+    // on a policy decline the API re-runs the request on a fitting Claude model itself
+    const fallback = FALLBACK_MODELS.has(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : null
     try {
-        const response = FALLBACK_MODELS.has(model)
-            // on a policy decline the API re-runs the request on a fitting Claude model itself
-            ? await client.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
-            : await client.messages.create(params)
+        let response
+        if (req.onToken && !req.json) {
+            // the answer as it is written (a fallback continues on the same stream)
+            const stream = fallback ? client.beta.messages.stream({ ...params, ...fallback }) : client.messages.stream(params)
+            let all = ''
+            stream.on('text', (delta) => { all += delta; try { req.onToken(all) } catch { } })
+            response = await stream.finalMessage()
+        } else {
+            response = fallback ? await client.beta.messages.create({ ...params, ...fallback }) : await client.messages.create(params)
+        }
         if (response.stop_reason === 'refusal') throw new AiHttpError('Claude declined this request', { code: 'REFUSED' })
         const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('')
         if (!text) throw new AiHttpError('Claude returned no text', { code: 'EMPTY', retryable: true })

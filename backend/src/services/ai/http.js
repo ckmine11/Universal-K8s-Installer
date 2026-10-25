@@ -76,7 +76,9 @@ export function requestJson(method, url, body, { headers = {}, timeoutMs = 60000
  * Same rules as requestJson: address check, tunnel, a hard timeout (from the first
  * byte on, a quiet stream also times out).
  */
-export function requestStream(url, body, { headers = {}, timeoutMs = 60000, createConnection = null, trusted = false, onDelta = () => { } } = {}) {
+// the OpenAI stream format; another format passes its own pick(json) → { delta, model?, usage? }
+const openAiPick = (j) => ({ delta: j.choices?.[0]?.delta?.content ?? j.choices?.[0]?.message?.content ?? '', model: j.model, usage: j.usage })
+export function requestStream(url, body, { headers = {}, timeoutMs = 60000, createConnection = null, trusted = false, onDelta = () => { }, pick = openAiPick } = {}) {
     return new Promise((resolve, reject) => {
         let u
         try { u = trusted || createConnection ? new URL(url) : checkProviderUrl(url) } catch (e) { return reject(e instanceof AiHttpError ? e : new AiHttpError(e.message, { code: 'BAD_URL' })) }
@@ -115,9 +117,10 @@ export function requestStream(url, body, { headers = {}, timeoutMs = 60000, crea
                     if (payload === '[DONE]') continue
                     let j; try { j = JSON.parse(payload) } catch { continue }
                     if (j.error) { failed = new AiHttpError(typeof j.error === 'string' ? j.error : j.error.message || 'The model stopped with an error', { code: 'HTTP', retryable: true }); continue }
-                    if (j.model) model = j.model
-                    if (j.usage) usage = j.usage
-                    const d = j.choices?.[0]?.delta?.content ?? j.choices?.[0]?.message?.content ?? ''
+                    const got = pick(j) || {}
+                    if (got.model) model = got.model
+                    if (got.usage) usage = got.usage
+                    const d = got.delta || ''
                     if (d) { text += d; try { onDelta(d, text) } catch { } }
                 }
             })

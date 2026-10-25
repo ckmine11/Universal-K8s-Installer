@@ -13,7 +13,8 @@ export async function aiJob(url, body, { maxMs = 8 * 60e3, onProgress = null } =
     const end = Date.now() + maxMs
     while (res.status === 202 && jobId && Date.now() < end) {
         if (onProgress && (data.partial || data.stage)) onProgress({ partial: data.partial || '', stage: data.stage || '' })
-        await sleep(onProgress ? 1000 : 2500)
+        // while an answer is being written: often, so it reads smoothly (like a chat app)
+        await sleep(onProgress ? 350 : 2500)
         try {
             res = await apiFetch(`/api/ai/jobs/${jobId}`)
             data = await res.json().catch(() => ({}))

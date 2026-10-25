@@ -180,7 +180,7 @@ export async function ask(user, opts) {
     const content = [...blocks, ...original, asked].filter(Boolean).join('\n\n')
     // the conversation so far (follow-up questions: "show its logs"), masked, the last turns only
     const history = (opts.history || []).filter(h => h && ['user', 'assistant'].includes(h.role) && h.content).slice(-8)
-        .map(h => { const r = redact(clean(String(h.content)).slice(0, 3000), { maskEmails: s.maskEmails, maskIps: s.maskIps }); masked += r.masked; return { role: h.role, content: r.text } })
+        .map(h => { const r = redact(clean(String(h.content)).slice(0, 8000), { maskEmails: s.maskEmails, maskIps: s.maskIps }); masked += r.masked; return { role: h.role, content: r.text } })
     const messages = [...history, { role: 'user', content }]
     const live = typeof opts.onToken === 'function' && !opts.json ? (t) => { try { opts.onToken(t) } catch { } } : null
 

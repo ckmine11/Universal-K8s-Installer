@@ -148,13 +148,28 @@ async function openAiChat(base, key, model, req, extra = {}, via = null) {
     return { text, model: r.model || model, tokensIn: r.usage?.prompt_tokens ?? null, tokensOut: r.usage?.completion_tokens ?? null }
 }
 
+// tests only: a local fake of the Gemini API
+let geminiBase = 'https://generativelanguage.googleapis.com'
+export function _setGeminiBaseForTests(url) { geminiBase = url || 'https://generativelanguage.googleapis.com' }
+
 async function geminiChat(p, key, req) {
     const model = encodeURIComponent(p.model)
-    const r = await requestJson('POST', `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    const body = {
         ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
         contents: req.messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
         generationConfig: { maxOutputTokens: req.maxTokens, temperature: req.temperature ?? 0.2, ...(req.json ? { responseMimeType: 'application/json' } : {}) }
-    }, { headers: { 'x-goog-api-key': key }, timeoutMs: req.timeoutMs })
+    }
+    if (req.onToken && !req.json) {
+        // the answer as it is written (Server-Sent Events, one GenerateContentResponse per piece)
+        let block = null
+        const r = await requestStream(`${geminiBase}/v1beta/models/${model}:streamGenerateContent?alt=sse`, body, {
+            headers: { 'x-goog-api-key': key }, timeoutMs: req.timeoutMs, trusted: geminiBase.startsWith('http://127.0.0.1'), onDelta: (d, all) => req.onToken(all),
+            pick: (j) => { if (j.promptFeedback?.blockReason) block = j.promptFeedback.blockReason; return { delta: (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join(''), model: j.modelVersion, usage: j.usageMetadata } }
+        })
+        if (!r.text) throw new AiHttpError(block ? `Blocked by Gemini: ${block}` : 'The model returned no text', { code: 'EMPTY', retryable: !block })
+        return { text: r.text, model: p.model, tokensIn: r.usage?.promptTokenCount ?? null, tokensOut: r.usage?.candidatesTokenCount ?? null, streamed: true }
+    }
+    const r = await requestJson('POST', `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, body, { headers: { 'x-goog-api-key': key }, timeoutMs: req.timeoutMs })
     const text = (r?.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('')
     if (!text) throw new AiHttpError(r?.promptFeedback?.blockReason ? `Blocked by Gemini: ${r.promptFeedback.blockReason}` : 'The model returned no text', { code: 'EMPTY', retryable: !r?.promptFeedback?.blockReason })
     return { text, model: p.model, tokensIn: r.usageMetadata?.promptTokenCount ?? null, tokensOut: r.usageMetadata?.candidatesTokenCount ?? null }
