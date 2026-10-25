@@ -1,4 +1,6 @@
 
+@import './theme-vars.css';
+@import './theme-solid.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -361,3 +363,53 @@ input[type="search"]::-webkit-search-cancel-button, input[type="search"]::-webki
   .kz-beam, .kz-shine::after { display: none; }
   .kz-conic, .kz-flow, .kz-tab-timer { animation: none; }
 }
+
+/* ═══ Light theme ("Daylight") ═══════════════════════════════════════════
+   Set by the console (<html data-theme="light">). Colours come from the
+   flipped palette variables (theme-vars.css); these are the shared pieces
+   that carry their own values. .kz-dark keeps a region dark (terminals, logs). */
+:root[data-theme="light"] {
+  --kz-bg: #f7f7f8;
+  --kz-surface: #ffffff;
+  --kz-surface-strong: #fafafb;
+  --kz-border: rgba(12, 13, 15, 0.08);
+  --kz-border-strong: rgba(12, 13, 15, 0.14);
+  --kz-highlight: rgba(255, 255, 255, 0.8);
+  --kz-text: #0c0d0f;
+  --kz-muted: #5f636b;
+  color-scheme: light;
+}
+.kz-dark {
+  --kz-bg: #08090a; --kz-surface: #0f1012; --kz-surface-strong: #141518;
+  --kz-border: rgba(255, 255, 255, 0.075); --kz-border-strong: rgba(255, 255, 255, 0.12);
+  --kz-highlight: rgba(255, 255, 255, 0.05); --kz-text: #eeeff1; --kz-muted: #8f949c;
+  color-scheme: dark; color: var(--kz-text);
+}
+:root[data-theme="light"] ::selection { background: rgba(128, 105, 251, 0.22); color: #0c0d0f; }
+:root[data-theme="light"] :focus-visible { outline-color: #6b4ff0; }
+:root[data-theme="light"] .kz-aurora { background: radial-gradient(1100px 380px at 50% -160px, rgba(128, 105, 251, 0.07), transparent 70%), var(--kz-bg); }
+:root[data-theme="light"] :is(.kz-card, .glass, .glass-card) { box-shadow: 0 1px 2px rgba(16, 17, 20, 0.04), 0 1px 0 rgba(16, 17, 20, 0.02); }
+:root[data-theme="light"] .kz-card-hover:hover,
+:root[data-theme="light"] .glass-card:hover { box-shadow: 0 4px 16px -6px rgba(16, 17, 20, 0.12); }
+:root[data-theme="light"] .kz-btn-primary { color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 2px rgba(16, 17, 20, 0.15); }
+:root[data-theme="light"] .kz-btn-light { color: #fff; background: #0c0d0f; box-shadow: 0 1px 2px rgba(16, 17, 20, 0.2); }
+:root[data-theme="light"] .kz-btn-light:hover { background: #26282d; box-shadow: 0 1px 2px rgba(16, 17, 20, 0.2); }
+:root[data-theme="light"] .kz-btn-ghost { background: #fff; border-color: rgba(12, 13, 15, 0.12); box-shadow: 0 1px 2px rgba(16, 17, 20, 0.04); }
+:root[data-theme="light"] .kz-btn-ghost:hover { background: #f4f4f6; border-color: rgba(12, 13, 15, 0.18); }
+:root[data-theme="light"] .kz-input { background: #fff; }
+:root[data-theme="light"] .kz-input:hover { border-color: rgba(12, 13, 15, 0.22); }
+:root[data-theme="light"] .gradient-text { background: linear-gradient(180deg, #0c0d0f 0%, #3d4047 100%); -webkit-background-clip: text; background-clip: text; }
+:root[data-theme="light"] .aurora-text { background: linear-gradient(100deg, #5a3ed6 0%, #6b4ff0 30%, #3b5bdb 55%, #0369a1 80%, #5a3ed6 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(12, 13, 15, 0.14); background-clip: padding-box; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(12, 13, 15, 0.26); background-clip: padding-box; }
+:root[data-theme="light"] select { color-scheme: light; color: #0c0d0f; }
+:root[data-theme="light"] select option:checked { background-color: #e8e4ff; color: #0c0d0f; }
+:root[data-theme="light"] :is(input, textarea, select):not(.kz-dark *) { background: #fff; }
+:root[data-theme="light"] :is(input, textarea, select):focus:not(.kz-dark *) { background: #fff; box-shadow: 0 0 0 3px rgba(128, 105, 251, 0.18); }
+:root[data-theme="light"] .log-line:hover:not(.kz-dark *) { background: rgba(12, 13, 15, 0.03); }
+/* panels coloured with a fixed dark hex: their light counterpart (not inside a .kz-dark region) */
+:root[data-theme="light"] :is(.bg-\[\#0b0b0f\], .bg-\[\#15151c\], .bg-\[\#16161b\], .bg-\[\#0c0c11\], .bg-\[\#0e0e13\], .bg-\[\#060608\], .bg-\[\#0c0c10\], .bg-\[\#0b0c0e\], .bg-\[\#141518\], .bg-\[\#0f1012\], .bg-\[\#0d0d0f\], .bg-\[\#0B0F1E\], .bg-\[\#0B0F1A\], .bg-\[\#0a0e17\], .bg-\[\#09090d\], .bg-\[\#08090a\], .bg-\[\#121218\], .bg-\[\#111116\]):not(.kz-dark):not(.kz-dark *) { background-color: #fff; }
+:root[data-theme="light"] :is(.bg-\[\#0b0c0e\]\/95, .bg-\[\#0b0b0f\]\/95, .bg-\[\#08090a\]\/85):not(.kz-dark *) { background-color: rgba(255, 255, 255, 0.9); }
+:root[data-theme="light"] .bg-\[\#0b0c0e\]:not(.kz-dark):not(.kz-dark *) { background-color: #fbfbfc; }
+:root[data-theme="light"] :is(.bg-\[\#0b0b0f\]\/80, .bg-\[\#16161b\]\/95, .bg-\[\#0c0c10\]\/95):not(.kz-dark *) { background-color: rgba(255, 255, 255, 0.9); }
+:root[data-theme="light"] :is(.ring-\[\#08080b\], .ring-\[\#0b0b0f\], .ring-\[\#0e0e13\]):not(.kz-dark *) { --tw-ring-color: #fff; }

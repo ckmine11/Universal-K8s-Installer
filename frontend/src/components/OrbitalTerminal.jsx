@@ -159,7 +159,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose, kubectlOnly = false }) => 
 
     return createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8 bg-black/60 backdrop-blur-md">
-            <div className="relative w-full max-w-7xl h-[85vh] bg-slate-900/90 border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="kz-dark relative w-full max-w-7xl h-[85vh] bg-slate-900/90 border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
                 {/* Header */}
                 <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
                     <div className="flex items-center gap-3">

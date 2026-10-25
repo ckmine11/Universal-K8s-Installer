@@ -973,7 +973,7 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                     <span className="text-xs text-gray-400">({logs.length} entries)</span>
                 </div>
 
-                <div className="terminal max-h-96 overflow-y-auto">
+                <div className="terminal kz-dark max-h-96 overflow-y-auto">
                     {logs.map((log, index) => (
                         <div key={index} className={`log-line log-${log.level}`}>
                             <span className="text-gray-500">[{log.timestamp}]</span> {log.message}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-    LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
+    Sun, Moon, LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
     LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2,
     Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked
 } from 'lucide-react'
@@ -92,6 +92,19 @@ const TITLES = [
 
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }
 
+// Light ("Daylight") or dark ("Midnight") console — the person's choice,
+// remembered in this browser. The public pages stay dark.
+const readTheme = () => { try { return localStorage.getItem('kz-theme') === 'dark' ? 'dark' : 'light' } catch { return 'light' } }
+function useConsoleTheme() {
+    const [theme, setTheme] = useState(readTheme)
+    useEffect(() => {
+        document.documentElement.dataset.theme = theme
+        try { localStorage.setItem('kz-theme', theme) } catch { }
+        return () => { delete document.documentElement.dataset.theme }
+    }, [theme])
+    return [theme, () => setTheme(t => (t === 'light' ? 'dark' : 'light'))]
+}
+
 export default function AppShell({ children }) {
     const { user, logout, refreshAccess } = useAuth()
     const location = useLocation()
@@ -100,6 +113,7 @@ export default function AppShell({ children }) {
     const [collapsed, setCollapsed] = useState(readCollapsed)
     const [mobileOpen, setMobileOpen] = useState(false)
     const [paletteOpen, setPaletteOpen] = useState(false)
+    const [theme, toggleTheme] = useConsoleTheme()
     const [openIncidents, setOpenIncidents] = useState(0)
     const running = activeInstallations.filter(i => i.status === 'running')
     const [approvalsWaiting, setApprovalsWaiting] = useState(0)
@@ -229,11 +243,15 @@ export default function AppShell({ children }) {
                     </button>
 
                     <div className="flex items-center gap-2 sm:ml-auto shrink-0">
+                        <button type="button" onClick={toggleTheme} className="p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition"
+                            aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'} title={theme === 'light' ? 'Dark theme' : 'Light theme'}>
+                            {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+                        </button>
                         <UpdatesMenu />
                         <Link to="/incidents" className="relative p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition" aria-label={`Incidents${openIncidents ? ` (${openIncidents} open)` : ''}`}>
                             <Bell className="w-5 h-5" />
                             {openIncidents > 0 && (
-                                <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-black text-white flex items-center justify-center ring-2 ring-[#08080b]">{openIncidents > 9 ? '9+' : openIncidents}</span>
+                                <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-black text-white flex items-center justify-center ring-2 ring-[var(--kz-bg)]">{openIncidents > 9 ? '9+' : openIncidents}</span>
                             )}
                         </Link>
                         {can(user?.role, 'cluster:create') && (

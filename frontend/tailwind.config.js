@@ -34,6 +34,10 @@ const graphite = {
     950: '#0c0d0f',
 }
 
+const SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
+const themed = Object.fromEntries(['blue', 'slate', 'emerald', 'amber', 'red', 'sky', 'purple', 'violet', 'rose', 'gray', 'cyan', 'fuchsia', 'orange', 'yellow', 'green', 'indigo', 'pink', 'teal', 'lime']
+    .map(n => [n, Object.fromEntries(SHADES.map(s => [s, `rgb(var(--c-${n}-${s}) / <alpha-value>)`]))]))
+
 export default {
     content: [
         "./index.html",
@@ -42,18 +46,21 @@ export default {
     theme: {
         extend: {
             colors: {
-                blue: iris,
-                slate: graphite,
-                iris,
-                graphite,
+                // every palette is a theme variable (src/theme-vars.css): the
+                // same classes render dark or light; light flips each scale
+                ...themed,
+                white: 'rgb(var(--c-white) / <alpha-value>)',
+                black: 'rgb(var(--c-black) / <alpha-value>)',
+                iris: themed.blue,
+                graphite: themed.slate,
                 // older names, kept so nothing breaks
-                aurora: iris,
-                night: graphite,
+                aurora: themed.blue,
+                night: themed.slate,
                 // tokens used by the Lightswind components
                 primary: { ...iris, DEFAULT: iris[500], foreground: '#ffffff' },
                 primarylw: iris[500],
-                secondary: { DEFAULT: graphite[400], foreground: graphite[100] },
-                foreground: graphite[100],
+                secondary: { DEFAULT: themed.slate[400], foreground: themed.slate[100] },
+                foreground: themed.slate[100],
                 background: '#08090a',
                 k8s: {
                     blue: '#326CE5',
