@@ -249,6 +249,16 @@ export async function explorerHttp(req, res) {
 
     const up = http.request({ method: req.method, path: req.originalUrl, headers, createConnection: () => stream })
     up.on('response', (pres) => {
+        // the page's health check: an error from Radar itself, said in words
+        if (pres.statusCode >= 500 && /\/explorer\/api\/health(\?|$)/.test(req.originalUrl)) {
+            const chunks = []
+            pres.on('data', c => { if (chunks.length < 8) chunks.push(c) })
+            pres.on('end', () => {
+                const said = Buffer.concat(chunks).toString('utf8').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+                sendError(res, 502, `The KubeEZ Explorer is running in the cluster but answered HTTP ${pres.statusCode}${said ? `: ${said}` : ''}. Add-ons → KubeEZ Explorer → Logs shows why; Repair restarts it.`, 'EXPLORER_UNHEALTHY')
+            })
+            return
+        }
         const h = { ...pres.headers }
         delete h['content-security-policy']
         delete h['x-frame-options']

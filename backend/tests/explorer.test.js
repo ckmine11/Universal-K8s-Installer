@@ -40,8 +40,10 @@ authService.verifyToken = (t) => USERS[t] || null
 
 // ── Fake Radar ──
 let lastHeaders = null
+let radarSick = false
 const radar = http.createServer((req, res) => {
     lastHeaders = req.headers
+    if (radarSick && req.url.endsWith('/api/health')) { res.writeHead(502, { 'content-type': 'text/plain' }); return res.end('kubernetes API unreachable') }
     if (req.url.endsWith('/api/health')) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}') }
     if (req.url.endsWith('/events')) {
         res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -117,6 +119,17 @@ test('proxy: spoofed identity replaced, KubeEZ credentials never reach Radar', a
     assert.equal(lastHeaders['x-forwarded-groups'], 'kubeez:viewers,kubeez:org:org-a')
     assert.equal(lastHeaders.cookie, undefined)
     assert.ok(!JSON.stringify(lastHeaders).includes('tok-viewer'))
+})
+
+test('health check: an error from Radar itself is explained, not a bare status', async () => {
+    radarSick = true
+    try {
+        const r = await get('/api/clusters/c-ex/explorer/api/health', { cookie: 'token=tok-admin' })
+        assert.equal(r.status, 502)
+        const j = await r.json()
+        assert.equal(j.code, 'EXPLORER_UNHEALTHY')
+        assert.match(j.error, /answered HTTP 502: kubernetes API unreachable/)
+    } finally { radarSick = false }
 })
 
 test('proxy: pages get the hashed CSP and can be framed by KubeEZ only', async () => {

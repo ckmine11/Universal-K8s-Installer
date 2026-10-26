@@ -34,9 +34,15 @@ export default function ExplorerTab({ clusterId, installed, canInstall, level = 
         try {
             const r = await apiFetch(`${explorerBase(clusterId)}/api/health`)
             if (r.ok) return setState('ready')
-            const j = await r.json().catch(() => ({}))
+            const text = await r.text().catch(() => '')
+            let j = {}
+            try { j = JSON.parse(text) } catch { }
             if (r.status === 404 && j.code === 'NOT_INSTALLED') return setState('absent')
-            setError(j.error || `The Explorer answered ${r.status}`); setState('error')
+            // not KubeEZ's own answer: say who sent it (the web server in front, Cloudflare)
+            const who = /cloudflare/i.test(text) ? ' from Cloudflare — the KubeEZ server did not answer in time'
+                : /nginx/i.test(text) ? ' from the web server in front of KubeEZ — the KubeEZ backend is down or restarting, or the request broke off'
+                    : ''
+            setError(j.error || `The Explorer answered ${r.status}${who}.`); setState('error')
         } catch (e) { setError(e.message); setState('error') }
     }
     useEffect(() => { if (installed) probe(); else setState('absent') }, [clusterId, installed])
