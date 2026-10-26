@@ -1252,10 +1252,10 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                     <div className="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/20">
                                                         <div className="flex items-center space-x-2 mb-2">
                                                             <Info size={14} className="text-blue-400" />
-                                                            <span className="text-[10px] font-black uppercase text-blue-400">Tactical Strategy</span>
+                                                            <span className="text-[10px] font-black uppercase text-blue-400">What happens next</span>
                                                         </div>
                                                         <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
-                                                            Converging {allNodes.length} nodes on {isRedHat ? 'RedHat' : 'Debian'} architecture. Master fleet priority 1.
+                                                            KubeEZ sets up {allNodes.length} server{allNodes.length > 1 ? "s" : ""} ({isRedHat ? "RHEL family" : "Debian / Ubuntu family"}): the control plane first, then the workers.
                                                         </p>
                                                     </div>
                                                 </div>
