@@ -103,6 +103,14 @@ app.use(helmet({
     contentSecurityPolicy: false, // Disable CSP to avoid frontend conflicts (API-focused)
     crossOriginEmbedderPolicy: false
 }))
+// Cloudflare (in front of the hosted site) swaps any 502 / 504 from the server
+// for its own "Bad gateway" page — the explanation KubeEZ wrote never reaches
+// the screen. KubeEZ's own errors go out as 503, which Cloudflare passes through.
+app.use((req, res, next) => {
+    const status = res.status.bind(res)
+    res.status = (code) => status(code === 502 || code === 504 ? 503 : code)
+    next()
+})
 // KubeEZ Explorer: streamed straight through (SSE, uploads) — before
 // compression, the JSON body parser and the API rate limit (a Radar page
 // loads dozens of assets). requireAuth + workspace check inside.

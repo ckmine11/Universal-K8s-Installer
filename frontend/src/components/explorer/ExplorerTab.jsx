@@ -39,7 +39,7 @@ export default function ExplorerTab({ clusterId, installed, canInstall, level = 
             try { j = JSON.parse(text) } catch { }
             if (r.status === 404 && j.code === 'NOT_INSTALLED') return setState('absent')
             // not KubeEZ's own answer: say who sent it (the web server in front, Cloudflare)
-            const who = /cloudflare/i.test(text) ? ' from Cloudflare — the KubeEZ server did not answer in time'
+            const who = /cloudflare/i.test(text) ? ' — Cloudflare got no usable answer from the KubeEZ server (backend down or restarting, or the request broke off)'
                 : /nginx/i.test(text) ? ' from the web server in front of KubeEZ — the KubeEZ backend is down or restarting, or the request broke off'
                     : ''
             setError(j.error || `The Explorer answered ${r.status}${who}.`); setState('error')

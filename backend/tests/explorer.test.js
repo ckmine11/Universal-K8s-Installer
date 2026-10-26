@@ -125,7 +125,7 @@ test('health check: an error from Radar itself is explained, not a bare status',
     radarSick = true
     try {
         const r = await get('/api/clusters/c-ex/explorer/api/health', { cookie: 'token=tok-admin' })
-        assert.equal(r.status, 502)
+        assert.equal(r.status, 503, 'not 502: Cloudflare would replace it with its own page')
         const j = await r.json()
         assert.equal(j.code, 'EXPLORER_UNHEALTHY')
         assert.match(j.error, /answered HTTP 502: kubernetes API unreachable/)

@@ -204,7 +204,7 @@ async function openUpstream(cluster) {
     try {
         return await clusterTunnel.open(cluster, ip, PORT)
     } catch (e) {
-        if (e.code === 'AGENT_OUTDATED') throw Object.assign(e, { status: 502 })
+        if (e.code === 'AGENT_OUTDATED') throw Object.assign(e, { status: 503 })
         // the Service may have been recreated with a new IP
         const again = await target(cluster, true)
         return clusterTunnel.open(cluster, again, PORT)
@@ -237,7 +237,7 @@ export async function explorerHttp(req, res) {
     try {
         stream = await openUpstream(cluster)
     } catch (e) {
-        return sendError(res, e.status || 502, e.status ? e.message : `Could not reach the KubeEZ Explorer: ${e.message}`, e.code)
+        return sendError(res, e.status || 503, e.status ? e.message : `Could not reach the KubeEZ Explorer: ${e.message}`, e.code)
     }
 
     const scoped = await scopeFor(req.user, cluster)
@@ -255,7 +255,7 @@ export async function explorerHttp(req, res) {
             pres.on('data', c => { if (chunks.length < 8) chunks.push(c) })
             pres.on('end', () => {
                 const said = Buffer.concat(chunks).toString('utf8').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
-                sendError(res, 502, `The KubeEZ Explorer is running in the cluster but answered HTTP ${pres.statusCode}${said ? `: ${said}` : ''}. Add-ons → KubeEZ Explorer → Logs shows why; Repair restarts it.`, 'EXPLORER_UNHEALTHY')
+                sendError(res, 503, `The KubeEZ Explorer is running in the cluster but answered HTTP ${pres.statusCode}${said ? `: ${said}` : ''}. Add-ons → KubeEZ Explorer → Logs shows why; Repair restarts it.`, 'EXPLORER_UNHEALTHY')
             })
             return
         }
@@ -284,7 +284,7 @@ export async function explorerHttp(req, res) {
             res.end(body)
         })
     })
-    up.on('error', (e) => sendError(res, 502, `The KubeEZ Explorer connection failed: ${e.message}`))
+    up.on('error', (e) => sendError(res, 503, `The KubeEZ Explorer connection failed: ${e.message}`))
     // browser gone (closed tab, ended SSE) → close the tunnel stream too
     res.on('close', () => { try { up.destroy() } catch { } try { stream.destroy() } catch { } })
     req.pipe(up)
