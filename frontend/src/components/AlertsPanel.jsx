@@ -307,7 +307,7 @@ export default function AlertsPanel() {
                                 <input type="time" aria-label="Quiet hours end" value={rules.quietHours.end} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, end: e.target.value } }))} className={`${input} !py-1.5 !w-36`} />
                             </div>
                             <select aria-label="Time zone" value={rules.quietHours.timezone} onChange={e => setRules(r => ({ ...r, quietHours: { ...r.quietHours, timezone: e.target.value } }))} className={`${input} !py-1.5 mt-2`}>
-                                {zones(rules.quietHours.timezone).map(z => <option key={z} value={z} className="bg-slate-950">{z.replace(/_/g, ' ')}</option>)}
+                                {zones(rules.quietHours.timezone).map(z => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
                             </select>
                             {rules.quietHours.enabled && rules.quietHours.start === rules.quietHours.end && <p className="mt-1.5 text-[11px] text-red-300">Start and end are the same time — quiet hours would never apply.</p>}
                             {rules.quietHours.enabled && <p className="mt-1.5 text-[11px] text-slate-500">Now in {rules.quietHours.timezone.replace(/_/g, ' ')}: {nowIn(rules.quietHours.timezone)}</p>}

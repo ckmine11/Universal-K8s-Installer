@@ -59,6 +59,7 @@
 :root[data-skin="zen"] .kz-btn-light:not(.kz-dark *) { background: var(--kz-ink); color: #fff; box-shadow: none; }
 :root[data-skin="zen"] .kz-btn-light:not(.kz-dark *):hover { background: #2a2b26; }
 :root[data-skin="zen"] .kz-btn-ghost:not(.kz-dark *) { background: #fff; border-color: rgba(17, 17, 17, 0.14); color: var(--kz-ink); }
+:root[data-skin="zen"] select:not(.kz-dark *) option:checked { background-color: #eef9c4 !important; color: var(--kz-ink) !important; }
 :root[data-skin="zen"] .kz-input:not(.kz-dark *):focus { border-color: var(--kz-ink); box-shadow: 0 0 0 3px rgba(212, 245, 60, 0.55); }
 
 /* solid accent fills (badges, active tabs, buttons coloured "blue"): lime with ink text */

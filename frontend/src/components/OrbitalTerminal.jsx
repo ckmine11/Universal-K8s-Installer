@@ -218,7 +218,7 @@ const OrbitalTerminal = ({ clusterId, nodes, onClose, kubectlOnly = false }) => 
                                             <span className="text-sm text-amber-100">Terminal access is given for a limited time and every session is recorded.</span>
                                             <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why do you need it? (an admin approves it)" className="flex-1 min-w-[14rem] bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200" />
                                             <select value={minutes} onChange={e => setMinutes(Number(e.target.value))} className="bg-black/40 border border-white/10 rounded-xl px-2 py-2 text-sm text-slate-200">
-                                                {(access.minutes || [15, 30, 60, 120]).map(m => <option key={m} value={m} className="bg-slate-950">{m} min</option>)}
+                                                {(access.minutes || [15, 30, 60, 120]).map(m => <option key={m} value={m}>{m} min</option>)}
                                             </select>
                                             <button disabled={asking || reason.trim().length < 5} className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl text-sm font-bold">{asking ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Ask for access'}</button>
                                             {askError && <span className="w-full text-xs text-red-300">{askError}</span>}

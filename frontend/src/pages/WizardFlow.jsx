@@ -36,6 +36,7 @@ import {
     Sparkles
 , Compass, Wifi, ArrowRight } from 'lucide-react'
 import NodeVerificationCard from '../components/NodeVerificationCard'
+import SshKeyInput from '../components/SshKeyInput'
 import AddonSettingsDialog from '../components/AddonSettingsDialog'
 import DeploymentPlan from '../components/DeploymentPlan'
 
@@ -461,7 +462,7 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                         onChange={(e) => setFormData({ ...formData, k8sVersion: e.target.value })}
                                     >
                                         {K8S_VERSIONS.map(v => (
-                                            <option key={v.value} value={v.value} className="bg-slate-900">
+                                            <option key={v.value} value={v.value}>
                                                 {v.label}{v.badge ? ` — ${v.badge}` : ''} {v.status === 'eol' ? '(EOL)' : '(Supported)'}
                                             </option>
                                         ))}
@@ -630,14 +631,8 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1.5">
-                                                        <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key Path (Optional)</label>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="/root/.ssh/id_rsa"
-                                                            className="w-full px-5 py-3 rounded-xl bg-black/40 border border-blue-500/20 focus:border-blue-500 outline-none placeholder:text-slate-700"
-                                                            value={node.sshKey}
-                                                            onChange={(e) => updateNode('master', idx, 'sshKey', e.target.value)}
-                                                        />
+                                                        <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key (or use the password)</label>
+                                                        <SshKeyInput value={node.sshKey} onChange={(v) => updateNode('master', idx, 'sshKey', v)} className="focus:border-blue-500" />
                                                     </div>
                                                 </div>
                                                 <NodeVerificationCard
@@ -747,15 +742,12 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                             </div>
                                                         </div>
                                                         <div className="space-y-1.5">
-                                                            <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key (Paste Content)</label>
-                                                            <div className="flex space-x-2">
-                                                                <textarea
-                                                                    placeholder="Paste Private Key Content (starts with -----BEGIN...)"
-                                                                    className="flex-1 px-5 py-3 rounded-xl bg-black/40 border border-emerald-500/20 focus:border-emerald-500 outline-none placeholder:text-slate-700 font-mono text-[10px] h-[52px] min-h-[52px] resize-y"
-                                                                    value={node.sshKey}
-                                                                    onChange={(e) => updateNode('master', actualIdx, 'sshKey', e.target.value)}
-                                                                />
+                                                            <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key (or use the password)</label>
+                                                            <div className="flex items-start gap-2">
+                                                                <SshKeyInput value={node.sshKey} onChange={(v) => updateNode('master', actualIdx, 'sshKey', v)} className="focus:border-emerald-500" />
                                                                 <button
+                                                                    type="button"
+                                                                    aria-label="Remove this node"
                                                                     onClick={() => removeNode('master', actualIdx)}
                                                                     className="p-3 text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-xl transition-all h-[52px]"
                                                                 >
@@ -841,16 +833,13 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1.5 relative">
-                                                        <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key (Paste Content)</label>
-                                                        <div className="flex space-x-2">
-                                                            <textarea
-                                                                placeholder="Paste Private Key Content (starts with -----BEGIN...)"
-                                                                className="flex-1 px-5 py-3 rounded-xl bg-black/40 border border-white/10 focus:border-blue-500 outline-none placeholder:text-slate-700 font-mono text-[10px] h-[52px] min-h-[52px] resize-y"
-                                                                value={node.sshKey}
-                                                                onChange={(e) => updateNode('master', idx, 'sshKey', e.target.value)}
-                                                            />
+                                                        <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key (or use the password)</label>
+                                                        <div className="flex items-start gap-2">
+                                                            <SshKeyInput value={node.sshKey} onChange={(v) => updateNode('master', idx, 'sshKey', v)} className="focus:border-blue-500" />
                                                             {formData.masterNodes.length > 1 && (
                                                                 <button
+                                                                    type="button"
+                                                                    aria-label="Remove this node"
                                                                     onClick={() => removeNode('master', idx)}
                                                                     className="p-3 text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-xl transition-all h-[52px]"
                                                                 >
@@ -995,15 +984,12 @@ export default function WizardFlow({ onStartInstallation, onCancel, mode = 'inst
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1.5 relative">
-                                                        <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key (Paste Content)</label>
-                                                        <div className="flex space-x-2">
-                                                            <textarea
-                                                                placeholder="Paste Private Key Content (starts with -----BEGIN...)"
-                                                                className="flex-1 px-5 py-3 rounded-xl bg-black/40 border border-white/10 focus:border-purple-500 outline-none placeholder:text-slate-700 font-mono text-[10px] h-[52px] min-h-[52px] resize-y"
-                                                                value={node.sshKey}
-                                                                onChange={(e) => updateNode('worker', idx, 'sshKey', e.target.value)}
-                                                            />
+                                                        <label className="text-[10px] font-black uppercase text-slate-500 ml-1">SSH Private Key (or use the password)</label>
+                                                        <div className="flex items-start gap-2">
+                                                            <SshKeyInput value={node.sshKey} onChange={(v) => updateNode('worker', idx, 'sshKey', v)} className="focus:border-purple-500" />
                                                             <button
+                                                                type="button"
+                                                                aria-label="Remove this node"
                                                                 onClick={() => removeNode('worker', idx)}
                                                                 className="p-3 text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-xl transition-all h-[52px]"
                                                             >

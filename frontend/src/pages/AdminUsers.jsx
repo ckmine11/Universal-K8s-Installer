@@ -5,7 +5,7 @@ import { useToast } from '../components/ToastProvider'
 import { PageTitle } from '../components/ui/PageHeader'
 import {
     Users, Shield, User, Trash2, Crown, RefreshCw, Loader2,
-    ChevronRight, Lock, AlertTriangle, Check, Clock, Eye, Wrench,
+    Lock, AlertTriangle, Check, Clock, Eye, Wrench,
     KeyRound, Search, UserCheck, UserX, MoreVertical, X, Layers, Download, ShieldCheck, Sparkles, EyeOff
 } from 'lucide-react'
 import RolesPanel from '../components/team/RolesPanel'
@@ -177,7 +177,7 @@ function CreateUserModal({ onClose, onSuccess, roleOptions }) {
                     <div>
                         <select value={formData.role} onChange={field('role')} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
                             {roleOptions.map(r => (
-                                <option key={r.key} value={r.key} className="bg-slate-950">{r.name}{r.custom ? ' (custom)' : ''}</option>
+                                <option key={r.key} value={r.key}>{r.name}{r.custom ? ' (custom)' : ''}</option>
                             ))}
                         </select>
                         <p className="text-[11px] text-slate-500 mt-1.5 px-1">{roleOptions.find(r => r.key === formData.role)?.description}</p>
@@ -186,7 +186,7 @@ function CreateUserModal({ onClose, onSuccess, roleOptions }) {
                         <div>
                             <label htmlFor="new-ai" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1"><Sparkles className="w-3 h-3 text-violet-300" /> KubeEZ AI</label>
                             <select id="new-ai" value={formData.aiAccess} onChange={field('aiAccess')} className="w-full bg-black/35 border border-white/5 focus:border-blue-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors appearance-none">
-                                {AI_LEVELS.map(l => <option key={l.key} value={l.key} className="bg-slate-950">{l.name}</option>)}
+                                {AI_LEVELS.map(l => <option key={l.key} value={l.key}>{l.name}</option>)}
                             </select>
                             <p className="text-[11px] text-slate-500 mt-1.5 px-1">{AI_LEVELS.find(l => l.key === formData.aiAccess)?.hint}</p>
                         </div>
@@ -228,7 +228,7 @@ function AiAccess({ userItem, onRefresh }) {
             <select id={`ai-${userItem.id}`} value={userItem.aiAccess || 'none'} disabled={saving} onChange={e => change(e.target.value)}
                 title={AI_LEVELS.find(l => l.key === (userItem.aiAccess || 'none'))?.hint}
                 className="flex-1 py-1.5 pl-2 pr-6 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 outline-none disabled:opacity-50">
-                {AI_LEVELS.map(l => <option key={l.key} value={l.key} className="bg-slate-950">{l.key === 'none' && fromRole ? `From their role (${userItem.ai === 'apply' ? 'Ask & apply' : 'Ask AI'})` : l.name}</option>)}
+                {AI_LEVELS.map(l => <option key={l.key} value={l.key}>{l.key === 'none' && fromRole ? `From their role (${userItem.ai === 'apply' ? 'Ask & apply' : 'Ask AI'})` : l.name}</option>)}
             </select>
             {saving && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
         </div>
@@ -363,13 +363,10 @@ function UserCard({ userItem, currentUser, onRefresh, roleOptions, onClusterAcce
                                 aria-label="Role"
                             >
                                 {roleOptions.map(r => (
-                                    <option key={r.key} value={r.key} className="bg-slate-950">{r.name}{r.custom ? ' (custom)' : ''}</option>
+                                    <option key={r.key} value={r.key}>{r.name}{r.custom ? ' (custom)' : ''}</option>
                                 ))}
                             </select>
-                            {changingRole
-                                ? <Loader2 className="w-3 h-3 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                : <ChevronRight className="w-3 h-3 rotate-90 absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                            }
+                            {changingRole && <Loader2 className="w-3 h-3 animate-spin absolute right-8 top-1/2 -translate-y-1/2 text-slate-400" />}
                         </div>
 
                         {/* Cluster access: a different role on some clusters (not for admins — they have everything) */}

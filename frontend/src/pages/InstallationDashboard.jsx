@@ -689,9 +689,9 @@ export default function InstallationDashboard({ installationId, onGoHome, onScal
                                             value={targetVersion}
                                             onChange={(e) => setTargetVersion(e.target.value)}
                                         >
-                                            <option value="" disabled className="bg-slate-900">Select Kubernetes Version</option>
+                                            <option value="" disabled>Select Kubernetes Version</option>
                                             {K8S_VERSIONS.map(v => (
-                                                <option key={v.value} value={v.value} className="bg-slate-900" disabled={v.value === (clusterInfo?.version || clusterInfo?.k8sVersion)}>
+                                                <option key={v.value} value={v.value} disabled={v.value === (clusterInfo?.version || clusterInfo?.k8sVersion)}>
                                                     {v.label} {v.status === 'eol' ? '(EOL)' : '(Supported)'} {v.value === (clusterInfo?.version || clusterInfo?.k8sVersion) ? '— Current' : ''}
                                                 </option>
                                             ))}

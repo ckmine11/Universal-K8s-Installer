@@ -257,7 +257,7 @@ export default function OffsiteBackup({ clusterId, offsite, canConfigure, canSyn
                             <div>
                                 <label className={label}>Region</label>
                                 <select value={form.region} onChange={set('region')} className={input}>
-                                    {AWS_REGIONS.map(([v, n]) => <option key={v} value={v} className="bg-slate-900">{n} — {v}</option>)}
+                                    {AWS_REGIONS.map(([v, n]) => <option key={v} value={v}>{n} — {v}</option>)}
                                 </select>
                             </div>
                         ) : (

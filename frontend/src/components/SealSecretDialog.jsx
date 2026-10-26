@@ -64,9 +64,9 @@ export default function SealSecretDialog({ clusterId, onClose }) {
                     <div>
                         <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1" htmlFor="ss-scope">Can be opened</label>
                         <select id="ss-scope" className={inputCls} value={scope} onChange={e => setScope(e.target.value)}>
-                            <option value="strict" className="bg-slate-950">Only with this name in this namespace (safest)</option>
-                            <option value="namespace-wide" className="bg-slate-950">Under any name in this namespace</option>
-                            <option value="cluster-wide" className="bg-slate-950">Anywhere in the cluster</option>
+                            <option value="strict">Only with this name in this namespace (safest)</option>
+                            <option value="namespace-wide">Under any name in this namespace</option>
+                            <option value="cluster-wide">Anywhere in the cluster</option>
                         </select>
                     </div>
                     <div className="space-y-2">

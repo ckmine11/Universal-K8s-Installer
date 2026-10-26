@@ -43,7 +43,7 @@ function RequestDialog({ clusterId, clusterName, onClose, onSent }) {
                     <div>
                         <label className="kz-label" htmlFor="el-role">Role on this cluster</label>
                         <select id="el-role" className="kz-input" value={role} onChange={e => setRole(e.target.value)}>
-                            {opts.roles.map(r => <option key={r.key} value={r.key} className="bg-slate-950">{r.name}</option>)}
+                            {opts.roles.map(r => <option key={r.key} value={r.key}>{r.name}</option>)}
                         </select>
                     </div>
                     <div>

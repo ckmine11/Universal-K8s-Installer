@@ -26,7 +26,7 @@ function Field({ f, value, onChange }) {
             <label htmlFor={id} className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">{f.label}{f.unit ? ` (${f.unit})` : ''}</label>
             {f.type === 'select' ? (
                 <select id={id} className={inputCls} value={String(value ?? '')} onChange={e => onChange(e.target.value)}>
-                    {f.options.map(([v, l]) => <option key={v} value={v} className="bg-slate-950">{l}</option>)}
+                    {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
             ) : (
                 <input id={id} className={inputCls} type={f.type === 'number' ? 'number' : 'text'} min={f.min} max={f.max} placeholder={f.placeholder || ''}
@@ -138,7 +138,7 @@ export default function AddonSettingsDialog({ clusterId, addonKey, installed, ru
                             Version
                             <select aria-label="Version" value={version} onChange={e => setVersion(e.target.value)} className="max-w-[16rem] bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200">
                                 {s.versions.map(v => (
-                                    <option key={v.id} value={v.id} disabled={v.fits === false} className="bg-slate-950">
+                                    <option key={v.id} value={v.id} disabled={v.fits === false}>
                                         {v.id} (app {v.app}){v.recommended ? ' — recommended' : ''}{v.tested === false ? ' — new, not yet tested by KubeEZ' : ''}{v.fits === false ? ` — needs Kubernetes 1.${v.kube?.[0]}+` : ''}{runningApp && !data.applied && v.app.replace(/^v/, '').split('.').slice(0, 2).join('.') === runningApp.split('.').slice(0, 2).join('.') ? ' — runs now' : ''}
                                     </option>
                                 ))}

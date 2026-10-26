@@ -275,9 +275,23 @@ input[type="checkbox"], input[type="radio"] { accent-color: #8069fb; box-shadow:
    see-through background it came out white with white text. A solid dark list
    with light text everywhere (every <select> in the app). */
 select { color-scheme: dark; color: #f1f5f9; }
-select option, select optgroup { background-color: #16161d; color: #e2e8f0; }
-select option:checked { background-color: #3b2f7a; color: #ffffff; }
-select option:disabled { color: #64748b; }
+select option, select optgroup { background-color: #16161d !important; color: #e2e8f0 !important; }
+select option:checked { background-color: #3b2f7a !important; color: #ffffff !important; }
+select option:disabled { color: #64748b !important; }
+/* One look for every dropdown: the same chevron on the right (some fields hid
+   the browser's arrow, so they did not look like a choice), room for it, and
+   no text running under it. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.7rem center !important;
+  background-size: 14px 14px !important;
+  padding-right: 2.25rem !important;
+  text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+  cursor: pointer;
+}
+select:disabled { cursor: not-allowed; opacity: 0.6; }
 :focus-visible { outline: 2px solid rgba(154, 135, 255, 0.8); outline-offset: 2px; }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
@@ -404,7 +418,11 @@ input[type="search"]::-webkit-search-cancel-button, input[type="search"]::-webki
 :root[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(12, 13, 15, 0.14); background-clip: padding-box; }
 :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(12, 13, 15, 0.26); background-clip: padding-box; }
 :root[data-theme="light"] select { color-scheme: light; color: #0c0d0f; }
-:root[data-theme="light"] select option:checked { background-color: #e8e4ff; color: #0c0d0f; }
+:root[data-theme="light"] select:not(.kz-dark *) option,
+:root[data-theme="light"] select:not(.kz-dark *) optgroup { background-color: #ffffff !important; color: #0c0d0f !important; }
+:root[data-theme="light"] select:not(.kz-dark *) option:checked { background-color: #e8e4ff !important; color: #0c0d0f !important; }
+:root[data-theme="light"] select:not(.kz-dark *) option:disabled { color: #9a9ea6 !important; }
+:root[data-theme="light"] select:not([multiple]):not([size]):not(.kz-dark *) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b5e57' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important; }
 :root[data-theme="light"] :is(input, textarea, select):not(.kz-dark *) { background: #fff; }
 :root[data-theme="light"] :is(input, textarea, select):focus:not(.kz-dark *) { background: #fff; box-shadow: 0 0 0 3px rgba(128, 105, 251, 0.18); }
 :root[data-theme="light"] .log-line:hover:not(.kz-dark *) { background: rgba(12, 13, 15, 0.03); }

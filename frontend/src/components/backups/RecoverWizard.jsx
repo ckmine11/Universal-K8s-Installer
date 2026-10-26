@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { apiFetch } from '../../context/AuthContext'
 import JobProgress from './JobProgress'
 import { useEtcdJob, startJob } from './useEtcdJob'
-import { X, Loader2, LifeBuoy, AlertTriangle, ChevronDown, Server, CheckCircle2 } from 'lucide-react'
+import { X, Loader2, LifeBuoy, AlertTriangle, Server, CheckCircle2 } from 'lucide-react'
 
 // etcd-<kind>-YYYYmmdd-HHMMSS.tar.gz.enc → readable time
 function bundleWhen(name) {
@@ -102,9 +102,8 @@ export default function RecoverWizard({ clusterId, clusterName, masterIp, contro
                                 <div className="relative mb-4">
                                     <select value={selected} onChange={e => setSelected(e.target.value)} aria-label="Offsite backup"
                                         className="w-full appearance-none bg-black/40 border border-white/10 rounded-xl pl-4 pr-10 py-3 text-sm text-white outline-none">
-                                        {list.map(n => <option key={n} value={n} className="bg-slate-900">{bundleWhen(n)} — {n.includes('pre-upgrade') ? 'before upgrade' : n.includes('pre-restore') ? 'before restore' : 'manual'}</option>)}
+                                        {list.map(n => <option key={n} value={n}>{bundleWhen(n)} — {n.includes('pre-upgrade') ? 'before upgrade' : n.includes('pre-restore') ? 'before restore' : 'manual'}</option>)}
                                     </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                                 </div>
                                 <div className="flex gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-3 mb-4 text-[11px] text-amber-200/90">
                                     <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />

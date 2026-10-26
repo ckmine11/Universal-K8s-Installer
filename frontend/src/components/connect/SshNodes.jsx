@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Loader2, Server, KeyRound, Trash2, CheckCircle2, Info } from 'lucide-react'
 import { useToast } from '../ToastProvider'
 import { call } from './shared'
+import SshKeyInput from '../SshKeyInput'
 
 // SSH for an on-prem imported cluster: pick its nodes, give the logins — each
 // node is checked (SSH works, it IS a node of this cluster) before it is kept.
@@ -57,7 +58,7 @@ export default function SshNodes({ c, onChanged }) {
                             <select aria-label="Login" className="kz-input !py-1 !text-xs" value={r.auth} onChange={e => set(i, { auth: e.target.value, secret: '' })}><option value="password">Password</option><option value="key">SSH key</option></select>
                             {r.auth === 'password'
                                 ? <input aria-label="Password" type="password" autoComplete="new-password" className="kz-input !py-1 !text-xs" value={r.secret} onChange={e => set(i, { secret: e.target.value })} placeholder="password" />
-                                : <textarea aria-label="Private key" className="kz-input !py-1 !text-[10px] font-mono col-span-2 h-16" spellCheck={false} value={r.secret} onChange={e => set(i, { secret: e.target.value })} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />}
+                                : <div className="col-span-2"><SshKeyInput value={r.secret} onChange={v => set(i, { secret: v })} className="!min-h-[64px] !px-3 !py-2 !text-[10px]" /></div>}
                         </div>
                     )}
                 </div>

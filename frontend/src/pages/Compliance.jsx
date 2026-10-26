@@ -154,7 +154,7 @@ export default function Compliance() {
                 actions={<>
                     <select aria-label="Cluster" value={clusterId} onChange={e => { const p = new URLSearchParams(params); p.set('cluster', e.target.value); setParams(p) }}
                         className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200">
-                        {ov.clusters.map(c => <option key={c.id} value={c.id} className="bg-slate-950">{c.name}</option>)}
+                        {ov.clusters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                     {canManage && <>
                         <label className="flex items-center gap-1.5 text-xs text-slate-400" title="kube-bench as a short Job on the control-plane (2–4 minutes)">
@@ -401,8 +401,8 @@ function CertIn({ clusterId, meta, pro, toast, attest }) {
                         <div className="text-sm font-semibold text-white">{sel.reason} <span className="text-slate-500 font-normal">— {sel.clusterName}</span></div>
                         <label className="block text-slate-400">Type of incident (Annexure I)
                             <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} className="mt-1 w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200">
-                                <option value="" className="bg-slate-950">— choose —</option>
-                                {meta.certinTypes.map(t => <option key={t} value={t} className="bg-slate-950">{t}</option>)}
+                                <option value="">— choose —</option>
+                                {meta.certinTypes.map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
                         </label>
                         {[['organisation', 'Organisation name'], ['occurredAt', 'When did it start (if known)']].map(([k, l]) => (
@@ -431,7 +431,7 @@ function Audit({ clusters, toast }) {
         <div className="kz-card">
             <div className="flex flex-wrap items-center gap-2 p-3 border-b border-white/[0.05] text-xs">
                 <select value={days} onChange={e => setDays(Number(e.target.value))} className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-slate-200">
-                    {[7, 30, 90, 180, 365].map(d => <option key={d} value={d} className="bg-slate-950">Last {d} days</option>)}
+                    {[7, 30, 90, 180, 365].map(d => <option key={d} value={d}>Last {d} days</option>)}
                 </select>
                 <input placeholder="Filter action (e.g. etcd, login, addons)" value={action} onChange={e => setAction(e.target.value)} className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-slate-200 w-64" />
                 {data && <span className={`flex items-center gap-1 ${data.chain.ok ? 'text-emerald-300' : 'text-red-300'}`}><Fingerprint className="w-3.5 h-3.5" />{data.chain.ok ? `Hash chain intact (${data.chain.count} entries)` : `Hash chain BROKEN: ${data.chain.reason}`}</span>}
@@ -487,9 +487,9 @@ function Schedule({ ov, canManage, reload, toast }) {
                     if (!r.ok) return toast({ title: 'Not saved', message: j.error, type: 'error' })
                     toast({ title: 'Add-on scan: ' + j.addonScan, type: 'success' }); reload()
                 }} className="mt-3 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200">
-                    <option value="off" className="bg-slate-950">Off</option>
-                    <option value="warn" className="bg-slate-950">Warn — report findings in the install log</option>
-                    <option value="block" className="bg-slate-950">Block — refuse images with fixable critical vulnerabilities</option>
+                    <option value="off">Off</option>
+                    <option value="warn">Warn — report findings in the install log</option>
+                    <option value="block">Block — refuse images with fixable critical vulnerabilities</option>
                 </select>
             </div>
         </div>

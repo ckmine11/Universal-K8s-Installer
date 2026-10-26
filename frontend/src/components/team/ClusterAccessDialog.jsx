@@ -76,7 +76,7 @@ export default function ClusterAccessDialog({ member, roleOptions, clusters, onC
                                         <Server className="w-4 h-4 text-slate-400" />
                                         <span className="text-sm text-slate-400">On</span>
                                         <select aria-label="Cluster" className={select} value={r.clusterId} onChange={e => update(r._k, { clusterId: e.target.value })}>
-                                            {clusters.map(c => <option key={c.id} value={c.id} className="bg-slate-950">{c.clusterName}</option>)}
+                                            {clusters.map(c => <option key={c.id} value={c.id}>{c.clusterName}</option>)}
                                         </select>
                                     </>
                                 ) : (
@@ -90,8 +90,8 @@ export default function ClusterAccessDialog({ member, roleOptions, clusters, onC
                                 )}
                                 <ArrowRight className="w-4 h-4 text-slate-500" />
                                 <select aria-label="Role there" className={select} value={r.role} onChange={e => update(r._k, { role: e.target.value })}>
-                                    {roleOptions.filter(o => o.key !== 'admin').map(o => <option key={o.key} value={o.key} className="bg-slate-950">{o.name}</option>)}
-                                    <option value="none" className="bg-slate-950">No access (hidden)</option>
+                                    {roleOptions.filter(o => o.key !== 'admin').map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
+                                    <option value="none">No access (hidden)</option>
                                 </select>
                                 <button onClick={() => remove(r._k)} className="ml-auto p-2 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/10" aria-label="Remove rule"><Trash2 className="w-4 h-4" /></button>
                                 {r.role !== 'none' && (
@@ -99,8 +99,8 @@ export default function ClusterAccessDialog({ member, roleOptions, clusters, onC
                                         <Boxes className="w-4 h-4 text-slate-500" />
                                         <select aria-label="Namespaces" className={`${select} !py-1.5 !text-xs`} value={r.nsText !== undefined && r.nsMode !== 'all' && (r.nsText.trim() || r.nsMode === 'some') ? 'some' : 'all'}
                                             onChange={e => update(r._k, e.target.value === 'all' ? { nsMode: 'all', nsText: '' } : { nsMode: 'some', nsText: r.nsText || '' })}>
-                                            <option value="all" className="bg-slate-950">All namespaces</option>
-                                            <option value="some" className="bg-slate-950">Only these namespaces…</option>
+                                            <option value="all">All namespaces</option>
+                                            <option value="some">Only these namespaces…</option>
                                         </select>
                                         {(r.nsMode === 'some' || r.nsText?.trim()) && (
                                             <input aria-label="Namespace list" className={`${select} !py-1.5 !text-xs font-mono flex-1 min-w-[200px]`} value={r.nsText || ''} placeholder="payments-*, web" autoComplete="off" spellCheck={false}
