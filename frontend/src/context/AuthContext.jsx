@@ -30,6 +30,16 @@ export async function apiFetch(url, options = {}) {
         }
     }
 
+    // An error page instead of KubeEZ's answer (Cloudflare or the web server in
+    // front gave up): hand the caller a readable error, not "Unexpected token '<'"
+    if (res.status >= 400 && !/json/i.test(res.headers.get('content-type') || '')) {
+        const s = res.status;
+        const error = [502, 503, 504, 520, 521, 522, 523, 524].includes(s)
+            ? `The KubeEZ server did not answer (HTTP ${s}). It may be restarting, or a cluster it was asking is off or unreachable. Try again in a minute.`
+            : `The server answered HTTP ${s}.`;
+        return new Response(JSON.stringify({ error, code: 'NOT_KUBEEZ_ANSWER' }), { status: s, headers: { 'Content-Type': 'application/json' } });
+    }
+
     return res;
 }
 

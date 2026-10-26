@@ -68,6 +68,7 @@ import { signupOpen } from './utils/signup.js'
 import oauthRoutes, { oauthProviders } from './routes/oauth.js'
 import { requireAuth } from './middleware/authMiddleware.js'
 import { explorerHttp, explorerUpgrade, EXPLORER_PATH } from './services/explorerProxy.js'
+import { readDeadline } from './middleware/readDeadline.js'
 import { canSeeCluster, canOn } from './services/accessControl.js'
 
 // One HTTP 'upgrade' entry: KubeEZ Explorer WebSockets (pod terminal, log
@@ -115,6 +116,8 @@ app.use((req, res, next) => {
 // compression, the JSON body parser and the API rate limit (a Radar page
 // loads dozens of assets). requireAuth + workspace check inside.
 app.use(EXPLORER_PATH, cookieParser(), requireAuth, explorerHttp)
+
+app.use('/api', readDeadline())   // answer before Cloudflare's 100 s cut-off (middleware/readDeadline.js)
 
 app.use(compression()) // Gzip compression
 
