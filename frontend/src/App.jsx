@@ -5,6 +5,7 @@ import IncidentNotifier from './components/IncidentNotifier'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AppShell from './components/shell/AppShell'
+import PageErrorBoundary from './components/PageErrorBoundary'
 import AuroraBackground from './components/shell/AuroraBackground'
 import { LogoMark } from './components/shell/Logo'
 // Every page is its own chunk: a visitor downloads the landing page, a member
@@ -92,8 +93,8 @@ function AuthenticatedApp() {
 
     if (!isAuthenticated) {
         // "/" is the public landing page; every other address (deep links) asks to sign in
-        if (location.pathname === '/') return <Suspense fallback={<div className="min-h-screen bg-[#060608]" />}><LandingPage /></Suspense>
-        return <Suspense fallback={<div className="min-h-screen bg-[#060608]" />}><Login /></Suspense>
+        if (location.pathname === '/') return <PageErrorBoundary><Suspense fallback={<div className="min-h-screen bg-[#060608]" />}><LandingPage /></Suspense></PageErrorBoundary>
+        return <PageErrorBoundary><Suspense fallback={<div className="min-h-screen bg-[#060608]" />}><Login /></Suspense></PageErrorBoundary>
     }
 
     const startInstallation = (id) => {
@@ -127,6 +128,7 @@ function AuthenticatedApp() {
             <ActiveInstallationIndicator />
             <IncidentNotifier />
 
+            <PageErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageFallback />}>
                 <Routes>
                     <Route
@@ -217,6 +219,7 @@ function AuthenticatedApp() {
                     } />
                 </Routes>
             </Suspense>
+            </PageErrorBoundary>
         </AppShell>
     )
 }
