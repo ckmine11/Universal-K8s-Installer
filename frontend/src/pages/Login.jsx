@@ -171,7 +171,7 @@ export default function Login() {
                         Install, upgrade, back up and heal production clusters from one console — with a clear reason and a fix whenever something goes wrong.
                     </p>
 
-                    <div aria-hidden="true" className="relative mt-4 -ml-10 h-[380px] max-w-[620px] [mask-image:radial-gradient(closest-side,#000_60%,transparent)]">
+                    <div aria-hidden="true" className="kz-deco relative mt-4 -ml-10 h-[380px] max-w-[620px] [mask-image:radial-gradient(closest-side,#000_60%,transparent)]">
                         <Suspense fallback={null}>
                             <Globe className="!min-h-0 h-full" dark={1} diffuse={1.1} mapSamples={14000} mapBrightness={5} scale={1}
                                 baseColor={[0.22, 0.2, 0.32]} markerColor={[0.62, 0.55, 1]} glowColor={[0.32, 0.27, 0.62]}
@@ -179,7 +179,7 @@ export default function Login() {
                         </Suspense>
                     </div>
 
-                    <div className="-mt-6 max-w-[720px]"><FeatureTicker groups={FEATURE_GROUPS} /></div>
+                    <div className="kz-after-deco -mt-6 max-w-[720px]"><FeatureTicker groups={FEATURE_GROUPS} /></div>
                 </div>
 
                 {/* Right Side: Ultra Premium Login Box */}
@@ -201,8 +201,8 @@ export default function Login() {
                         </p>
                     </div>
 
-                    <div className="w-full max-w-[460px] relative z-10 rounded-[30px] shadow-[0_50px_120px_-40px_rgba(128,105,251,.5)]">
-                    <div className="relative rounded-[30px] border border-white/10 bg-[#0c0c11]/85 backdrop-blur-2xl p-6 sm:p-9 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,.08)]">
+                    <div className="kz-login-card-wrap w-full max-w-[460px] relative z-10 rounded-[30px] shadow-[0_50px_120px_-40px_rgba(128,105,251,.5)]">
+                    <div className="kz-login-card relative rounded-[30px] border border-white/10 bg-[#0c0c11]/85 backdrop-blur-2xl p-6 sm:p-9 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,.08)]">
                         <BorderBeam size={220} duration={9} colorFrom="#b6a8ff" colorTo="#38bdf8" />
                         
                         
@@ -406,8 +406,8 @@ export default function Login() {
                                     disabled={loading}
                                     className="w-full relative group active:scale-[0.98] transition-all duration-300"
                                 >
-                                    <div className="absolute inset-0 bg-blue-500 blur-2xl opacity-20 group-hover:opacity-40 transition-opacity rounded-2xl"></div>
-                                    <div className="relative flex items-center justify-center space-x-3 w-full py-4 sm:py-[18px] bg-gradient-to-b from-white to-[#e4e1f3] text-[#0b0b0f] font-semibold text-[15px] rounded-2xl shadow-[0_14px_40px_-14px_rgba(182,168,255,.7),inset_0_-1px_0_rgba(0,0,0,.12)]">
+                                    <div className="kz-deco absolute inset-0 bg-blue-500 blur-2xl opacity-20 group-hover:opacity-40 transition-opacity rounded-2xl"></div>
+                                    <div className="kz-submit relative flex items-center justify-center space-x-3 w-full py-4 sm:py-[18px] bg-gradient-to-b from-white to-[#e4e1f3] text-[#0b0b0f] font-semibold text-[15px] rounded-2xl shadow-[0_14px_40px_-14px_rgba(182,168,255,.7),inset_0_-1px_0_rgba(0,0,0,.12)]">
                                         {loading ? (
                                             <div className="w-5 h-5 border-2 border-black/20 border-t-black/70 rounded-full animate-spin" />
                                         ) : (

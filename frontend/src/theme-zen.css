@@ -1,0 +1,94 @@
+/* ═══ Zen ════════════════════════════════════════════════════════════════
+   The default look: warm off-white, white rounded cards, near-black ink and
+   one acid-lime accent; headings, labels and buttons in a monospace face.
+   Built on the light theme (data-theme="light") — this layer (data-skin="zen")
+   swaps the accent to lime/olive and adds the type and shapes.
+   ════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="light"][data-skin="zen"] {
+  /* the accent scale ("blue" in the code) as lime → olive, flipped like every light palette */
+  --c-blue-50: 31 36 8;    --c-blue-100: 58 66 17;  --c-blue-200: 79 91 19;  --c-blue-300: 108 125 21;
+  --c-blue-400: 147 170 28; --c-blue-500: 184 212 42; --c-blue-600: 205 232 60; --c-blue-700: 216 241 94;
+  --c-blue-800: 229 246 154; --c-blue-900: 241 251 201; --c-blue-950: 249 253 232;
+  --kz-lime: #d4f53c;
+  --kz-ink: #111111;
+  --kz-bg: #efefe9;
+  --kz-surface: #ffffff;
+  --kz-surface-strong: #fbfbf7;
+  --kz-border: rgba(17, 17, 17, 0.08);
+  --kz-border-strong: rgba(17, 17, 17, 0.15);
+  --kz-highlight: rgba(255, 255, 255, 0.9);
+  --kz-text: #111111;
+  --kz-muted: #5b5e57;
+  --kz-logo-1: #111111; --kz-logo-2: #1b1d16; --kz-logo-3: #2c3020; --kz-logo-ink: #d4f53c;
+}
+
+/* ── type: monospace headings, labels, buttons ── */
+:root[data-skin="zen"] :is(h1, h2, h3, .heading-font, .font-display):not(.kz-dark *) {
+  font-family: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: -0.035em;
+}
+:root[data-skin="zen"] .gradient-text:not(.kz-dark *) { background: none; -webkit-text-fill-color: var(--kz-ink); color: var(--kz-ink); }
+/* the accent words ("calm as a cloud.", "at a glance."): ink on a lime highlighter */
+:root[data-skin="zen"] :is(.aurora-text, .kz-serif):not(.kz-dark *) {
+  font-family: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
+  font-style: normal; letter-spacing: -0.04em;
+  background: linear-gradient(transparent 55%, var(--kz-lime) 55%, var(--kz-lime) 92%, transparent 92%);
+  -webkit-background-clip: border-box; background-clip: border-box;
+  -webkit-text-fill-color: var(--kz-ink); color: var(--kz-ink);
+  animation: none; padding: 0 0.12em; -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+/* the small label above a title: a bordered pill */
+:root[data-skin="zen"] .kz-eyebrow:not(.kz-dark *) {
+  display: inline-flex; padding: 4px 11px; border: 1px solid rgba(17, 17, 17, 0.2); border-radius: 999px;
+  font-family: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px; letter-spacing: 0.02em; text-transform: none; color: var(--kz-ink); background: #fff;
+}
+
+/* ── surfaces ── */
+:root[data-skin="zen"] .kz-card:not(.kz-dark *) { border-radius: 22px; box-shadow: none; }
+:root[data-skin="zen"] .kz-aurora { background: var(--kz-bg); }
+:root[data-skin="zen"] .kz-aurora-vivid { background: radial-gradient(700px 420px at 85% 10%, rgba(212, 245, 60, 0.35), transparent 70%), var(--kz-bg); }
+:root[data-skin="zen"] .kz-aurora-vivid :is(.blob, .grid, .grain) { display: none; }
+:root[data-skin="zen"] ::selection { background: var(--kz-lime); color: var(--kz-ink); }
+:root[data-skin="zen"] :focus-visible { outline-color: var(--kz-ink); }
+
+/* ── buttons: lime pill with ink (action), ink pill (the big call to action) ── */
+:root[data-skin="zen"] .kz-btn:not(.kz-dark *) { font-family: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace; letter-spacing: -0.01em; border-radius: 999px; }
+:root[data-skin="zen"] .kz-btn-primary:not(.kz-dark *) { background: var(--kz-lime); color: var(--kz-ink); box-shadow: inset 0 -1px 0 rgba(17, 17, 17, 0.12); }
+:root[data-skin="zen"] .kz-btn-primary:not(.kz-dark *):hover { background: #c6ea24; }
+:root[data-skin="zen"] .kz-btn-light:not(.kz-dark *) { background: var(--kz-ink); color: #fff; box-shadow: none; }
+:root[data-skin="zen"] .kz-btn-light:not(.kz-dark *):hover { background: #2a2b26; }
+:root[data-skin="zen"] .kz-btn-ghost:not(.kz-dark *) { background: #fff; border-color: rgba(17, 17, 17, 0.14); color: var(--kz-ink); }
+:root[data-skin="zen"] .kz-input:not(.kz-dark *):focus { border-color: var(--kz-ink); box-shadow: 0 0 0 3px rgba(212, 245, 60, 0.55); }
+
+/* solid accent fills (badges, active tabs, buttons coloured "blue"): lime with ink text */
+:root[data-skin="zen"] :is([class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-blue-700"], [class~="bg-[#8069fb]"]):not(.kz-dark *) { background-color: var(--kz-lime); }
+:root[data-skin="zen"] :is([class~="from-blue-500"], [class~="from-blue-600"], [class~="from-blue-400"]):not(.kz-dark *) { --tw-gradient-from: #d4f53c var(--tw-gradient-from-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+:root[data-skin="zen"] :is([class~="to-blue-500"], [class~="to-blue-600"], [class~="to-blue-700"], [class~="to-sky-400"], [class~="to-violet-400"]):not(.kz-dark *) { --tw-gradient-to: #b8d42a var(--tw-gradient-to-position); }
+:root[data-skin="zen"] :is([class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-blue-700"], [class~="bg-[#8069fb]"], [class~="from-blue-500"], [class~="from-blue-600"], [class~="from-blue-400"], .kz-btn-primary):is(.text-white, :has(> .text-white)):not(.kz-dark *),
+:root[data-skin="zen"] :is([class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-blue-700"], [class~="bg-[#8069fb]"], [class~="from-blue-500"], [class~="from-blue-600"], [class~="from-blue-400"], .kz-btn-primary) .text-white:not(.kz-dark *) { color: var(--kz-ink); }
+
+/* ── the public pages: lime instead of iris light, no WebGL globe ── */
+:root[data-skin="zen"] .kz-deco { display: none !important; }
+:root[data-skin="zen"] .kz-hero-glow { background: radial-gradient(600px circle at var(--mx) var(--my), rgba(212, 245, 60, 0.25), transparent 60%); }
+:root[data-skin="zen"] .kz-conic { background: conic-gradient(from var(--kz-angle), #111, #d4f53c, #111, #b8d42a, #111); }
+:root[data-skin="zen"] .kz-globe-space { padding-top: 48px !important; }
+
+/* page backgrounds written as a fixed near-black: the warm off-white */
+:root[data-skin="zen"] :is(.bg-\[\#060608\], .bg-\[\#08090a\]):not(.kz-dark):not(.kz-dark *) { background-color: var(--kz-bg); }
+
+/* sign-in page: a white card, a lime pill button */
+:root[data-skin="zen"] .kz-login-card-wrap { box-shadow: 0 30px 80px -40px rgba(17, 17, 17, 0.25); }
+:root[data-skin="zen"] .kz-login-card { background: #fff; border-color: var(--kz-border-strong); box-shadow: none; }
+:root[data-skin="zen"] .kz-submit { background: var(--kz-lime); color: var(--kz-ink); box-shadow: inset 0 -1px 0 rgba(17, 17, 17, 0.12); border-radius: 999px; font-family: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace; }
+/* no iris halo around the logo; the "New" badge shimmer in ink */
+:root[data-skin="zen"] svg[class*="drop-shadow"]:not(.kz-dark *) { filter: none; }
+:root[data-skin="zen"] { --kz-shiny-base: #5b5e57; --kz-shiny: #111111; }
+/* the landing nav once scrolled: frosted white, not a dark bar */
+:root[data-skin="zen"] .bg-\[\#0c0c11\]\/75:not(.kz-dark *) { background-color: rgba(255, 255, 255, 0.85); border-color: var(--kz-border-strong); box-shadow: 0 12px 40px -24px rgba(17, 17, 17, 0.35); }
+/* the product window: a neutral shadow instead of the iris halo */
+:root[data-skin="zen"] .kz-dark.rounded-\[28px\] > div { box-shadow: 0 50px 100px -50px rgba(17, 17, 17, 0.55); }
+/* the sign-in page: no globe, so the feature tabs follow the text */
+:root[data-skin="zen"] .kz-after-deco { margin-top: 2rem; }
+/* dim helper text ("slate-600" in the dark-first code) readable on white: 4.6:1 */
+:root[data-theme="light"] { --c-slate-600: 109 113 120; }

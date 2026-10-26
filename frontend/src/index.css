@@ -1,6 +1,7 @@
 
 @import './theme-vars.css';
 @import './theme-solid.css';
+@import './theme-zen.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

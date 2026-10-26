@@ -391,7 +391,7 @@ export default function LandingPage() {
             <motion.div aria-hidden="true" style={{ scaleX: page }} className="fixed inset-x-0 top-0 z-[60] h-[2px] origin-left bg-gradient-to-r from-[#8069fb] via-[#4f7dff] to-[#38bdf8]" />
 
             {/* ── light ── */}
-            <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[1200px] overflow-hidden">
+            <div aria-hidden="true" className="kz-deco pointer-events-none absolute inset-x-0 top-0 h-[1200px] overflow-hidden">
                 <div className="absolute left-1/2 -top-[340px] -translate-x-1/2 w-[1300px] h-[800px] rounded-full bg-[radial-gradient(closest-side,rgba(128,105,251,.34),transparent)] blur-2xl" />
                 <div className="absolute left-[10%] top-[120px] w-[520px] h-[420px] rounded-full bg-[radial-gradient(closest-side,rgba(79,125,255,.18),transparent)] blur-2xl animate-aurora-1" />
                 <div className="absolute right-[6%] top-[60px] w-[520px] h-[420px] rounded-full bg-[radial-gradient(closest-side,rgba(56,189,248,.13),transparent)] blur-2xl animate-aurora-2" />
@@ -424,7 +424,7 @@ export default function LandingPage() {
                 <Reveal>
                     <a href="#connect" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur px-1.5 py-1.5 pr-4 text-xs text-slate-300 hover:border-white/20 transition">
                         <span className="rounded-full bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[11px] font-semibold text-blue-200">New</span>
-                        <ShinyText size="xs" baseColor="#b9b6cc" shineColor="#ffffff" speed={3}>Connect EKS, AKS, GKE, k3s, OpenShift — any cluster</ShinyText>
+                        <ShinyText size="xs" baseColor="var(--kz-shiny-base, #b9b6cc)" shineColor="var(--kz-shiny, #ffffff)" speed={3}>Connect EKS, AKS, GKE, k3s, OpenShift — any cluster</ShinyText>
                         <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
                     </a>
                 </Reveal>
@@ -452,7 +452,7 @@ export default function LandingPage() {
 
                 {/* globe + product */}
                 <div id="product" className="relative mx-auto mt-16 max-w-6xl scroll-mt-28">
-                    <div aria-hidden="true" className="absolute left-1/2 -translate-x-1/2 -top-16 sm:-top-24 w-[480px] h-[480px] sm:w-[760px] sm:h-[760px] max-w-[120vw] opacity-70 [mask-image:radial-gradient(closest-side,#000_55%,transparent)]">
+                    <div aria-hidden="true" className="kz-deco absolute left-1/2 -translate-x-1/2 -top-16 sm:-top-24 w-[480px] h-[480px] sm:w-[760px] sm:h-[760px] max-w-[120vw] opacity-70 [mask-image:radial-gradient(closest-side,#000_55%,transparent)]">
                         {showGlobe && <Suspense fallback={null}>
                             <Globe className="!min-h-0 h-full" dark={1} diffuse={1.1} mapSamples={10000} mapBrightness={5} scale={1}
                                 baseColor={[0.22, 0.2, 0.32]} markerColor={[0.62, 0.55, 1]} glowColor={[0.32, 0.27, 0.62]}
@@ -460,8 +460,8 @@ export default function LandingPage() {
                         </Suspense>}
                     </div>
                     <motion.div initial={reduce ? false : { opacity: 0, y: 60, rotateX: 18 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} transition={{ duration: 1.3, delay: .7, ease: EASE }}
-                        style={{ transformPerspective: 1400 }} className="relative pt-[200px] sm:pt-[340px] text-left">
-                        <ProductWindow />
+                        style={{ transformPerspective: 1400 }} className="kz-globe-space relative pt-[200px] sm:pt-[340px] text-left">
+                        <div className="kz-dark rounded-[28px]"><ProductWindow /></div>
                     </motion.div>
                 </div>
             </section>

@@ -7,6 +7,10 @@ import '@fontsource-variable/geist-mono'
 import '@fontsource/instrument-serif/latin-400.css'
 import '@fontsource/instrument-serif/latin-400-italic.css'
 import './index.css'
+import { applyTheme } from './utils/theme'
+
+// the theme before the first paint (no flash of the other one)
+applyTheme()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>

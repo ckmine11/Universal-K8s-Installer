@@ -15,6 +15,7 @@ import AuroraBackground from './AuroraBackground'
 import ChangePasswordDialog from './ChangePasswordDialog'
 import ApprovalGate from './ApprovalGate'
 import { whenVisible } from '../../utils/whenVisible'
+import { getTheme, setTheme } from '../../utils/theme'
 
 const ROLE_META = {
     superadmin: { label: 'Super Admin', icon: Crown, tone: 'text-violet-300 bg-violet-500/10 border-violet-400/20' },
@@ -92,17 +93,11 @@ const TITLES = [
 
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }
 
-// Light ("Daylight") or dark ("Midnight") console — the person's choice,
-// remembered in this browser. The public pages stay dark.
-const readTheme = () => { try { return localStorage.getItem('kz-theme') === 'dark' ? 'dark' : 'light' } catch { return 'light' } }
-function useConsoleTheme() {
-    const [theme, setTheme] = useState(readTheme)
-    useEffect(() => {
-        document.documentElement.dataset.theme = theme
-        try { localStorage.setItem('kz-theme', theme) } catch { }
-        return () => { delete document.documentElement.dataset.theme }
-    }, [theme])
-    return [theme, () => setTheme(t => (t === 'light' ? 'dark' : 'light'))]
+// Zen (default) or Midnight — the person's choice, for every page (utils/theme.js)
+function useTheme() {
+    const [theme, set] = useState(getTheme)
+    useEffect(() => { const on = (e) => set(e.detail); window.addEventListener('kz-theme', on); return () => window.removeEventListener('kz-theme', on) }, [])
+    return [theme, () => setTheme(theme === 'dark' ? 'zen' : 'dark')]
 }
 
 export default function AppShell({ children }) {
@@ -113,7 +108,7 @@ export default function AppShell({ children }) {
     const [collapsed, setCollapsed] = useState(readCollapsed)
     const [mobileOpen, setMobileOpen] = useState(false)
     const [paletteOpen, setPaletteOpen] = useState(false)
-    const [theme, toggleTheme] = useConsoleTheme()
+    const [theme, toggleTheme] = useTheme()
     const [openIncidents, setOpenIncidents] = useState(0)
     const running = activeInstallations.filter(i => i.status === 'running')
     const [approvalsWaiting, setApprovalsWaiting] = useState(0)
@@ -244,8 +239,8 @@ export default function AppShell({ children }) {
 
                     <div className="flex items-center gap-2 sm:ml-auto shrink-0">
                         <button type="button" onClick={toggleTheme} className="p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition"
-                            aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'} title={theme === 'light' ? 'Dark theme' : 'Light theme'}>
-                            {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+                            aria-label={theme === 'zen' ? 'Switch to dark theme' : 'Switch to Zen theme'} title={theme === 'zen' ? 'Dark theme' : 'Zen theme'}>
+                            {theme === 'zen' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
                         </button>
                         <UpdatesMenu />
                         <Link to="/incidents" className="relative p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition" aria-label={`Incidents${openIncidents ? ` (${openIncidents} open)` : ''}`}>
