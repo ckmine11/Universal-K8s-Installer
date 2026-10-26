@@ -208,6 +208,10 @@ test('security headers: HSTS on every page location, no duplicates from the oute
     assert.ok(blocksWithHeaders.length >= 3)
     for (const b of blocksWithHeaders) assert.match(b, /Strict-Transport-Security "max-age=31536000; includeSubDomains"/)
     assert.match(inner, /Content-Security-Policy "default-src 'self'/)
+    // the Explorer opens in an iframe from our own site: every CSP must allow 'self' frames
+    const csps = inner.match(/Content-Security-Policy "[^"]*"/g)
+    assert.ok(csps.length >= 3)
+    for (const c of csps) assert.match(c, /frame-src 'self'[ ;]/)
     assert.doesNotMatch(outer, /add_header (X-Frame-Options|X-Content-Type-Options|X-XSS-Protection|Referrer-Policy)/)
     assert.doesNotMatch(inner, /X-XSS-Protection/)
 })
