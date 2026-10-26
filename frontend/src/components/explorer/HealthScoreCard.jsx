@@ -17,16 +17,19 @@ export default function HealthScoreCard({ clusterId, installed, onOpenExplorer }
     }
     useEffect(() => { if (installed) load() }, [clusterId, installed])
 
-    if (!installed) return (
+    // the cluster record says installed, but the Explorer does not answer (removed, not running yet)
+    if (!installed || data?.installed === false) return (
         <div className="glass rounded-2xl border border-white/8 p-5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
                 <Activity className="w-5 h-5 text-slate-500" />
                 <div>
                     <p className="text-sm font-black text-white">Cluster health score</p>
-                    <p className="text-[11px] text-slate-500">31 security, reliability and efficiency checks — with the KubeEZ Explorer add-on.</p>
+                    <p className="text-[11px] text-slate-500">{installed
+                        ? 'The KubeEZ Explorer add-on is installed but not answering (not running yet, or removed from the cluster) — open it to check or repair.'
+                        : '31 security, reliability and efficiency checks — with the KubeEZ Explorer add-on.'}</p>
                 </div>
             </div>
-            <button onClick={onOpenExplorer} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 text-xs font-bold shrink-0"><Compass className="w-3.5 h-3.5" /> Get it</button>
+            <button onClick={onOpenExplorer} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 text-xs font-bold shrink-0"><Compass className="w-3.5 h-3.5" /> {installed ? 'Check it' : 'Get it'}</button>
         </div>
     )
 
@@ -69,13 +72,13 @@ export default function HealthScoreCard({ clusterId, installed, onOpenExplorer }
                             ))}
                         </div>
                         <ul className="space-y-1">
-                            {data.top.slice(0, 4).map((t, i) => (
+                            {(data.top || []).slice(0, 4).map((t, i) => (
                                 <li key={i} className="flex items-center justify-between gap-2 text-[11px]">
                                     <span className="flex items-center gap-1.5 min-w-0"><span className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.severity === 'danger' ? 'bg-red-400' : 'bg-amber-400'}`} /><span className="text-slate-300 truncate">{t.title}</span></span>
                                     <span className="text-slate-500 shrink-0">{t.resources} resource{t.resources === 1 ? '' : 's'}</span>
                                 </li>
                             ))}
-                            {!data.top.length && <li className="text-[11px] text-emerald-300">No warnings — nicely done.</li>}
+                            {!(data.top || []).length && <li className="text-[11px] text-emerald-300">No warnings — nicely done.</li>}
                         </ul>
                     </div>
                 </div>
