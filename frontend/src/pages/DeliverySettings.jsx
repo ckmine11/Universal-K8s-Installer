@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save } from 'lucide-react'
+import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save, KeyRound, GitPullRequest } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import PageHeader from '../components/ui/PageHeader'
@@ -31,12 +31,19 @@ export default function DeliverySettings() {
     const [freezeForm, setFreezeForm] = useState(() => ({ from: local(new Date()), until: local(new Date(Date.now() + 86400e3)), reason: '', clusterIds: [] }))
     const [cmp, setCmp] = useState({ release: '', a: '', b: '' })
     const [cmpResult, setCmpResult] = useState(null)
+    const [tokens, setTokens] = useState(null)      // null: not allowed to manage tokens
+    const [newToken, setNewToken] = useState(null)
+    const [tokForm, setTokForm] = useState({ name: '', clusterId: '', namespace: '', release: '', repoId: '', chart: '', keys: 'image.tag', expiresDays: 90 })
+    const [git, setGit] = useState(null)
+    const [gitForm, setGitForm] = useState({ name: '', apiUrl: 'https://api.github.com', token: '' })
+    const [pr, setPr] = useState({ accountId: '', repo: '', base: 'main', path: '', set: '', busy: false, result: null })
 
     const load = useCallback(async () => {
         try {
-            const [e, r, f] = await Promise.all(['/api/delivery/environments', '/api/delivery/repos', '/api/delivery/freezes'].map(u => apiFetch(u).then(json)))
-            setEnvs(e); setRepos(r); setFreezes(f); setError(null)
+            const [e, r, f, g] = await Promise.all(['/api/delivery/environments', '/api/delivery/repos', '/api/delivery/freezes', '/api/delivery/git'].map(u => apiFetch(u).then(json)))
+            setEnvs(e); setRepos(r); setFreezes(f); setGit(g); setError(null)
         } catch (err) { setError(err.message) }
+        apiFetch('/api/delivery/tokens').then(r => r.ok ? r.json() : null).then(d => setTokens(d ? d.tokens : null)).catch(() => setTokens(null))
         apiFetch('/api/clusters').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
     }, [])
     useEffect(() => { load() }, [load])
@@ -44,6 +51,21 @@ export default function DeliverySettings() {
     const send = async (url, method, body, ok) => {
         try { await json(await apiFetch(url, { method, body: body ? JSON.stringify(body) : undefined })); toast({ title: ok, type: 'success' }); load(); return true }
         catch (e) { toast({ title: 'Not saved', message: e.message, type: 'error' }); return false }
+    }
+    const createToken = async () => {
+        try {
+            const d = await json(await apiFetch('/api/delivery/tokens', { method: 'POST', body: JSON.stringify({ ...tokForm, allowedKeys: tokForm.keys.split(',').map(s => s.trim()).filter(Boolean) }) }))
+            setNewToken(d.token); toast({ title: 'Token created', message: 'Copy it now — it is shown once.', type: 'success' }); load()
+        } catch (e) { toast({ title: 'No token', message: e.message, type: 'error' }) }
+    }
+    // "image.tag=1.4.2, replicas=3" → { "image.tag": "1.4.2", replicas: 3 }
+    const parseSet = (s) => Object.fromEntries(s.split(',').map(x => x.trim()).filter(Boolean).map(x => { const i = x.indexOf('='); const v = x.slice(i + 1).trim(); return [x.slice(0, i).trim(), /^-?\d+(\.\d+)?$/.test(v) && !/^0\d/.test(v) ? Number(v) : v === 'true' ? true : v === 'false' ? false : v] }))
+    const promote = async () => {
+        setPr(p => ({ ...p, busy: true, result: null }))
+        try {
+            const d = await json(await apiFetch('/api/delivery/promote', { method: 'POST', body: JSON.stringify({ accountId: pr.accountId, repo: pr.repo, base: pr.base || 'main', path: pr.path, set: parseSet(pr.set) }) }))
+            setPr(p => ({ ...p, busy: false, result: d }))
+        } catch (e) { setPr(p => ({ ...p, busy: false })); toast({ title: 'No pull request', message: e.message, type: 'error' }) }
     }
     const compare = async () => {
         setCmpResult({ loading: true })
@@ -62,6 +84,12 @@ export default function DeliverySettings() {
                             <li key={e.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
                                 <span className="font-semibold text-white">{e.name}</span><span className="text-slate-400">{e.clusterName} · {e.namespace}</span>
                                 {e.protected && <span className="flex items-center gap-1 text-amber-200"><Lock className="w-3 h-3" />protected</span>}
+                                {envs.canManage ? (
+                                    <select className="kz-input !w-auto !py-1 !text-[11px]" value={e.cvePolicy ? `${e.cvePolicy.mode}:${e.cvePolicy.severity}` : 'off'} aria-label={`CVE policy of ${e.name}`}
+                                        onChange={ev => { const [mode, severity] = ev.target.value.split(':'); send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, cvePolicy: mode === 'off' ? { mode: 'off' } : { mode, severity } }, 'CVE policy saved') }}>
+                                        <option value="off">CVE gate: off</option><option value="warn:CRITICAL">warn on critical</option><option value="block:CRITICAL">block critical</option><option value="warn:HIGH">warn on high+</option><option value="block:HIGH">block high+</option>
+                                    </select>
+                                ) : e.cvePolicy && <span className="text-slate-400">CVE gate: {e.cvePolicy.mode} {e.cvePolicy.severity.toLowerCase()}</span>}
                                 {envs.canManage && <span className="ml-auto flex gap-2">
                                     <button onClick={() => send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, protected: !e.protected }, e.protected ? 'No longer protected' : 'Protected')} className="kz-btn-ghost !py-1 !px-2 !text-[11px]">{e.protected ? 'Unprotect' : 'Protect'}</button>
                                     <button onClick={() => window.confirm(`Remove environment ${e.name}? Nothing on the cluster changes.`) && send(`/api/delivery/environments/${e.id}`, 'DELETE', null, 'Removed')} className="kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${e.name}`}><Trash2 className="w-3 h-3" /></button>
@@ -129,6 +157,69 @@ export default function DeliverySettings() {
                     </>
                 )}
             </Section>
+
+            {tokens && (
+                <Section Icon={KeyRound} title="Deploy tokens (CI)" hint="A token deploys one app from your pipeline (GitHub Actions, GitLab CI, Jenkins) — one release, one chart, only the values you list (e.g. image.tag). Protected environments, freezes and the CVE gate still apply. The token is shown once.">
+                    {newToken && (
+                        <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/[0.05] p-3 text-[11px] space-y-1.5">
+                            <p className="text-emerald-100 font-semibold">Copy it now — it is not shown again.</p>
+                            <code className="block font-mono text-slate-200 break-all">{newToken}</code>
+                            <pre className="whitespace-pre-wrap font-mono text-slate-400">{`curl -fsS -X POST ${window.location.origin}/api/hooks/deploy \\\n  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" \\\n  -d '{"set": {"image.tag": "'"$GIT_SHA"'"}}'`}</pre>
+                        </div>
+                    )}
+                    <ul className="space-y-1.5">{tokens.map(t => (
+                        <li key={t.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
+                            <span className="font-semibold text-white">{t.name}</span><span className="font-mono text-slate-500">{t.hint}</span>
+                            <span className="text-slate-400">{clusters.find(c => c.id === t.clusterId)?.clusterName || t.clusterId} · {t.namespace}/{t.release} · may set {t.allowedKeys.join(', ')}</span>
+                            <span className={t.revokedAt || t.expired ? 'text-red-300' : 'text-slate-500'}>{t.revokedAt ? 'revoked' : t.expired ? 'expired' : `until ${t.expiresAt.slice(0, 10)}`}{t.lastUsedAt ? ` · used ${new Date(t.lastUsedAt).toLocaleString()}` : ' · never used'}</span>
+                            {!t.revokedAt && <button onClick={() => window.confirm(`Revoke ${t.name}? Pipelines using it stop deploying.`) && send(`/api/delivery/tokens/${t.id}`, 'DELETE', null, 'Revoked')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300">Revoke</button>}
+                        </li>
+                    ))}{!tokens.length && <li className="text-sm text-slate-500">No tokens yet.</li>}</ul>
+                    <div className="flex flex-wrap items-end gap-2">
+                        <input className="kz-input !w-44" placeholder="name (ci web prod)" value={tokForm.name} onChange={e => setTokForm(f => ({ ...f, name: e.target.value }))} aria-label="Token name" />
+                        <select className="kz-input !w-40" value={tokForm.clusterId} onChange={e => setTokForm(f => ({ ...f, clusterId: e.target.value }))} aria-label="Cluster"><option value="">Cluster…</option>{clusters.map(c => <option key={c.id} value={c.id}>{c.clusterName || c.id}</option>)}</select>
+                        <input className="kz-input !w-32" placeholder="namespace" value={tokForm.namespace} onChange={e => setTokForm(f => ({ ...f, namespace: e.target.value }))} aria-label="Namespace" />
+                        <input className="kz-input !w-32" placeholder="release" value={tokForm.release} onChange={e => setTokForm(f => ({ ...f, release: e.target.value }))} aria-label="Release" />
+                        <select className="kz-input !w-36" value={tokForm.repoId} onChange={e => setTokForm(f => ({ ...f, repoId: e.target.value }))} aria-label="Repository"><option value="">Repository…</option>{(repos?.repos || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+                        <input className="kz-input !w-32" placeholder="chart" value={tokForm.chart} onChange={e => setTokForm(f => ({ ...f, chart: e.target.value }))} aria-label="Chart" />
+                        <input className="kz-input !w-40" placeholder="image.tag" value={tokForm.keys} onChange={e => setTokForm(f => ({ ...f, keys: e.target.value }))} aria-label="Values it may change (comma separated)" />
+                        <select className="kz-input !w-28" value={tokForm.expiresDays} onChange={e => setTokForm(f => ({ ...f, expiresDays: Number(e.target.value) }))} aria-label="Expires after">{[30, 90, 180, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select>
+                        <button onClick={createToken} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Create token</button>
+                    </div>
+                </Section>
+            )}
+
+            {git && (
+                <Section Icon={GitPullRequest} title="Promote by pull request" hint="Change values in a YAML file of a GitHub repository (e.g. image.tag in apps/web/prod.yaml) — KubeEZ opens a pull request; Argo CD / Flux deploy it once it is merged. The token needs Contents and Pull requests: read and write.">
+                    <ul className="space-y-1.5">{git.accounts.map(a => (
+                        <li key={a.id} className="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
+                            <span className="font-semibold text-white">{a.name}</span><span className="text-slate-400 font-mono">{a.apiUrl}</span>{a.hasToken && <span className="text-slate-500">(token set)</span>}
+                            {git.canManage && <button onClick={() => window.confirm(`Remove ${a.name}?`) && send(`/api/delivery/git/${a.id}`, 'DELETE', null, 'Removed')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${a.name}`}><Trash2 className="w-3 h-3" /></button>}
+                        </li>
+                    ))}</ul>
+                    {git.canManage && (
+                        <div className="flex flex-wrap items-end gap-2">
+                            <input className="kz-input !w-32" placeholder="name (github)" value={gitForm.name} onChange={e => setGitForm(f => ({ ...f, name: e.target.value }))} aria-label="Account name" />
+                            <input className="kz-input !w-60" placeholder="https://api.github.com" value={gitForm.apiUrl} onChange={e => setGitForm(f => ({ ...f, apiUrl: e.target.value }))} aria-label="API address" />
+                            <input className="kz-input !w-56" type="password" placeholder="token" value={gitForm.token} onChange={e => setGitForm(f => ({ ...f, token: e.target.value }))} aria-label="GitHub token" autoComplete="new-password" />
+                            <button onClick={async () => { if (await send('/api/delivery/git', 'POST', gitForm, 'Git account added')) setGitForm({ name: '', apiUrl: 'https://api.github.com', token: '' }) }} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Add</button>
+                        </div>
+                    )}
+                    {git.accounts.length > 0 && (
+                        <div className="rounded-lg border border-white/[0.07] p-3 space-y-2">
+                            <div className="flex flex-wrap items-end gap-2">
+                                <select className="kz-input !w-36" value={pr.accountId} onChange={e => setPr(p => ({ ...p, accountId: e.target.value }))} aria-label="Git account"><option value="">Account…</option>{git.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+                                <input className="kz-input !w-44" placeholder="owner/repo" value={pr.repo} onChange={e => setPr(p => ({ ...p, repo: e.target.value }))} aria-label="Repository" />
+                                <input className="kz-input !w-24" placeholder="main" value={pr.base} onChange={e => setPr(p => ({ ...p, base: e.target.value }))} aria-label="Base branch" />
+                                <input className="kz-input !w-56" placeholder="apps/web/prod.yaml" value={pr.path} onChange={e => setPr(p => ({ ...p, path: e.target.value }))} aria-label="File" />
+                                <input className="kz-input !w-56" placeholder="image.tag=1.4.2, replicas=3" value={pr.set} onChange={e => setPr(p => ({ ...p, set: e.target.value }))} aria-label="Values to set" />
+                                <button onClick={promote} disabled={pr.busy} className="kz-btn-primary !py-2 !text-xs">{pr.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitPullRequest className="w-3.5 h-3.5" />} Open pull request</button>
+                            </div>
+                            {pr.result && <p className="text-xs text-emerald-200">Pull request <a href={pr.result.url} target="_blank" rel="noopener noreferrer" className="underline">#{pr.result.number}</a> opened: {pr.result.changes.map(c => `${c.key} ${c.from ?? '—'} → ${c.to}`).join(', ')}</p>}
+                        </div>
+                    )}
+                </Section>
+            )}
 
             <Section Icon={GitCompare} title="Compare environments" hint="The same app in two environments: chart version and every value that differs (secrets masked). Finds config drift before a promotion.">
                 <div className="flex flex-wrap items-end gap-2">

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Boxes, RefreshCw, Loader2, AlertTriangle, Plus, ChevronDown, ChevronRight, Undo2, Trash2, ArrowUpCircle, Eye, Lock, Snowflake, Search, X, CheckCircle2, XCircle } from 'lucide-react'
 import { apiFetch, useAuth } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
+import OpsPanel from './OpsPanel'
 
 // Helm apps of one cluster: releases with their environment, history with
 // roll back, values (secrets masked), and install / upgrade with a preview of
@@ -44,7 +45,8 @@ function JobBar({ job, onClose }) {
     return (
         <div className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${run ? 'border-blue-400/25 text-blue-100' : ok ? 'border-emerald-400/25 text-emerald-100' : 'border-red-400/25 text-red-200'}`}>
             {run ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-            <span className="flex-1 break-words">{job.action} {job.namespace}/{job.release} — {run ? 'running (Helm waits until the pods are ready)…' : ok ? 'done' : job.error}</span>
+            <span className="flex-1 break-words">{job.action} {job.namespace}/{job.release} — {run ? 'running (Helm waits until the pods are ready)…' : ok ? 'done' : job.error}
+                {(job.warnings || []).map((w, i) => <span key={i} className="block text-amber-200">⚠ {w}</span>)}</span>
             {!run && <button onClick={onClose} aria-label="Close"><X className="w-3.5 h-3.5" /></button>}
         </div>
     )
@@ -61,6 +63,7 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
     const [preview, setPreview] = useState(null)
     const [busy, setBusy] = useState(false)
     const [override, setOverride] = useState('')
+    const [overrideCve, setOverrideCve] = useState('')
     const set = (k) => (e) => { setForm(f => ({ ...f, [k]: e.target.value })); setPreview(null) }
     const repo = repos.find(r => r.id === repoId)
 
@@ -73,7 +76,7 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
     }, [repoId, q])
     const chart = charts?.charts?.find(c => c.name === form.chart)
     const env = environments.find(e => e.namespace === form.namespace)
-    const body = () => ({ ...form, repoId, version: form.version || undefined, ...(override ? { overrideFreeze: override } : {}) })
+    const body = () => ({ ...form, repoId, version: form.version || undefined, ...(override ? { overrideFreeze: override } : {}), ...(overrideCve ? { overrideCve } : {}) })
 
     const doPreview = async () => {
         setBusy(true); setPreview(null)
@@ -144,6 +147,14 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
                                 {c.diff ? <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-black/30 p-2 font-mono leading-snug">{c.diff.map((l, k) => <div key={k} className={l[0] === '+' ? 'text-emerald-300' : l[0] === '-' ? 'text-red-300' : 'text-slate-500'}>{l}</div>)}</pre> : c.action !== 'remove' && <p className="text-slate-500">Too large to show.</p>}
                             </details>
                         ))}
+                        {preview.cve && (
+                            <div className={`rounded-lg border p-2.5 text-[11px] space-y-1 ${preview.cve.blocked ? 'border-red-400/30 text-red-200' : preview.cve.failing.length ? 'border-amber-400/30 text-amber-100' : 'border-emerald-400/25 text-emerald-100'}`}>
+                                <p className="font-semibold">CVE policy of this environment: {preview.cve.mode} on {preview.cve.severity.toLowerCase()}{preview.cve.blocked ? ' — this deploy will be blocked' : preview.cve.failing.length ? ' — vulnerable images, deploy allowed' : ' — passed'}</p>
+                                {preview.cve.failing.map(f => <p key={f.image} className="font-mono break-all">{f.image}: {f.critical} critical, {f.high} high{f.cves.length ? ` (${f.cves.join(', ')})` : ''}</p>)}
+                                {preview.cve.unscanned.length > 0 && <p className="text-slate-400">Not scanned by Trivy yet: {preview.cve.unscanned.join(', ')}</p>}
+                                {preview.cve.blocked && isAdmin && <input className="kz-input !text-xs" value={overrideCve} onChange={e => setOverrideCve(e.target.value)} placeholder="Deploy anyway as admin — why? (recorded in the audit trail)" />}
+                            </div>
+                        )}
                         {preview.notes && <pre className="text-[11px] text-slate-400 whitespace-pre-wrap max-h-32 overflow-auto">{preview.notes}</pre>}
                     </div>
                 ))}
@@ -258,6 +269,7 @@ export default function AppsTab({ clusterId }) {
                     </>
                 ) : <p className="text-sm text-slate-500 py-2">No Helm releases{data.hidden ? ' you can see' : ''} on this cluster yet.</p>)}
             </div>
+            <OpsPanel clusterId={clusterId} />
             {dialog && <DeployDialog clusterId={clusterId} start={dialog.release ? dialog : null} environments={data?.environments || []} isAdmin={isAdmin} freeze={data?.freeze} onClose={() => setDialog(null)} onStarted={follow} />}
         </div>
     )
