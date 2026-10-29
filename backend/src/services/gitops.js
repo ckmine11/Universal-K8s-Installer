@@ -6,8 +6,8 @@
 // job (Argo CD: the `operation` field / refresh annotation; Flux: the
 // reconcile.fluxcd.io/requestedAt annotation). KubeEZ never edits an app's
 // spec, never prunes, and never reads Secrets. Repo URLs lose any user:password.
-const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf timeout 40 kubectl'
-const MAX_BYTES = 8_000_000
+import { KUBECTL, crdSection, splitSections, listError } from './kubeList.js'
+
 const MARK = (k) => `==KZGITOPS:${k}==`
 
 export const SOURCES = [
@@ -21,16 +21,8 @@ const KINDS = Object.fromEntries(SOURCES.filter(s => !s.lookup).map(s => [s.kind
 
 // one round trip; a missing CRD (tool not installed) or a forbidden read
 // answers with its error instead of the list
-const section = (s) => `if E=$(${KUBECTL} get ${s.resource} -A -o name --request-timeout=20s 2>&1 >/dev/null); then echo '${MARK(s.key)}'; ${KUBECTL} get ${s.resource} -A -o json --request-timeout=30s 2>/dev/null | head -c ${MAX_BYTES}; echo; else echo '${MARK(`${s.key}_ERR`)}'; printf '%s\\n' "$E" | head -c 400; echo; fi`
-export const GITOPS_SCRIPT = [...SOURCES.map(section), `echo '${MARK('END')}'`].join('; ')
-
-function sections(out) {
-    const s = {}
-    const re = /==KZGITOPS:([A-Z_]+)==\n?([\s\S]*?)(?===KZGITOPS:[A-Z_]+==|$)/g
-    let m
-    while ((m = re.exec(out || ''))) s[m[1]] = m[2].trim()
-    return s
-}
+export const GITOPS_SCRIPT = [...SOURCES.map(s => crdSection('KZGITOPS', s.key, s.resource)), `echo '${MARK('END')}'`].join('; ')
+const sections = (out) => splitSections(out, 'KZGITOPS')
 
 const str = (v, n = 300) => v == null || v === '' ? null : String(v).slice(0, n)
 const at = (v) => { const t = Date.parse(v); return Number.isNaN(t) ? null : new Date(t).toISOString() }
@@ -54,12 +46,6 @@ export function shortRev(r) {
     return /^[0-9a-f]{40}$/i.test(s) ? s.slice(0, 7) : str(s, 80)
 }
 
-function errorOf(text, resource) {
-    const t = String(text || '').trim()
-    if (/doesn't have a resource type|could not find the requested resource|no matches for kind|the server could not find/i.test(t)) return { state: 'missing' }
-    if (/forbidden/i.test(t)) return { state: 'forbidden', message: `KubeEZ may not read ${resource} on this cluster — give its access read rights on it (Connected clusters → Reconnect updates the access).` }
-    return { state: 'error', message: str(t.split('\n').filter(l => !/^Warning:/i.test(l)).join(' ') || 'kubectl failed', 300) }
-}
 
 const IN_CLUSTER = ['https://kubernetes.default.svc', 'https://kubernetes.default.svc:443']
 
@@ -145,7 +131,7 @@ export function parseGitops(out) {
     const lists = {}
     for (const src of SOURCES) {
         if (s[`${src.key}_ERR`] != null) {
-            const e = errorOf(s[`${src.key}_ERR`], src.resource)
+            const e = listError(s[`${src.key}_ERR`], src.resource)
             // Flux: one of its kinds missing (e.g. no helm-controller) is not a Flux problem
             if (!src.lookup && e.state !== 'missing' && tools[src.tool].state !== 'ok') tools[src.tool] = e
             continue

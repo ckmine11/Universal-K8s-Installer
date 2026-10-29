@@ -67,6 +67,10 @@ export const PERMISSIONS = {
     'gitops:view':       ['admin', 'operator', 'viewer'],   // apps, sync & health, repo, revision, drift
     'gitops:sync':       ['admin', 'operator'],             // "Sync now" / "Refresh" — asks Argo CD / Flux to sync from Git
 
+    // Security & delivery insight (read-only)
+    'security:view':     ['admin', 'operator', 'viewer'],   // Trivy: image vulnerabilities and misconfigurations per workload
+    'metrics:view':      ['admin', 'operator', 'viewer'],   // DORA: deploy frequency, change failure rate, recovery time
+
     // Workspace administration
     'team:view':         ['admin'],
     'team:manage':       ['admin'],   // invite / remove / change roles / reset passwords
@@ -119,6 +123,10 @@ export const PERMISSION_GROUPS = [
     { group: 'GitOps', items: [
         { key: 'gitops:view', label: 'View GitOps apps (Argo CD / Flux): sync, health, drift' },
         { key: 'gitops:sync', label: 'Sync or refresh a GitOps app from Git' }
+    ]},
+    { group: 'Security & delivery', items: [
+        { key: 'security:view', label: 'View image vulnerabilities and misconfigurations (Trivy)' },
+        { key: 'metrics:view', label: 'View delivery metrics (DORA)' }
     ]},
     { group: 'Workspace', items: [
         { key: 'team:manage',    label: 'Manage team & roles' },
@@ -173,7 +181,8 @@ export const CLUSTER_PERMISSIONS = [
     'incident:view', 'incident:act',
     'compliance:view', 'compliance:manage',
     'backup:manage',
-    'gitops:view', 'gitops:sync'
+    'gitops:view', 'gitops:sync',
+    'security:view', 'metrics:view'
 ]
 
 // Never part of a custom role: running the workspace stays with Admins
@@ -186,13 +195,13 @@ export const BUILTIN_KUBE_LEVEL = { admin: 'admin', operator: 'edit', viewer: 'v
 // Ready-made starting points for the role builder
 export const ROLE_TEMPLATES = [
     { key: 'oncall', name: 'On-call engineer', description: 'Watches and fixes incidents, terminal with approval. Cannot delete or upgrade.',
-      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync'] },
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync', 'security:view', 'metrics:view'] },
     { key: 'developer', name: 'Developer', description: 'Sees clusters and add-on addresses, works inside the cluster (Explorer). No credentials, no cluster changes.',
-      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'compliance:view', 'gitops:view'] },
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'compliance:view', 'gitops:view', 'security:view', 'metrics:view'] },
     { key: 'backup', name: 'Backup manager', description: 'Takes and restores backups. Nothing else changes.',
       kube: 'view', permissions: ['cluster:view', 'addon:view', 'incident:view', 'backup:manage'] },
     { key: 'auditor', name: 'Auditor', description: 'Read-only compliance: scores, reports, audit trail and terminal recordings. No secrets.',
-      kube: 'view', permissions: ['cluster:view', 'incident:view', 'compliance:view', 'audit:view'] },
+      kube: 'view', permissions: ['cluster:view', 'incident:view', 'compliance:view', 'audit:view', 'security:view'] },
     { key: 'addons', name: 'Add-on manager', description: 'Installs, configures and updates add-ons, with their logins.',
       kube: 'view', permissions: ['cluster:view', 'addon:view', 'addon:credentials', 'addon:install', 'incident:view'] }
 ]

@@ -28,7 +28,7 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package, PlugZap, GitBranch } from 'lucide-react'
+    Package, PlugZap, GitBranch, ShieldAlert, Gauge } from 'lucide-react'
 import { ClusterTopology3D, OrbitalTerminal } from '../components/LazyHeavy'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
@@ -36,6 +36,8 @@ import AddonManagerPanel from '../components/AddonManagerPanel'
 import BackupsTab from '../components/backups/BackupsTab'
 import ExplorerTab from '../components/explorer/ExplorerTab'
 import GitOpsTab from '../components/gitops/GitOpsTab'
+import SecurityTab from '../components/security/SecurityTab'
+import DoraTab from '../components/delivery/DoraTab'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
 import RiskCard from '../components/ai/RiskCard'
@@ -44,7 +46,9 @@ import RiskCard from '../components/ai/RiskCard'
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
-    { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch },
+    { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch, permission: 'gitops:view' },
+    { key: 'security', label: 'Security', hint: 'vulnerabilities, misconfig', Icon: ShieldAlert, permission: 'security:view' },
+    { key: 'delivery', label: 'Delivery', hint: 'DORA metrics', Icon: Gauge, permission: 'metrics:view' },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
     { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
 ]
@@ -96,7 +100,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     // Open tab + add-on section live in the URL (?tab=addons&section=manage):
     // refresh, back button and shared links keep the user where they were
     const [params, setParams] = useSearchParams()
-    const tabs = TABS.filter(t => t.key !== 'gitops' || can(user?.role, 'gitops:view', id))
+    const tabs = TABS.filter(t => !t.permission || can(user?.role, t.permission, id))
     const tab = tabs.some(t => t.key === params.get('tab')) ? params.get('tab') : 'overview'
     const section = ADDON_SECTIONS.some(s => s.key === params.get('section')) ? params.get('section') : 'access'
     const setTab = (key) => setParams(key === 'overview' ? {} : { tab: key })
@@ -613,6 +617,14 @@ export default function ClusterDetails({ onScaleCluster }) {
             {tab === 'gitops' && (
                 <GitOpsTab clusterId={id} canInstall={canManageAddons} onOpenAddons={() => setParams({ tab: 'addons', section: 'manage' })} />
             )}
+
+            {/* ── Security (Trivy reports) ───────────────────────────── */}
+            {tab === 'security' && (
+                <SecurityTab clusterId={id} canInstall={canManageAddons} onOpenAddons={() => setParams({ tab: 'addons', section: 'manage' })} />
+            )}
+
+            {/* ── Delivery (DORA) ─────────────────────────────────────── */}
+            {tab === 'delivery' && <DoraTab clusterId={id} />}
 
 
             {/* UPGRADE MODAL */}

@@ -24,6 +24,8 @@ export const PERMISSIONS = {
 
     'gitops:view':         ['admin', 'operator', 'viewer'],
     'gitops:sync':         ['admin', 'operator'],
+    'security:view':       ['admin', 'operator', 'viewer'],
+    'metrics:view':        ['admin', 'operator', 'viewer'],
 
     'team:view':           ['admin'],
     'team:manage':         ['admin'],
