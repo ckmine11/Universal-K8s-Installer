@@ -33,6 +33,10 @@ export const PERMISSIONS = {
     'env:manage':          ['admin'],
     'chartrepo:manage':    ['admin'],
     'freeze:manage':       ['admin'],
+    'token:manage':        ['admin'],
+    'gitrepo:manage':      ['admin'],
+    'hibernate:manage':    ['admin', 'operator'],
+    'debug:ephemeral':     ['admin', 'operator'],
     'security:view':       ['admin', 'operator', 'viewer'],
     'metrics:view':        ['admin', 'operator', 'viewer'],
 

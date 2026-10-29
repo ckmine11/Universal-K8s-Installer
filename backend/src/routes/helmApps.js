@@ -29,6 +29,13 @@ async function visibleCluster(req, res) {
 }
 const inScope = (user, cluster, ns) => { const nss = accessOn(user, cluster).namespaces; return !nss || nsMatches(nss, ns) }
 const writable = (cluster) => { const w = capabilities(cluster).helmApps; if (w?.ok === false) throw Object.assign(new Error(w.why), { status: 409 }) }
+// the environment's CVE policy; only an admin may push past "block", with a reason
+function gateFor(req, cluster, namespace) {
+    const policy = deliveryStore.environmentAt(cluster.orgId, cluster.id, namespace)?.cvePolicy
+    if (!policy) return null
+    const why = String(req.body?.overrideCve || '').trim()
+    return { policy, override: ['admin', 'superadmin'].includes(req.user.role) && why.length >= 3 ? why.slice(0, 200) : null }
+}
 const always = (action) => async (req) => protectedTarget(req.user.orgId, action, req.params.id, req.originalUrl.split('?')[0], req.body)
 
 router.get('/:id/apps', requirePermission('app:view'), async (req, res) => {
@@ -90,7 +97,7 @@ router.post('/:id/apps/preview', requirePermission('app:deploy'), requirePermiss
     if (!cluster) return
     try {
         const d = deployRequest(req, cluster)
-        res.json(await withTimeout(previewDeploy(cluster, d), 130e3, 'The dry run did not finish in time'))
+        res.json(await withTimeout(previewDeploy(cluster, d, { gate: gateFor(req, cluster, d.namespace) }), 130e3, 'The dry run did not finish in time'))
     } catch (e) { fail(res, e) }
 })
 
@@ -101,8 +108,9 @@ router.post('/:id/apps', requirePermission('app:deploy'), validDeploy, requireAp
         writable(cluster)
         const d = deployRequest(req, cluster)
         const override = checkFreeze(req.user, cluster, req.body)
-        req.auditDetail = `deploy ${d.namespace}/${d.release} chart ${d.repo.name}/${d.chart}${d.version ? ` ${d.version}` : ''}${override ? ` — ${override}` : ''}`
-        const j = await deploy(cluster, d, { by: req.user.username })
+        const gate = gateFor(req, cluster, d.namespace)
+        req.auditDetail = `deploy ${d.namespace}/${d.release} chart ${d.repo.name}/${d.chart}${d.version ? ` ${d.version}` : ''}${override ? ` — ${override}` : ''}${gate?.override ? ` — CVE policy overridden: ${gate.override}` : ''}`
+        const j = await deploy(cluster, d, { by: req.user.username, gate })
         res.status(202).json(jobView(j))
     } catch (e) { fail(res, e) }
 })

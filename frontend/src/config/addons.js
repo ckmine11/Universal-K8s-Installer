@@ -137,6 +137,17 @@ export const ADDONS_LIST = [
         helm: true
     },
     {
+        key: 'external-secrets',
+        name: 'External Secrets',
+        desc: 'Secrets from Vault, AWS, GCP or Azure, synced into the cluster',
+        iconName: 'KeyRound',
+        gradient: 'from-emerald-500 via-teal-500 to-cyan-600',
+        badge: '✨ New',
+        badgeColor: 'text-emerald-400 border-emerald-500/30',
+        tier: 'pro',
+        helm: true
+    },
+    {
         key: 'kyverno',
         name: 'Kyverno policies',
         desc: 'Rules for what may run — no "latest" images, limits required, no privileged pods',

@@ -93,6 +93,8 @@ import gitopsRoutes from './routes/gitops.js'
 import clusterReportRoutes from './routes/clusterReports.js'
 import helmAppRoutes from './routes/helmApps.js'
 import deliveryRoutes from './routes/delivery.js'
+import operateRoutes from './routes/operate.js'
+import hookRoutes from './routes/hooks.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -385,7 +387,9 @@ app.use('/api/clusters', requireAuth, aiActionsRoutes)       // safe fixes with 
 app.use('/api/clusters', requireAuth, gitopsRoutes)          // GitOps view: Argo CD / Flux apps, sync now
 app.use('/api/clusters', requireAuth, clusterReportRoutes)   // Security (Trivy) and DORA delivery metrics
 app.use('/api/clusters', requireAuth, helmAppRoutes)         // Helm App Manager: releases, preview, deploy, rollback
-app.use('/api/delivery', requireAuth, deliveryRoutes)        // environments, chart repositories, change freezes, compare
+app.use('/api/delivery', requireAuth, deliveryRoutes)        // environments, chart repositories, change freezes, compare, tokens, promotions
+app.use('/api/clusters', requireAuth, operateRoutes)         // hibernate / wake, debug containers, External Secrets status
+app.use('/api/hooks', hookRoutes)                            // CI deploy webhook (a deploy token, no session)
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 

@@ -67,6 +67,10 @@ const READ_RULES = `rules:
   - apiGroups: [storage.k8s.io, apiextensions.k8s.io, rbac.authorization.k8s.io, admissionregistration.k8s.io, apiregistration.k8s.io, scheduling.k8s.io, node.k8s.io, networking.k8s.io, policy, certificates.k8s.io, coordination.k8s.io, discovery.k8s.io, metrics.k8s.io, autoscaling, batch, apps, flowcontrol.apiserver.k8s.io, events.k8s.io, snapshot.storage.k8s.io, velero.io, monitoring.coreos.com, cert-manager.io, gateway.networking.k8s.io, argoproj.io, kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io, source.toolkit.fluxcd.io, aquasecurity.github.io]
     resources: ["*"]
     verbs: [get, list, watch]
+  # External Secrets: only the sync objects (their status) — never its generators' state
+  - apiGroups: [external-secrets.io]
+    resources: [externalsecrets, secretstores, clustersecretstores]
+    verbs: [get, list, watch]
   - nonResourceURLs: [/healthz, /livez, /readyz, /version, /version/]
     verbs: [get]`
 export function accessManifest(level) {

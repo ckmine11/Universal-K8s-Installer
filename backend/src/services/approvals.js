@@ -30,7 +30,9 @@ export const PROTECTED_ACTIONS = {
     'gitops:sync':     { label: 'Sync a GitOps app (Argo CD / Flux)', permission: 'gitops:sync', route: (id) => new RegExp(`^POST /api/clusters/${id}/gitops/sync$`) },
     // always asked for a protected environment, whatever the workspace setting
     'app:deploy':      { label: 'Install, upgrade or roll back a Helm app', permission: 'app:deploy', route: (id) => new RegExp(`^POST /api/clusters/${id}/apps(/[a-z0-9-]+/[a-z0-9-]+/rollback)?$`) },
-    'app:uninstall':   { label: 'Uninstall a Helm app', permission: 'app:delete', route: (id) => new RegExp(`^DELETE /api/clusters/${id}/apps/[a-z0-9-]+/[a-z0-9-]+$`) }
+    'app:uninstall':   { label: 'Uninstall a Helm app', permission: 'app:delete', route: (id) => new RegExp(`^DELETE /api/clusters/${id}/apps/[a-z0-9-]+/[a-z0-9-]+$`) },
+    'hibernate':       { label: 'Hibernate a namespace (scale it to 0)', permission: 'hibernate:manage', route: (id) => new RegExp(`^POST /api/clusters/${id}/hibernate$`) },
+    'debug:ephemeral': { label: 'Add a debug container to a running pod', permission: 'debug:ephemeral', route: (id) => new RegExp(`^POST /api/clusters/${id}/debug$`) }
 }
 export const ELEVATION_MINUTES = [15, 30, 60, 120, 240, 480]
 const bad = (m, status = 400) => Object.assign(new Error(m), { status })
@@ -58,6 +60,8 @@ function summaryOf(action, cluster, path, body) {
         case 'ai:apply': return `Apply YAML on ${name} in namespace ${body?.namespace || 'default'}${body?.description ? `: ${String(body.description).slice(0, 80)}` : ''}`
         case 'app:deploy': { const rb = path.match(/\/apps\/([a-z0-9-]+)\/([a-z0-9-]+)\/rollback$/); return rb ? `Roll back Helm app ${rb[1]}/${rb[2]} on ${name} to revision ${body?.revision}` : `Deploy Helm app ${body?.namespace || ''}/${body?.release || ''} (${body?.chart || 'chart'}${body?.version ? ` ${body.version}` : ''}) on ${name}` }
         case 'app:uninstall': { const m = path.match(/\/apps\/([a-z0-9-]+)\/([a-z0-9-]+)$/); return `Uninstall Helm app ${m?.[1]}/${m?.[2]} on ${name}` }
+        case 'hibernate': return `Hibernate namespace ${body?.namespace || ''} on ${name} (scale its workloads to 0)`
+        case 'debug:ephemeral': return `Add a ${body?.image || 'busybox'} debug container to ${body?.namespace || ''}/${body?.pod || ''} on ${name}`
         case 'gitops:sync': return `${body?.action === 'refresh' ? 'Refresh' : 'Sync'} GitOps app ${body?.kind || 'app'} ${body?.namespace || ''}/${body?.name || ''} on ${name}`
         case 'ai:action': { const sp = body?.spec || {}; return `KubeEZ AI fix on ${name}: ${sp.type || 'action'} ${sp.kind || ''} ${sp.namespace || 'default'}/${sp.name || ''}${sp.type === 'scale' ? ` to ${sp.replicas}` : ''}` }
         default: return `${PROTECTED_ACTIONS[action]?.label || action} on ${name}`
@@ -88,7 +92,7 @@ async function notify(r) {
  * person)? Helm app deploys, rollbacks and uninstalls into its namespace.
  */
 export function protectedTarget(orgId, action, clusterId, path, body) {
-    if (!['app:deploy', 'app:uninstall'].includes(action)) return false
+    if (!['app:deploy', 'app:uninstall', 'hibernate'].includes(action)) return false
     const ns = /\/apps\/([a-z0-9-]+)\/[a-z0-9-]+(\/rollback)?$/.exec(path)?.[1] || body?.namespace
     return !!(ns && deliveryStore.environmentAt(orgId, clusterId, ns)?.protected)
 }

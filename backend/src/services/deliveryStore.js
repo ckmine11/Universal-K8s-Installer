@@ -13,7 +13,7 @@ import { encrypt, decrypt } from '../utils/cryptoUtils.js'
 //   freezes       change freezes: no deploys, rollbacks or GitOps syncs on
 //                 the clusters they cover until they end (admins may override)
 const FILE = path.join(DATA_DIR, 'delivery.json')
-const bad = (m) => Object.assign(new Error(m), { status: 400 })
+const bad = (m) => { throw Object.assign(new Error(m), { status: 400 }) }
 const id = () => randomBytes(6).toString('hex')
 
 export const ENV_NAME = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/
@@ -38,7 +38,7 @@ class DeliveryStore {
     _write(all) { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAtomicSync(FILE, JSON.stringify(all, null, 2)) }
     _org(all, orgId) {
         const o = all[orgId || '_'] ||= {}
-        o.environments ||= []; o.repos ||= []; o.freezes ||= []
+        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []
         return o
     }
     _edit(orgId, fn) { const all = this._read(); const o = this._org(all, orgId); const r = fn(o); this._write(all); return r }
@@ -59,7 +59,9 @@ class DeliveryStore {
             if (o.environments.some(e => e.name === name && e.id !== input.id)) throw bad(`There is already an environment called ${name}`)
             if (o.environments.some(e => e.clusterId === input.clusterId && e.namespace === input.namespace && e.id !== input.id)) throw bad('That namespace on that cluster is already an environment')
             if (!cur && o.environments.length >= MAX.environments) throw bad(`A workspace can have up to ${MAX.environments} environments`)
-            const env = { id: cur?.id || id(), name, clusterId: input.clusterId, namespace: input.namespace, protected: !!input.protected, updatedAt: new Date().toISOString(), updatedBy: by || null }
+            const cve = input.cvePolicy ?? cur?.cvePolicy ?? null
+            const cvePolicy = cve && cve.mode !== 'off' ? { mode: ['warn', 'block'].includes(cve.mode) ? cve.mode : bad('CVE policy: off, warn or block'), severity: cve.severity === 'HIGH' ? 'HIGH' : 'CRITICAL' } : null
+            const env = { id: cur?.id || id(), name, clusterId: input.clusterId, namespace: input.namespace, protected: !!input.protected, cvePolicy, updatedAt: new Date().toISOString(), updatedBy: by || null }
             if (cur) Object.assign(cur, env); else o.environments.push(env)
             return env
         })
@@ -122,6 +124,35 @@ class DeliveryStore {
         })
     }
     removeFreeze(orgId, freezeId) { return this._edit(orgId, (o) => { const n = o.freezes.length; o.freezes = o.freezes.filter(f => f.id !== freezeId); return n !== o.freezes.length }) }
+
+    // ── Git accounts (pull requests for promotions) ──
+    gitAccounts(orgId) { return this._org(this._read(), orgId).git.map(g => ({ id: g.id, name: g.name, provider: g.provider, apiUrl: g.apiUrl, hasToken: !!g.token })) }
+    gitAccountCredentials(orgId, accountId) {
+        const g = this._org(this._read(), orgId).git.find(x => x.id === accountId)
+        if (!g) return null
+        let token = null
+        try { token = g.token ? decrypt(g.token) : null } catch { token = null }
+        return { ...g, token }
+    }
+    saveGitAccount(orgId, input, { by } = {}) {
+        const name = String(input?.name || '').trim().toLowerCase()
+        if (!REPO_NAME.test(name)) bad('Name: lowercase letters, digits and dashes')
+        let api
+        try { api = new URL(String(input?.apiUrl || 'https://api.github.com')) } catch { bad('API address is not a valid URL') }
+        if (api.protocol !== 'https:' || api.username || api.password || api.search) bad('Use an https:// API address without user, password or ?query')
+        const token = String(input?.token || '')
+        if (!input?.id && token.length < 20) bad('Paste a GitHub token (fine-grained, "Contents" and "Pull requests": read and write)')
+        return this._edit(orgId, (o) => {
+            const cur = input.id ? o.git.find(g => g.id === input.id) : null
+            if (input.id && !cur) throw Object.assign(new Error('Git account not found'), { status: 404 })
+            if (o.git.some(g => g.name === name && g.id !== input.id)) bad(`There is already a Git account called ${name}`)
+            if (!cur && o.git.length >= 20) bad('Up to 20 Git accounts')
+            const rec = { id: cur?.id || id(), name, provider: 'github', apiUrl: api.toString().replace(/\/+$/, ''), token: token ? encrypt(token.slice(0, 500)) : cur?.token || null, updatedAt: new Date().toISOString(), updatedBy: by || null }
+            if (cur) Object.assign(cur, rec); else o.git.push(rec)
+            return { id: rec.id, name, provider: 'github', apiUrl: rec.apiUrl, hasToken: !!rec.token }
+        })
+    }
+    removeGitAccount(orgId, accountId) { return this._edit(orgId, (o) => { const n = o.git.length; o.git = o.git.filter(g => g.id !== accountId); return n !== o.git.length }) }
 
     /** Remove everything about a cluster that is gone. */
     dropCluster(orgId, clusterId) {

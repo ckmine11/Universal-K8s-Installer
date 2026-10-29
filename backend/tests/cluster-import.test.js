@@ -88,7 +88,9 @@ describe('the access KubeEZ asks for', () => {
     test('read-only: no Secrets, no node or service proxy, no write verbs; full: cluster-admin', () => {
         const read = accessManifest('read'), full = accessManifest('full')
         const rules = read.slice(read.indexOf('kind: ClusterRole\n'), read.indexOf('kind: ClusterRoleBinding'))
-        assert.doesNotMatch(rules, /secrets|nodes\/proxy|services\/proxy|pods\/exec|create|delete|patch|update/)
+        // the External Secrets status objects are named *secrets* — Kubernetes Secrets themselves never
+        assert.doesNotMatch(rules.replace(/external-secrets\.io|externalsecrets|clustersecretstores|secretstores|# External Secrets.*\n/g, ''), /secrets|nodes\/proxy|services\/proxy|pods\/exec|create|delete|patch|update/)
+        assert.match(rules, /apiGroups: \[external-secrets\.io\]\n\s+resources: \[externalsecrets, secretstores, clustersecretstores\]/)
         assert.match(read, /name: view/)
         assert.doesNotMatch(read, /cluster-admin/)
         assert.match(full, /kubeez-full[\s\S]*cluster-admin/)

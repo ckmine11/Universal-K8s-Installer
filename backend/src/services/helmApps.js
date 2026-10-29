@@ -188,8 +188,18 @@ export function diffManifests(before, after) {
 }
 
 /** A dry run on the cluster (the API server checks it) and the diff against what runs now. */
-export async function previewDeploy(cluster, d, { connect = defaultConnect } = {}) {
+export async function previewDeploy(cluster, d, { connect = defaultConnect, gate = null } = {}) {
     const values = await finalValues(cluster, d, connect)
+    const out = await previewWith(cluster, d, values, connect)
+    if (gate?.policy) {
+        const { imagesOf, checkImages } = await import('./cveGate.js')
+        const security = await (gate.read || (async () => (await import('./security.js')).readSecurity(cluster)))().catch(() => null)
+        out.cve = checkImages(imagesOf(out.manifest), security, gate.policy)
+    }
+    delete out.manifest
+    return out
+}
+async function previewWith(cluster, d, values, connect) {
     const body = `echo '==CUR=='; HELM get manifest ${ref(d.namespace, d.release)} 2>/dev/null; echo '==NEW=='; ${upgradeCmd(d, '--dry-run=server -o json')}`
     const r = await run(connect, cluster, body, { stdin: JSON.stringify(values), timeoutMs: 120e3 })
     if (r?.code) throw helmError(r, 'The dry run failed')
@@ -199,7 +209,7 @@ export async function previewDeploy(cluster, d, { connect = defaultConnect } = {
     return {
         install: !cur.trim(), chart: release?.chart?.metadata ? `${release.chart.metadata.name}-${release.chart.metadata.version}` : d.chart,
         appVersion: release?.chart?.metadata?.appVersion || null, ...diffManifests(cur, release?.manifest || ''),
-        notes: String(release?.info?.notes || '').slice(0, 2000) || null
+        notes: String(release?.info?.notes || '').slice(0, 2000) || null, manifest: release?.manifest || ''
     }
 }
 
@@ -207,7 +217,7 @@ export async function previewDeploy(cluster, d, { connect = defaultConnect } = {
 const jobs = new Map()   // id → job
 const JOB_TTL = 60 * 60e3
 function sweep() { for (const [k, j] of jobs) if (j.status !== 'running' && Date.now() - Date.parse(j.finishedAt) > JOB_TTL) jobs.delete(k) }
-export const jobView = (j) => j && ({ id: j.id, clusterId: j.clusterId, action: j.action, release: j.release, namespace: j.namespace, status: j.status, by: j.by, startedAt: j.startedAt, finishedAt: j.finishedAt || null, error: j.error || null, output: j.output || null })
+export const jobView = (j) => j && ({ id: j.id, clusterId: j.clusterId, action: j.action, release: j.release, namespace: j.namespace, status: j.status, by: j.by, startedAt: j.startedAt, finishedAt: j.finishedAt || null, error: j.error || null, output: j.output || null, warnings: j.warnings || [], cve: j.cve || null })
 export const findJob = (jobId) => jobs.get(jobId) || null
 export const runningFor = (clusterId, namespace, release) => [...jobs.values()].find(j => j.status === 'running' && j.clusterId === clusterId && j.namespace === namespace && j.release === release) || null
 
@@ -224,11 +234,36 @@ function startJob(cluster, { action, release, namespace, by }, work) {
 }
 const must = (r, what) => { if (r?.code) throw helmError(r, what); return r }
 
-/** Install or upgrade (waits for the pods; a failed upgrade is rolled back by Helm). */
-export async function deploy(cluster, d, { by, connect = defaultConnect } = {}) {
-    const values = await finalValues(cluster, d, connect)
-    return startJob(cluster, { action: 'deploy', release: d.release, namespace: d.namespace, by }, async () =>
-        must(await run(connect, cluster, upgradeCmd(d, '--wait --timeout 10m $RB -o json'), { stdin: JSON.stringify(values), timeoutMs: 12 * 60e3 }), `${d.release} was not deployed`))
+// the CVE gate: the images of the dry run against the cluster's Trivy reports
+async function cveCheck(cluster, d, values, gate, connect) {
+    const r = await run(connect, cluster, upgradeCmd(d, '--dry-run=server -o json'), { stdin: JSON.stringify(values), timeoutMs: 120e3 })
+    if (r?.code) throw helmError(r, 'The dry run failed')
+    let manifest = ''
+    try { manifest = JSON.parse(String(r.stdout || '').trim())?.manifest || '' } catch { }
+    const { imagesOf, checkImages } = await import('./cveGate.js')
+    const security = await (gate.read || (async () => (await import('./security.js')).readSecurity(cluster)))().catch(() => null)
+    return { ...checkImages(imagesOf(manifest), security, gate.policy), trivy: !!security && security.tools?.vulnerabilities?.state === 'ok' }
+}
+
+/**
+ * Install or upgrade (waits for the pods; a failed upgrade is rolled back by Helm).
+ * values: use exactly these (the deploy webhook) instead of the typed ones.
+ * gate: { policy, override, read } — the environment's CVE policy; override = an admin's reason.
+ */
+export async function deploy(cluster, d, { by, connect = defaultConnect, values = null, gate = null } = {}) {
+    const final = values || await finalValues(cluster, d, connect)
+    const j = startJob(cluster, { action: 'deploy', release: d.release, namespace: d.namespace, by }, async () => {
+        if (gate?.policy) {
+            const { gateText } = await import('./cveGate.js')
+            const g = await cveCheck(cluster, d, final, gate, connect)
+            j.cve = g
+            if (g.blocked && !gate.override) throw bad(`Blocked by the CVE policy of this environment: ${gateText(g)}. Fix the image, or an admin deploys it anyway with a reason.`, 409)
+            if (g.failing.length) j.warnings = [`${g.blocked ? 'CVE policy overridden' : 'Vulnerable images'}: ${gateText(g)}`]
+            if (g.unscanned.length) (j.warnings ||= []).push(`Not scanned by Trivy yet: ${g.unscanned.join(', ')}`)
+        }
+        return must(await run(connect, cluster, upgradeCmd(d, '--wait --timeout 10m $RB -o json'), { stdin: JSON.stringify(final), timeoutMs: 12 * 60e3 }), `${d.release} was not deployed`)
+    })
+    return j
 }
 export function rollback(cluster, namespace, release, revision, { by, connect = defaultConnect } = {}) {
     if (!Number.isInteger(revision) || revision < 1) throw bad('Pick a revision to roll back to')

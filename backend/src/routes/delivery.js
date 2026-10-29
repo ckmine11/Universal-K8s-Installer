@@ -6,6 +6,8 @@ import { clusterStore } from '../services/clusterStore.js'
 import { deliveryStore } from '../services/deliveryStore.js'
 import { listCharts } from '../services/chartCatalog.js'
 import { listReleases, valuesOf, compareValues, RELEASE } from '../services/helmApps.js'
+import { apiTokens } from '../services/apiTokens.js'
+import { cleanPromotion, openPromotionPr } from '../services/gitPromote.js'
 
 // Delivery settings of the workspace (mounted at /api/delivery):
 //   environments  GET (members see those on clusters they see) · POST/PUT/DELETE env:manage
@@ -82,6 +84,38 @@ router.post('/compare', async (req, res) => {
             chartDiffers: !!(a.release && b.release && (a.release.chart !== b.release.chart || a.release.version !== b.release.version)),
             values: a.release && b.release ? compareValues(a.values, b.values) : null
         })
+    } catch (e) { fail(res, e) }
+})
+
+// ── deploy tokens (CI webhook) ──
+router.get('/tokens', requirePermission('token:manage'), (req, res) => res.json({ tokens: apiTokens.list(req.user.orgId) }))
+router.post('/tokens', requirePermission('token:manage'), async (req, res) => {
+    try {
+        const clusters = await clustersOf(req.user)
+        const cluster = clusters.find(c => c.id === req.body?.clusterId)
+        // a token can never do more than the person who makes it
+        if (cluster && !canOn(req.user, 'app:deploy', cluster)) return res.status(403).json({ error: `You may not deploy on ${cluster.clusterName} yourself`, requiredPermission: 'app:deploy' })
+        const r = apiTokens.create(req.user.orgId, req.body, { by: req.user.username, clusterIds: clusters.map(c => c.id), repoIds: deliveryStore.repos(req.user.orgId).map(x => x.id) })
+        req.auditDetail = `deploy token "${r.record.name}" for ${r.record.namespace}/${r.record.release} (${r.record.allowedKeys.join(', ')}), expires ${r.record.expiresAt.slice(0, 10)}`
+        res.json(r)
+    } catch (e) { fail(res, e) }
+})
+router.delete('/tokens/:tokenId', requirePermission('token:manage'), (req, res) => apiTokens.revoke(req.user.orgId, req.params.tokenId, req.user.username) ? res.json({ success: true }) : res.status(404).json({ error: 'Token not found' }))
+
+// ── Git accounts and promotions by pull request (GitOps level 3) ──
+router.get('/git', (req, res) => res.json({ accounts: deliveryStore.gitAccounts(req.user.orgId), canManage: canOn(req.user, 'gitrepo:manage') }))
+const saveGit = (req, res) => { try { res.json(deliveryStore.saveGitAccount(req.user.orgId, { ...req.body, id: req.params.accountId || undefined }, { by: req.user.username })) } catch (e) { fail(res, e) } }
+router.post('/git', requirePermission('gitrepo:manage'), saveGit)
+router.put('/git/:accountId', requirePermission('gitrepo:manage'), saveGit)
+router.delete('/git/:accountId', requirePermission('gitrepo:manage'), (req, res) => deliveryStore.removeGitAccount(req.user.orgId, req.params.accountId) ? res.json({ success: true }) : res.status(404).json({ error: 'Git account not found' }))
+router.post('/promote', requirePermission('gitops:create'), async (req, res) => {
+    const account = deliveryStore.gitAccountCredentials(req.user.orgId, String(req.body?.accountId || ''))
+    if (!account?.token) return res.status(400).json({ error: 'Pick one of the workspace\'s Git accounts' })
+    try {
+        const p = cleanPromotion(req.body)
+        const pr = await openPromotionPr(account, p, { by: req.user.username })
+        req.auditDetail = `pull request #${pr.number} on ${p.repo} (${p.path}): ${pr.changes.map(c => `${c.key} → ${c.to}`).join(', ')}`
+        res.json({ success: true, ...pr })
     } catch (e) { fail(res, e) }
 })
 

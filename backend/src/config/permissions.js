@@ -80,6 +80,12 @@ export const PERMISSIONS = {
     'env:manage':        ['admin'],                         // environments (dev / staging / prod) and which are protected
     'chartrepo:manage':  ['admin'],                         // chart repositories the team may deploy from
     'freeze:manage':     ['admin'],                         // change freezes
+    'token:manage':      ['admin'],                         // deploy tokens for CI (one release each)
+    'gitrepo:manage':    ['admin'],                         // Git accounts for promotion pull requests
+
+    // Day-2 operations on a cluster
+    'hibernate:manage':  ['admin', 'operator'],             // scale a namespace to 0 and back (Hibernate / Wake)
+    'debug:ephemeral':   ['admin', 'operator'],             // add a debug container to a running pod (also needs terminal access)
 
     // Security & delivery insight (read-only)
     'security:view':     ['admin', 'operator', 'viewer'],   // Trivy: image vulnerabilities and misconfigurations per workload
@@ -147,7 +153,11 @@ export const PERMISSION_GROUPS = [
         { key: 'app:delete', label: 'Uninstall Helm apps' },
         { key: 'env:manage', label: 'Manage environments and which are protected' },
         { key: 'chartrepo:manage', label: 'Manage chart repositories' },
-        { key: 'freeze:manage', label: 'Manage change freezes' }
+        { key: 'freeze:manage', label: 'Manage change freezes' },
+        { key: 'token:manage', label: 'Manage deploy tokens for CI' },
+        { key: 'gitrepo:manage', label: 'Manage Git accounts for promotion pull requests' },
+        { key: 'hibernate:manage', label: 'Hibernate and wake namespaces' },
+        { key: 'debug:ephemeral', label: 'Add debug containers to running pods' }
     ]},
     { group: 'Security & delivery', items: [
         { key: 'security:view', label: 'View image vulnerabilities and misconfigurations (Trivy)' },
@@ -208,6 +218,7 @@ export const CLUSTER_PERMISSIONS = [
     'backup:manage',
     'gitops:view', 'gitops:sync', 'gitops:create', 'gitops:delete',
     'app:view', 'app:values', 'app:deploy', 'app:delete',
+    'hibernate:manage', 'debug:ephemeral',
     'security:view', 'metrics:view'
 ]
 
@@ -221,7 +232,7 @@ export const BUILTIN_KUBE_LEVEL = { admin: 'admin', operator: 'edit', viewer: 'v
 // Ready-made starting points for the role builder
 export const ROLE_TEMPLATES = [
     { key: 'oncall', name: 'On-call engineer', description: 'Watches and fixes incidents, terminal with approval. Cannot delete or upgrade.',
-      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync', 'security:view', 'metrics:view', 'app:view', 'app:values', 'app:deploy'] },
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync', 'security:view', 'metrics:view', 'app:view', 'app:values', 'app:deploy', 'debug:ephemeral'] },
     { key: 'developer', name: 'Developer', description: 'Sees clusters and add-on addresses, works inside the cluster (Explorer). No credentials, no cluster changes.',
       kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'compliance:view', 'gitops:view', 'security:view', 'metrics:view', 'app:view'] },
     { key: 'backup', name: 'Backup manager', description: 'Takes and restores backups. Nothing else changes.',

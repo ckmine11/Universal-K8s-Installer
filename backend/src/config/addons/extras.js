@@ -336,6 +336,33 @@ export const EXTRA_ADDONS = {
         uninstallNote: 'The controller and its keys are deleted — SealedSecrets in Git can no longer be opened by this cluster (Secrets already created stay). Keep an etcd backup if you may need the keys.'
     },
 
+    'external-secrets': {
+        label: 'External Secrets', ns: 'external-secrets', detect: 'deploy/external-secrets', tier: 'pro',
+        summary: 'Secrets from Vault, AWS / GCP / Azure secret managers and more, kept in sync as Kubernetes Secrets. Sync status in the cluster\'s Security tab.',
+        versions: [
+            { id: '2.14.0', app: 'v2.14.0', charts: { 'external-secrets': '2.14.0' } },
+            { id: '2.13.0', app: 'v2.13.0', charts: { 'external-secrets': '2.13.0' } }
+        ],
+        fields: [
+            { key: 'replicas', type: 'number', label: 'Operator replicas', default: 1, min: 1, max: 3, help: '2 or more keep syncing while a node restarts (one is the leader).' }
+        ],
+        validate: (s) => ({ replicas: int(s.replicas ?? 1, { min: 1, max: 3, label: 'Operator replicas' }) }),
+        releases: (s, ctx, v) => [{
+            name: 'external-secrets', repo: REPOS['external-secrets'], chart: 'external-secrets', version: v.charts['external-secrets'],
+            values: {
+                fullnameOverride: 'external-secrets',
+                installCRDs: true,
+                replicaCount: s.replicas || 1,
+                leaderElect: (s.replicas || 1) > 1,
+                resources: { requests: { cpu: '20m', memory: '64Mi' }, limits: { memory: '256Mi' } },
+                webhook: { resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { memory: '128Mi' } } },
+                certController: { resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { memory: '128Mi' } } }
+            }
+        }],
+        locked: { 'external-secrets': ['fullnameOverride', 'installCRDs'] },
+        uninstallNote: 'The operator stops syncing. The Kubernetes Secrets it made stay; ExternalSecret and SecretStore objects stay unless you delete them.'
+    },
+
     kyverno: {
         label: 'Kyverno policies', ns: 'kyverno', detect: 'deploy/kyverno-admission-controller', tier: 'pro',
         summary: 'Rules for what may run: no "latest" images, limits required, no privileged pods — report or block.',
