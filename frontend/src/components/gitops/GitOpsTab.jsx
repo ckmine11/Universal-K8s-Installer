@@ -35,13 +35,53 @@ function ToolStatus({ tool, status, canInstall, onInstall }) {
     return <p className="flex items-start gap-1.5 text-[11px] text-amber-200"><AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />{TOOL_NAME[tool]}: {status.message}</p>
 }
 
+// GitOps level 2: an Argo CD app from a public Git repository, locked to one namespace
+function NewApp({ clusterId, isAdmin, onCreated }) {
+    const { toast } = useToast()
+    const [open, setOpen] = useState(false)
+    const [f, setF] = useState({ name: '', repoURL: '', path: '', targetRevision: 'HEAD', namespace: '', autoSync: false })
+    const [busy, setBusy] = useState(false)
+    const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+    const create = async (overrideFreeze) => {
+        setBusy(true)
+        try {
+            const res = await apiFetch(`/api/clusters/${clusterId}/gitops/apps`, { method: 'POST', body: JSON.stringify({ ...f, ...(overrideFreeze ? { overrideFreeze } : {}) }) })
+            const d = await res.json().catch(() => ({}))
+            if (res.status === 423 && isAdmin && !overrideFreeze) { const why = window.prompt(`${d.error}\n\nOverride as admin — why?`); setBusy(false); return why ? create(why) : undefined }
+            if (!res.ok) throw new Error(d.error || 'Not created')
+            toast({ title: 'App created', message: d.message, type: 'success' }); setOpen(false); onCreated()
+        } catch (e) { toast({ title: 'Not created', message: e.message, type: 'error' }) } finally { setBusy(false) }
+    }
+    if (!open) return <button onClick={() => setOpen(true)} className="kz-btn-primary !py-1.5 !text-xs">+ New Argo CD app</button>
+    return (
+        <div className="rounded-xl border border-blue-400/20 bg-blue-500/[0.04] p-4 space-y-3 w-full">
+            <p className="text-xs text-slate-300">KubeEZ gives the app its own Argo CD project: only this repository, only this namespace, nothing cluster-wide — and it never prunes. Public https repositories.</p>
+            <div className="grid sm:grid-cols-3 gap-2">
+                <input className="kz-input !text-xs" placeholder="name (shop-web)" value={f.name} onChange={set('name')} aria-label="App name" />
+                <input className="kz-input !text-xs sm:col-span-2" placeholder="https://github.com/org/deploy.git" value={f.repoURL} onChange={set('repoURL')} aria-label="Git repository" />
+                <input className="kz-input !text-xs" placeholder="path in the repo (apps/web)" value={f.path} onChange={set('path')} aria-label="Path" />
+                <input className="kz-input !text-xs" placeholder="branch / tag (HEAD)" value={f.targetRevision} onChange={set('targetRevision')} aria-label="Revision" />
+                <input className="kz-input !text-xs" placeholder="namespace to deploy into" value={f.namespace} onChange={set('namespace')} aria-label="Namespace" />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" checked={f.autoSync} onChange={set('autoSync')} /> Sync by itself when Git changes</label>
+                <span className="flex-1" />
+                <button onClick={() => setOpen(false)} className="kz-btn-ghost !py-1.5 !text-xs">Cancel</button>
+                <button onClick={() => create()} disabled={busy || !f.name || !f.repoURL || !f.namespace} className="kz-btn-primary !py-1.5 !text-xs">{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Create</button>
+            </div>
+        </div>
+    )
+}
+
 function SyncButtons({ app, busy, onAct }) {
     const [confirm, setConfirm] = useState(false)
     useEffect(() => { if (!confirm) return; const t = setTimeout(() => setConfirm(false), 5000); return () => clearTimeout(t) }, [confirm])
-    if (!app.canSync) return null
     const working = busy === app.id
+    const remove = app.canDelete && <button onClick={() => onAct(app, 'remove')} disabled={working} className="kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" title="Created by KubeEZ — remove it from Argo CD">Remove</button>
+    if (!app.canSync) return remove || null
     return (
         <div className="flex items-center gap-1.5">
+            {remove}
             {app.tool === 'argocd' && (
                 <button onClick={() => onAct(app, 'refresh')} disabled={working} className="kz-btn-ghost !py-1 !px-2 !text-[11px]" title="Compare with Git again (changes nothing)">
                     <RefreshCw className="w-3 h-3" /> Refresh
@@ -151,17 +191,31 @@ export default function GitOpsTab({ clusterId, canInstall, onOpenAddons }) {
     }, [clusterId])
     useEffect(() => { load() }, [load])
 
-    const act = async (app, action) => {
+    const isAdmin = ['admin', 'superadmin'].includes(user?.role)
+    const act = async (app, action, overrideFreeze) => {
+        if (action === 'remove') return removeApp(app)
         setBusy(app.id)
         try {
-            const res = await apiFetch(`/api/clusters/${clusterId}/gitops/sync`, { method: 'POST', body: JSON.stringify({ kind: app.kind, namespace: app.namespace, name: app.name, action }) })
+            const res = await apiFetch(`/api/clusters/${clusterId}/gitops/sync`, { method: 'POST', body: JSON.stringify({ kind: app.kind, namespace: app.namespace, name: app.name, action, ...(overrideFreeze ? { overrideFreeze } : {}) }) })
             const d = await res.json().catch(() => ({}))
+            // a change freeze: an admin may push it through with a reason
+            if (res.status === 423 && isAdmin && !overrideFreeze) { const why = window.prompt(`${d.error}\n\nOverride as admin — why?`); setBusy(null); return why ? act(app, action, why) : undefined }
             if (!res.ok) throw new Error(d.error || 'The sync was refused')
             toast({ title: action === 'refresh' ? 'Refresh requested' : 'Sync started', message: d.message, type: 'success' })
             setTimeout(() => load(true), 3000)
         } catch (e) {
             toast({ title: 'Sync failed', message: e.message, type: 'error' })
         } finally { setBusy(null) }
+    }
+    const removeApp = async (app) => {
+        if (!window.confirm(`Remove ${app.name} from Argo CD? What it deployed keeps running — delete that yourself if it should go.`)) return
+        setBusy(app.id)
+        try {
+            const res = await apiFetch(`/api/clusters/${clusterId}/gitops/apps/${app.namespace}/${app.name}`, { method: 'DELETE' })
+            const d = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(d.error || 'Not removed')
+            toast({ title: 'Removed', message: d.message, type: 'success' }); load(true)
+        } catch (e) { toast({ title: 'Not removed', message: e.message, type: 'error' }) } finally { setBusy(null) }
     }
 
     const apps = data?.apps || []
@@ -201,6 +255,7 @@ export default function GitOpsTab({ clusterId, canInstall, onOpenAddons }) {
                         <ToolStatus tool="flux" status={data.tools?.flux} canInstall={canInstall} onInstall={onOpenAddons} />
                     </div>
                 )}
+                {data?.canCreate && <NewApp clusterId={clusterId} isAdmin={isAdmin} onCreated={() => load(true)} />}
                 {data?.readOnlyReason && <p className="flex items-center gap-1.5 text-[11px] text-slate-400"><Lock className="w-3.5 h-3.5" />{data.readOnlyReason}</p>}
                 {data?.hidden > 0 && <p className="text-[11px] text-slate-500">{data.hidden} app{data.hidden === 1 ? '' : 's'} not shown — they deploy outside your namespaces, cluster-wide or to another cluster.</p>}
                 {error && <p className="flex items-center gap-1.5 text-xs text-red-300"><AlertTriangle className="w-3.5 h-3.5" />{error}</p>}

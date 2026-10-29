@@ -69,11 +69,12 @@ export default function Login() {
     const freshCaptcha = () => setCaptcha(c => ({ token: '', n: c.n + 1 }));
     const [resendIn, setResendIn] = useState(0);
     const [oauth, setOauth] = useState([]);                 // "Continue with Google / GitHub" (when set up)
+    const [ssoName, setSsoName] = useState('SSO');          // the server's single sign-on (OIDC), by its name
     const [confirmFor, setConfirmFor] = useState({ identifier: '', email: '' });   // a sign-up waiting for its email code
 
     useEffect(() => {
         setMounted(true);
-        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) { setEmailReset(!!o.emailReset); setSelfHosted(!!o.selfHosted); setCaptchaKey(o.captchaSiteKey || null); setOauth(Array.isArray(o.oauth) ? o.oauth : []); if (o.signup === false) { setSignupOpen(false); setAuthMode(m => m === 'register' ? 'login' : m) } } }).catch(() => { });
+        fetch('/api/auth/options').then(r => r.ok ? r.json() : null).then(o => { if (o) { setEmailReset(!!o.emailReset); setSelfHosted(!!o.selfHosted); setCaptchaKey(o.captchaSiteKey || null); setOauth(Array.isArray(o.oauth) ? o.oauth : []); setSsoName(o.ssoName || 'SSO'); if (o.signup === false) { setSignupOpen(false); setAuthMode(m => m === 'register' ? 'login' : m) } } }).catch(() => { });
     }, []);
     useEffect(() => {
         const q = new URLSearchParams(window.location.search);
@@ -232,7 +233,7 @@ export default function Login() {
                         </div>
 
                         {!isSetupRequired && (authMode === 'login' || (authMode === 'register' && signupOpen)) && oauth.length > 0 && (
-                            <OAuthButtons providers={oauth} verb={authMode === 'register' ? 'Sign up' : 'Continue'} />
+                            <OAuthButtons providers={oauth} ssoName={ssoName} verb={authMode === 'register' ? 'Sign up' : 'Continue'} />
                         )}
 
                         <form onSubmit={handleSubmit} className="space-y-6 relative z-10">

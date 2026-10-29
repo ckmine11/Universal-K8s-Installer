@@ -27,6 +27,7 @@ const PAGES = {
     VendorPortal: () => import('./pages/VendorPortal'),
     Incidents: () => import('./pages/Incidents'),
     Fleet: () => import('./pages/Fleet'),
+    DeliverySettings: () => import('./pages/DeliverySettings'),
     AiHub: () => import('./pages/AiHub'),
     AiSettingsPage: () => import('./pages/AiSettingsPage'),
     Alerts: () => import('./pages/Alerts'),
@@ -49,6 +50,7 @@ const Pricing = page('Pricing')
 const VendorPortal = page('VendorPortal')
 const Incidents = page('Incidents')
 const Fleet = page('Fleet')
+const DeliverySettings = page('DeliverySettings')
 const AiHub = page('AiHub')
 const AiSettingsPage = page('AiSettingsPage')
 const Alerts = page('Alerts')
@@ -189,6 +191,7 @@ function AuthenticatedApp() {
                         element={<Incidents />}
                     />
                     <Route path="/fleet" element={<Fleet />} />
+                    <Route path="/delivery" element={<DeliverySettings />} />
                     <Route path="/connect/*" element={<ConnectHub />} />
                     <Route path="/ai" element={<AiHub />} />
                     <Route path="/ai/settings" element={<AiSettingsPage />} />

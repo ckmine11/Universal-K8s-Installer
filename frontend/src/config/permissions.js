@@ -24,6 +24,15 @@ export const PERMISSIONS = {
 
     'gitops:view':         ['admin', 'operator', 'viewer'],
     'gitops:sync':         ['admin', 'operator'],
+    'gitops:create':       ['admin', 'operator'],
+    'gitops:delete':       ['admin'],
+    'app:view':            ['admin', 'operator', 'viewer'],
+    'app:values':          ['admin', 'operator'],
+    'app:deploy':          ['admin', 'operator'],
+    'app:delete':          ['admin'],
+    'env:manage':          ['admin'],
+    'chartrepo:manage':    ['admin'],
+    'freeze:manage':       ['admin'],
     'security:view':       ['admin', 'operator', 'viewer'],
     'metrics:view':        ['admin', 'operator', 'viewer'],
 

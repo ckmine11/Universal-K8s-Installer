@@ -28,7 +28,7 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package, PlugZap, GitBranch, ShieldAlert, Gauge } from 'lucide-react'
+    Package, PlugZap, GitBranch, ShieldAlert, Gauge, Boxes } from 'lucide-react'
 import { ClusterTopology3D, OrbitalTerminal } from '../components/LazyHeavy'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
@@ -36,6 +36,7 @@ import AddonManagerPanel from '../components/AddonManagerPanel'
 import BackupsTab from '../components/backups/BackupsTab'
 import ExplorerTab from '../components/explorer/ExplorerTab'
 import GitOpsTab from '../components/gitops/GitOpsTab'
+import AppsTab from '../components/apps/AppsTab'
 import SecurityTab from '../components/security/SecurityTab'
 import DoraTab from '../components/delivery/DoraTab'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
@@ -46,6 +47,7 @@ import RiskCard from '../components/ai/RiskCard'
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
+    { key: 'apps', label: 'Apps', hint: 'Helm install, upgrade, roll back', Icon: Boxes, permission: 'app:view' },
     { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch, permission: 'gitops:view' },
     { key: 'security', label: 'Security', hint: 'vulnerabilities, misconfig', Icon: ShieldAlert, permission: 'security:view' },
     { key: 'delivery', label: 'Delivery', hint: 'DORA metrics', Icon: Gauge, permission: 'metrics:view' },
@@ -612,6 +614,9 @@ export default function ClusterDetails({ onScaleCluster }) {
             {tab === 'explorer' && (
                 <ExplorerTab clusterId={id} installed={!!cluster.addons?.explorer} canInstall={canManageAddons} level={kubeLevel(user?.role, id)} />
             )}
+
+            {/* ── Apps (Helm releases) ───────────────────────────────── */}
+            {tab === 'apps' && <AppsTab clusterId={id} />}
 
             {/* ── GitOps (Argo CD / Flux apps) ───────────────────────── */}
             {tab === 'gitops' && (

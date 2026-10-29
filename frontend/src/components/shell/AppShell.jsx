@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     Sun, Moon, LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
     LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2,
-    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked
+    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked, Layers
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
@@ -65,6 +65,7 @@ export function navSections(user, approvalsWaiting = 0) {
             title: 'Build', items: [
                 canDeploy && { to: '/install', label: 'Deploy cluster', icon: Rocket },
                 canAgents && { to: '/agents', label: 'Gateway Agents', icon: Wifi },
+                { to: '/delivery', label: 'Delivery', icon: Layers },
             ].filter(Boolean)
         },
         {
