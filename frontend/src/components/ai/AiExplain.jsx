@@ -14,12 +14,12 @@ function Steps({ items, caution = [] }) {
     return <ol className="mt-1.5 space-y-1.5 list-decimal list-inside text-xs text-slate-300 leading-relaxed">{items.map((s, i) => <li key={i}><Inline text={s} />{caution.includes(s) && <span className="block ml-4 mt-0.5 text-[11px] text-red-300">⚠ Destroys data or setup on that machine — only if it is not part of a working cluster, and after a snapshot.</span>}</li>)}</ol>
 }
 
-export default function AiExplain({ url, label = 'Explain with AI', hint, clusterId, incidentId, onFallback }) {
+export default function AiExplain({ url, body = null, label = 'Explain with AI', hint, clusterId, incidentId, onFallback }) {
     const [state, setState] = useState({ status: 'idle' })
     const run = async (fresh = false) => {
         setState({ status: 'loading' })
         try {
-            const { ok, data: d } = await aiJob(url, { fresh })
+            const { ok, data: d } = await aiJob(url, { ...body, fresh })
             if (!ok) { setState({ status: 'error', error: d.error || 'No answer', attempts: d.attempts }); onFallback?.(d); return }
             setState({ status: 'done', data: d })
         } catch (e) { setState({ status: 'error', error: e.message }) }

@@ -1,6 +1,7 @@
 import { automationEngine } from './automationEngine.js'
 import { connectCluster, usesApi } from './clusterAccess.js'
 import { providerById } from '../config/clusterProviders.js'
+import { lastKnownApp, gitopsFacts } from './gitops.js'
 // fixes that run on a node over SSH — not on an imported cluster
 const NODE_PLAYBOOKS = new Set(['NodeNotReady', 'DiskPressure', 'MemoryPressure', 'PIDPressure', 'ControlPlaneDown', 'ControlPlaneDiskFull', 'CertExpiring', 'NodeDiskFilling'])
 
@@ -186,6 +187,15 @@ async function freeDisk(ssh) {
 const diskBefore = new Map()   // incident id → disk % before the cleanup
 const diskPct = async (ssh) => parseInt((await ssh.execCommand("df -P / | tail -1 | awk '{print $5}' | tr -d '%'")).stdout.trim(), 10)
 
+// the GitOps poller's last read of the app is the evidence (no extra cluster call)
+function gitopsDiagnosis(next) {
+    return async (engine, cluster, node, incident, evidence) => {
+        const app = lastKnownApp(cluster.id, incident.namespace, incident.target)
+        if (app) await evidence(incident, 'GitOps status', gitopsFacts(app))
+        return `${incident.message}. ${next}`
+    }
+}
+
 const PLAYBOOKS = {
     // ── Node not reporting Ready ─────────────────────────────────────────────
     NodeNotReady: {
@@ -368,6 +378,11 @@ const PLAYBOOKS = {
             return onNode(engine, node, async (ssh) => { const p = await diskPct(ssh); return !isNaN(p) && before != null && before - p >= 2 })
         }
     },
+
+    // ── GitOps: the fix is in Git — KubeEZ shows what Argo CD / Flux reported ──
+    GitOpsSyncFailed: { diagnose: gitopsDiagnosis('Fix it in Git (or the repo access), then "Sync now" in the cluster\'s GitOps tab.') },
+    GitOpsDegraded: { diagnose: gitopsDiagnosis('Look at the resources under drift in the GitOps tab; revert the commit in Git to roll back.') },
+    GitOpsOutOfSync: { diagnose: gitopsDiagnosis('Sync it from the cluster\'s GitOps tab, or find who changed it by hand.') },
 
     // ── Diagnose only: a person decides ──────────────────────────────────────
     NodeMemoryHigh: {

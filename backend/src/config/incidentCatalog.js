@@ -109,6 +109,20 @@ export const CATALOG = {
     JobFailed: {
         label: 'Job failed', category: 'workload', severity: 'info', fixable: false, policy: 'notify',
         suggestion: 'Check the job\'s pod logs. A CronJob runs again at its next schedule.'
+    },
+
+    // ── GitOps (Argo CD / Flux) ────────────────────────────────────────────
+    GitOpsSyncFailed: {
+        label: 'GitOps sync failed', category: 'gitops', severity: 'warning', fixable: false, policy: 'notify',
+        suggestion: 'Argo CD / Flux could not apply what is in Git for 5 minutes. The message says why — usually invalid YAML or a Helm/Kustomize error in the repo, a revision or path that does not exist, lost repo credentials, or a resource the cluster refuses (webhook, quota, immutable field). Fix it in Git, then "Sync now" in the cluster\'s GitOps tab.'
+    },
+    GitOpsDegraded: {
+        label: 'GitOps app unhealthy', category: 'gitops', severity: 'warning', fixable: false, policy: 'notify',
+        suggestion: 'The app was applied but what it deployed is not healthy for 5 minutes. Look at the resources listed under drift — usually pods that crash or cannot pull their image — and their own incidents. Roll back by reverting the commit in Git.'
+    },
+    GitOpsOutOfSync: {
+        label: 'GitOps app out of sync', category: 'gitops', severity: 'info', fixable: false, policy: 'off',
+        suggestion: 'What runs differs from Git for 30 minutes. With manual sync that may be on purpose — sync it from the GitOps tab; with automated sync, someone changed it by hand or a field keeps changing (ignoreDifferences in Argo CD).'
     }
 }
 

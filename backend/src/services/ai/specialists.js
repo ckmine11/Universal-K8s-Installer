@@ -48,8 +48,27 @@ export const SPECIALISTS = {
         label: 'Application specialist',
         prompt: 'Think like an experienced SRE debugging an application on Kubernetes. Check in this order: the previous container log (the real error is usually the first error before it exits), the exit code (137 = killed for memory, 1 = app error), configuration (env vars, ConfigMaps, Secrets, mounted files), probes (port and path match what the app serves), resource limits, and dependencies it calls (database, API).',
         async collect() { }
+    },
+    gitops: {
+        label: 'GitOps specialist',
+        prompt: 'Think like an Argo CD and Flux expert. Check in this order: the sync / reconcile message (it usually names the file, resource or field), whether the source can be read (repo URL, revision or path that does not exist, expired repo credentials — the GitRepository / HelmRepository status), rendering errors (invalid YAML, Helm values, Kustomize), resources the cluster refuses (admission webhooks, quotas, immutable fields such as a selector, a CRD that is missing), then the health of what was deployed (pods that crash or cannot pull). The fix is a change in Git — never suggest editing the live objects by hand (GitOps puts them back) or deleting the Application / Kustomization; with prune, deleting it can delete the app.',
+        async collect(run, inc) {
+            const [kind, name] = String(inc.target || '').split('/')
+            const res = GITOPS_RESOURCES[kind]
+            if (!res || !ok(name) || !ok(inc.namespace)) return
+            const obj = `-n ${inc.namespace} get ${res} ${name}`
+            if (kind === 'Application') {
+                await run('Argo CD status', `${K} ${obj} -o jsonpath='{range .status.conditions[*]}{.type}: {.message}{"\\n"}{end}{.status.operationState.phase}: {.status.operationState.message}{"\\n"}{range .status.operationState.syncResult.resources[*]}{.kind} {.namespace}/{.name}: {.status} {.message}{"\\n"}{end}' 2>&1 | head -60`)
+                await run('Argo CD controller log', `${K} -n ${inc.namespace} logs statefulset/argocd-application-controller --tail=400 2>&1 | grep -F 'application=${inc.namespace}/${name}' | grep -Ei 'error|fail|warn' | tail -15`)
+            } else {
+                await run('Flux status', `${K} ${obj} -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\\n"}{end}' 2>&1 | head -30`)
+                await run('Flux sources', `${K} get gitrepositories.source.toolkit.fluxcd.io,helmrepositories.source.toolkit.fluxcd.io,ocirepositories.source.toolkit.fluxcd.io -A 2>&1 | head -20`)
+            }
+            await run('events', `${K} -n ${inc.namespace} get events --field-selector involvedObject.name=${name} 2>&1 | tail -12`)
+        }
     }
 }
+const GITOPS_RESOURCES = { Application: 'applications.argoproj.io', Kustomization: 'kustomizations.kustomize.toolkit.fluxcd.io', HelmRelease: 'helmreleases.helm.toolkit.fluxcd.io' }
 
 const NETWORK_TEXT = /no such host|i\/o timeout|connection (refused|reset|timed out)|dial tcp|network is unreachable|could not resolve|name resolution|503 service unavailable|upstream connect error|tls handshake timeout/i
 const STORAGE_TEXT = /persistentvolumeclaim|multi-attach|failedmount|failedattach|read-only file system|no space left on device|unbound immediate|volume .* not found|failed to provision/i
@@ -57,6 +76,7 @@ const STORAGE_TEXT = /persistentvolumeclaim|multi-attach|failedmount|failedattac
 /** Which specialist fits this incident (and what the logs say). */
 export function pickSpecialist(inc, text = '') {
     const all = `${inc.message || ''}\n${text}`
+    if (inc.category === 'gitops' || /^GitOps/.test(inc.reason || '')) return 'gitops'
     if (inc.category === 'control-plane' || ['EtcdUnhealthy', 'CertExpiring', 'ControlPlaneDown', 'ControlPlaneDiskFull'].includes(inc.reason)) return 'controlPlane'
     if (inc.category === 'storage' || inc.reason === 'PVCPending' || STORAGE_TEXT.test(all)) return 'storage'
     if (inc.category === 'node' || ['NodeNotReady', 'DiskPressure', 'MemoryPressure', 'PIDPressure', 'NodeDiskFilling', 'NodeMemoryHigh', 'NodeCPUHigh'].includes(inc.reason)) return 'node'

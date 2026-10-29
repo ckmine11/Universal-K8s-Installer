@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { GitBranch, RefreshCw, Loader2, AlertTriangle, CheckCircle2, XCircle, PauseCircle, CircleDashed, ChevronDown, ChevronRight, Search, Lock, ExternalLink, Play } from 'lucide-react'
-import { apiFetch } from '../../context/AuthContext'
+import { apiFetch, useAuth } from '../../context/AuthContext'
+import { can } from '../../config/permissions'
 import { useToast } from '../ToastProvider'
+import AiExplain from '../ai/AiExplain'
 
 // GitOps view of one cluster: Argo CD Applications and Flux Kustomizations /
 // HelmReleases — sync and health, repo and revision, what drifted — with
@@ -17,6 +19,8 @@ const FILTERS = [
     ['suspended', 'Suspended', a => a.suspended]
 ]
 const TOOL_NAME = { argocd: 'Argo CD', flux: 'Flux' }
+// same rule as the backend (services/gitops.js problemOf): what can be explained
+const hasProblem = (a) => !a.suspended && (a.sync === 'Failed' || ['Degraded', 'Missing'].includes(a.health) || (a.sync === 'OutOfSync' && !a.running))
 const ago = (iso) => {
     if (!iso) return null
     const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
@@ -55,11 +59,12 @@ function SyncButtons({ app, busy, onAct }) {
     )
 }
 
-function AppRow({ app, busy, onAct }) {
+function AppRow({ app, busy, onAct, clusterId, canAi }) {
     const [open, setOpen] = useState(false)
     const HIcon = HEALTH_ICON[app.health] || CircleDashed
     const src = app.source || {}
-    const detail = app.drift?.length || app.operation || app.message
+    const explain = canAi && hasProblem(app)
+    const detail = app.drift?.length || app.operation || app.message || explain
     return (
         <li className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -114,6 +119,10 @@ function AppRow({ app, busy, onAct }) {
                             </ul>
                         </div>
                     )}
+                    {explain && (
+                        <AiExplain url={`/api/ai/explain/gitops/${clusterId}`} body={{ kind: app.kind, namespace: app.namespace, name: app.name }} clusterId={clusterId}
+                            label="Explain with AI" hint="KubeEZ AI reads Argo CD / Flux status, events and what changed, and says why — and what to change in Git. Secrets are masked first." />
+                    )}
                 </div>
             )}
         </li>
@@ -122,6 +131,8 @@ function AppRow({ app, busy, onAct }) {
 
 export default function GitOpsTab({ clusterId, canInstall, onOpenAddons }) {
     const { toast } = useToast()
+    const { user } = useAuth()
+    const canAi = can(user?.role, 'ai:use', clusterId)
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
@@ -214,7 +225,7 @@ export default function GitOpsTab({ clusterId, canInstall, onOpenAddons }) {
                             </div>
                         </div>
                         {shown.length ? (
-                            <ul className="space-y-2">{shown.map(a => <AppRow key={a.id} app={a} busy={busy} onAct={act} />)}</ul>
+                            <ul className="space-y-2">{shown.map(a => <AppRow key={a.id} app={a} busy={busy} onAct={act} clusterId={clusterId} canAi={canAi} />)}</ul>
                         ) : <p className="text-sm text-slate-500 py-2">No apps match.</p>}
                     </>
                 )}

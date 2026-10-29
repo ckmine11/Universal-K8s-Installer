@@ -27,6 +27,7 @@ import { generateManifests, parseManifests, checkManifests, previewManifests, ap
 import { offsiteStore } from '../services/offsiteStore.js'
 import { complianceStore } from '../services/complianceService.js'
 import { capabilities } from '../services/clusterAccess.js'
+import { readGitops, visibleTo, problemOf, gitopsFacts, analyzeGitops, cleanSyncRequest } from '../services/gitops.js'
 
 // KubeEZ AI operations: Install Doctor, incident explainer, "What changed?"
 // (mounted at /api/ai), and the safe fixes with dry-run and undo
@@ -113,6 +114,36 @@ router.post('/explain/incident/:id', requirePermission('ai:use'), async (req, re
     // a suggested fix can be applied by a member who may act on incidents AND apply what the AI suggests
     await runJob(req, res, explainKey(inc), () => explainIncidentFull(req.user, inc, cluster, { fresh: !!req.body?.fresh }),
         { fresh: !!req.body?.fresh, decorate: (v, u) => ({ ...v, canAct: canOn(u, 'incident:act', cluster) && canOn(u, 'ai:apply') }) })
+})
+
+// ── GitOps app explainer (the GitOps tab): the same explainer, with the GitOps specialist ──
+router.post('/explain/gitops/:clusterId', requirePermission('ai:use'), async (req, res) => {
+    const cluster = await visibleCluster(req, res, req.params.clusterId)
+    if (!cluster) return
+    if (!canOn(req.user, 'gitops:view', cluster)) return res.status(403).json({ error: 'Your role may not see GitOps apps on this cluster.', requiredPermission: 'gitops:view' })
+    let want
+    try { want = cleanSyncRequest({ ...req.body, action: 'sync' }) } catch (e) { return fail(res, e) }
+    let app
+    try {
+        const r = await withTimeout(readGitops(cluster), 90000, 'The cluster did not answer in time')
+        const nss = accessOn(req.user, cluster).namespaces
+        app = r.apps.find(a => a.kind === want.kind && a.namespace === want.namespace && a.name === want.name)
+        if (app && !visibleTo(app, nss ? (ns) => nsMatches(nss, ns) : null)) app = null
+    } catch (e) { return fail(res, e) }
+    if (!app) return res.status(404).json({ error: `${want.kind} ${want.namespace}/${want.name} not found on this cluster` })
+    const reason = problemOf(app)
+    if (!reason) return res.status(409).json({ error: `${app.name} is in sync and healthy — nothing to explain.` })
+    // shaped like an incident, so the explanation is the same as on the Incidents page
+    const now = new Date(Math.floor(Date.now() / 60e3) * 60e3).toISOString()
+    const inc = {
+        id: `gitops:${cluster.id}:${app.id}`, reason, category: 'gitops', severity: CATALOG[reason].severity, status: `${app.sync}/${app.health}`,
+        clusterId: cluster.id, orgId: cluster.orgId, namespace: app.namespace, target: `${app.kind}/${app.name}`,
+        message: analyzeGitops([app], { since: () => 0, now: Date.now() })[0]?.message || `${app.kind} ${app.name}: ${app.sync}, ${app.health}`,
+        evidence: [{ title: 'GitOps status', text: gitopsFacts(app) }],
+        timestamp: app.operation?.finishedAt || app.lastSyncAt || now, lastSeen: now, count: 1
+    }
+    await runJob(req, res, explainKey(inc), () => explainIncidentFull(req.user, inc, cluster, { fresh: !!req.body?.fresh }),
+        { fresh: !!req.body?.fresh, decorate: (v) => ({ ...v, canAct: false }) })
 })
 
 // ── Ask AI (the web chat): the same answers as ChatOps, only about what this member may see ──

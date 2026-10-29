@@ -12,6 +12,7 @@ import { RESOURCE_REASONS, HISTORY_MAX, parseResources, analyzeResources, resour
 import { redact } from './ai/redact.js'
 import { podFacts, containerMemory, recordMemory, memoryFindings, recordRestarts, restartFindings } from './predict.js'
 import { usesApi, apiShell } from './clusterAccess.js'
+import { GITOPS_SCRIPT, GITOPS_REASONS, parseGitops, analyzeGitops, rememberGitops } from './gitops.js'
 
 const alertTarget = (inc) => inc.namespace ? `${inc.namespace}/${inc.target}` : inc.target
 
@@ -19,6 +20,8 @@ const NODE_POLL_INTERVAL   = 60 * 1000        // node conditions
 const POD_POLL_INTERVAL    = 90 * 1000        // pod states
 const HEALTH_POLL_INTERVAL = 2 * 60 * 1000    // control plane, etcd, certs, disk, workloads, PVCs, jobs
 const RESOURCE_POLL_INTERVAL = 2 * 60 * 1000  // CPU / memory / disk per node (forecasts)
+const GITOPS_POLL_INTERVAL = 3 * 60 * 1000    // Argo CD / Flux apps (sync failed, unhealthy)
+const GITOPS_ABSENT_SKIP   = 10                // neither tool installed: look again every ~30 min
 const RECONNECT_BASE_MS    = 10 * 1000
 const RECONNECT_MAX_MS     = 5 * 60 * 1000
 const INCIDENT_TTL_MS      = 7 * 24 * 60 * 60 * 1000   // a week of history (stats, MTTR)
@@ -285,6 +288,7 @@ class IncidentDetector {
         this.unreachableSince = new Map()   // clusterId -> first failed connection
         this.resources = new Map()   // clusterId -> { nodeName: { ip, samples[] } } (memory only)
         this.predict = new Map()     // clusterId -> { limits, restarts, memSeries, restartHistory } (memory only)
+        this.gitopsSkip = new Map()  // clusterId -> GitOps polls to skip (no Argo CD / Flux there)
         this.listeners = { create: [], close: [] }   // runbooks learn from closed incidents, may act on new ones
         this.incidents = this._load()
     }
@@ -446,7 +450,9 @@ class IncidentDetector {
         stream.timers.push(setInterval(() => this._pollPods(cluster.id), POD_POLL_INTERVAL))
         stream.timers.push(setInterval(() => this._pollHealth(cluster.id), HEALTH_POLL_INTERVAL))
         stream.timers.push(setInterval(() => this._pollResources(cluster.id), RESOURCE_POLL_INTERVAL))
+        stream.timers.push(setInterval(() => this._pollGitops(cluster.id), GITOPS_POLL_INTERVAL))
         setTimeout(() => this._pollResources(cluster.id), 30000).unref?.()
+        setTimeout(() => this._pollGitops(cluster.id), 45000).unref?.()
         this._pollNodes(cluster.id)
         this._pollPods(cluster.id)
         setTimeout(() => this._pollHealth(cluster.id), 15000).unref?.()
@@ -554,9 +560,31 @@ class IncidentDetector {
         const used = new Set()
         const since = (k) => { const key = `${clusterId}|${k}`; used.add(key); return this._since(key) }
         const { findings, checked } = analyzeHealth(splitSections(r.stdout), { since })
-        for (const k of [...this.firstSeen.keys()]) if (k.startsWith(`${clusterId}|`) && !used.has(k)) this.firstSeen.delete(k)
+        // (the GitOps poller keeps its own clocks)
+        for (const k of [...this.firstSeen.keys()]) if (k.startsWith(`${clusterId}|`) && !k.startsWith(`${clusterId}|gitops|`) && !used.has(k)) this.firstSeen.delete(k)
         this.lastCheck.set(clusterId, new Date().toISOString())
         this._apply(this.watched.get(clusterId), findings, checked)
+    }
+
+    // Argo CD / Flux apps: a sync that keeps failing or an app that stays
+    // unhealthy becomes an incident (alert, AI explain); it clears when fixed.
+    // Clusters with neither tool are asked again only every ~30 minutes.
+    async _pollGitops(clusterId) {
+        const skip = this.gitopsSkip.get(clusterId) || 0
+        if (skip > 0) return this.gitopsSkip.set(clusterId, skip - 1)
+        const r = await this._run(clusterId, ssh => ssh.execCommand(GITOPS_SCRIPT, { timeoutMs: 120000 }))
+        if (!r?.stdout || !r.stdout.includes('==KZGITOPS:END==')) return
+        const { apps, tools } = parseGitops(r.stdout)
+        rememberGitops(clusterId, { apps, tools, at: new Date().toISOString() })
+        const states = Object.values(tools).map(t => t.state)
+        if (states.every(s => s === 'missing')) this.gitopsSkip.set(clusterId, GITOPS_ABSENT_SKIP)
+        // a tool that could not be read says nothing about its apps: keep their incidents as they are
+        if (states.some(s => s === 'error' || s === 'forbidden')) return
+        const used = new Set()
+        const since = (k) => { const key = `${clusterId}|gitops|${k}`; used.add(key); return this._since(key) }
+        const findings = analyzeGitops(apps, { since })
+        for (const k of [...this.firstSeen.keys()]) if (k.startsWith(`${clusterId}|gitops|`) && !used.has(k)) this.firstSeen.delete(k)
+        this._apply(this.watched.get(clusterId), findings, GITOPS_REASONS)
     }
 
     // CPU / memory / disk of every node from the kubelet: warns before a disk is

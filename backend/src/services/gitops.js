@@ -197,8 +197,63 @@ export function visibleTo(app, match) {
     return app.targetNamespaces.length > 0 && app.targetNamespaces.every(match)
 }
 
+// ── auto-healing: GitOps problems become incidents (alerts, AI explain) ──
+// Only problems that last: Flux retries on its own and a sync takes a while.
+export const PERSIST_MS = { GitOpsSyncFailed: 5 * 60e3, GitOpsDegraded: 5 * 60e3, GitOpsOutOfSync: 30 * 60e3 }
+export const GITOPS_REASONS = new Set(Object.keys(PERSIST_MS))
+const TOOL = { argocd: 'Argo CD', flux: 'Flux' }
+
+/** The problem an app has now (one per app, the worst), or null. */
+export function problemOf(app) {
+    if (app.suspended) return null
+    if (app.sync === 'Failed') return 'GitOpsSyncFailed'
+    if (['Degraded', 'Missing'].includes(app.health)) return 'GitOpsDegraded'
+    if (app.sync === 'OutOfSync' && !app.running) return 'GitOpsOutOfSync'
+    return null
+}
+
+/** What KubeEZ knows about an app, as plain lines (incident evidence, the AI). */
+export function gitopsFacts(app) {
+    const s = app.source || {}
+    return [
+        `${TOOL[app.tool]} ${app.kind} ${app.namespace}/${app.name}${app.project ? ` (project ${app.project})` : ''}`,
+        `Source: ${s.repo || 'unknown'}${s.path ? ` path ${s.path}` : ''}${s.chart ? ` chart ${s.chart}` : ''}${s.revision ? ` at ${s.revision}` : ''}${s.count > 1 ? ` (+${s.count - 1} more sources)` : ''}`,
+        `Deploys to: ${app.destination?.external ? app.destination.server : 'this cluster'}${app.targetNamespaces?.length ? `, namespaces ${app.targetNamespaces.join(', ')}` : ''}${app.clusterScoped ? ', plus cluster-wide resources' : ''}`,
+        `Sync: ${app.sync}, health: ${app.health}${app.running ? ', a sync is running' : ''}${app.automated ? ', automated sync' : ', manual sync'}${app.suspended ? ', suspended' : ''}`,
+        app.revision && `Synced revision: ${app.revision}`,
+        app.lastSyncAt && `Last sync / reconcile: ${app.lastSyncAt}`,
+        app.operation && `Last operation: ${app.operation.phase}${app.operation.by ? ` by ${app.operation.by}` : ''}${app.operation.finishedAt ? ` at ${app.operation.finishedAt}` : ''}${app.operation.message ? ` — ${app.operation.message}` : ''}`,
+        app.message && `Message: ${app.message}`,
+        app.driftCount && `Drift (${app.driftCount} resource(s)):\n${app.drift.map(r => `- ${r.kind} ${r.namespace ? `${r.namespace}/` : ''}${r.name}: ${[r.sync, r.health, r.message].filter(Boolean).join(', ')}`).join('\n')}`
+    ].filter(Boolean).join('\n')
+}
+
+/**
+ * Apps with a problem that lasted long enough → incident findings.
+ * since(key) → when this problem was first seen (the detector keeps the clocks).
+ */
+export function analyzeGitops(apps, { since = () => Date.now(), now = Date.now() } = {}) {
+    const out = []
+    for (const a of apps) {
+        const reason = problemOf(a)
+        if (!reason || now - since(`${a.id}|${reason}`) < PERSIST_MS[reason]) continue
+        const why = reason === 'GitOpsSyncFailed' ? `sync failed${a.message ? `: ${a.message}` : ''}`
+            : reason === 'GitOpsDegraded' ? `${a.health.toLowerCase()} after sync${a.drift?.[0] ? ` — ${a.drift[0].kind} ${a.drift[0].name}${a.drift[0].message ? `: ${a.drift[0].message}` : ` ${a.drift[0].health || ''}`}` : a.message ? `: ${a.message}` : ''}`
+                : `out of sync with Git for over ${PERSIST_MS[reason] / 60e3} min${a.driftCount ? ` (${a.driftCount} resource(s) differ)` : ''}`
+        out.push({ reason, target: `${a.kind}/${a.name}`, namespace: a.namespace, message: `${TOOL[a.tool]} ${a.kind} ${a.namespace}/${a.name} ${why}`.slice(0, 500) })
+    }
+    return out
+}
+
 const cache = new Map()   // clusterId → { at, value }
 const TTL = 30e3
+/** The detector's own read is the freshest one — the GitOps tab and the diagnosis reuse it. */
+export const rememberGitops = (clusterId, value) => cache.set(clusterId, { at: Date.now(), value })
+/** The last read app (any age) for an incident target "Kind/name" in a namespace. */
+export function lastKnownApp(clusterId, namespace, target) {
+    const [kind, name] = String(target || '').split('/')
+    return cache.get(clusterId)?.value?.apps?.find(a => a.kind === kind && a.name === name && a.namespace === namespace) || null
+}
 
 /** Every GitOps app of the cluster → { apps, tools, summary, at, cached? } */
 export async function readGitops(cluster, { connect, fresh = false } = {}) {

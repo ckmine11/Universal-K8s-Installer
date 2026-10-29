@@ -28,7 +28,7 @@ const STATUS = {
     failed: { cls: 'text-red-300', Icon: XCircle, text: 'Auto-fix failed — needs attention' },
     unresolved: { cls: 'text-slate-300', Icon: AlertTriangle, text: 'Needs attention' }
 }
-const CATEGORY = { cluster: 'Cluster', node: 'Nodes', 'control-plane': 'Control plane', pod: 'Pods', workload: 'Workloads', storage: 'Storage' }
+const CATEGORY = { cluster: 'Cluster', node: 'Nodes', 'control-plane': 'Control plane', pod: 'Pods', workload: 'Workloads', storage: 'Storage', gitops: 'GitOps' }
 
 function ago(iso) {
     if (!iso) return ''
@@ -455,6 +455,7 @@ function IncidentDrawer({ inc, meta, label, sev, kids, cause, labelOf, canAct, c
                             {inc.muted
                                 ? <button onClick={() => onMute(0)} className="kz-btn-ghost !py-2"><Wifi className="w-4 h-4" /> Unmute</button>
                                 : <button onClick={() => onMute(24)} className="kz-btn-ghost !py-2"><BellOff className="w-4 h-4" /> Mute 24 h</button>}
+                            {inc.category === 'gitops' && <Link to={`/cluster/${inc.clusterId}?tab=gitops`} className="kz-btn-ghost !py-2"><Compass className="w-4 h-4" /> Open in GitOps</Link>}
                             {explorer && <a href={explorer} target="_blank" rel="noopener noreferrer" className="kz-btn-ghost !py-2"><Compass className="w-4 h-4" /> Explorer</a>}
                         </div>
                     )}
