@@ -64,6 +64,7 @@ function argoApp(a) {
     const namespaces = new Set([dest.namespace, ...resources.map(r => r.namespace)].filter(Boolean))
     return {
         id: `Application/${md.namespace}/${md.name}`, tool: 'argocd', kind: 'Application', namespace: md.namespace, name: md.name,
+        managed: md.labels?.[MANAGED_BY] === 'kubeez',
         project: str(spec.project, 100) || 'default',
         source: { repo: cleanRepo(src.repoURL), path: str(src.path, 200), chart: str(src.chart, 120), revision: str(src.targetRevision, 80) || 'HEAD', count: spec.sources?.length || 1 },
         destination: { namespace: str(dest.namespace, 63), external, server: external ? cleanRepo(dest.server || dest.name) : null },
@@ -302,6 +303,92 @@ export async function runSync(cluster, app, action, { by, connect } = {}) {
     if (r?.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300) || `exit ${r.code}`}`), { status: 502 })
     const what = action === 'refresh' ? 'Refresh requested' : app.tool === 'argocd' ? 'Sync started' : 'Reconcile requested'
     return { message: `${what} for ${app.kind} ${app.namespace}/${app.name}.` }
+}
+
+// ── creating Argo CD apps (GitOps level 2) ──
+// Each app KubeEZ creates gets its own AppProject: only its repository, only
+// its one namespace on this cluster, no cluster-wide resources — so what is in
+// Git can never reach another namespace, whatever is committed later.
+export const MANAGED_BY = 'app.kubernetes.io/managed-by'
+const APP_NAME = /^[a-z0-9]([-a-z0-9]{0,38}[a-z0-9])?$/
+const GIT_PATH = /^[\w.\-/]{0,200}$/
+const REVISION = /^[\w.\-/]{1,100}$/
+// where KubeEZ itself and the cluster's own controllers live: admins only
+export const SYSTEM_NS = /^(kube-.*|argocd|flux-system|kubeez.*|cert-manager|ingress-nginx|metallb-system|longhorn-system|velero|trivy-system|kyverno|gatekeeper-system)$/
+
+/** A "new app" request → the checked spec, or 400. */
+export function cleanCreateApp(body) {
+    const b = body || {}
+    const bad = (m) => { throw Object.assign(new Error(m), { status: 400 }) }
+    if (!APP_NAME.test(String(b.name || ''))) bad('Name: lowercase letters, digits and dashes, up to 40')
+    let u
+    try { u = new URL(String(b.repoURL || '')) } catch { bad('The Git repository is not a valid URL') }
+    if (u.protocol !== 'https:') bad('Use an https:// Git repository')
+    if (u.username || u.password || u.search || u.hash) bad('The repository address may not carry a user, password, ?query or #fragment — public repositories only for now')
+    const path = String(b.path ?? '').replace(/^\/+|\/+$/g, '')
+    if (!GIT_PATH.test(path) || path.split('/').includes('..')) bad('Path: a folder in the repository (letters, digits, . _ - /)')
+    const targetRevision = String(b.targetRevision || 'HEAD')
+    if (!REVISION.test(targetRevision)) bad('Revision: a branch, tag or commit')
+    if (!NAMESPACE.test(String(b.namespace || ''))) bad('Namespace is not a valid Kubernetes namespace')
+    return { name: b.name, repoURL: u.toString().replace(/\/$/, ''), path, targetRevision, namespace: b.namespace, autoSync: !!b.autoSync }
+}
+
+/** The AppProject + Application for a spec, in the Argo CD namespace. */
+export function argoAppManifests(spec, argoNs, by = 'kubeez') {
+    const labels = { [MANAGED_BY]: 'kubeez' }
+    const annotations = { 'kubeez.io/created-by': String(by).replace(/[^\w.@-]/g, '').slice(0, 60) || 'kubeez' }
+    const project = `kubeez-${spec.name}`
+    return {
+        apiVersion: 'v1', kind: 'List', items: [
+            {
+                apiVersion: 'argoproj.io/v1alpha1', kind: 'AppProject', metadata: { name: project, namespace: argoNs, labels, annotations },
+                spec: {
+                    description: `Created by KubeEZ for ${spec.name}: one repository, one namespace`,
+                    sourceRepos: [spec.repoURL],
+                    destinations: [{ server: 'https://kubernetes.default.svc', namespace: spec.namespace }],
+                    clusterResourceWhitelist: [],
+                    namespaceResourceBlacklist: [{ group: '', kind: 'ResourceQuota' }, { group: '', kind: 'LimitRange' }]
+                }
+            },
+            {
+                apiVersion: 'argoproj.io/v1alpha1', kind: 'Application', metadata: { name: spec.name, namespace: argoNs, labels, annotations },
+                spec: {
+                    project,
+                    source: { repoURL: spec.repoURL, path: spec.path || '.', targetRevision: spec.targetRevision },
+                    destination: { server: 'https://kubernetes.default.svc', namespace: spec.namespace },
+                    // never prune: removing a file in Git does not delete live objects through KubeEZ's setup
+                    syncPolicy: { ...(spec.autoSync ? { automated: { prune: false, selfHeal: true } } : {}), syncOptions: ['CreateNamespace=true'] }
+                }
+            }
+        ]
+    }
+}
+
+const ARGO_NS = `${KUBECTL} get deploy -A -l app.kubernetes.io/name=argocd-server -o jsonpath='{.items[0].metadata.namespace}' --request-timeout=20s 2>/dev/null`
+/** Create (or update) an app KubeEZ manages. → { message, argoNamespace } */
+export async function createArgoApp(cluster, spec, { by, connect } = {}) {
+    const ssh = await (connect || defaultConnect)(cluster)
+    try {
+        const ns = String((await ssh.execCommand(ARGO_NS)).stdout || '').trim() || 'argocd'
+        if (!NAMESPACE.test(ns)) throw Object.assign(new Error('Could not find where Argo CD runs'), { status: 409 })
+        // an app with this name that KubeEZ did not create is not taken over
+        const cur = await ssh.execCommand(`${KUBECTL} -n ${q(ns)} get applications.argoproj.io ${q(spec.name)} -o jsonpath='{.metadata.labels.app\\.kubernetes\\.io/managed-by}' --request-timeout=20s 2>/dev/null`)
+        if (!cur.code && String(cur.stdout || '').trim() !== 'kubeez') throw Object.assign(new Error(`An Argo CD app called ${spec.name} already exists and was not created by KubeEZ — pick another name.`), { status: 409 })
+        const r = await ssh.execCommand(`${KUBECTL} apply -f - --request-timeout=30s`, { stdin: JSON.stringify(argoAppManifests(spec, ns, by)), timeoutMs: 60e3 })
+        if (r.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
+        return { message: `Argo CD app ${spec.name} created in ${ns} — it deploys ${spec.repoURL}${spec.path ? `/${spec.path}` : ''} into ${spec.namespace}${spec.autoSync ? ' and syncs by itself' : '; press Sync now to deploy'}.`, argoNamespace: ns }
+    } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
+}
+
+/** Remove an app KubeEZ created and its AppProject. What it deployed stays (no cascade). */
+export async function deleteArgoApp(cluster, app, { connect } = {}) {
+    if (!app.managed) throw Object.assign(new Error('KubeEZ removes only the apps it created — remove this one in Argo CD.'), { status: 409 })
+    const ssh = await (connect || defaultConnect)(cluster)
+    try {
+        const r = await ssh.execCommand(`${KUBECTL} -n ${q(app.namespace)} delete applications.argoproj.io ${q(app.name)} --cascade=orphan --wait=false --request-timeout=30s && ${KUBECTL} -n ${q(app.namespace)} delete appprojects.argoproj.io ${q(`kubeez-${app.name}`)} --ignore-not-found --request-timeout=30s`, { timeoutMs: 60e3 })
+        if (r.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
+        return { message: `${app.name} removed from Argo CD. What it deployed is still running — delete it yourself if it should go.` }
+    } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
 }
 
 let testConnect = null

@@ -67,6 +67,20 @@ export const PERMISSIONS = {
     'gitops:view':       ['admin', 'operator', 'viewer'],   // apps, sync & health, repo, revision, drift
     'gitops:sync':       ['admin', 'operator'],             // "Sync now" / "Refresh" — asks Argo CD / Flux to sync from Git
 
+    'gitops:create':     ['admin', 'operator'],             // create an Argo CD app from a Git repo (locked to its namespace)
+    'gitops:delete':     ['admin'],                         // remove an app KubeEZ created (what it deployed stays)
+
+    // Helm apps (your releases on a cluster)
+    'app:view':          ['admin', 'operator', 'viewer'],   // releases, status, history
+    'app:values':        ['admin', 'operator'],             // values (secrets masked), previews, environment compare
+    'app:deploy':        ['admin', 'operator'],             // install, upgrade, roll back
+    'app:delete':        ['admin'],                         // uninstall a release
+
+    // Delivery settings (workspace-wide)
+    'env:manage':        ['admin'],                         // environments (dev / staging / prod) and which are protected
+    'chartrepo:manage':  ['admin'],                         // chart repositories the team may deploy from
+    'freeze:manage':     ['admin'],                         // change freezes
+
     // Security & delivery insight (read-only)
     'security:view':     ['admin', 'operator', 'viewer'],   // Trivy: image vulnerabilities and misconfigurations per workload
     'metrics:view':      ['admin', 'operator', 'viewer'],   // DORA: deploy frequency, change failure rate, recovery time
@@ -122,7 +136,18 @@ export const PERMISSION_GROUPS = [
     ]},
     { group: 'GitOps', items: [
         { key: 'gitops:view', label: 'View GitOps apps (Argo CD / Flux): sync, health, drift' },
-        { key: 'gitops:sync', label: 'Sync or refresh a GitOps app from Git' }
+        { key: 'gitops:sync', label: 'Sync or refresh a GitOps app from Git' },
+        { key: 'gitops:create', label: 'Create an Argo CD app from a Git repository' },
+        { key: 'gitops:delete', label: 'Remove an app KubeEZ created' }
+    ]},
+    { group: 'Apps & delivery', items: [
+        { key: 'app:view', label: 'View Helm apps, their status and history' },
+        { key: 'app:values', label: 'View values (secrets masked), previews and environment compare' },
+        { key: 'app:deploy', label: 'Install, upgrade and roll back Helm apps' },
+        { key: 'app:delete', label: 'Uninstall Helm apps' },
+        { key: 'env:manage', label: 'Manage environments and which are protected' },
+        { key: 'chartrepo:manage', label: 'Manage chart repositories' },
+        { key: 'freeze:manage', label: 'Manage change freezes' }
     ]},
     { group: 'Security & delivery', items: [
         { key: 'security:view', label: 'View image vulnerabilities and misconfigurations (Trivy)' },
@@ -181,7 +206,8 @@ export const CLUSTER_PERMISSIONS = [
     'incident:view', 'incident:act',
     'compliance:view', 'compliance:manage',
     'backup:manage',
-    'gitops:view', 'gitops:sync',
+    'gitops:view', 'gitops:sync', 'gitops:create', 'gitops:delete',
+    'app:view', 'app:values', 'app:deploy', 'app:delete',
     'security:view', 'metrics:view'
 ]
 
@@ -195,9 +221,9 @@ export const BUILTIN_KUBE_LEVEL = { admin: 'admin', operator: 'edit', viewer: 'v
 // Ready-made starting points for the role builder
 export const ROLE_TEMPLATES = [
     { key: 'oncall', name: 'On-call engineer', description: 'Watches and fixes incidents, terminal with approval. Cannot delete or upgrade.',
-      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync', 'security:view', 'metrics:view'] },
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync', 'security:view', 'metrics:view', 'app:view', 'app:values', 'app:deploy'] },
     { key: 'developer', name: 'Developer', description: 'Sees clusters and add-on addresses, works inside the cluster (Explorer). No credentials, no cluster changes.',
-      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'compliance:view', 'gitops:view', 'security:view', 'metrics:view'] },
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'compliance:view', 'gitops:view', 'security:view', 'metrics:view', 'app:view'] },
     { key: 'backup', name: 'Backup manager', description: 'Takes and restores backups. Nothing else changes.',
       kube: 'view', permissions: ['cluster:view', 'addon:view', 'incident:view', 'backup:manage'] },
     { key: 'auditor', name: 'Auditor', description: 'Read-only compliance: scores, reports, audit trail and terminal recordings. No secrets.',

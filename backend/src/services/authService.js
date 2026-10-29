@@ -226,6 +226,38 @@ class AuthService {
         return this.generateToken(user);
     }
 
+    // Enterprise sign-in (OIDC): the person joins the configured workspace with
+    // the role their identity-provider groups give. The role follows the groups
+    // at every sign-in — except for the workspace owner and the platform admin.
+    async signInWithSso({ provider, subject, email, name, orgId, role }) {
+        const sub = String(subject);
+        if (!orgId || !this.getOrgOwner(orgId)) throw Object.assign(new Error('Single sign-on is not linked to a workspace on this server.'), { code: 'NO_WORKSPACE' });
+        if (role === 'none') throw Object.assign(new Error('Your account is not in a group that may use KubeEZ. Ask your administrator.'), { code: 'NO_ROLE' });
+        if (!['admin', 'operator', 'viewer'].includes(role)) throw Object.assign(new Error('Single sign-on gives an unknown role.'), { code: 'NO_ROLE' });
+        let user = this.users.find(u => u.oauth?.[provider] === sub);
+        if (!user && email) {
+            user = this.users.find(u => u.email && u.email.toLowerCase() === String(email).toLowerCase());
+            // never sign into an account of another workspace through this workspace's identity provider
+            if (user && user.orgId !== orgId) throw Object.assign(new Error('This email belongs to an account in another workspace.'), { code: 'OTHER_WORKSPACE' });
+            if (user) user.oauth = { ...(user.oauth || {}), [provider]: sub };
+        }
+        if (!user) {
+            const base = (String(name || '').trim() || String(email).split('@')[0]).toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 24) || 'user';
+            const first = base.length >= 3 ? base : `${base}-user`;
+            let username = first;
+            for (let i = 2; this.users.some(u => u.username.toLowerCase() === username.toLowerCase()); i++) username = `${first}-${i}`;
+            try { user = await this.createTeamMember(orgId, username, crypto.randomBytes(32).toString('hex'), email, role); }
+            catch (e) { throw Object.assign(new Error(/seat limit/i.test(e.message) ? `${e.message.replace(/ Upgrade your plan.*$/, '')} — ask your administrator to free a seat or raise the limit.` : e.message), { code: /seat limit/i.test(e.message) ? 'SEATS' : 'FAILED' }); }
+            Object.assign(user, { oauth: { [provider]: sub }, passwordSet: false, emailVerified: true, emailVerifiedAt: new Date().toISOString(), createdVia: provider });
+        } else if (user.role !== 'superadmin' && this.getOrgOwner(orgId)?.id !== user.id && user.role !== role && !String(user.role).startsWith('custom:')) {
+            user.role = role;   // custom roles set in KubeEZ are kept
+        }
+        if (user.isSuspended) throw Object.assign(new Error('This account is suspended. Contact your administrator.'), { code: 'SUSPENDED' });
+        user.lastLoginAt = new Date().toISOString();
+        this.saveUsers();
+        return this.generateToken(user);
+    }
+
     async createTeamMember(adminOrgId, username, password, email, role = 'viewer') {
         const existing = this.users.find(u => u.username.toLowerCase() === username.toLowerCase() || (u.email && email && u.email.toLowerCase() === email.toLowerCase()));
         if (existing) {

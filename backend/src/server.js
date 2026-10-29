@@ -91,6 +91,8 @@ import aiRoutes from './routes/ai.js'
 import aiOpsRoutes, { actionsRouter as aiActionsRoutes } from './routes/aiOps.js'
 import gitopsRoutes from './routes/gitops.js'
 import clusterReportRoutes from './routes/clusterReports.js'
+import helmAppRoutes from './routes/helmApps.js'
+import deliveryRoutes from './routes/delivery.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -250,7 +252,7 @@ app.post('/api/auth/register', requireCaptcha, async (req, res) => {
 // What the login page can offer (no secrets): reset by email only when this
 // server can actually send email
 app.get('/api/auth/options', (req, res) => {
-    res.json({ emailReset: mailConfigured(), selfHosted: process.env.KUBEEZ_MODE !== 'saas', signup: signupOpen(), captchaSiteKey: captchaSiteKey(), oauth: oauthProviders() })
+    res.json({ emailReset: mailConfigured(), selfHosted: process.env.KUBEEZ_MODE !== 'saas', signup: signupOpen(), captchaSiteKey: captchaSiteKey(), oauth: oauthProviders(), ssoName: process.env.OIDC_NAME || 'SSO' })
 })
 
 app.post('/api/auth/forgot-password', authLimiter, requireCaptcha, async (req, res) => {
@@ -382,6 +384,8 @@ app.use('/api/import', clusterImportPublic)                  // the connect comm
 app.use('/api/clusters', requireAuth, aiActionsRoutes)       // safe fixes with dry-run and undo
 app.use('/api/clusters', requireAuth, gitopsRoutes)          // GitOps view: Argo CD / Flux apps, sync now
 app.use('/api/clusters', requireAuth, clusterReportRoutes)   // Security (Trivy) and DORA delivery metrics
+app.use('/api/clusters', requireAuth, helmAppRoutes)         // Helm App Manager: releases, preview, deploy, rollback
+app.use('/api/delivery', requireAuth, deliveryRoutes)        // environments, chart repositories, change freezes, compare
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 

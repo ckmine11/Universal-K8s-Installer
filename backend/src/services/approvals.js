@@ -15,6 +15,7 @@ import { customRoleId, roleStore } from './roleStore.js'
 import { authService } from './authService.js'
 import { auditLog } from './auditLog.js'
 import { scheduleOrg } from './namespaceAccess.js'
+import { deliveryStore } from './deliveryStore.js'
 
 // the actions that can need a second person — and the route that does each
 export const PROTECTED_ACTIONS = {
@@ -26,7 +27,10 @@ export const PROTECTED_ACTIONS = {
     'volume:restore':  { label: 'Restore volume backups', permission: 'cluster:upgrade', route: (id) => new RegExp(`^POST /api/clusters/${id}/volume-backups/restores$`) },
     'ai:action':       { label: 'Run a fix suggested by KubeEZ AI', permission: 'incident:act', route: (id) => new RegExp(`^POST /api/clusters/${id}/ai-actions$`) },
     'ai:apply':        { label: 'Apply YAML written by KubeEZ AI', permission: 'cluster:view', route: (id) => new RegExp(`^POST /api/clusters/${id}/ai-manifests$`) },
-    'gitops:sync':     { label: 'Sync a GitOps app (Argo CD / Flux)', permission: 'gitops:sync', route: (id) => new RegExp(`^POST /api/clusters/${id}/gitops/sync$`) }
+    'gitops:sync':     { label: 'Sync a GitOps app (Argo CD / Flux)', permission: 'gitops:sync', route: (id) => new RegExp(`^POST /api/clusters/${id}/gitops/sync$`) },
+    // always asked for a protected environment, whatever the workspace setting
+    'app:deploy':      { label: 'Install, upgrade or roll back a Helm app', permission: 'app:deploy', route: (id) => new RegExp(`^POST /api/clusters/${id}/apps(/[a-z0-9-]+/[a-z0-9-]+/rollback)?$`) },
+    'app:uninstall':   { label: 'Uninstall a Helm app', permission: 'app:delete', route: (id) => new RegExp(`^DELETE /api/clusters/${id}/apps/[a-z0-9-]+/[a-z0-9-]+$`) }
 }
 export const ELEVATION_MINUTES = [15, 30, 60, 120, 240, 480]
 const bad = (m, status = 400) => Object.assign(new Error(m), { status })
@@ -52,6 +56,8 @@ function summaryOf(action, cluster, path, body) {
         case 'volume:restore': return `Restore volume backup ${body?.backup || body?.name || ''} on ${name} (${body?.mode || 'restore'})`.replace('  ', ' ')
         case 'cluster:delete': return `Remove ${name} from KubeEZ`
         case 'ai:apply': return `Apply YAML on ${name} in namespace ${body?.namespace || 'default'}${body?.description ? `: ${String(body.description).slice(0, 80)}` : ''}`
+        case 'app:deploy': { const rb = path.match(/\/apps\/([a-z0-9-]+)\/([a-z0-9-]+)\/rollback$/); return rb ? `Roll back Helm app ${rb[1]}/${rb[2]} on ${name} to revision ${body?.revision}` : `Deploy Helm app ${body?.namespace || ''}/${body?.release || ''} (${body?.chart || 'chart'}${body?.version ? ` ${body.version}` : ''}) on ${name}` }
+        case 'app:uninstall': { const m = path.match(/\/apps\/([a-z0-9-]+)\/([a-z0-9-]+)$/); return `Uninstall Helm app ${m?.[1]}/${m?.[2]} on ${name}` }
         case 'gitops:sync': return `${body?.action === 'refresh' ? 'Refresh' : 'Sync'} GitOps app ${body?.kind || 'app'} ${body?.namespace || ''}/${body?.name || ''} on ${name}`
         case 'ai:action': { const sp = body?.spec || {}; return `KubeEZ AI fix on ${name}: ${sp.type || 'action'} ${sp.kind || ''} ${sp.namespace || 'default'}/${sp.name || ''}${sp.type === 'scale' ? ` to ${sp.replicas}` : ''}` }
         default: return `${PROTECTED_ACTIONS[action]?.label || action} on ${name}`
@@ -77,10 +83,24 @@ async function notify(r) {
     })
 }
 
-/** Middleware: this action may need a second person's approval. Runs after requirePermission. */
-export const requireApproval = (action) => async (req, res, next) => {
+/**
+ * Does this change hit a protected environment (it then always needs a second
+ * person)? Helm app deploys, rollbacks and uninstalls into its namespace.
+ */
+export function protectedTarget(orgId, action, clusterId, path, body) {
+    if (!['app:deploy', 'app:uninstall'].includes(action)) return false
+    const ns = /\/apps\/([a-z0-9-]+)\/[a-z0-9-]+(\/rollback)?$/.exec(path)?.[1] || body?.namespace
+    return !!(ns && deliveryStore.environmentAt(orgId, clusterId, ns)?.protected)
+}
+
+/**
+ * Middleware: this action may need a second person's approval. Runs after requirePermission.
+ * always(req) → true asks for it even when the workspace has not turned it on (a protected environment).
+ */
+export const requireApproval = (action, { always = null } = {}) => async (req, res, next) => {
     try {
-        if (!req.user?.orgId || !approvalStore.settings(req.user.orgId).actions?.[action]) return next()
+        if (!req.user?.orgId) return next()
+        if (!approvalStore.settings(req.user.orgId).actions?.[action] && !(always && await always(req))) return next()
         const path = pathOf(req.originalUrl)
         const hash = requestHash(req.method, path, req.body)
         const id = req.get('x-kubeez-approval')
@@ -113,7 +133,7 @@ export async function createRequest(user, input, clusters) {
     if (input?.kind === 'action') {
         const a = PROTECTED_ACTIONS[input.action]
         if (!a) throw bad('Unknown action')
-        if (!approvalStore.settings(user.orgId).actions?.[input.action]) throw bad('This action does not need an approval in your workspace — just run it')
+        if (!approvalStore.settings(user.orgId).actions?.[input.action] && !protectedTarget(user.orgId, input.action, input.clusterId, String(input.path || ''), input.body)) throw bad('This action does not need an approval in your workspace — just run it')
         const cluster = clusters.find(c => c.id === input.clusterId)
         if (!cluster || !canSeeCluster(member, cluster)) throw bad('Cluster not found', 404)
         if (!canOn(member, a.permission, cluster)) throw bad('Your role may not do this on that cluster — an approval cannot add permissions', 403)
