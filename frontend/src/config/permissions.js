@@ -22,6 +22,9 @@ export const PERMISSIONS = {
 
     'incident:view':       ['admin', 'operator', 'viewer'],
 
+    'gitops:view':         ['admin', 'operator', 'viewer'],
+    'gitops:sync':         ['admin', 'operator'],
+
     'team:view':           ['admin'],
     'team:manage':         ['admin'],
     'billing:manage':      ['admin'],

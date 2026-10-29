@@ -40,7 +40,7 @@ const NODE_FEATURES = {
     certRotation: 'Control-plane certificates of an imported cluster are managed by its provider.'
 }
 // Features that change things inside the cluster — need "Full manage" access
-const WRITE_FEATURES = ['addons', 'healing', 'actions', 'yamlApply', 'backup', 'namespaceAccess', 'terminal', 'kubeconfig']
+const WRITE_FEATURES = ['addons', 'healing', 'actions', 'yamlApply', 'backup', 'namespaceAccess', 'terminal', 'kubeconfig', 'gitopsSync']
 
 // Add-ons that prepare or check the NODES themselves (kernel modules, mounts,
 // containerd) — not without node access

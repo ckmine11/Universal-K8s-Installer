@@ -118,6 +118,7 @@ const LABELS = [
     [/^POST \/api\/clusters\/:id\/volume-backups\/backups$/, 'Volume backup taken'],
     [/^PUT \/api\/clusters\/:id\/labels$/, 'Cluster labels changed'],
     [/^POST \/api\/clusters\/:id\/ai-actions$/, 'Fix suggested by KubeEZ AI applied'],
+    [/^POST \/api\/clusters\/:id\/gitops\/sync$/, 'GitOps sync requested'],
     [/^POST \/api\/clusters\/:id\/ai-actions\/:actionId\/undo$/, 'AI fix undone']
 ]
 // reads and previews that only look are not changes

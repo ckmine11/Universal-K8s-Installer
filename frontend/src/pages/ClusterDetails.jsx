@@ -28,13 +28,14 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package, PlugZap } from 'lucide-react'
+    Package, PlugZap, GitBranch } from 'lucide-react'
 import { ClusterTopology3D, OrbitalTerminal } from '../components/LazyHeavy'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
 import AddonManagerPanel from '../components/AddonManagerPanel'
 import BackupsTab from '../components/backups/BackupsTab'
 import ExplorerTab from '../components/explorer/ExplorerTab'
+import GitOpsTab from '../components/gitops/GitOpsTab'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
 import RiskCard from '../components/ai/RiskCard'
@@ -43,6 +44,7 @@ import RiskCard from '../components/ai/RiskCard'
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
+    { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
     { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
 ]
@@ -94,7 +96,8 @@ export default function ClusterDetails({ onScaleCluster }) {
     // Open tab + add-on section live in the URL (?tab=addons&section=manage):
     // refresh, back button and shared links keep the user where they were
     const [params, setParams] = useSearchParams()
-    const tab = TABS.some(t => t.key === params.get('tab')) ? params.get('tab') : 'overview'
+    const tabs = TABS.filter(t => t.key !== 'gitops' || can(user?.role, 'gitops:view', id))
+    const tab = tabs.some(t => t.key === params.get('tab')) ? params.get('tab') : 'overview'
     const section = ADDON_SECTIONS.some(s => s.key === params.get('section')) ? params.get('section') : 'access'
     const setTab = (key) => setParams(key === 'overview' ? {} : { tab: key })
     useEffect(() => { const m = MOVED_TO_AI[params.get('tab')]; if (m) navigate(`/ai/${m}?cluster=${id}`, { replace: true }) }, [params, id])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -352,7 +355,7 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* Tabs (the open tab is kept in the URL: ?tab=addons) */}
             <div role="tablist" className="sticky top-16 z-20 mb-6 p-1 rounded-2xl bg-[#0b0b0f]/80 backdrop-blur-xl border border-white/10 flex gap-1 overflow-x-auto">
-                {TABS.map(t => (
+                {tabs.map(t => (
                     <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={tabClass(tab === t.key)}>
                         <t.Icon className="w-4 h-4" /> {t.label}
                         <span className="hidden md:inline text-[11px] font-medium opacity-60">{t.hint}</span>
@@ -604,6 +607,11 @@ export default function ClusterDetails({ onScaleCluster }) {
             {/* ── Explorer (Radar behind KubeEZ) ─────────────────────── */}
             {tab === 'explorer' && (
                 <ExplorerTab clusterId={id} installed={!!cluster.addons?.explorer} canInstall={canManageAddons} level={kubeLevel(user?.role, id)} />
+            )}
+
+            {/* ── GitOps (Argo CD / Flux apps) ───────────────────────── */}
+            {tab === 'gitops' && (
+                <GitOpsTab clusterId={id} canInstall={canManageAddons} onOpenAddons={() => setParams({ tab: 'addons', section: 'manage' })} />
             )}
 
 

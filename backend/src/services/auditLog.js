@@ -149,7 +149,8 @@ export function auditTrail(req, res, next) {
             orgId: req.user.orgId || null, actor: req.user, ip: req.ip || null,
             action: routeName(req),
             target: m && m[1] !== 'install' ? { clusterId: decodeURIComponent(m[1]) } : null,
-            ok: res.statusCode < 400, status: res.statusCode
+            ok: res.statusCode < 400, status: res.statusCode,
+            detail: req.auditDetail ?? null   // a route may say exactly what it changed
         })
     })
     next()

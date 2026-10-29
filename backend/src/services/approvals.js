@@ -25,7 +25,8 @@ export const PROTECTED_ACTIONS = {
     'addon:uninstall': { label: 'Uninstall or reinstall an add-on', permission: 'addon:install', route: (id) => new RegExp(`^POST /api/clusters/${id}/addons/[a-z0-9-]+/(uninstall|reinstall)$`) },
     'volume:restore':  { label: 'Restore volume backups', permission: 'cluster:upgrade', route: (id) => new RegExp(`^POST /api/clusters/${id}/volume-backups/restores$`) },
     'ai:action':       { label: 'Run a fix suggested by KubeEZ AI', permission: 'incident:act', route: (id) => new RegExp(`^POST /api/clusters/${id}/ai-actions$`) },
-    'ai:apply':        { label: 'Apply YAML written by KubeEZ AI', permission: 'cluster:view', route: (id) => new RegExp(`^POST /api/clusters/${id}/ai-manifests$`) }
+    'ai:apply':        { label: 'Apply YAML written by KubeEZ AI', permission: 'cluster:view', route: (id) => new RegExp(`^POST /api/clusters/${id}/ai-manifests$`) },
+    'gitops:sync':     { label: 'Sync a GitOps app (Argo CD / Flux)', permission: 'gitops:sync', route: (id) => new RegExp(`^POST /api/clusters/${id}/gitops/sync$`) }
 }
 export const ELEVATION_MINUTES = [15, 30, 60, 120, 240, 480]
 const bad = (m, status = 400) => Object.assign(new Error(m), { status })
@@ -51,6 +52,7 @@ function summaryOf(action, cluster, path, body) {
         case 'volume:restore': return `Restore volume backup ${body?.backup || body?.name || ''} on ${name} (${body?.mode || 'restore'})`.replace('  ', ' ')
         case 'cluster:delete': return `Remove ${name} from KubeEZ`
         case 'ai:apply': return `Apply YAML on ${name} in namespace ${body?.namespace || 'default'}${body?.description ? `: ${String(body.description).slice(0, 80)}` : ''}`
+        case 'gitops:sync': return `${body?.action === 'refresh' ? 'Refresh' : 'Sync'} GitOps app ${body?.kind || 'app'} ${body?.namespace || ''}/${body?.name || ''} on ${name}`
         case 'ai:action': { const sp = body?.spec || {}; return `KubeEZ AI fix on ${name}: ${sp.type || 'action'} ${sp.kind || ''} ${sp.namespace || 'default'}/${sp.name || ''}${sp.type === 'scale' ? ` to ${sp.replicas}` : ''}` }
         default: return `${PROTECTED_ACTIONS[action]?.label || action} on ${name}`
     }

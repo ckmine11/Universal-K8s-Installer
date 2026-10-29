@@ -89,6 +89,7 @@ import terminalRoutes from './routes/terminal.js'
 import approvalRoutes from './routes/approvals.js'
 import aiRoutes from './routes/ai.js'
 import aiOpsRoutes, { actionsRouter as aiActionsRoutes } from './routes/aiOps.js'
+import gitopsRoutes from './routes/gitops.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -378,6 +379,7 @@ app.use('/api/ai', requireAuth, aiOpsRoutes)                 // Install Doctor, 
 app.use('/api/connect', requireAuth, clusterConnectRoutes)   // Connected clusters: add an existing cluster, its access
 app.use('/api/import', clusterImportPublic)                  // the connect command (its one-time code is the key)
 app.use('/api/clusters', requireAuth, aiActionsRoutes)       // safe fixes with dry-run and undo
+app.use('/api/clusters', requireAuth, gitopsRoutes)          // GitOps view: Argo CD / Flux apps, sync now
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 
