@@ -38,7 +38,7 @@ class DeliveryStore {
     _write(all) { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAtomicSync(FILE, JSON.stringify(all, null, 2)) }
     _org(all, orgId) {
         const o = all[orgId || '_'] ||= {}
-        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []
+        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []; o.registries ||= []
         return o
     }
     _edit(orgId, fn) { const all = this._read(); const o = this._org(all, orgId); const r = fn(o); this._write(all); return r }
@@ -153,6 +153,30 @@ class DeliveryStore {
         })
     }
     removeGitAccount(orgId, accountId) { return this._edit(orgId, (o) => { const n = o.git.length; o.git = o.git.filter(g => g.id !== accountId); return n !== o.git.length }) }
+
+    // ── container registries (pull secrets) ──
+    registries(orgId) { return this._org(this._read(), orgId).registries.map(r => ({ id: r.id, name: r.name, server: r.server, username: r.username, hasPassword: !!r.password })) }
+    registryCredentials(orgId, regId) {
+        const r = this._org(this._read(), orgId).registries.find(x => x.id === regId)
+        if (!r) return null
+        let password = null
+        try { password = r.password ? decrypt(r.password) : null } catch { password = null }
+        return { ...r, password }
+    }
+    saveRegistry(orgId, input, { by, clean } = {}) {
+        const c = clean(input)
+        return this._edit(orgId, (o) => {
+            const cur = input.id ? o.registries.find(r => r.id === input.id) : null
+            if (input.id && !cur) throw Object.assign(new Error('Registry not found'), { status: 404 })
+            if (o.registries.some(r => r.name === c.name && r.id !== input.id)) bad(`There is already a registry called ${c.name}`)
+            if (!cur && !input.password) bad('Give the registry password or access token')
+            if (!cur && o.registries.length >= 30) bad('Up to 30 registries')
+            const rec = { id: cur?.id || id(), ...c, password: input.password ? encrypt(String(input.password).slice(0, 2000)) : cur.password, updatedAt: new Date().toISOString(), updatedBy: by || null }
+            if (cur) Object.assign(cur, rec); else o.registries.push(rec)
+            return { id: rec.id, ...c, hasPassword: true }
+        })
+    }
+    removeRegistry(orgId, regId) { return this._edit(orgId, (o) => { const n = o.registries.length; o.registries = o.registries.filter(r => r.id !== regId); return n !== o.registries.length }) }
 
     /** Remove everything about a cluster that is gone. */
     dropCluster(orgId, clusterId) {

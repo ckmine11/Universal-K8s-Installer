@@ -95,6 +95,7 @@ import helmAppRoutes from './routes/helmApps.js'
 import deliveryRoutes from './routes/delivery.js'
 import operateRoutes from './routes/operate.js'
 import hookRoutes from './routes/hooks.js'
+import scalingRoutes from './routes/scaling.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -389,6 +390,7 @@ app.use('/api/clusters', requireAuth, clusterReportRoutes)   // Security (Trivy)
 app.use('/api/clusters', requireAuth, helmAppRoutes)         // Helm App Manager: releases, preview, deploy, rollback
 app.use('/api/delivery', requireAuth, deliveryRoutes)        // environments, chart repositories, change freezes, compare, tokens, promotions
 app.use('/api/clusters', requireAuth, operateRoutes)         // hibernate / wake, debug containers, External Secrets status
+app.use('/api/clusters', requireAuth, scalingRoutes)         // Argo Rollouts, KEDA, app metrics, registry pull secrets
 app.use('/api/hooks', hookRoutes)                            // CI deploy webhook (a deploy token, no session)
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)

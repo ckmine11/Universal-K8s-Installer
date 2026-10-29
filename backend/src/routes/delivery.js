@@ -7,6 +7,7 @@ import { deliveryStore } from '../services/deliveryStore.js'
 import { listCharts } from '../services/chartCatalog.js'
 import { listReleases, valuesOf, compareValues, RELEASE } from '../services/helmApps.js'
 import { apiTokens } from '../services/apiTokens.js'
+import { cleanRegistry } from '../services/appMetrics.js'
 import { cleanPromotion, openPromotionPr } from '../services/gitPromote.js'
 
 // Delivery settings of the workspace (mounted at /api/delivery):
@@ -86,6 +87,13 @@ router.post('/compare', async (req, res) => {
         })
     } catch (e) { fail(res, e) }
 })
+
+// ── container registries (pull secrets) ──
+router.get('/registries', (req, res) => res.json({ registries: deliveryStore.registries(req.user.orgId), canManage: canOn(req.user, 'registry:manage') }))
+const saveRegistry = (req, res) => { try { res.json(deliveryStore.saveRegistry(req.user.orgId, { ...req.body, id: req.params.regId || undefined }, { by: req.user.username, clean: cleanRegistry })) } catch (e) { fail(res, e) } }
+router.post('/registries', requirePermission('registry:manage'), saveRegistry)
+router.put('/registries/:regId', requirePermission('registry:manage'), saveRegistry)
+router.delete('/registries/:regId', requirePermission('registry:manage'), (req, res) => deliveryStore.removeRegistry(req.user.orgId, req.params.regId) ? res.json({ success: true }) : res.status(404).json({ error: 'Registry not found' }))
 
 // ── deploy tokens (CI webhook) ──
 router.get('/tokens', requirePermission('token:manage'), (req, res) => res.json({ tokens: apiTokens.list(req.user.orgId) }))

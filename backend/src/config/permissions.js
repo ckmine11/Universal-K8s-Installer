@@ -86,6 +86,8 @@ export const PERMISSIONS = {
     // Day-2 operations on a cluster
     'hibernate:manage':  ['admin', 'operator'],             // scale a namespace to 0 and back (Hibernate / Wake)
     'debug:ephemeral':   ['admin', 'operator'],             // add a debug container to a running pod (also needs terminal access)
+    'autoscale:manage':  ['admin', 'operator'],             // KEDA ScaledObjects KubeEZ makes (schedule, CPU / memory, Prometheus)
+    'registry:manage':   ['admin'],                         // container registries and their pull secrets in namespaces
 
     // Security & delivery insight (read-only)
     'security:view':     ['admin', 'operator', 'viewer'],   // Trivy: image vulnerabilities and misconfigurations per workload
@@ -157,7 +159,9 @@ export const PERMISSION_GROUPS = [
         { key: 'token:manage', label: 'Manage deploy tokens for CI' },
         { key: 'gitrepo:manage', label: 'Manage Git accounts for promotion pull requests' },
         { key: 'hibernate:manage', label: 'Hibernate and wake namespaces' },
-        { key: 'debug:ephemeral', label: 'Add debug containers to running pods' }
+        { key: 'debug:ephemeral', label: 'Add debug containers to running pods' },
+        { key: 'autoscale:manage', label: 'Set up autoscaling (KEDA)' },
+        { key: 'registry:manage', label: 'Manage registries and pull secrets' }
     ]},
     { group: 'Security & delivery', items: [
         { key: 'security:view', label: 'View image vulnerabilities and misconfigurations (Trivy)' },
@@ -218,7 +222,7 @@ export const CLUSTER_PERMISSIONS = [
     'backup:manage',
     'gitops:view', 'gitops:sync', 'gitops:create', 'gitops:delete',
     'app:view', 'app:values', 'app:deploy', 'app:delete',
-    'hibernate:manage', 'debug:ephemeral',
+    'hibernate:manage', 'debug:ephemeral', 'autoscale:manage',
     'security:view', 'metrics:view'
 ]
 

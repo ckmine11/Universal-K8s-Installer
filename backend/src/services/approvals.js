@@ -32,7 +32,8 @@ export const PROTECTED_ACTIONS = {
     'app:deploy':      { label: 'Install, upgrade or roll back a Helm app', permission: 'app:deploy', route: (id) => new RegExp(`^POST /api/clusters/${id}/apps(/[a-z0-9-]+/[a-z0-9-]+/rollback)?$`) },
     'app:uninstall':   { label: 'Uninstall a Helm app', permission: 'app:delete', route: (id) => new RegExp(`^DELETE /api/clusters/${id}/apps/[a-z0-9-]+/[a-z0-9-]+$`) },
     'hibernate':       { label: 'Hibernate a namespace (scale it to 0)', permission: 'hibernate:manage', route: (id) => new RegExp(`^POST /api/clusters/${id}/hibernate$`) },
-    'debug:ephemeral': { label: 'Add a debug container to a running pod', permission: 'debug:ephemeral', route: (id) => new RegExp(`^POST /api/clusters/${id}/debug$`) }
+    'debug:ephemeral': { label: 'Add a debug container to a running pod', permission: 'debug:ephemeral', route: (id) => new RegExp(`^POST /api/clusters/${id}/debug$`) },
+    'rollout':         { label: 'Promote or retry a canary / blue-green rollout', permission: 'app:deploy', route: (id) => new RegExp(`^POST /api/clusters/${id}/rollouts/action$`) }
 }
 export const ELEVATION_MINUTES = [15, 30, 60, 120, 240, 480]
 const bad = (m, status = 400) => Object.assign(new Error(m), { status })
@@ -60,6 +61,7 @@ function summaryOf(action, cluster, path, body) {
         case 'ai:apply': return `Apply YAML on ${name} in namespace ${body?.namespace || 'default'}${body?.description ? `: ${String(body.description).slice(0, 80)}` : ''}`
         case 'app:deploy': { const rb = path.match(/\/apps\/([a-z0-9-]+)\/([a-z0-9-]+)\/rollback$/); return rb ? `Roll back Helm app ${rb[1]}/${rb[2]} on ${name} to revision ${body?.revision}` : `Deploy Helm app ${body?.namespace || ''}/${body?.release || ''} (${body?.chart || 'chart'}${body?.version ? ` ${body.version}` : ''}) on ${name}` }
         case 'app:uninstall': { const m = path.match(/\/apps\/([a-z0-9-]+)\/([a-z0-9-]+)$/); return `Uninstall Helm app ${m?.[1]}/${m?.[2]} on ${name}` }
+        case 'rollout': return `${body?.action === 'promote-full' ? 'Promote fully' : body?.action === 'retry' ? 'Retry' : 'Promote'} rollout ${body?.namespace || ''}/${body?.name || ''} on ${name}`
         case 'hibernate': return `Hibernate namespace ${body?.namespace || ''} on ${name} (scale its workloads to 0)`
         case 'debug:ephemeral': return `Add a ${body?.image || 'busybox'} debug container to ${body?.namespace || ''}/${body?.pod || ''} on ${name}`
         case 'gitops:sync': return `${body?.action === 'refresh' ? 'Refresh' : 'Sync'} GitOps app ${body?.kind || 'app'} ${body?.namespace || ''}/${body?.name || ''} on ${name}`
@@ -92,7 +94,7 @@ async function notify(r) {
  * person)? Helm app deploys, rollbacks and uninstalls into its namespace.
  */
 export function protectedTarget(orgId, action, clusterId, path, body) {
-    if (!['app:deploy', 'app:uninstall', 'hibernate'].includes(action)) return false
+    if (!['app:deploy', 'app:uninstall', 'hibernate', 'rollout'].includes(action)) return false
     const ns = /\/apps\/([a-z0-9-]+)\/[a-z0-9-]+(\/rollback)?$/.exec(path)?.[1] || body?.namespace
     return !!(ns && deliveryStore.environmentAt(orgId, clusterId, ns)?.protected)
 }

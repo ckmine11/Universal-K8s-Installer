@@ -148,6 +148,28 @@ export const ADDONS_LIST = [
         helm: true
     },
     {
+        key: 'argo-rollouts',
+        name: 'Argo Rollouts',
+        desc: 'Canary and blue-green releases — promote or abort from KubeEZ',
+        iconName: 'GitMerge',
+        gradient: 'from-orange-500 via-amber-500 to-yellow-500',
+        badge: '✨ New',
+        badgeColor: 'text-orange-400 border-orange-500/30',
+        tier: 'pro',
+        helm: true
+    },
+    {
+        key: 'keda',
+        name: 'KEDA autoscaling',
+        desc: 'Scale on a schedule, CPU, Prometheus or queues — down to zero',
+        iconName: 'Zap',
+        gradient: 'from-sky-500 via-blue-500 to-indigo-600',
+        badge: '✨ New',
+        badgeColor: 'text-sky-400 border-sky-500/30',
+        tier: 'pro',
+        helm: true
+    },
+    {
         key: 'kyverno',
         name: 'Kyverno policies',
         desc: 'Rules for what may run — no "latest" images, limits required, no privileged pods',

@@ -363,6 +363,50 @@ export const EXTRA_ADDONS = {
         uninstallNote: 'The operator stops syncing. The Kubernetes Secrets it made stay; ExternalSecret and SecretStore objects stay unless you delete them.'
     },
 
+    'argo-rollouts': {
+        label: 'Argo Rollouts', ns: 'argo-rollouts', detect: 'deploy/argo-rollouts', tier: 'pro',
+        summary: 'Canary and blue-green releases: a new version gets a share of the traffic step by step and is stopped when it misbehaves. Promote / abort from the cluster\'s Apps tab.',
+        versions: [
+            { id: '2.43.8', app: 'v1.10.1', charts: { 'argo-rollouts': '2.43.8' } },
+            { id: '2.43.7', app: 'v1.10.1', charts: { 'argo-rollouts': '2.43.7' } }
+        ],
+        fields: [
+            { key: 'dashboard', type: 'bool', label: 'Rollouts dashboard', default: false, help: 'Argo\'s own read-only page inside the cluster. KubeEZ shows and controls rollouts without it.' }
+        ],
+        validate: (s) => ({ dashboard: !!s.dashboard }),
+        releases: (s, ctx, v) => [{
+            name: 'argo-rollouts', repo: REPOS.argo, chart: 'argo-rollouts', version: v.charts['argo-rollouts'],
+            values: {
+                fullnameOverride: 'argo-rollouts',
+                dashboard: { enabled: !!s.dashboard },
+                controller: { resources: { requests: { cpu: '20m', memory: '64Mi' }, limits: { memory: '256Mi' } } }
+            }
+        }],
+        locked: { 'argo-rollouts': ['fullnameOverride'] },
+        uninstallNote: 'Rollouts stop progressing and their pods are no longer managed — move them back to Deployments first.'
+    },
+
+    keda: {
+        label: 'KEDA autoscaling', ns: 'keda', detect: 'deploy/keda-operator', tier: 'pro',
+        summary: 'Scale workloads on anything — a schedule, CPU / memory, a Prometheus query, queue length — even down to zero. Set up from the cluster\'s Apps tab.',
+        versions: [
+            { id: '2.21.0', app: '2.21.0', charts: { keda: '2.21.0' } },
+            { id: '2.20.2', app: '2.20.2', charts: { keda: '2.20.2' } }
+        ],
+        fields: [
+            { key: 'replicas', type: 'number', label: 'Operator replicas', default: 1, min: 1, max: 2, help: '2 keeps scaling while a node restarts.' }
+        ],
+        validate: (s) => ({ replicas: int(s.replicas ?? 1, { min: 1, max: 2, label: 'Operator replicas' }) }),
+        releases: (s, ctx, v) => [{
+            name: 'keda', repo: REPOS.kedacore, chart: 'keda', version: v.charts.keda,
+            values: {
+                operator: { replicaCount: s.replicas || 1 },
+                resources: { operator: { requests: { cpu: '50m', memory: '100Mi' }, limits: { memory: '512Mi' } }, metricServer: { requests: { cpu: '50m', memory: '100Mi' }, limits: { memory: '512Mi' } } }
+            }
+        }],
+        uninstallNote: 'ScaledObjects stop scaling; workloads keep the replicas they have. A workload scaled to 0 stays at 0 — scale it up yourself.'
+    },
+
     kyverno: {
         label: 'Kyverno policies', ns: 'kyverno', detect: 'deploy/kyverno-admission-controller', tier: 'pro',
         summary: 'Rules for what may run: no "latest" images, limits required, no privileged pods — report or block.',

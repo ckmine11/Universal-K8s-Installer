@@ -32,6 +32,7 @@ export const REPOS = {
     fluent: { name: 'kubeez-fluent', url: 'https://fluent.github.io/helm-charts' },
     'sealed-secrets': { name: 'kubeez-sealed-secrets', url: 'https://bitnami.github.io/sealed-secrets' },
     'external-secrets': { name: 'kubeez-external-secrets', url: 'https://charts.external-secrets.io' },
+    kedacore: { name: 'kubeez-kedacore', url: 'https://kedacore.github.io/charts' },
     kyverno: { name: 'kubeez-kyverno', url: 'https://kyverno.github.io/kyverno/' },
     'ingress-nginx': { name: 'kubeez-ingress-nginx', url: 'https://kubernetes.github.io/ingress-nginx' },
     jetstack: { name: 'kubeez-jetstack', url: 'https://charts.jetstack.io' },
@@ -58,7 +59,7 @@ export const SYSTEM_NAMESPACES = ['kube-system', 'kube-public', 'kube-node-lease
     'cert-manager', 'longhorn-system', 'argocd', 'seaweedfs', 'velero', 'kubeez-explorer',
     'metrics-server', 'metallb-system', 'logging', 'sealed-secrets', 'kyverno',
     'harbor', 'fluent-bit', 'fluentd', 'elastic-system', 'nfs-provisioner', 'snapshot-controller', 'flux-system',
-    'jenkins', 'vault', 'gatekeeper-system', 'falco', 'trivy-system', 'external-secrets']
+    'jenkins', 'vault', 'gatekeeper-system', 'falco', 'trivy-system', 'external-secrets', 'argo-rollouts', 'keda']
 
 export const int = (v, { min, max, label }) => {
     const n = Number(v)

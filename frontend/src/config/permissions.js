@@ -37,6 +37,8 @@ export const PERMISSIONS = {
     'gitrepo:manage':      ['admin'],
     'hibernate:manage':    ['admin', 'operator'],
     'debug:ephemeral':     ['admin', 'operator'],
+    'autoscale:manage':    ['admin', 'operator'],
+    'registry:manage':     ['admin'],
     'security:view':       ['admin', 'operator', 'viewer'],
     'metrics:view':        ['admin', 'operator', 'viewer'],
 
