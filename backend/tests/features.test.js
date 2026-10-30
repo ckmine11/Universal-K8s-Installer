@@ -8,7 +8,7 @@ import { tempDataDir, paidOrgs } from './helpers/server.js'
 
 const DATA = tempDataDir()
 process.env.KUBEEZ_DATA_DIR = DATA
-paidOrgs(DATA, ['org-f'])
+paidOrgs(DATA, { 'org-f': 'ENTERPRISE', 'org-pro': 'PRO' })
 process.env.APP_SECRET ||= 'test-secret-test-secret-test-secret-123'
 const prev = { mode: process.env.KUBEEZ_MODE, f: process.env.KUBEEZ_FEATURES, d: process.env.KUBEEZ_FEATURES_DEFAULT }
 process.env.KUBEEZ_MODE = 'selfhosted'
@@ -118,7 +118,13 @@ describe('enforcement', () => {
         assert.equal(r.status, 402); assert.equal(r.data.code, 'UPGRADE_REQUIRED'); assert.equal(r.data.plan, 'PRO')
         assert.match(r.data.error, /Deploy tokens & CI webhook is part of the Pro plan — upgrade your plan/)
         const v = features.view('org-free').find(f => f.key === 'gitopsPromote')
-        assert.deepEqual([v.plan, v.included, v.on], ['enterprise', false, true], 'still shown and on — just not included')
+        assert.deepEqual([v.plan, v.included, v.on], ['pro', false, true], 'still shown and on — just not included')
+        // Pro and Enterprise workspaces may use every feature — none is Enterprise-only
+        for (const key of FEATURE_KEYS) {
+            assert.equal(features.planOk('org-pro', key), true, `Pro: ${key}`)
+            assert.equal(features.planOk('org-f', key), true, `Enterprise: ${key}`)
+        }
+        assert.ok(features.view('org-pro').every(f => f.included), 'the Features page shows everything included for Pro')
     })
 
     test('GitOps alerts off: the poller does not touch the cluster', async () => {

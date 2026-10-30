@@ -14,7 +14,7 @@ export const FEATURES = {
     gitops:          { label: 'GitOps view & sync', group: 'GitOps', description: 'Argo CD / Flux apps per cluster, Sync now, AI explain' },
     gitopsAlerts:    { label: 'GitOps alerts', group: 'GitOps', description: 'Checks Argo CD / Flux every 3 minutes: sync failed / unhealthy incidents and alerts', background: true, plan: 'pro' },
     gitopsCreate:    { label: 'Create Argo CD apps', group: 'GitOps', description: 'New Argo CD apps from a Git repository, locked to one namespace', plan: 'pro' },
-    gitopsPromote:   { label: 'Promote by pull request', group: 'GitOps', description: 'GitHub accounts and pull requests that change values in Git', plan: 'enterprise' },
+    gitopsPromote:   { label: 'Promote by pull request', group: 'GitOps', description: 'GitHub accounts and pull requests that change values in Git', plan: 'pro' },
     security:        { label: 'Security (Trivy)', group: 'Security', description: 'Image vulnerabilities and misconfigurations per workload' },
     externalSecrets: { label: 'External Secrets status', group: 'Security', description: 'Sync status of ExternalSecrets, Sync now', plan: 'pro' },
     dora:            { label: 'Delivery metrics (DORA)', group: 'Insight', description: 'Deploy frequency, change failure rate, recovery time' },

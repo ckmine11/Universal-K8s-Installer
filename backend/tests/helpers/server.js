@@ -77,6 +77,8 @@ export function client(server) {
 // In-process tests: give these workspaces an owner on a paid plan (Pro / Enterprise
 // features answer 402 otherwise). Call before importing services.
 export function paidOrgs(dataDir, orgIds, plan = 'ENTERPRISE') {
-    const users = orgIds.map((orgId, i) => ({ id: `owner-${orgId}`, username: `owner${i}`, email: `owner${i}@example.com`, orgId, role: 'admin', password: 'x', subscription: { plan } }))
+    // orgIds: [orgId…] (all on plan) or { orgId: plan }
+    const list = Array.isArray(orgIds) ? orgIds.map(o => [o, plan]) : Object.entries(orgIds)
+    const users = list.map(([orgId, p], i) => ({ id: `owner-${orgId}`, username: `owner${i}`, email: `owner${i}@example.com`, orgId, role: 'admin', password: 'x', subscription: { plan: p } }))
     fs.writeFileSync(path.join(dataDir, 'users.json'), JSON.stringify(users))
 }
