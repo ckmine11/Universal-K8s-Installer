@@ -3,6 +3,8 @@ import { Boxes, RefreshCw, Loader2, AlertTriangle, Plus, ChevronDown, ChevronRig
 import { apiFetch, useAuth } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import OpsPanel from './OpsPanel'
+import ProgressivePanel from './ProgressivePanel'
+import MetricsPanel from './MetricsPanel'
 
 // Helm apps of one cluster: releases with their environment, history with
 // roll back, values (secrets masked), and install / upgrade with a preview of
@@ -269,6 +271,8 @@ export default function AppsTab({ clusterId }) {
                     </>
                 ) : <p className="text-sm text-slate-500 py-2">No Helm releases{data.hidden ? ' you can see' : ''} on this cluster yet.</p>)}
             </div>
+            <ProgressivePanel clusterId={clusterId} />
+            <MetricsPanel clusterId={clusterId} />
             <OpsPanel clusterId={clusterId} />
             {dialog && <DeployDialog clusterId={clusterId} start={dialog.release ? dialog : null} environments={data?.environments || []} isAdmin={isAdmin} freeze={data?.freeze} onClose={() => setDialog(null)} onStarted={follow} />}
         </div>

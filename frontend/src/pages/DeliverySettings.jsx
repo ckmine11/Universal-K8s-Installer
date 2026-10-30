@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save, KeyRound, GitPullRequest } from 'lucide-react'
+import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save, KeyRound, GitPullRequest, Container } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import PageHeader from '../components/ui/PageHeader'
@@ -34,14 +34,17 @@ export default function DeliverySettings() {
     const [tokens, setTokens] = useState(null)      // null: not allowed to manage tokens
     const [newToken, setNewToken] = useState(null)
     const [tokForm, setTokForm] = useState({ name: '', clusterId: '', namespace: '', release: '', repoId: '', chart: '', keys: 'image.tag', expiresDays: 90 })
+    const [regs, setRegs] = useState(null)
+    const [regForm, setRegForm] = useState({ name: '', server: '', username: '', password: '' })
+    const [sync, setSync] = useState({ registryId: '', clusterId: '', namespaces: '', defaultServiceAccount: false })
     const [git, setGit] = useState(null)
     const [gitForm, setGitForm] = useState({ name: '', apiUrl: 'https://api.github.com', token: '' })
     const [pr, setPr] = useState({ accountId: '', repo: '', base: 'main', path: '', set: '', busy: false, result: null })
 
     const load = useCallback(async () => {
         try {
-            const [e, r, f, g] = await Promise.all(['/api/delivery/environments', '/api/delivery/repos', '/api/delivery/freezes', '/api/delivery/git'].map(u => apiFetch(u).then(json)))
-            setEnvs(e); setRepos(r); setFreezes(f); setGit(g); setError(null)
+            const [e, r, f, g, rg] = await Promise.all(['/api/delivery/environments', '/api/delivery/repos', '/api/delivery/freezes', '/api/delivery/git', '/api/delivery/registries'].map(u => apiFetch(u).then(json)))
+            setEnvs(e); setRepos(r); setFreezes(f); setGit(g); setRegs(rg); setError(null)
         } catch (err) { setError(err.message) }
         apiFetch('/api/delivery/tokens').then(r => r.ok ? r.json() : null).then(d => setTokens(d ? d.tokens : null)).catch(() => setTokens(null))
         apiFetch('/api/clusters').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
@@ -51,6 +54,12 @@ export default function DeliverySettings() {
     const send = async (url, method, body, ok) => {
         try { await json(await apiFetch(url, { method, body: body ? JSON.stringify(body) : undefined })); toast({ title: ok, type: 'success' }); load(); return true }
         catch (e) { toast({ title: 'Not saved', message: e.message, type: 'error' }); return false }
+    }
+    const syncRegistry = async () => {
+        try {
+            const d = await json(await apiFetch(`/api/clusters/${sync.clusterId}/registries/sync`, { method: 'POST', body: JSON.stringify({ registryId: sync.registryId, namespaces: sync.namespaces.split(',').map(s => s.trim()).filter(Boolean), defaultServiceAccount: sync.defaultServiceAccount }) }))
+            toast({ title: 'Pull secret written', message: d.message, type: 'success' })
+        } catch (e) { toast({ title: 'Not written', message: e.message, type: 'error' }) }
     }
     const createToken = async () => {
         try {
@@ -157,6 +166,37 @@ export default function DeliverySettings() {
                     </>
                 )}
             </Section>
+
+            {regs && (
+                <Section Icon={Container} title="Registries (pull secrets)" hint="A private registry's login, written as a pull secret (kubeez-registry-<name>) into the namespaces you pick — optionally used by their default ServiceAccount, so pods pull without changing manifests. The password is stored encrypted and sent to the cluster on stdin.">
+                    <ul className="space-y-1.5">{regs.registries.map(r => (
+                        <li key={r.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
+                            <span className="font-semibold text-white">{r.name}</span><span className="font-mono text-slate-400">{r.server}</span><span className="text-slate-500">as {r.username}</span>
+                            {regs.canManage && <button onClick={() => window.confirm(`Remove ${r.name}? Secrets already in clusters stay.`) && send(`/api/delivery/registries/${r.id}`, 'DELETE', null, 'Removed')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${r.name}`}><Trash2 className="w-3 h-3" /></button>}
+                        </li>
+                    ))}{!regs.registries.length && <li className="text-sm text-slate-500">None yet.</li>}</ul>
+                    {regs.canManage && (
+                        <>
+                            <div className="flex flex-wrap items-end gap-2">
+                                <input className="kz-input !w-28" placeholder="name" value={regForm.name} onChange={e => setRegForm(f => ({ ...f, name: e.target.value }))} aria-label="Registry name" />
+                                <input className="kz-input !w-52" placeholder="ghcr.io" value={regForm.server} onChange={e => setRegForm(f => ({ ...f, server: e.target.value }))} aria-label="Registry server" />
+                                <input className="kz-input !w-32" placeholder="user" value={regForm.username} onChange={e => setRegForm(f => ({ ...f, username: e.target.value }))} aria-label="User name" autoComplete="off" />
+                                <input className="kz-input !w-40" type="password" placeholder="password / token" value={regForm.password} onChange={e => setRegForm(f => ({ ...f, password: e.target.value }))} aria-label="Password" autoComplete="new-password" />
+                                <button onClick={async () => { if (await send('/api/delivery/registries', 'POST', regForm, 'Registry added')) setRegForm({ name: '', server: '', username: '', password: '' }) }} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Add</button>
+                            </div>
+                            {regs.registries.length > 0 && (
+                                <div className="flex flex-wrap items-end gap-2 rounded-lg border border-white/[0.07] p-3">
+                                    <select className="kz-input !w-36" value={sync.registryId} onChange={e => setSync(s => ({ ...s, registryId: e.target.value }))} aria-label="Registry"><option value="">Registry…</option>{regs.registries.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+                                    <select className="kz-input !w-40" value={sync.clusterId} onChange={e => setSync(s => ({ ...s, clusterId: e.target.value }))} aria-label="Cluster"><option value="">Cluster…</option>{clusters.map(c => <option key={c.id} value={c.id}>{c.clusterName || c.id}</option>)}</select>
+                                    <input className="kz-input !w-56" placeholder="namespaces: shop, dev" value={sync.namespaces} onChange={e => setSync(s => ({ ...s, namespaces: e.target.value }))} aria-label="Namespaces (comma separated)" />
+                                    <label className="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" checked={sync.defaultServiceAccount} onChange={e => setSync(s => ({ ...s, defaultServiceAccount: e.target.checked }))} /> Use for the default ServiceAccount</label>
+                                    <button onClick={syncRegistry} disabled={!sync.registryId || !sync.clusterId || !sync.namespaces.trim()} className="kz-btn-primary !py-2 !text-xs">Write pull secret</button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </Section>
+            )}
 
             {tokens && (
                 <Section Icon={KeyRound} title="Deploy tokens (CI)" hint="A token deploys one app from your pipeline (GitHub Actions, GitLab CI, Jenkins) — one release, one chart, only the values you list (e.g. image.tag). Protected environments, freezes and the CVE gate still apply. The token is shown once.">
