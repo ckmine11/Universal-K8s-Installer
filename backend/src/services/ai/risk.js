@@ -71,6 +71,10 @@ export function riskScore(f) {
     else if (cps <= 1) add('single-cp', 10, 'One control-plane', 'If that machine fails, the cluster cannot be managed until it is rebuilt.', api ? "For production: 3 control-planes, added with the cluster's own tooling." : 'For production: 3 control-planes behind a virtual IP (new cluster with HA in the wizard).')
     else good.push(`${cps} control-planes${c.controlPlaneVip ? ` behind ${c.controlPlaneVip}` : ''}`)
 
+    // vulnerabilities in the running images (the last Trivy reading)
+    if (f.cves?.critical) add('critical-cves', Math.min(15, 5 + f.cves.critical), `${f.cves.critical} critical vulnerabilit${f.cves.critical === 1 ? 'y' : 'ies'} in running images`, `${f.cves.fixableCritical} of them have a fixed version${f.cves.high ? `; ${f.cves.high} high` : ''}.`, 'Security tab → update the images with a fix.')
+    else if (f.cves) good.push('No critical vulnerabilities in running images')
+
     // compliance
     if (f.compliance?.score != null) {
         if (f.compliance.score < 60) add('compliance', 5, `Compliance score ${f.compliance.score}`, 'Many security controls fail.', 'Compliance → see the failing controls and their fixes.', '/compliance')

@@ -7,6 +7,7 @@ import { complianceStore } from '../complianceService.js'
 import { offsiteStore } from '../offsiteStore.js'
 import { addonSettingsStore } from '../addonSettings.js'
 import { canSeeCluster, canOn, accessOn, nsMatches } from '../accessControl.js'
+import { lastCveTotals } from '../cveAlerts.js'
 import { canAccessResource } from '../../utils/access.js'
 import { riskScore, newestSnapshot, cachedSnapshot } from './risk.js'
 import { fleetView } from './fleet.js'
@@ -48,7 +49,8 @@ export async function riskOf(cluster, { deep }) {
         maintenanceUntil: m?.maintenance?.until || null,
         snapshot: deep ? await withTimeout(newestSnapshot(cluster, sshTo), 20000, 'timeout').catch(e => ({ newestAt: null, error: `Could not check: ${e.message}` })) : cachedSnapshot(cluster.id),
         offsite: !!offsiteStore.getConnected(cluster.orgId),
-        compliance: latest ? { score: latest.score, at: latest.at } : null
+        compliance: latest ? { score: latest.score, at: latest.at } : null,
+        cves: lastCveTotals(cluster.id)
     })
 }
 
