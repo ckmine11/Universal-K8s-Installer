@@ -37,6 +37,8 @@ export default function DeliverySettings() {
     const [newToken, setNewToken] = useState(null)
     const [tokForm, setTokForm] = useState({ name: '', clusterId: '', namespace: '', release: '', repoId: '', chart: '', keys: 'image.tag', expiresDays: 90 })
     const [regs, setRegs] = useState(null)
+    const [costRates, setCostRates] = useState(null)
+    const [costCanManage, setCostCanManage] = useState(false)
     const [regForm, setRegForm] = useState({ name: '', server: '', username: '', password: '' })
     const [sync, setSync] = useState({ registryId: '', clusterId: '', namespaces: '', defaultServiceAccount: false })
     const [git, setGit] = useState(null)
@@ -48,6 +50,7 @@ export default function DeliverySettings() {
             const [e, r, f, g, rg] = await Promise.all(['/api/delivery/environments', '/api/delivery/repos', '/api/delivery/freezes', '/api/delivery/git', '/api/delivery/registries'].map(u => apiFetch(u).then(json)))
             setEnvs(e); setRepos(r); setFreezes(f); setGit(g); setRegs(rg); setError(null)
         } catch (err) { setError(err.message) }
+        apiFetch('/api/delivery/costs').then(r => r.ok ? r.json() : null).then(d => { if (d) { setCostRates(d.rates); setCostCanManage(d.canManage) } }).catch(() => { })
         apiFetch('/api/delivery/tokens').then(r => r.ok ? r.json() : null).then(d => setTokens(d ? d.tokens : null)).catch(() => setTokens(null))
         apiFetch('/api/clusters').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
     }, [])
@@ -182,6 +185,17 @@ export default function DeliverySettings() {
                     </>
                 )}
             </Section>
+
+            {featureOn('costs') && costRates && (
+                <Section Icon={Layers} title="Prices (cost per app)" hint="What one vCPU and one GiB of memory cost per hour on your servers or cloud — the Apps tab shows each app's monthly cost from its requests.">
+                    <div className="flex flex-wrap items-end gap-2">
+                        <input className="kz-input !w-20" value={costRates.currency} onChange={e => setCostRates(r => ({ ...r, currency: e.target.value }))} aria-label="Currency" disabled={!costCanManage} />
+                        <label className="text-xs text-slate-400">per vCPU-hour <input className="kz-input !w-24" type="number" step="0.01" value={costRates.cpuHour} onChange={e => setCostRates(r => ({ ...r, cpuHour: e.target.value }))} disabled={!costCanManage} /></label>
+                        <label className="text-xs text-slate-400">per GiB-hour <input className="kz-input !w-24" type="number" step="0.01" value={costRates.memGiBHour} onChange={e => setCostRates(r => ({ ...r, memGiBHour: e.target.value }))} disabled={!costCanManage} /></label>
+                        {costCanManage && <button onClick={() => send('/api/delivery/costs', 'PUT', { currency: costRates.currency, cpuHour: Number(costRates.cpuHour), memGiBHour: Number(costRates.memGiBHour) }, 'Prices saved')} className="kz-btn-primary !py-2 !text-xs"><Save className="w-3.5 h-3.5" /> Save</button>}
+                    </div>
+                </Section>
+            )}
 
             {regs && featureOn('registries') && (
                 <Section Icon={Container} title="Registries (pull secrets)" hint="A private registry's login, written as a pull secret (kubeez-registry-<name>) into the namespaces you pick — optionally used by their default ServiceAccount, so pods pull without changing manifests. The password is stored encrypted and sent to the cluster on stdin.">

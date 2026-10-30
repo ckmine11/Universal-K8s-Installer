@@ -28,6 +28,8 @@ export const FEATURES = {
     debug:           { label: 'Debug containers', group: 'Operations', description: 'Ephemeral debug containers in running pods', plan: 'pro' },
     registries:      { label: 'Registry pull secrets', group: 'Operations', description: 'Registry logins written as pull secrets into namespaces', plan: 'pro' },
     autoRollback:    { label: 'Auto-rollback', group: 'Apps', description: 'Roll back (or suggest it) when a Helm deploy breaks its workload within an hour', plan: 'pro', background: true },
+    costs:           { label: 'Cost per app', group: 'Insight', description: 'Monthly cost of each namespace and app from its CPU / memory requests, and the money left idle' },
+    hibernateSchedule: { label: 'Scheduled hibernate', group: 'Operations', description: 'Namespaces sleep and wake on a clock (e.g. dev 21:00 → 09:00 on weekdays)', plan: 'pro', background: true },
     promotion:       { label: 'Promotion pipeline', group: 'Apps', description: 'Promote an app from one environment to the next (chart version and chosen values)', plan: 'pro' }
 }
 export const FEATURE_KEYS = Object.keys(FEATURES)

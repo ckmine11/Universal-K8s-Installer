@@ -11,6 +11,9 @@ import { requireApproval } from '../services/approvals.js'
 import { capabilities } from '../services/clusterAccess.js'
 import { apiTokens } from '../services/apiTokens.js'
 import { cleanRegistry } from '../services/appMetrics.js'
+import { cleanRates, DEFAULT_RATES } from '../services/costs.js'
+import { cleanSchedule } from '../services/hibernateSchedule.js'
+import { SYSTEM_NS } from '../services/gitops.js'
 import { cleanPromotion, openPromotionPr } from '../services/gitPromote.js'
 
 // Delivery settings of the workspace (mounted at /api/delivery):
@@ -22,6 +25,8 @@ const router = express.Router()
 // feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
 router.use('/repos', requireFeature('helmApps'))
 router.use('/compare', requireFeature('helmApps'))
+router.use('/costs', requireFeature('costs'))
+router.use('/hibernate-schedules', requireFeature('hibernate'), requireFeature('hibernateSchedule'))
 router.use('/promote-release', requireFeature('helmApps'), requireFeature('promotion'))
 router.use('/tokens', requireFeature('deployTokens'))
 router.use('/git', requireFeature('gitopsPromote'))
@@ -154,6 +159,39 @@ router.post('/promote-release', requirePermission('app:deploy'), promoteTarget, 
         const j = await deploy(to.cluster, d, { by: req.user.username, values, gate: policy ? { policy, override: null } : null })
         res.status(202).json({ ...jobView(j), clusterId: to.cluster.id, promoted: { chart: src.chart, version: src.version, values: moved } })
     } catch (e) { fail(res, e) }
+})
+
+// ── cost prices ──
+router.get('/costs', (req, res) => res.json({ rates: deliveryStore.costRates(req.user.orgId, DEFAULT_RATES), canManage: canOn(req.user, 'env:manage') }))
+router.put('/costs', requirePermission('env:manage'), (req, res) => { try { res.json({ rates: deliveryStore.saveCostRates(req.user.orgId, cleanRates(req.body)) }) } catch (e) { fail(res, e) } })
+
+// ── hibernate schedules ──
+router.get('/hibernate-schedules', async (req, res) => {
+    const clusters = await clustersOf(req.user)
+    res.json({ schedules: deliveryStore.hibernateSchedules(req.user.orgId).filter(s => { const c = clusters.find(x => x.id === s.clusterId); const n = c && accessOn(req.user, c).namespaces; return c && canSeeCluster(req.user, c) && (!n || nsMatches(n, s.namespace)) }) })
+})
+router.post('/hibernate-schedules', async (req, res) => {
+    try {
+        const spec = cleanSchedule(req.body)
+        const cluster = (await clustersOf(req.user)).find(c => c.id === spec.clusterId)
+        if (!cluster || !canSeeCluster(req.user, cluster)) return res.status(404).json({ error: 'Cluster not found' })
+        if (!canOn(req.user, 'hibernate:manage', cluster)) return res.status(403).json({ error: 'Your role may not hibernate on this cluster', requiredPermission: 'hibernate:manage' })
+        const n = accessOn(req.user, cluster).namespaces
+        if (n && !nsMatches(n, spec.namespace)) return res.status(403).json({ error: `You may not change namespace ${spec.namespace}` })
+        const admin = ['admin', 'superadmin'].includes(req.user.role)
+        if ((SYSTEM_NS.test(spec.namespace) || deliveryStore.environmentAt(req.user.orgId, cluster.id, spec.namespace)?.protected) && !admin) return res.status(403).json({ error: `${spec.namespace} is a system namespace or a protected environment — only an admin may schedule it.` })
+        const s = deliveryStore.saveHibernateSchedule(req.user.orgId, spec, { by: req.user.username })
+        req.auditDetail = `hibernate schedule ${cluster.clusterName}/${s.namespace}: sleep ${s.sleep}, wake ${s.wake} (${s.timezone}, days ${s.days.join(',')})`
+        res.json(s)
+    } catch (e) { fail(res, e) }
+})
+router.delete('/hibernate-schedules/:sid', async (req, res) => {
+    const s = deliveryStore.hibernateSchedules(req.user.orgId).find(x => x.id === req.params.sid)
+    const cluster = s && (await clustersOf(req.user)).find(c => c.id === s.clusterId)
+    if (!s || !cluster || !canSeeCluster(req.user, cluster)) return res.status(404).json({ error: 'Schedule not found' })
+    if (!canOn(req.user, 'hibernate:manage', cluster)) return res.status(403).json({ error: 'Your role may not hibernate on this cluster' })
+    deliveryStore.removeHibernateSchedule(req.user.orgId, s.id)
+    res.json({ success: true })
 })
 
 // ── container registries (pull secrets) ──

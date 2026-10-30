@@ -8,7 +8,7 @@ import { useToast } from '../ToastProvider'
 // and back, e.g. dev at night) and a debug container in a running pod.
 const json = async (res) => { const d = await res.json().catch(() => ({})); if (!res.ok) throw Object.assign(new Error(d.error || `Request failed (${res.status})`), { status: res.status }); return d }
 
-export default function OpsPanel({ clusterId, hibernate: hibernateOn = true, debug: debugOn = true }) {
+export default function OpsPanel({ clusterId, hibernate: hibernateOn = true, debug: debugOn = true, schedules: schedulesOn = false }) {
     const { user } = useAuth()
     const { toast } = useToast()
     const isAdmin = ['admin', 'superadmin'].includes(user?.role)
@@ -19,6 +19,15 @@ export default function OpsPanel({ clusterId, hibernate: hibernateOn = true, deb
     const [busy, setBusy] = useState(null)
     const [dbg, setDbg] = useState({ namespace: '', pod: '', target: '', image: 'busybox' })
     const [dbgOut, setDbgOut] = useState(null)
+    const [scheds, setScheds] = useState([])
+    const [sf, setSf] = useState({ namespace: '', sleep: '21:00', wake: '09:00', timezone: 'Asia/Kolkata', weekdays: true })
+    const loadScheds = useCallback(() => schedulesOn ? apiFetch('/api/delivery/hibernate-schedules').then(json).then(d => setScheds(d.schedules.filter(s => s.clusterId === clusterId))).catch(() => setScheds([])) : null, [clusterId, schedulesOn])
+    useEffect(() => { loadScheds() }, [loadScheds])
+    const addSched = async () => {
+        try { await json(await apiFetch('/api/delivery/hibernate-schedules', { method: 'POST', body: JSON.stringify({ clusterId, namespace: sf.namespace, sleep: sf.sleep, wake: sf.wake, timezone: sf.timezone, days: sf.weekdays ? [1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6] }) })); toast({ title: 'Schedule saved', type: 'success' }); setSf(f => ({ ...f, namespace: '' })); loadScheds() }
+        catch (e) { toast({ title: 'Not saved', message: e.message, type: 'error' }) }
+    }
+    const delSched = async (s) => { try { await json(await apiFetch(`/api/delivery/hibernate-schedules/${s.id}`, { method: 'DELETE' })); loadScheds() } catch (e) { toast({ title: 'Not removed', message: e.message, type: 'error' }) } }
 
     const load = useCallback(() => hibernateOn ? apiFetch(`/api/clusters/${clusterId}/hibernate`).then(json).then(d => setSleeping(d.namespaces)).catch(() => setSleeping([])) : setSleeping([]), [clusterId, hibernateOn])
     useEffect(() => { load() }, [load])
@@ -59,6 +68,20 @@ export default function OpsPanel({ clusterId, hibernate: hibernateOn = true, deb
                             {canHibernate && <button onClick={() => act('wake', s.namespace)} disabled={!!busy} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px]">{busy === `wake:${s.namespace}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sun className="w-3 h-3" />} Wake</button>}
                         </li>
                     ))}</ul>
+                )}
+                {schedulesOn && canHibernate && (
+                    <div className="space-y-1.5 rounded-lg border border-white/[0.07] p-2.5">
+                        <p className="text-[11px] font-semibold text-slate-400">Schedules</p>
+                        {scheds.map(s => <p key={s.id} className="flex items-center gap-2 text-[11px] text-slate-300">{s.namespace}: sleeps {s.sleep}, wakes {s.wake} ({s.timezone}{s.days.length === 5 ? ', Mon–Fri' : ', every day'})<button onClick={() => delSched(s)} className="ml-auto text-red-300 text-[10px]">Remove</button></p>)}
+                        <div className="flex flex-wrap gap-1.5">
+                            <input className="kz-input !w-28 !text-[11px]" placeholder="namespace" value={sf.namespace} onChange={e => setSf(f => ({ ...f, namespace: e.target.value }))} aria-label="Namespace to schedule" />
+                            <input className="kz-input !w-20 !text-[11px]" type="time" value={sf.sleep} onChange={e => setSf(f => ({ ...f, sleep: e.target.value }))} aria-label="Sleep at" />
+                            <input className="kz-input !w-20 !text-[11px]" type="time" value={sf.wake} onChange={e => setSf(f => ({ ...f, wake: e.target.value }))} aria-label="Wake at" />
+                            <input className="kz-input !w-28 !text-[11px]" value={sf.timezone} onChange={e => setSf(f => ({ ...f, timezone: e.target.value }))} aria-label="Time zone" />
+                            <label className="flex items-center gap-1 text-[11px] text-slate-300"><input type="checkbox" checked={sf.weekdays} onChange={e => setSf(f => ({ ...f, weekdays: e.target.checked }))} /> Mon–Fri only</label>
+                            <button onClick={addSched} disabled={!sf.namespace} className="kz-btn-ghost !py-1 !px-2 !text-[11px]">Add schedule</button>
+                        </div>
+                    </div>
                 )}
                 {canHibernate && (
                     <div className="flex gap-2">

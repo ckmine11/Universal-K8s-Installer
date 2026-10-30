@@ -7,6 +7,8 @@ import { clusterStore } from '../services/clusterStore.js'
 import { incidentDetector } from '../services/incidentDetector.js'
 import { readSecurity, summarizeSecurity } from '../services/security.js'
 import { readRollouts, computeDora } from '../services/dora.js'
+import { readCosts, DEFAULT_RATES } from '../services/costs.js'
+import { deliveryStore } from '../services/deliveryStore.js'
 
 // Read-only reports of one cluster (mounted at /api/clusters):
 //   GET /:id/security          Trivy: vulnerabilities and misconfigurations per workload
@@ -16,6 +18,7 @@ const router = express.Router()
 // feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
 router.use('/:id/security', requireFeature('security'))
 router.use('/:id/dora', requireFeature('dora'))
+router.use('/:id/costs', requireFeature('costs'))
 
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message })
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { status: 504 })), ms).unref?.())])
@@ -47,6 +50,15 @@ router.get('/:id/dora', requirePermission('metrics:view'), async (req, res) => {
         const incidents = incidentDetector.getIncidents().filter(i => i.clusterId === cluster.id)
         const to = Date.now()
         res.json({ ...computeDora({ rollouts, incidents, from: to - days * 86400e3, to, match: matcherFor(req.user, cluster), platform: req.query.platform === '1' }), days, platform: req.query.platform === '1' })
+    } catch (e) { fail(res, e) }
+})
+
+router.get('/:id/costs', requirePermission('metrics:view'), async (req, res) => {
+    const cluster = await visibleCluster(req, res)
+    if (!cluster) return
+    try {
+        const rates = deliveryStore.costRates(cluster.orgId, DEFAULT_RATES)
+        res.json(await withTimeout(readCosts(cluster, rates, { match: matcherFor(req.user, cluster) }), 130e3, 'The cluster did not answer in time'))
     } catch (e) { fail(res, e) }
 })
 

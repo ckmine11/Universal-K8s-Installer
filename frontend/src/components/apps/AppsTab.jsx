@@ -6,6 +6,7 @@ import OpsPanel from './OpsPanel'
 import { useFeatures } from '../../config/features'
 import ProgressivePanel from './ProgressivePanel'
 import MetricsPanel from './MetricsPanel'
+import CostPanel from './CostPanel'
 
 // Helm apps of one cluster: releases with their environment, history with
 // roll back, values (secrets masked), and install / upgrade with a preview of
@@ -275,7 +276,8 @@ export default function AppsTab({ clusterId }) {
             </div>
             {(featureOn('rollouts') || featureOn('autoscale')) && <ProgressivePanel clusterId={clusterId} rollouts={featureOn('rollouts')} autoscale={featureOn('autoscale')} />}
             {featureOn('appMetrics') && <MetricsPanel clusterId={clusterId} />}
-            {(featureOn('hibernate') || featureOn('debug')) && <OpsPanel clusterId={clusterId} hibernate={featureOn('hibernate')} debug={featureOn('debug')} />}
+            {featureOn('costs') && <CostPanel clusterId={clusterId} />}
+            {(featureOn('hibernate') || featureOn('debug')) && <OpsPanel clusterId={clusterId} hibernate={featureOn('hibernate')} debug={featureOn('debug')} schedules={featureOn('hibernate') && featureOn('hibernateSchedule')} />}
             {dialog && <DeployDialog clusterId={clusterId} start={dialog.release ? dialog : null} environments={data?.environments || []} isAdmin={isAdmin} freeze={data?.freeze} onClose={() => setDialog(null)} onStarted={follow} />}
         </div>
     )

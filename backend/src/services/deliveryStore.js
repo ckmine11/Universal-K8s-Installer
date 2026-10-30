@@ -38,7 +38,7 @@ class DeliveryStore {
     _write(all) { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAtomicSync(FILE, JSON.stringify(all, null, 2)) }
     _org(all, orgId) {
         const o = all[orgId || '_'] ||= {}
-        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []; o.registries ||= []
+        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []; o.registries ||= []; o.hibernateSchedules ||= []
         return o
     }
     _edit(orgId, fn) { const all = this._read(); const o = this._org(all, orgId); const r = fn(o); this._write(all); return r }
@@ -177,6 +177,24 @@ class DeliveryStore {
         })
     }
     removeRegistry(orgId, regId) { return this._edit(orgId, (o) => { const n = o.registries.length; o.registries = o.registries.filter(r => r.id !== regId); return n !== o.registries.length }) }
+
+    // ── cost prices ──
+    costRates(orgId, defaults) { return { ...defaults, ...(this._org(this._read(), orgId).costRates || {}) } }
+    saveCostRates(orgId, rates) { return this._edit(orgId, (o) => { o.costRates = rates; return rates }) }
+
+    // ── hibernate schedules ──
+    hibernateSchedules(orgId) { return this._org(this._read(), orgId).hibernateSchedules.slice() }
+    allHibernateSchedules() { return Object.entries(this._read()).flatMap(([orgId, o]) => (o.hibernateSchedules || []).map(s => ({ ...s, orgId }))) }
+    saveHibernateSchedule(orgId, spec, { by } = {}) {
+        return this._edit(orgId, (o) => {
+            if (o.hibernateSchedules.some(s => s.clusterId === spec.clusterId && s.namespace === spec.namespace)) bad('That namespace already has a schedule — remove it first')
+            if (o.hibernateSchedules.length >= 100) bad('Up to 100 schedules')
+            const s = { id: id(), ...spec, createdAt: new Date().toISOString(), createdBy: by || null }
+            o.hibernateSchedules.push(s)
+            return s
+        })
+    }
+    removeHibernateSchedule(orgId, sid) { return this._edit(orgId, (o) => { const n = o.hibernateSchedules.length; o.hibernateSchedules = o.hibernateSchedules.filter(s => s.id !== sid); return n !== o.hibernateSchedules.length }) }
 
     /** Remove everything about a cluster that is gone. */
     dropCluster(orgId, clusterId) {
