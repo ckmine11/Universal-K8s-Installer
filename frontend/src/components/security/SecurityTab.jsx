@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ShieldAlert, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Search, ExternalLink, Wrench } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import ExternalSecretsCard from './ExternalSecretsCard'
+import { useFeatures } from '../../config/features'
 
 // Security of one cluster from the Trivy Operator's reports: image
 // vulnerabilities per workload (critical / high listed, with the fixed
@@ -85,6 +86,7 @@ function WorkloadRow({ w }) {
 }
 
 export default function SecurityTab({ clusterId, canInstall, onOpenAddons }) {
+    const featureOn = useFeatures()
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
@@ -186,7 +188,7 @@ export default function SecurityTab({ clusterId, canInstall, onOpenAddons }) {
                     </>
                 ) : !error && vt?.state === 'ok' && <p className="text-sm text-slate-500 py-2">No scan results yet — the first scans take a few minutes after the Trivy Operator starts.</p>)}
             </div>
-            <ExternalSecretsCard clusterId={clusterId} />
+            {featureOn('externalSecrets') && <ExternalSecretsCard clusterId={clusterId} />}
         </div>
     )
 }

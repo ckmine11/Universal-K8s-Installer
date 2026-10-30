@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     Sun, Moon, LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
     LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2,
-    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked, Layers
+    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked, Layers, ToggleLeft
 } from 'lucide-react'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
@@ -74,6 +74,7 @@ export function navSections(user, approvalsWaiting = 0) {
                 { to: '/approvals', label: 'Approvals', icon: UserCheck, badge: approvalsWaiting },
                 (isAdmin || can(role, 'alerts:manage')) && { to: '/alerts', label: 'Alerts', icon: Bell },
                 isAdmin && { to: '/settings', label: 'Settings', icon: Settings },
+                isAdmin && { to: '/features', label: 'Features', icon: ToggleLeft },
             ].filter(Boolean)
         },
         {

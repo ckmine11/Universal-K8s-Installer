@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
 import { apiFetch, useAuth } from '../context/AuthContext'
 import { can, kubeLevel } from '../config/permissions'
+import { useFeatures } from '../config/features'
 import ClusterLabels from '../components/ClusterLabels'
 import ElevationBar from '../components/ElevationBar'
 import { MAX_K8S_MINOR } from '../config/versions'
@@ -47,10 +48,10 @@ import RiskCard from '../components/ai/RiskCard'
 const TABS = [
     { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
     { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
-    { key: 'apps', label: 'Apps', hint: 'Helm install, upgrade, roll back', Icon: Boxes, permission: 'app:view' },
-    { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch, permission: 'gitops:view' },
-    { key: 'security', label: 'Security', hint: 'vulnerabilities, misconfig', Icon: ShieldAlert, permission: 'security:view' },
-    { key: 'delivery', label: 'Delivery', hint: 'DORA metrics', Icon: Gauge, permission: 'metrics:view' },
+    { key: 'apps', label: 'Apps', hint: 'Helm install, upgrade, roll back', Icon: Boxes, permission: 'app:view', feature: 'helmApps' },
+    { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch, permission: 'gitops:view', feature: 'gitops' },
+    { key: 'security', label: 'Security', hint: 'vulnerabilities, misconfig', Icon: ShieldAlert, permission: 'security:view', feature: 'security' },
+    { key: 'delivery', label: 'Delivery', hint: 'DORA metrics', Icon: Gauge, permission: 'metrics:view', feature: 'dora' },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
     { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
 ]
@@ -102,7 +103,8 @@ export default function ClusterDetails({ onScaleCluster }) {
     // Open tab + add-on section live in the URL (?tab=addons&section=manage):
     // refresh, back button and shared links keep the user where they were
     const [params, setParams] = useSearchParams()
-    const tabs = TABS.filter(t => !t.permission || can(user?.role, t.permission, id))
+    const featureOn = useFeatures()
+    const tabs = TABS.filter(t => (!t.permission || can(user?.role, t.permission, id)) && (!t.feature || featureOn(t.feature)))
     const tab = tabs.some(t => t.key === params.get('tab')) ? params.get('tab') : 'overview'
     const section = ADDON_SECTIONS.some(s => s.key === params.get('section')) ? params.get('section') : 'access'
     const setTab = (key) => setParams(key === 'overview' ? {} : { tab: key })

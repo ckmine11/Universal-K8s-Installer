@@ -3,6 +3,7 @@ import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, Al
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import PageHeader from '../components/ui/PageHeader'
+import { useFeatures } from '../config/features'
 
 // Delivery settings of the workspace: environments (and which are protected),
 // chart repositories, change freezes — and comparing one app across two
@@ -21,6 +22,7 @@ function Section({ Icon, title, hint, children }) {
 
 export default function DeliverySettings() {
     const { toast } = useToast()
+    const featureOn = useFeatures()
     const [clusters, setClusters] = useState([])
     const [envs, setEnvs] = useState(null)
     const [repos, setRepos] = useState(null)
@@ -167,7 +169,7 @@ export default function DeliverySettings() {
                 )}
             </Section>
 
-            {regs && (
+            {regs && featureOn('registries') && (
                 <Section Icon={Container} title="Registries (pull secrets)" hint="A private registry's login, written as a pull secret (kubeez-registry-<name>) into the namespaces you pick — optionally used by their default ServiceAccount, so pods pull without changing manifests. The password is stored encrypted and sent to the cluster on stdin.">
                     <ul className="space-y-1.5">{regs.registries.map(r => (
                         <li key={r.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
@@ -198,7 +200,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
-            {tokens && (
+            {tokens && featureOn('deployTokens') && (
                 <Section Icon={KeyRound} title="Deploy tokens (CI)" hint="A token deploys one app from your pipeline (GitHub Actions, GitLab CI, Jenkins) — one release, one chart, only the values you list (e.g. image.tag). Protected environments, freezes and the CVE gate still apply. The token is shown once.">
                     {newToken && (
                         <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/[0.05] p-3 text-[11px] space-y-1.5">
@@ -229,7 +231,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
-            {git && (
+            {git && featureOn('gitopsPromote') && (
                 <Section Icon={GitPullRequest} title="Promote by pull request" hint="Change values in a YAML file of a GitHub repository (e.g. image.tag in apps/web/prod.yaml) — KubeEZ opens a pull request; Argo CD / Flux deploy it once it is merged. The token needs Contents and Pull requests: read and write.">
                     <ul className="space-y-1.5">{git.accounts.map(a => (
                         <li key={a.id} className="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">

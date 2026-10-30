@@ -145,13 +145,13 @@ function Autoscale({ clusterId, canManage }) {
     )
 }
 
-export default function ProgressivePanel({ clusterId }) {
+export default function ProgressivePanel({ clusterId, rollouts = true, autoscale = true }) {
     const { user } = useAuth()
     const isAdmin = ['admin', 'superadmin'].includes(user?.role)
     return (
         <div className="grid lg:grid-cols-2 gap-4 items-start">
-            <Rollouts clusterId={clusterId} isAdmin={isAdmin} canAct={can(user?.role, 'app:deploy', clusterId)} />
-            <Autoscale clusterId={clusterId} canManage={can(user?.role, 'autoscale:manage', clusterId)} />
+            {rollouts && <Rollouts clusterId={clusterId} isAdmin={isAdmin} canAct={can(user?.role, 'app:deploy', clusterId)} />}
+            {autoscale && <Autoscale clusterId={clusterId} canManage={can(user?.role, 'autoscale:manage', clusterId)} />}
         </div>
     )
 }

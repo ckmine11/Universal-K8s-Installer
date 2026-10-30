@@ -8,19 +8,19 @@ import { useToast } from '../ToastProvider'
 // and back, e.g. dev at night) and a debug container in a running pod.
 const json = async (res) => { const d = await res.json().catch(() => ({})); if (!res.ok) throw Object.assign(new Error(d.error || `Request failed (${res.status})`), { status: res.status }); return d }
 
-export default function OpsPanel({ clusterId }) {
+export default function OpsPanel({ clusterId, hibernate: hibernateOn = true, debug: debugOn = true }) {
     const { user } = useAuth()
     const { toast } = useToast()
     const isAdmin = ['admin', 'superadmin'].includes(user?.role)
-    const canHibernate = can(user?.role, 'hibernate:manage', clusterId)
-    const canDebug = can(user?.role, 'debug:ephemeral', clusterId) && can(user?.role, 'terminal:access', clusterId)
+    const canHibernate = hibernateOn && can(user?.role, 'hibernate:manage', clusterId)
+    const canDebug = debugOn && can(user?.role, 'debug:ephemeral', clusterId) && can(user?.role, 'terminal:access', clusterId)
     const [sleeping, setSleeping] = useState(null)
     const [ns, setNs] = useState('')
     const [busy, setBusy] = useState(null)
     const [dbg, setDbg] = useState({ namespace: '', pod: '', target: '', image: 'busybox' })
     const [dbgOut, setDbgOut] = useState(null)
 
-    const load = useCallback(() => apiFetch(`/api/clusters/${clusterId}/hibernate`).then(json).then(d => setSleeping(d.namespaces)).catch(() => setSleeping([])), [clusterId])
+    const load = useCallback(() => hibernateOn ? apiFetch(`/api/clusters/${clusterId}/hibernate`).then(json).then(d => setSleeping(d.namespaces)).catch(() => setSleeping([])) : setSleeping([]), [clusterId, hibernateOn])
     useEffect(() => { load() }, [load])
 
     // a change freeze: an admin may go ahead with a reason

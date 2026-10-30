@@ -4,6 +4,7 @@ import { apiFetch, useAuth } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
 import { useToast } from '../ToastProvider'
 import AiExplain from '../ai/AiExplain'
+import { useFeatures } from '../../config/features'
 
 // GitOps view of one cluster: Argo CD Applications and Flux Kustomizations /
 // HelmReleases — sync and health, repo and revision, what drifted — with
@@ -192,6 +193,7 @@ export default function GitOpsTab({ clusterId, canInstall, onOpenAddons }) {
     useEffect(() => { load() }, [load])
 
     const isAdmin = ['admin', 'superadmin'].includes(user?.role)
+    const featureOn = useFeatures()
     const act = async (app, action, overrideFreeze) => {
         if (action === 'remove') return removeApp(app)
         setBusy(app.id)
@@ -255,7 +257,7 @@ export default function GitOpsTab({ clusterId, canInstall, onOpenAddons }) {
                         <ToolStatus tool="flux" status={data.tools?.flux} canInstall={canInstall} onInstall={onOpenAddons} />
                     </div>
                 )}
-                {data?.canCreate && <NewApp clusterId={clusterId} isAdmin={isAdmin} onCreated={() => load(true)} />}
+                {data?.canCreate && featureOn('gitopsCreate') && <NewApp clusterId={clusterId} isAdmin={isAdmin} onCreated={() => load(true)} />}
                 {data?.readOnlyReason && <p className="flex items-center gap-1.5 text-[11px] text-slate-400"><Lock className="w-3.5 h-3.5" />{data.readOnlyReason}</p>}
                 {data?.hidden > 0 && <p className="text-[11px] text-slate-500">{data.hidden} app{data.hidden === 1 ? '' : 's'} not shown — they deploy outside your namespaces, cluster-wide or to another cluster.</p>}
                 {error && <p className="flex items-center gap-1.5 text-xs text-red-300"><AlertTriangle className="w-3.5 h-3.5" />{error}</p>}
