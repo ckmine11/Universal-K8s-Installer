@@ -1,4 +1,5 @@
 import express from 'express'
+import { requireFeature } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { canSeeCluster, canOn, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
@@ -16,6 +17,13 @@ import { cleanPromotion, openPromotionPr } from '../services/gitPromote.js'
 //   freezes       GET · POST/DELETE freeze:manage
 //   compare       POST { release, a: envId, b: envId } — values and chart of one app in two environments
 const router = express.Router()
+// feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
+router.use('/repos', requireFeature('helmApps'))
+router.use('/compare', requireFeature('helmApps'))
+router.use('/tokens', requireFeature('deployTokens'))
+router.use('/git', requireFeature('gitopsPromote'))
+router.use('/promote', requireFeature('gitopsPromote'))
+router.use('/registries', requireFeature('registries'))
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message })
 const clustersOf = async (user) => (await clusterStore.getClusters().catch(() => [])).filter(c => canAccessResource(user, c) && c.orgId === user.orgId)
 const orgOnly = (req, res, next) => req.user?.orgId ? next() : res.status(400).json({ error: 'Delivery settings belong to a workspace' })

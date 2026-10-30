@@ -27,6 +27,7 @@ import { generateManifests, parseManifests, checkManifests, previewManifests, ap
 import { offsiteStore } from '../services/offsiteStore.js'
 import { complianceStore } from '../services/complianceService.js'
 import { capabilities } from '../services/clusterAccess.js'
+import { requireFeature } from '../services/features.js'
 import { readGitops, visibleTo, problemOf, gitopsFacts, analyzeGitops, cleanSyncRequest } from '../services/gitops.js'
 
 // KubeEZ AI operations: Install Doctor, incident explainer, "What changed?"
@@ -117,7 +118,7 @@ router.post('/explain/incident/:id', requirePermission('ai:use'), async (req, re
 })
 
 // ── GitOps app explainer (the GitOps tab): the same explainer, with the GitOps specialist ──
-router.post('/explain/gitops/:clusterId', requirePermission('ai:use'), async (req, res) => {
+router.post('/explain/gitops/:clusterId', requireFeature('gitops'), requirePermission('ai:use'), async (req, res) => {
     const cluster = await visibleCluster(req, res, req.params.clusterId)
     if (!cluster) return
     if (!canOn(req.user, 'gitops:view', cluster)) return res.status(403).json({ error: 'Your role may not see GitOps apps on this cluster.', requiredPermission: 'gitops:view' })

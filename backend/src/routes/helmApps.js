@@ -1,4 +1,5 @@
 import express from 'express'
+import { requireFeature, features } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { canSeeCluster, canOn, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
@@ -19,6 +20,8 @@ import { listReleases, releaseDetail, cleanDeploy, previewDeploy, deploy, rollba
 // A protected environment always needs a second person; a change freeze stops
 // changes (admins may override with a reason); namespace limits apply.
 const router = express.Router()
+// feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
+router.use('/:id/apps', requireFeature('helmApps'))
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}), ...(e.freeze ? { freeze: e.freeze } : {}) })
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { status: 504 })), ms).unref?.())])
 
@@ -32,7 +35,7 @@ const writable = (cluster) => { const w = capabilities(cluster).helmApps; if (w?
 // the environment's CVE policy; only an admin may push past "block", with a reason
 function gateFor(req, cluster, namespace) {
     const policy = deliveryStore.environmentAt(cluster.orgId, cluster.id, namespace)?.cvePolicy
-    if (!policy) return null
+    if (!policy || !features.isOn(cluster.orgId, 'cveGate')) return null
     const why = String(req.body?.overrideCve || '').trim()
     return { policy, override: ['admin', 'superadmin'].includes(req.user.role) && why.length >= 3 ? why.slice(0, 200) : null }
 }

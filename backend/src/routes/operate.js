@@ -1,4 +1,5 @@
 import express from 'express'
+import { requireFeature } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { canSeeCluster, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
@@ -20,6 +21,11 @@ import { readEso, refreshEso } from '../services/externalSecrets.js'
 // Namespace limits apply; system namespaces are admin-only; a protected
 // environment needs a second person to hibernate; freezes stop changes.
 const router = express.Router()
+// feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
+router.use('/:id/hibernate', requireFeature('hibernate'))
+router.use('/:id/wake', requireFeature('hibernate'))
+router.use('/:id/debug', requireFeature('debug'))
+router.use('/:id/external-secrets', requireFeature('externalSecrets'))
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}) })
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('The cluster did not answer in time'), { status: 504 })), ms).unref?.())])
 async function visibleCluster(req, res) {

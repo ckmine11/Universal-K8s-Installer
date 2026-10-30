@@ -12,6 +12,7 @@ import { RESOURCE_REASONS, HISTORY_MAX, parseResources, analyzeResources, resour
 import { redact } from './ai/redact.js'
 import { podFacts, containerMemory, recordMemory, memoryFindings, recordRestarts, restartFindings } from './predict.js'
 import { usesApi, apiShell } from './clusterAccess.js'
+import { features } from './features.js'
 import { GITOPS_SCRIPT, GITOPS_REASONS, parseGitops, analyzeGitops, rememberGitops } from './gitops.js'
 
 const alertTarget = (inc) => inc.namespace ? `${inc.namespace}/${inc.target}` : inc.target
@@ -570,6 +571,7 @@ class IncidentDetector {
     // unhealthy becomes an incident (alert, AI explain); it clears when fixed.
     // Clusters with neither tool are asked again only every ~30 minutes.
     async _pollGitops(clusterId) {
+        if (!features.isOn(this.watched.get(clusterId)?.orgId, 'gitopsAlerts')) return
         const skip = this.gitopsSkip.get(clusterId) || 0
         if (skip > 0) return this.gitopsSkip.set(clusterId, skip - 1)
         const r = await this._run(clusterId, ssh => ssh.execCommand(GITOPS_SCRIPT, { timeoutMs: 120000 }))

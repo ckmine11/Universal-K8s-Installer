@@ -96,6 +96,7 @@ import deliveryRoutes from './routes/delivery.js'
 import operateRoutes from './routes/operate.js'
 import hookRoutes from './routes/hooks.js'
 import scalingRoutes from './routes/scaling.js'
+import featureRoutes from './routes/features.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -392,6 +393,7 @@ app.use('/api/delivery', requireAuth, deliveryRoutes)        // environments, ch
 app.use('/api/clusters', requireAuth, operateRoutes)         // hibernate / wake, debug containers, External Secrets status
 app.use('/api/clusters', requireAuth, scalingRoutes)         // Argo Rollouts, KEDA, app metrics, registry pull secrets
 app.use('/api/hooks', hookRoutes)                            // CI deploy webhook (a deploy token, no session)
+app.use('/api/features', requireAuth, featureRoutes)         // feature flags: workspace and platform
 app.use('/api/clusters', requireAuth, installationRoutes)
 app.use('/api/nodes', requireAuth, nodeVerificationRoutes)
 

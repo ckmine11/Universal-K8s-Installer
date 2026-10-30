@@ -1,5 +1,6 @@
 import express from 'express'
 import { apiTokens, applySet } from '../services/apiTokens.js'
+import { features } from '../services/features.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { deliveryStore, checkFreeze } from '../services/deliveryStore.js'
 import { capabilities } from '../services/clusterAccess.js'
@@ -18,6 +19,7 @@ const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ..
 async function tokenOf(req, res) {
     const t = apiTokens.verify(String(req.get('authorization') || '').replace(/^Bearer\s+/i, ''))
     if (!t) { res.status(401).json({ error: 'Unknown, expired or revoked deploy token' }); return null }
+    if (!features.isOn(t.orgId, 'deployTokens')) { res.status(403).json({ error: 'Deploy tokens are turned off for this workspace', code: 'FEATURE_OFF', feature: 'deployTokens' }); return null }
     const cluster = (await clusterStore.getClusters().catch(() => [])).find(c => c.id === t.clusterId && c.orgId === t.orgId)
     if (!cluster) { res.status(404).json({ error: 'The cluster of this token is gone' }); return null }
     return { t, cluster }
@@ -42,7 +44,7 @@ router.post('/deploy', async (req, res) => {
         const d = cleanDeploy({ release: t.release, namespace: t.namespace, chart: t.chart, version }, repo)
         const values = applySet(await valuesOf(cluster, t.namespace, t.release), req.body?.set, t.allowedKeys)
         const what = `${t.namespace}/${t.release} ${t.chart}${version ? ` ${version}` : ''}${req.body?.set ? ` set ${Object.entries(req.body.set).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}`
-        const j = await deploy(cluster, d, { by: `token:${t.name}`, values, gate: env?.cvePolicy ? { policy: env.cvePolicy, override: null } : null })
+        const j = await deploy(cluster, d, { by: `token:${t.name}`, values, gate: env?.cvePolicy && features.isOn(t.orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null })
         record(true, 202, `deploy ${what}`)
         res.status(202).json(jobView(j))
     } catch (e) { record(false, e.status || 500, e.message.slice(0, 300)); fail(res, e) }

@@ -1,4 +1,5 @@
 import express from 'express'
+import { requireFeature } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { canSeeCluster, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
@@ -20,6 +21,11 @@ import { workloadMetrics, syncRegistry } from '../services/appMetrics.js'
 // Promoting in a protected environment needs a second person; aborting never
 // does and works during a freeze (it is the way back).
 const router = express.Router()
+// feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
+router.use('/:id/rollouts', requireFeature('rollouts'))
+router.use('/:id/autoscale', requireFeature('autoscale'))
+router.use('/:id/metrics', requireFeature('appMetrics'))
+router.use('/:id/registries', requireFeature('registries'))
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code ? { code: e.code } : {}) })
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('The cluster did not answer in time'), { status: 504 })), ms).unref?.())])
 async function visibleCluster(req, res) {

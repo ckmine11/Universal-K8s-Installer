@@ -1,4 +1,5 @@
 import express from 'express'
+import { requireFeature } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { canSeeCluster, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
@@ -12,6 +13,9 @@ import { readRollouts, computeDora } from '../services/dora.js'
 //   GET /:id/dora?days=&platform=1   DORA delivery metrics
 // Members limited to some namespaces see only those namespaces.
 const router = express.Router()
+// feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
+router.use('/:id/security', requireFeature('security'))
+router.use('/:id/dora', requireFeature('dora'))
 
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message })
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { status: 504 })), ms).unref?.())])
