@@ -78,6 +78,14 @@ export default function DeliverySettings() {
             setPr(p => ({ ...p, busy: false, result: d }))
         } catch (e) { setPr(p => ({ ...p, busy: false })); toast({ title: 'No pull request', message: e.message, type: 'error' }) }
     }
+    const [promo, setPromo] = useState({ keys: 'image.tag', repoId: '', busy: false, result: null })
+    const promoteRelease = async () => {
+        setPromo(p => ({ ...p, busy: true, result: null }))
+        try {
+            const d = await json(await apiFetch('/api/delivery/promote-release', { method: 'POST', body: JSON.stringify({ release: cmp.release, from: cmp.a, to: cmp.b, repoId: promo.repoId, keys: promo.keys.split(',').map(s => s.trim()).filter(Boolean) }) }))
+            setPromo(p => ({ ...p, busy: false, result: d })); toast({ title: 'Promotion started', message: `${d.promoted.chart} ${d.promoted.version || ''} ${d.promoted.values.join(', ')}`, type: 'success' })
+        } catch (e) { setPromo(p => ({ ...p, busy: false })); toast({ title: 'Not promoted', message: e.message, type: 'error' }) }
+    }
     const compare = async () => {
         setCmpResult({ loading: true })
         try { setCmpResult(await json(await apiFetch('/api/delivery/compare', { method: 'POST', body: JSON.stringify(cmp) }))) } catch (e) { setCmpResult({ error: e.message }) }
@@ -101,6 +109,12 @@ export default function DeliverySettings() {
                                         <option value="off">CVE gate: off</option><option value="warn:CRITICAL">warn on critical</option><option value="block:CRITICAL">block critical</option><option value="warn:HIGH">warn on high+</option><option value="block:HIGH">block high+</option>
                                     </select>
                                 ) : e.cvePolicy && <span className="text-slate-400">CVE gate: {e.cvePolicy.mode} {e.cvePolicy.severity.toLowerCase()}</span>}
+                                {featureOn('autoRollback') && (envs.canManage ? (
+                                    <select className="kz-input !w-auto !py-1 !text-[11px]" value={e.autoRollback || 'off'} aria-label={`Auto-rollback of ${e.name}`} title="When a Helm deploy breaks its workload within an hour"
+                                        onChange={ev => send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, autoRollback: ev.target.value }, 'Auto-rollback saved')}>
+                                        <option value="off">Auto-rollback: off</option><option value="ask">suggest a rollback</option><option value="auto">roll back by itself</option>
+                                    </select>
+                                ) : e.autoRollback && e.autoRollback !== 'off' && <span className="text-slate-400">auto-rollback: {e.autoRollback}</span>)}
                                 {envs.canManage && <span className="ml-auto flex gap-2">
                                     <button onClick={() => send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, protected: !e.protected }, e.protected ? 'No longer protected' : 'Protected')} className="kz-btn-ghost !py-1 !px-2 !text-[11px]">{e.protected ? 'Unprotect' : 'Protect'}</button>
                                     <button onClick={() => window.confirm(`Remove environment ${e.name}? Nothing on the cluster changes.`) && send(`/api/delivery/environments/${e.id}`, 'DELETE', null, 'Removed')} className="kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${e.name}`}><Trash2 className="w-3 h-3" /></button>
@@ -279,6 +293,16 @@ export default function DeliverySettings() {
                             </div>
                         ))}</div>
                         {cmpResult.chartDiffers && <p className="text-amber-200">The chart or its version differs.</p>}
+                        {featureOn('promotion') && cmpResult.a.release && (
+                            <div className="flex flex-wrap items-end gap-2 rounded-lg border border-blue-400/20 bg-blue-500/[0.04] p-2.5">
+                                <span className="text-slate-300">Promote {cmpResult.release}: {cmpResult.a.env.name} → {cmpResult.b.env.name} (chart {cmpResult.a.release.chart} {cmpResult.a.release.version || ''}, plus</span>
+                                <input className="kz-input !w-56 !text-xs" value={promo.keys} onChange={e => setPromo(p => ({ ...p, keys: e.target.value }))} aria-label="Values to take over (comma separated)" />
+                                <span className="text-slate-300">) from</span>
+                                <select className="kz-input !w-32 !text-xs" value={promo.repoId} onChange={e => setPromo(p => ({ ...p, repoId: e.target.value }))} aria-label="Chart repository"><option value="">repository…</option>{(repos?.repos || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+                                <button onClick={promoteRelease} disabled={!promo.repoId || promo.busy} className="kz-btn-primary !py-1.5 !text-xs">{promo.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Promote</button>
+                                {promo.result && <span className="w-full text-emerald-200">Deploy started on {cmpResult.b.env.name} — follow it in the cluster's Apps tab.</span>}
+                            </div>
+                        )}
                         {cmpResult.values && (cmpResult.values.length ? (
                             <table className="w-full text-[11px]"><thead><tr className="text-left text-slate-500 border-b border-white/10"><th className="py-1 font-semibold">Value</th><th className="py-1 font-semibold">{cmpResult.a.env.name}</th><th className="py-1 font-semibold">{cmpResult.b.env.name}</th></tr></thead>
                                 <tbody>{cmpResult.values.map(v => <tr key={v.key} className="border-b border-white/[0.05] align-top"><td className="py-1 font-mono text-slate-300">{v.key}</td><td className="py-1 font-mono text-slate-200 break-all">{v.only === 'b' ? <span className="text-slate-500">—</span> : JSON.stringify(v.a)}</td><td className="py-1 font-mono text-slate-200 break-all">{v.only === 'a' ? <span className="text-slate-500">—</span> : JSON.stringify(v.b)}</td></tr>)}</tbody></table>

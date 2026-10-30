@@ -61,7 +61,7 @@ class DeliveryStore {
             if (!cur && o.environments.length >= MAX.environments) throw bad(`A workspace can have up to ${MAX.environments} environments`)
             const cve = input.cvePolicy ?? cur?.cvePolicy ?? null
             const cvePolicy = cve && cve.mode !== 'off' ? { mode: ['warn', 'block'].includes(cve.mode) ? cve.mode : bad('CVE policy: off, warn or block'), severity: cve.severity === 'HIGH' ? 'HIGH' : 'CRITICAL' } : null
-            const env = { id: cur?.id || id(), name, clusterId: input.clusterId, namespace: input.namespace, protected: !!input.protected, cvePolicy, updatedAt: new Date().toISOString(), updatedBy: by || null }
+            const env = { id: cur?.id || id(), name, clusterId: input.clusterId, namespace: input.namespace, protected: !!input.protected, cvePolicy, autoRollback: ['ask', 'auto'].includes(input.autoRollback ?? cur?.autoRollback) ? (input.autoRollback ?? cur?.autoRollback) : 'off', updatedAt: new Date().toISOString(), updatedBy: by || null }
             if (cur) Object.assign(cur, env); else o.environments.push(env)
             return env
         })

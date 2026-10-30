@@ -1,12 +1,14 @@
 import express from 'express'
-import { requireFeature } from '../services/features.js'
+import { requireFeature, features } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { canSeeCluster, canOn, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
 import { clusterStore } from '../services/clusterStore.js'
-import { deliveryStore } from '../services/deliveryStore.js'
+import { deliveryStore, checkFreeze } from '../services/deliveryStore.js'
 import { listCharts } from '../services/chartCatalog.js'
-import { listReleases, valuesOf, compareValues, RELEASE } from '../services/helmApps.js'
+import { listReleases, valuesOf, compareValues, RELEASE, cleanDeploy, deploy, jobView } from '../services/helmApps.js'
+import { requireApproval } from '../services/approvals.js'
+import { capabilities } from '../services/clusterAccess.js'
 import { apiTokens } from '../services/apiTokens.js'
 import { cleanRegistry } from '../services/appMetrics.js'
 import { cleanPromotion, openPromotionPr } from '../services/gitPromote.js'
@@ -20,6 +22,7 @@ const router = express.Router()
 // feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
 router.use('/repos', requireFeature('helmApps'))
 router.use('/compare', requireFeature('helmApps'))
+router.use('/promote-release', requireFeature('helmApps'), requireFeature('promotion'))
 router.use('/tokens', requireFeature('deployTokens'))
 router.use('/git', requireFeature('gitopsPromote'))
 router.use('/promote', requireFeature('gitopsPromote'))
@@ -93,6 +96,63 @@ router.post('/compare', async (req, res) => {
             chartDiffers: !!(a.release && b.release && (a.release.chart !== b.release.chart || a.release.version !== b.release.version)),
             values: a.release && b.release ? compareValues(a.values, b.values) : null
         })
+    } catch (e) { fail(res, e) }
+})
+
+// ── promotion pipeline: an app from one environment into the next ──
+// The target gets the source's chart version and the chosen values (image.tag
+// by default); everything else keeps the target's own values. Protected
+// targets need a second person; freezes and the target's CVE policy apply.
+const KEY = /^[A-Za-z0-9_-]{1,60}(\.[A-Za-z0-9_-]{1,60}){0,7}$/
+async function promotionPlan(req) {
+    const b = req.body || {}
+    if (!RELEASE.test(String(b.release || ''))) throw Object.assign(new Error('Not a valid release name'), { status: 400 })
+    const keys = Array.isArray(b.keys) && b.keys.length ? b.keys.map(String) : ['image.tag']
+    if (keys.length > 20 || keys.some(k => !KEY.test(k) || k.split('.').some(p => ['__proto__', 'constructor', 'prototype'].includes(p)))) throw Object.assign(new Error('keys: up to 20 value paths like image.tag'), { status: 400 })
+    if (b.from === b.to) throw Object.assign(new Error('Pick two different environments'), { status: 400 })
+    const clusters = await clustersOf(req.user)
+    const side = (envId) => {
+        const env = deliveryStore.environment(req.user.orgId, envId)
+        const cluster = env && clusters.find(c => c.id === env.clusterId)
+        const nss = cluster && accessOn(req.user, cluster).namespaces
+        if (!env || !cluster || !canSeeCluster(req.user, cluster) || (nss && !nsMatches(nss, env.namespace))) throw Object.assign(new Error('Environment not found'), { status: 404 })
+        return { env, cluster }
+    }
+    const from = side(b.from), to = side(b.to)
+    if (!canOn(req.user, 'app:values', from.cluster)) throw Object.assign(new Error(`Your role may not see app values on ${from.cluster.clusterName}.`), { status: 403 })
+    if (!canOn(req.user, 'app:deploy', to.cluster)) throw Object.assign(new Error(`Your role may not deploy on ${to.cluster.clusterName}.`), { status: 403 })
+    const repo = deliveryStore.repoCredentials(req.user.orgId, String(b.repoId || ''))
+    if (!repo) throw Object.assign(new Error('Pick the chart repository the app comes from'), { status: 400 })
+    return { b, keys, from, to, repo }
+}
+// the approval is asked on the target's cluster
+const promoteTarget = async (req, res, next) => {
+    try { const p = await promotionPlan(req); req.params.id = p.to.cluster.id; req.permissionCluster = p.to.cluster; next() } catch (e) { fail(res, e) }
+}
+router.post('/promote-release', requirePermission('app:deploy'), promoteTarget, requireApproval('app:promote', { always: (req) => !!deliveryStore.environment(req.user.orgId, req.body?.to)?.protected }), async (req, res) => {
+    try {
+        const { b, keys, from, to, repo } = await promotionPlan(req)
+        const w = capabilities(to.cluster).helmApps
+        if (w?.ok === false) return res.status(409).json({ error: w.why })
+        const override = checkFreeze(req.user, to.cluster, b)
+        const src = (await listReleases(from.cluster)).find(r => r.namespace === from.env.namespace && r.name === b.release)
+        if (!src) return res.status(404).json({ error: `${b.release} is not installed in ${from.env.name}` })
+        const [srcValues, dstValues] = await Promise.all([valuesOf(from.cluster, from.env.namespace, b.release), valuesOf(to.cluster, to.env.namespace, b.release)])
+        const values = structuredClone(dstValues || {})
+        const moved = []
+        for (const k of keys) {
+            const parts = k.split('.')
+            const v = parts.reduce((o, p) => (o && typeof o === 'object' ? o[p] : undefined), srcValues)
+            if (v === undefined) continue
+            let o = values
+            for (const p of parts.slice(0, -1)) { if (!o[p] || typeof o[p] !== 'object' || Array.isArray(o[p])) o[p] = {}; o = o[p] }
+            o[parts.at(-1)] = v; moved.push(`${k}=${typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : v}`)
+        }
+        const d = cleanDeploy({ release: b.release, namespace: to.env.namespace, chart: src.chart, version: src.version }, repo)
+        const policy = to.env.cvePolicy && features.usable(req.user.orgId, 'cveGate') ? to.env.cvePolicy : null
+        req.auditDetail = `promote ${b.release} ${src.chart} ${src.version || ''} from ${from.env.name} to ${to.env.name}${moved.length ? ` (${moved.join(', ')})` : ''}${override ? ` — ${override}` : ''}`
+        const j = await deploy(to.cluster, d, { by: req.user.username, values, gate: policy ? { policy, override: null } : null })
+        res.status(202).json({ ...jobView(j), clusterId: to.cluster.id, promoted: { chart: src.chart, version: src.version, values: moved } })
     } catch (e) { fail(res, e) }
 })
 

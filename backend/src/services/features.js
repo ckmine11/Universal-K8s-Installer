@@ -26,7 +26,9 @@ export const FEATURES = {
     autoscale:       { label: 'Autoscaling (KEDA)', group: 'Apps', description: 'ScaledObjects from a wizard', plan: 'pro' },
     hibernate:       { label: 'Hibernate / Wake', group: 'Operations', description: 'Scale a namespace to 0 and back' },
     debug:           { label: 'Debug containers', group: 'Operations', description: 'Ephemeral debug containers in running pods', plan: 'pro' },
-    registries:      { label: 'Registry pull secrets', group: 'Operations', description: 'Registry logins written as pull secrets into namespaces', plan: 'pro' }
+    registries:      { label: 'Registry pull secrets', group: 'Operations', description: 'Registry logins written as pull secrets into namespaces', plan: 'pro' },
+    autoRollback:    { label: 'Auto-rollback', group: 'Apps', description: 'Roll back (or suggest it) when a Helm deploy breaks its workload within an hour', plan: 'pro', background: true },
+    promotion:       { label: 'Promotion pipeline', group: 'Apps', description: 'Promote an app from one environment to the next (chart version and chosen values)', plan: 'pro' }
 }
 export const FEATURE_KEYS = Object.keys(FEATURES)
 // plans: free < pro < enterprise (the workspace owner's subscription, as for backups and alerts)

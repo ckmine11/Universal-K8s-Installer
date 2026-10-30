@@ -97,6 +97,7 @@ import operateRoutes from './routes/operate.js'
 import hookRoutes from './routes/hooks.js'
 import scalingRoutes from './routes/scaling.js'
 import featureRoutes from './routes/features.js'
+import { startAutoRollback } from './services/autoRollback.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -642,6 +643,7 @@ server.listen(PORT, () => {
     startConnectionChecks()       // imported clusters: still reachable? (every 5 minutes)
     lockDownServerFiles(DATA_DIR) // scripts for imported clusters run sandboxed: KubeEZ's own files stay owner-only
     startAiDigest()               // the daily / weekly AI digest to the alert channels (AI settings)
+    startAutoRollback().catch(e => console.error(`[AutoRollback] ${e.message}`))   // roll back Helm deploys that break their workload (per environment)
     import('./services/ai/providers.js').then(m => m.ensureServerModel()).catch(() => { })   // KubeEZ AI server model (background)
     import('./services/ai/runbookHooks.js').then(m => m.startRunbooks()).catch(e => console.warn('[KubeEZ AI] runbooks not started:', e.message))   // learned runbooks
 
