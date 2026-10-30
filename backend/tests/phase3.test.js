@@ -5,10 +5,11 @@ import { test, before, after, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { tempDataDir } from './helpers/server.js'
+import { tempDataDir, paidOrgs } from './helpers/server.js'
 
 const DATA = tempDataDir()
 process.env.KUBEEZ_DATA_DIR = DATA
+paidOrgs(DATA, ['org-p'])
 process.env.APP_SECRET ||= 'test-secret-test-secret-test-secret-123'
 const prevMode = process.env.KUBEEZ_MODE
 process.env.KUBEEZ_MODE = 'selfhosted'

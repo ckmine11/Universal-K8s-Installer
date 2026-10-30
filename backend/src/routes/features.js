@@ -1,6 +1,7 @@
 import express from 'express'
 import { features } from '../services/features.js'
 import { auditLog } from '../services/auditLog.js'
+import { authService } from '../services/authService.js'
 
 // Feature flags (mounted at /api/features, signed in):
 //   GET  /            the features of my workspace (on, available, labels)
@@ -11,7 +12,7 @@ const router = express.Router()
 const isAdmin = (u) => ['admin', 'superadmin'].includes(u?.role)
 const changed = (body) => Object.entries(body || {}).map(([k, v]) => `${k}=${v === null ? 'default' : v ? 'on' : 'off'}`).join(', ')
 
-router.get('/', (req, res) => res.json({ features: features.view(req.user.orgId || null), enabled: features.enabled(req.user.orgId || null), canManage: isAdmin(req.user) && !!req.user.orgId, canManagePlatform: req.user.role === 'superadmin' }))
+router.get('/', (req, res) => res.json({ features: features.view(req.user.orgId || null, req.user.role), plan: req.user.orgId ? authService.getOrgPlan(req.user.orgId) : 'FREE', enabled: features.enabled(req.user.orgId || null), canManage: isAdmin(req.user) && !!req.user.orgId, canManagePlatform: req.user.role === 'superadmin' }))
 router.put('/', (req, res) => {
     if (!isAdmin(req.user)) return res.status(403).json({ error: 'Only an admin may change the workspace\'s features' })
     try {

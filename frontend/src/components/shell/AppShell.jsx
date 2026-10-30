@@ -14,6 +14,7 @@ import UpdatesMenu from './UpdatesMenu'
 import AuroraBackground from './AuroraBackground'
 import ChangePasswordDialog from './ChangePasswordDialog'
 import ApprovalGate from './ApprovalGate'
+import UpgradeNotice from './UpgradeNotice'
 import { whenVisible } from '../../utils/whenVisible'
 import { getTheme, setTheme } from '../../utils/theme'
 
@@ -263,6 +264,7 @@ export default function AppShell({ children }) {
             </div>
 
             <ApprovalGate />
+            <UpgradeNotice />
             <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} sections={sections} onLogout={logout} />
         </div>
     )

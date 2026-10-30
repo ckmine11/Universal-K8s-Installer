@@ -4,10 +4,11 @@ import { test, before, after, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { tempDataDir } from './helpers/server.js'
+import { tempDataDir, paidOrgs } from './helpers/server.js'
 
 const DATA = tempDataDir()
 process.env.KUBEEZ_DATA_DIR = DATA
+paidOrgs(DATA, ['org-f'])
 process.env.APP_SECRET ||= 'test-secret-test-secret-test-secret-123'
 const prev = { mode: process.env.KUBEEZ_MODE, f: process.env.KUBEEZ_FEATURES, d: process.env.KUBEEZ_FEATURES_DEFAULT }
 process.env.KUBEEZ_MODE = 'selfhosted'
@@ -104,6 +105,20 @@ describe('enforcement', () => {
         const r = await call(null, 'POST', '/api/hooks/deploy', {}, { authorization: `Bearer ${token}` })
         assert.equal(r.status, 403); assert.equal(r.data.code, 'FEATURE_OFF')
         await call('admin', 'PUT', '/api/features', { deployTokens: true })
+    })
+
+    test('plans: a Free workspace sees the feature but gets 402 with an upgrade message; Pro features are in Pro; Enterprise only in Enterprise', async () => {
+        assert.equal(features.planOk('org-free', 'security'), true, 'free features stay free')
+        assert.equal(features.planOk('org-free', 'rollouts'), false)
+        assert.equal(features.planOk('org-f', 'gitopsPromote'), true, 'org-f is Enterprise')
+        assert.equal(features.planOk('org-free', 'rollouts', 'superadmin'), true, 'the platform owner always')
+        const { apiTokens } = await import('../src/services/apiTokens.js')
+        const { token } = apiTokens.create('org-free', { name: 'ci free', clusterId: 'f1', namespace: 'dev', release: 'web', repoId: 'r', chart: 'web' }, { clusterIds: ['f1'], repoIds: ['r'] })
+        const r = await call(null, 'POST', '/api/hooks/deploy', {}, { authorization: `Bearer ${token}` })
+        assert.equal(r.status, 402); assert.equal(r.data.code, 'UPGRADE_REQUIRED'); assert.equal(r.data.plan, 'PRO')
+        assert.match(r.data.error, /Deploy tokens & CI webhook is part of the Pro plan — upgrade your plan/)
+        const v = features.view('org-free').find(f => f.key === 'gitopsPromote')
+        assert.deepEqual([v.plan, v.included, v.on], ['enterprise', false, true], 'still shown and on — just not included')
     })
 
     test('GitOps alerts off: the poller does not touch the cluster', async () => {

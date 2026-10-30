@@ -21,6 +21,11 @@ export async function apiFetch(url, options = {}) {
         if (info?.approvalRequired) return window.__kubeezApprovalGate({ url, options, info, response: res });
     }
 
+    // a feature outside the plan: the shell shows "upgrade your plan" (the caller still gets the answer)
+    if (res.status === 402 && typeof window !== 'undefined') {
+        res.clone().json().then(d => { if (d?.code === 'UPGRADE_REQUIRED') window.dispatchEvent(new CustomEvent('kubeez:upgrade', { detail: d })) }).catch(() => { })
+    }
+
     // Only auto-logout on 401 (auth failure). 402 = limit/upgrade, 403 = permission —
     // those are real API responses the caller must handle, not session expiry.
     if (res.status === 401) {

@@ -73,3 +73,10 @@ export function client(server) {
         return { status: r.status, data }
     }
 }
+
+// In-process tests: give these workspaces an owner on a paid plan (Pro / Enterprise
+// features answer 402 otherwise). Call before importing services.
+export function paidOrgs(dataDir, orgIds, plan = 'ENTERPRISE') {
+    const users = orgIds.map((orgId, i) => ({ id: `owner-${orgId}`, username: `owner${i}`, email: `owner${i}@example.com`, orgId, role: 'admin', password: 'x', subscription: { plan } }))
+    fs.writeFileSync(path.join(dataDir, 'users.json'), JSON.stringify(users))
+}

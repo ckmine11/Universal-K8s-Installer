@@ -6,10 +6,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import http from 'node:http'
-import { tempDataDir } from './helpers/server.js'
+import { tempDataDir, paidOrgs } from './helpers/server.js'
 
 const DATA = tempDataDir()
 process.env.KUBEEZ_DATA_DIR = DATA
+paidOrgs(DATA, ['orgG'])
 process.env.APP_SECRET ||= 'test-secret'
 process.env.KUBEEZ_AI_JOB_WAIT_MS = '3000'
 delete process.env.KUBEEZ_AI_URL

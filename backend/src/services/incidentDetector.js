@@ -571,7 +571,7 @@ class IncidentDetector {
     // unhealthy becomes an incident (alert, AI explain); it clears when fixed.
     // Clusters with neither tool are asked again only every ~30 minutes.
     async _pollGitops(clusterId) {
-        if (!features.isOn(this.watched.get(clusterId)?.orgId, 'gitopsAlerts')) return
+        if (!features.usable(this.watched.get(clusterId)?.orgId, 'gitopsAlerts')) return
         const skip = this.gitopsSkip.get(clusterId) || 0
         if (skip > 0) return this.gitopsSkip.set(clusterId, skip - 1)
         const r = await this._run(clusterId, ssh => ssh.execCommand(GITOPS_SCRIPT, { timeoutMs: 120000 }))

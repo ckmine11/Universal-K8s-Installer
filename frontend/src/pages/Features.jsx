@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { ToggleLeft, Loader2, AlertTriangle, Server } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
@@ -43,8 +44,11 @@ export default function Features() {
                     <ul className="divide-y divide-white/[0.06]">{list.map(f => (
                         <li key={f.key} className="flex flex-wrap items-center gap-3 py-2.5">
                             <div className="flex-1 min-w-[220px]">
-                                <p className="text-sm text-white">{f.label} {f.background && <span className="text-[10px] text-slate-500">runs in the background</span>}</p>
+                                <p className="text-sm text-white">{f.label}
+                                    {f.plan !== 'free' && <span className={`ml-2 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${f.plan === 'enterprise' ? 'border-violet-400/30 text-violet-300' : 'border-amber-400/30 text-amber-200'}`}>{f.plan === 'enterprise' ? 'Enterprise' : 'Pro'}</span>}
+                                    {f.background && <span className="ml-2 text-[10px] text-slate-500">runs in the background</span>}</p>
                                 <p className="text-[11px] text-slate-400">{f.description}</p>
+                                {!f.included && <p className="text-[11px] text-amber-200">Not in your plan ({String(data.plan || 'FREE').toLowerCase()}) — <Link to="/pricing" className="underline">upgrade to use it</Link>.</p>}
                                 {!f.available && <p className="flex items-center gap-1 text-[11px] text-amber-200"><Server className="w-3 h-3" />Not offered on this server</p>}
                             </div>
                             {platform && (

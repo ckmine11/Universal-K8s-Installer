@@ -35,7 +35,7 @@ const writable = (cluster) => { const w = capabilities(cluster).helmApps; if (w?
 // the environment's CVE policy; only an admin may push past "block", with a reason
 function gateFor(req, cluster, namespace) {
     const policy = deliveryStore.environmentAt(cluster.orgId, cluster.id, namespace)?.cvePolicy
-    if (!policy || !features.isOn(cluster.orgId, 'cveGate')) return null
+    if (!policy || !features.usable(cluster.orgId, 'cveGate')) return null
     const why = String(req.body?.overrideCve || '').trim()
     return { policy, override: ['admin', 'superadmin'].includes(req.user.role) && why.length >= 3 ? why.slice(0, 200) : null }
 }

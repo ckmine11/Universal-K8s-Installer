@@ -8,10 +8,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { tempDataDir } from './helpers/server.js'
+import { tempDataDir, paidOrgs } from './helpers/server.js'
 
 const DATA = tempDataDir()
 process.env.KUBEEZ_DATA_DIR = DATA
+paidOrgs(DATA, ['org-h'])
 process.env.APP_SECRET ||= 'test-secret-test-secret-test-secret-123'
 const prevMode = process.env.KUBEEZ_MODE
 process.env.KUBEEZ_MODE = 'selfhosted'
