@@ -74,7 +74,7 @@ docker run --rm -v "$(pwd)/backend:/app" -w /app node:22-alpine \
 
 ### From the vendor portal (bound to a server)
 
-On a KubeEZ server that has `backend/scripts/vendor-keys/private.pem`, the platform owner opens **`/vendor-portal`**, enters the plan, limits, validity and the customer's **System ID**, and generates the key. The license works only on that server. (The portal's API, `POST /api/license/generate`, also takes an optional `maxMembers`.)
+On a KubeEZ server that has `backend/scripts/vendor-keys/private.pem`, the platform owner opens **`/vendor-portal`**, enters the plan, clusters, nodes, **team seats per workspace** (empty = no limit), validity and the customer's **System ID**, and generates the key. The license works only on that server. (The same fields go to `POST /api/license/generate`; `maxMembers` is optional.)
 
 The output is a long string starting with `eyJhbGciOiJSUzI1Ni…` — send it to the customer.
 

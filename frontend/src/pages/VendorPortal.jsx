@@ -10,7 +10,8 @@ export default function VendorPortal() {
     const { user } = useAuth()
     const navigate = useNavigate()
 
-    const [vendorForm, setVendorForm] = useState({ plan: 'ENTERPRISE', clusters: 50, nodes: 500, validityDays: 365, systemId: '' })
+    // members: team seats per workspace ('' = no limit)
+    const [vendorForm, setVendorForm] = useState({ plan: 'ENTERPRISE', clusters: 50, nodes: 500, members: '', validityDays: 365, systemId: '' })
     const [vendorToken, setVendorToken] = useState('')
     const [vendorGenerating, setVendorGenerating] = useState(false)
 
@@ -45,6 +46,7 @@ export default function VendorPortal() {
                     maxClusters: vendorForm.clusters,
                     maxNodes: vendorForm.nodes,
                     validityDays: vendorForm.validityDays,
+                    ...(vendorForm.members ? { maxMembers: vendorForm.members } : {}),
                     systemId: vendorForm.systemId.trim()
                 })
             })
@@ -113,6 +115,19 @@ export default function VendorPortal() {
                             onChange={e => setVendorForm(p => ({ ...p, nodes: parseInt(e.target.value) || 0 }))}
                             className="w-full bg-black/35 border border-white/5 focus:border-purple-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors"
                         />
+                    </div>
+                    <div>
+                        <label htmlFor="vendor-seats" className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Team seats per workspace</label>
+                        <input
+                            id="vendor-seats"
+                            type="number"
+                            min="1"
+                            placeholder="No limit"
+                            value={vendorForm.members}
+                            onChange={e => setVendorForm(p => ({ ...p, members: e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1) }))}
+                            className="w-full bg-black/35 border border-white/5 focus:border-purple-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors"
+                        />
+                        <p className="mt-1 text-[10px] text-slate-500">Leave empty for no limit.</p>
                     </div>
                     <div>
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Validity (Days)</label>
