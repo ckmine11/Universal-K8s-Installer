@@ -6,9 +6,11 @@ import { deliveryStore, checkFreeze } from '../services/deliveryStore.js'
 import { capabilities } from '../services/clusterAccess.js'
 import { auditLog } from '../services/auditLog.js'
 import { valuesOf, cleanDeploy, deploy, findJob, jobView, VERSION } from '../services/helmApps.js'
+import { leadTimes, cleanCommit } from '../services/leadTime.js'
 
 // The deploy webhook for CI (mounted at /api/hooks, no session — a deploy token):
-//   POST /api/hooks/deploy     Authorization: Bearer kzt_…   { set: { "image.tag": "1.4.2" }, version? }
+//   POST /api/hooks/deploy     Authorization: Bearer kzt_…   { set: { "image.tag": "1.4.2" }, version?, commit?: { sha, time } }
+//                              a commit makes the deploy count for DORA lead time once it succeeds
 //   GET  /api/hooks/jobs/:id   the job it started
 // The token decides everything else (cluster, namespace, release, repository,
 // chart, which values may change). Change freezes, protected environments and
@@ -40,13 +42,15 @@ router.post('/deploy', async (req, res) => {
         checkFreeze({ role: 'token' }, cluster, {})
         const version = req.body?.version ?? t.version
         if (version != null && !VERSION.test(String(version))) throw Object.assign(new Error('version is not valid'), { status: 400 })
+        const commit = cleanCommit(req.body?.commit)
         const repo = deliveryStore.repoCredentials(t.orgId, t.repoId)
         if (!repo) throw Object.assign(new Error('The chart repository of this token was removed'), { status: 409 })
         const d = cleanDeploy({ release: t.release, namespace: t.namespace, chart: t.chart, version }, repo)
         const values = applySet(await valuesOf(cluster, t.namespace, t.release), req.body?.set, t.allowedKeys)
         const what = `${t.namespace}/${t.release} ${t.chart}${version ? ` ${version}` : ''}${req.body?.set ? ` set ${Object.entries(req.body.set).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}`
         const j = await deploy(cluster, d, { by: `token:${t.name}`, values, gate: env?.cvePolicy && features.usable(t.orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null })
-        record(true, 202, `deploy ${what}`)
+        if (commit) j.promise?.then(() => { if (j.status === 'done') leadTimes.record(t.orgId, { clusterId: cluster.id, namespace: t.namespace, release: t.release, ...commit, deployedAt: j.finishedAt, by: `token:${t.name}` }) }).catch(() => { })
+        record(true, 202, `deploy ${what}${commit ? ` commit ${commit.sha.slice(0, 12)}` : ''}`)
         res.status(202).json(jobView(j))
     } catch (e) { record(false, e.status || 500, e.message.slice(0, 300)); fail(res, e) }
 })

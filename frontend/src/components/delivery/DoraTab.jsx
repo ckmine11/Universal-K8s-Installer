@@ -3,7 +3,8 @@ import { Gauge, RefreshCw, Loader2, AlertTriangle, Rocket, XCircle, Timer, GitCo
 import { apiFetch } from '../../context/AuthContext'
 
 // DORA delivery metrics of one cluster: deployment frequency, change failure
-// rate, recovery time (lead time needs Git — said so, not faked), a daily
+// rate, recovery time, lead time (only from deploys whose CI sent the commit
+// with the webhook — otherwise said so, not faked), a daily
 // chart of rollouts and the rollouts that failed.
 const WINDOWS = [7, 14, 30]
 // Elite / High / Medium / Low always shown as words, the colour only helps
@@ -103,7 +104,7 @@ export default function DoraTab({ clusterId }) {
     }, [clusterId, days, platform])
     useEffect(() => { load() }, [load])
 
-    const f = data?.frequency, cf = data?.changeFailure, rc = data?.recovery
+    const f = data?.frequency, cf = data?.changeFailure, rc = data?.recovery, lt = data?.leadTime
     return (
         <div className="space-y-5">
             <div className="kz-card p-5 space-y-4">
@@ -131,11 +132,16 @@ export default function DoraTab({ clusterId }) {
                                 sub={`${cf.failed} of ${cf.deploys} rollouts failed`} level={cf.level} empty={cf.tooFew ? 'too few rollouts to grade' : 'no rollouts'} />
                             <Tile Icon={Timer} title="Failed deployment recovery" value={dur(rc.medianMinutes)}
                                 sub={rc.measured ? `median of ${rc.measured}${rc.unrecovered ? ` · ${rc.unrecovered} not recovered yet` : ''}` : rc.unrecovered ? `${rc.unrecovered} not recovered yet` : 'no failed rollouts'} level={rc.level} empty="nothing to measure" />
-                            <div className="rounded-xl border border-dashed border-white/10 p-4 space-y-1.5">
-                                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400"><GitCommitHorizontal className="w-3.5 h-3.5" />Lead time for changes</p>
-                                <p className="text-2xl font-bold text-slate-500">—</p>
-                                <p className="text-[11px] text-slate-500">{data.leadTime.why}</p>
-                            </div>
+                            {lt.available ? (
+                                <Tile Icon={GitCommitHorizontal} title="Lead time for changes" value={dur(lt.medianMinutes)}
+                                    sub={`median of ${lt.changes} deploy${lt.changes === 1 ? '' : 's'} with a commit (commit → running)`} level={lt.level} />
+                            ) : (
+                                <div className="rounded-xl border border-dashed border-white/10 p-4 space-y-1.5">
+                                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400"><GitCommitHorizontal className="w-3.5 h-3.5" />Lead time for changes</p>
+                                    <p className="text-2xl font-bold text-slate-500">—</p>
+                                    <p className="text-[11px] text-slate-500">{lt.why}</p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">

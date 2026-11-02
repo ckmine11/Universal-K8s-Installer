@@ -7,6 +7,7 @@ import { clusterStore } from '../services/clusterStore.js'
 import { incidentDetector } from '../services/incidentDetector.js'
 import { readSecurity, summarizeSecurity } from '../services/security.js'
 import { readRollouts, computeDora } from '../services/dora.js'
+import { leadTimes } from '../services/leadTime.js'
 import { readCosts, DEFAULT_RATES } from '../services/costs.js'
 import { deliveryStore } from '../services/deliveryStore.js'
 
@@ -49,7 +50,8 @@ router.get('/:id/dora', requirePermission('metrics:view'), async (req, res) => {
         const rollouts = await withTimeout(readRollouts(cluster, { fresh: req.query.fresh === '1' }), 130e3, 'The cluster did not answer in time')
         const incidents = incidentDetector.getIncidents().filter(i => i.clusterId === cluster.id)
         const to = Date.now()
-        res.json({ ...computeDora({ rollouts, incidents, from: to - days * 86400e3, to, match: matcherFor(req.user, cluster), platform: req.query.platform === '1' }), days, platform: req.query.platform === '1' })
+        const changes = leadTimes.forCluster(cluster.orgId, cluster.id)
+        res.json({ ...computeDora({ rollouts, incidents, changes, from: to - days * 86400e3, to, match: matcherFor(req.user, cluster), platform: req.query.platform === '1' }), days, platform: req.query.platform === '1' })
     } catch (e) { fail(res, e) }
 })
 

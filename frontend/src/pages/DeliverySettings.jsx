@@ -234,7 +234,8 @@ export default function DeliverySettings() {
                         <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/[0.05] p-3 text-[11px] space-y-1.5">
                             <p className="text-emerald-100 font-semibold">Copy it now — it is not shown again.</p>
                             <code className="block font-mono text-slate-200 break-all">{newToken}</code>
-                            <pre className="whitespace-pre-wrap font-mono text-slate-400">{`curl -fsS -X POST ${window.location.origin}/api/hooks/deploy \\\n  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" \\\n  -d '{"set": {"image.tag": "'"$GIT_SHA"'"}}'`}</pre>
+                            <pre className="whitespace-pre-wrap font-mono text-slate-400">{`curl -fsS -X POST ${window.location.origin}/api/hooks/deploy \\\n  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" \\\n  -d '{"set": {"image.tag": "'"$GIT_SHA"'"}, "commit": {"sha": "'"$GIT_SHA"'", "time": "'"$(git log -1 --format=%cI)"'"}}'`}</pre>
+                            <p className="text-slate-500">The commit is optional — with it, each deploy counts for the DORA lead time (commit → running).</p>
                         </div>
                     )}
                     <ul className="space-y-1.5">{tokens.map(t => (

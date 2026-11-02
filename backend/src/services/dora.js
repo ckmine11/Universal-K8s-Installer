@@ -7,7 +7,8 @@
 //                          incident on that workload (crash loop, image pull…)
 //   recovery time          from that rollout until its incident closed or the
 //                          next rollout replaced it
-//   lead time for changes  needs commit times from Git — not measured yet
+//   lead time for changes  commit → running, for deploys whose CI sent the
+//                          commit with the deploy webhook (services/leadTime.js)
 // Kubernetes keeps ~10 old ReplicaSets per Deployment and KubeEZ keeps
 // incidents for 7 days, so long windows count what is still there.
 const KUBECTL = 'sudo KUBECONFIG=/etc/kubernetes/admin.conf timeout 60 kubectl'
@@ -95,6 +96,7 @@ export function levelOf(metric, v) {
     if (v == null) return null
     if (metric === 'frequency') return v >= 1 ? 'elite' : v >= 1 / 7 ? 'high' : v >= 1 / 30 ? 'medium' : 'low'          // deploys per day
     if (metric === 'failure') return v <= 5 ? 'elite' : v <= 10 ? 'high' : v <= 15 ? 'medium' : 'low'                    // %
+    if (metric === 'lead') return v < 24 * 60 ? 'elite' : v < 7 * 24 * 60 ? 'high' : v < 30 * 24 * 60 ? 'medium' : 'low'  // minutes
     if (metric === 'recovery') return v < 60 ? 'elite' : v < 24 * 60 ? 'high' : v < 7 * 24 * 60 ? 'medium' : 'low'      // minutes
     return null
 }
@@ -105,10 +107,11 @@ const MIN_FOR_RATE = 5
 /**
  * The four keys for one cluster between from and to (ms).
  * incidents: KubeEZ's incidents of this cluster (open and closed).
+ * changes: deploys with their commit ({ namespace, release, sha, commitAt, deployedAt }).
  * match(ns): namespaces the member may see (null = all); platform: include
  * Kubernetes' and the add-ons' own namespaces.
  */
-export function computeDora({ rollouts, incidents = [], from, to = Date.now(), match = null, platform = false }) {
+export function computeDora({ rollouts, incidents = [], changes = [], from, to = Date.now(), match = null, platform = false }) {
     const mine = (ns) => (platform || !PLATFORM_NS.test(ns)) && (!match || match(ns))
     const all = rollouts.filter(r => mine(r.namespace))
     const nextOf = new Map()
@@ -148,6 +151,14 @@ export function computeDora({ rollouts, incidents = [], from, to = Date.now(), m
     const closed = incidents.filter(i => ['resolved', 'cleared'].includes(i.status) && ms(i.closedAt) != null && ms(i.closedAt) >= from && ms(i.closedAt) <= to && (!i.namespace || mine(i.namespace)))
     const mttr = median(closed.map(i => (ms(i.closedAt) - ms(i.timestamp)) / 60e3).filter(v => v >= 0))
 
+    const inWindow = changes.filter(c => ms(c.deployedAt) >= from && ms(c.deployedAt) <= to && mine(c.namespace))
+    const leadOf = (c) => (ms(c.deployedAt) - ms(c.commitAt)) / 60e3
+    const leads = inWindow.map(leadOf).filter(v => v >= 0)
+    const lead = median(leads)
+    const leadTime = leads.length
+        ? { available: true, medianMinutes: Math.round(lead), changes: leads.length, level: levelOf('lead', lead), recent: inWindow.slice(-10).reverse().map(c => ({ namespace: c.namespace, release: c.release, sha: c.sha.slice(0, 12), minutes: Math.round(leadOf(c)), deployedAt: c.deployedAt })) }
+        : { available: false, why: 'Send the commit with the deploy webhook ("commit": { "sha", "time" }) and each deploy counts.' }
+
     const daily = []
     for (let t = Date.parse(`${day(from)}T00:00:00Z`); t <= to; t += 86400e3) daily.push({ date: day(t), deploys: 0, failed: 0 })
     const idx = new Map(daily.map((d, i) => [d.date, i]))
@@ -167,7 +178,7 @@ export function computeDora({ rollouts, incidents = [], from, to = Date.now(), m
         changeFailure: { failed: failed.length, deploys: deploys.length, percent: rate, level: deploys.length >= MIN_FOR_RATE ? levelOf('failure', rate) : null, tooFew: deploys.length < MIN_FOR_RATE },
         recovery: { medianMinutes: recovery != null ? Math.round(recovery) : null, measured: recovered.length, unrecovered: failed.length - recovered.length, level: levelOf('recovery', recovery) },
         incidentRestore: { medianMinutes: mttr != null ? Math.round(mttr) : null, incidents: closed.length },
-        leadTime: { available: false, why: 'Needs the commit time of each change (Git) — comes with deploying through KubeEZ.' },
+        leadTime,
         daily,
         workloads: [...workloads.values()].sort((a, b) => b.deploys - a.deploys || a.name.localeCompare(b.name)).slice(0, 25),
         failures: [...failed].reverse().slice(0, 25),

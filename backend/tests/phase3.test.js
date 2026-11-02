@@ -274,6 +274,14 @@ describe('API: webhook, tokens, operations — who may do what', () => {
         assert.deepEqual(JSON.parse(up.stdin), { image: { tag: '2.0', repository: 'acme/web' }, replicas: 2 }, 'the live values with only image.tag changed')
         const j = await call(null, 'GET', `/api/hooks/jobs/${d.data.id}`, null, { authorization: `Bearer ${token}` })
         assert.equal(j.data.status, 'done')
+        // a commit with the deploy → DORA lead time once it succeeded; a bad one is refused before anything runs
+        assert.equal((await hook(token, { set: { 'image.tag': '2.0' }, commit: { sha: 'not-a-sha', time: '2026-10-30T10:00:00Z' } })).status, 400)
+        const sha = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', time = new Date(Date.now() - 90 * 60e3).toISOString()
+        const dc = await hook(token, { set: { 'image.tag': '2.0' }, commit: { sha, time } })
+        assert.equal(dc.status, 202, JSON.stringify(dc.data)); await wait(dc.data.id)
+        const { leadTimes } = await import('../src/services/leadTime.js')
+        const lt = leadTimes.forCluster('org-p', 'p1')
+        assert.equal(lt.length, 1); assert.equal(lt[0].sha, sha); assert.equal(lt[0].release, 'web'); assert.equal(lt[0].namespace, 'dev'); assert.equal(lt[0].commitAt, time)
         // a second token for another release cannot read that job
         const other = (await call('admin', 'POST', '/api/delivery/tokens', { ...body, name: 'ci api dev', release: 'api' })).data.token
         assert.equal((await call(null, 'GET', `/api/hooks/jobs/${d.data.id}`, null, { authorization: `Bearer ${other}` })).status, 404)
