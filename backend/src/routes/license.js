@@ -102,7 +102,7 @@ router.post('/license/generate', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'Vendor access required to generate licenses.' })
         }
 
-        const { plan, maxClusters, maxNodes, validityDays, systemId } = req.body
+        const { plan, maxClusters, maxNodes, validityDays, systemId, maxMembers } = req.body
         
         if (!plan || !maxClusters || !maxNodes || !validityDays || !systemId) {
             return res.status(400).json({ error: 'Missing required parameters.' })
@@ -113,7 +113,9 @@ router.post('/license/generate', requireAuth, async (req, res) => {
             parseInt(maxClusters), 
             parseInt(maxNodes), 
             parseInt(validityDays),
-            systemId
+            systemId,
+            // optional: team seats per workspace (empty = no limit)
+            Number.isInteger(parseInt(maxMembers)) && parseInt(maxMembers) > 0 ? parseInt(maxMembers) : null
         )
 
         res.json({

@@ -50,9 +50,8 @@ Everything since 2.2.0 (about 250 changes). The built-in guide (Help → Docs) d
 ### Fixed
 - `docker-compose.prod.yml` now passes `OIDC_*`, `KUBEEZ_FEATURES*`, `KUBEEZ_ALLOW_PRIVATE_SSH`, `ALERT_EMAILS_PER_DAY_*` and `AUDIT_RETENTION_DAYS` from `.env` to the backend — before, those settings had no effect in Docker.
 - `docker-compose.yml` (development) takes `KUBEEZ_MODE` and `APP_SECRET` from `.env` instead of always running in SaaS mode.
-
-### Known issue
-- On self-hosted servers a license key raises the cluster and node limits but does not change the workspace's feature plan: Pro features fully work only for the platform owner, and Pro background checks stay off (see LICENSING_GUIDE.md).
+- **Self-hosted licenses now set the plan.** An active license gives every workspace on the server its plan (Enterprise for `ENTERPRISE…` licenses, Pro for any other) — features including their background checks, backups, compliance reports, custom roles, approvals and alert channels — and its team seats (`maxMembers`, or no limit). Before, a license only raised the cluster and node limits, so Pro features worked only for the platform owner and Pro background checks never ran. Expired, foreign-signed or other-server licenses fall back to Free at once.
+- License generator and vendor portal accept an optional seat count (`maxMembers`); the team page shows "∞" when there is no limit.
 
 ### Not yet verified
 - Features added on 2026-10-30 and later are covered by automated tests with simulated clusters, registries and Git providers; they have not been run against real clusters yet.

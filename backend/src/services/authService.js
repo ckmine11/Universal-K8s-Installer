@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { DATA_DIR } from '../utils/paths.js';
 import { writeFileAtomicSync } from '../utils/atomicWrite.js'
+import { licensedPlan } from './licensePlan.js'
 
 dotenv.config();
 
@@ -272,10 +273,9 @@ class AuthService {
         }
 
         // Enforce the plan's team-member seat limit (counts ALL users in the org)
-        const orgAdmin = this.getOrgOwner(adminOrgId)
-        const maxMembers = orgAdmin?.subscription?.maxMembers ?? 1
+        const maxMembers = this.seatLimit(adminOrgId)
         const currentCount = this.users.filter(u => u.orgId === adminOrgId).length
-        if (currentCount >= maxMembers) {
+        if (maxMembers != null && currentCount >= maxMembers) {
             throw new Error(`Team seat limit reached (${maxMembers}). Upgrade your plan to add more members.`)
         }
 
@@ -452,7 +452,18 @@ class AuthService {
     }
 
     getOrgPlan(orgId) {
-        return String(this.getOrgOwner(orgId)?.subscription?.plan || 'FREE').toUpperCase()
+        const own = String(this.getOrgOwner(orgId)?.subscription?.plan || 'FREE').toUpperCase()
+        // self-hosted: an active license gives every workspace its plan (never less than its own)
+        const lic = licensedPlan()
+        if (!lic) return own
+        return own === 'ENTERPRISE' || lic.plan === 'ENTERPRISE' ? 'ENTERPRISE' : lic.plan
+    }
+
+    /** Team seats of a workspace: the license's (self-hosted, null = no limit), else the owner's subscription. */
+    seatLimit(orgId) {
+        const lic = licensedPlan()
+        if (lic) return lic.maxMembers
+        return this.getOrgOwner(orgId)?.subscription?.maxMembers ?? 1
     }
 
     getUsersByOrgId(orgId) {

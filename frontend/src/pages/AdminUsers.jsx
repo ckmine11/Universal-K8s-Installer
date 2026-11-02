@@ -498,7 +498,8 @@ export default function AdminUsers() {
         } catch (e) { toast({ title: 'Access review', message: e.message, type: 'error' }) }
     }
 
-    const seatsFull = seats.used >= seats.max
+    // max null = no seat limit (a self-hosted license)
+    const seatsFull = seats.max != null && seats.used >= seats.max
     const filtered = users.filter(u => {
         const matchSearch = u.username.toLowerCase().includes(search.toLowerCase())
         const matchRole = filterRole === 'all' || (filterRole === 'custom' ? u.role.startsWith('custom:') : u.role === filterRole)
@@ -546,7 +547,7 @@ export default function AdminUsers() {
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 {[
-                    { label: 'Seats used', value: <>{seats.used}<span className="text-lg text-slate-600">/{seats.max}</span></>, color: seatsFull ? 'text-amber-400' : 'text-white' },
+                    { label: 'Seats used', value: <>{seats.used}<span className="text-lg text-slate-600">/{seats.max ?? '∞'}</span></>, color: seatsFull ? 'text-amber-400' : 'text-white' },
                     { label: 'Admins', value: adminCount, color: 'text-amber-400' },
                     { label: 'Operators & viewers', value: builtinOthers, color: 'text-blue-300' },
                     { label: 'Custom roles · cluster rules', value: <>{customCount}<span className="text-lg text-slate-600"> · {withRules}</span></>, color: 'text-sky-300' },

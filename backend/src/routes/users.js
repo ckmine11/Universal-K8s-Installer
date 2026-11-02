@@ -117,9 +117,8 @@ router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
             createdAt: u.createdAt
         }))
         // Seat usage so the UI can show "3 / 5 seats used"
-        const orgAdmin = authService.getOrgOwner(req.user.orgId)
-        const maxMembers = orgAdmin?.subscription?.maxMembers ?? 1
-        res.json({ users, seats: { used: users.length, max: maxMembers } })
+        // max null = no limit (a self-hosted license without a seat count)
+        res.json({ users, seats: { used: users.length, max: authService.seatLimit(req.user.orgId) } })
     } catch (err) {
         res.status(500).json({ error: err.message })
     }

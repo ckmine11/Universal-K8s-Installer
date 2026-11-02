@@ -47,7 +47,7 @@ function generateKeys() {
 }
 
 // 2. Generate a License JWT
-function createLicense(plan, maxClusters, maxNodes, validityDays) {
+function createLicense(plan, maxClusters, maxNodes, validityDays, maxMembers) {
     if (!fs.existsSync(PRIVATE_KEY_PATH)) {
         console.error('❌ Private key not found! Run with "generate-keys" first.');
         process.exit(1);
@@ -60,6 +60,7 @@ function createLicense(plan, maxClusters, maxNodes, validityDays) {
         plan,
         maxClusters,
         maxNodes,
+        ...(maxMembers ? { maxMembers } : {}),   // team seats per workspace (none = no limit)
         issuer: 'KubeEZ-Vendor',
         issuedAt: new Date().toISOString()
     };
@@ -92,7 +93,8 @@ if (command === 'generate-keys') {
     const clusters = parseInt(process.argv[4] || '5', 10);
     const nodes = parseInt(process.argv[5] || '25', 10);
     const days = parseInt(process.argv[6] || '365', 10);
-    createLicense(plan, clusters, nodes, days);
+    const members = process.argv[7] ? parseInt(process.argv[7], 10) : null;
+    createLicense(plan, clusters, nodes, days, members);
 } else {
     console.log(`
 KubeEZ Enterprise License Generator
@@ -103,7 +105,7 @@ Usage:
    node license-generator.js generate-keys
 
 2. Create a License Key:
-   node license-generator.js create-license [PLAN] [MAX_CLUSTERS] [MAX_NODES] [VALIDITY_DAYS]
+   node license-generator.js create-license [PLAN] [MAX_CLUSTERS] [MAX_NODES] [VALIDITY_DAYS] [MAX_MEMBERS (optional, default: no limit)]
 
 Examples:
    node license-generator.js create-license ENTERPRISE 50 500 365

@@ -175,6 +175,9 @@ class LicenseService {
             }
 
             await writeFileAtomic(LICENSE_FILE, JSON.stringify(payload, null, 2))
+            // every workspace gets the new plan right away (services/licensePlan.js)
+            const { forgetLicensePlan } = await import('./licensePlan.js')
+            forgetLicensePlan()
             return {
                 plan: parsed.plan,
                 maxClusters: parsed.maxClusters,
@@ -189,7 +192,7 @@ class LicenseService {
         }
     }
 
-    generateLicense(plan, maxClusters, maxNodes, validityDays, systemId) {
+    generateLicense(plan, maxClusters, maxNodes, validityDays, systemId, maxMembers = null) {
         const privateKeyPath = path.join(__dirname, '../../scripts/vendor-keys/private.pem')
         
         if (!fs.existsSync(privateKeyPath)) {
@@ -202,6 +205,7 @@ class LicenseService {
             plan,
             maxClusters,
             maxNodes,
+            ...(maxMembers ? { maxMembers } : {}),   // team seats per workspace (none = no limit)
             systemId,
             issuer: 'KubeEZ-Vendor',
             issuedAt: new Date().toISOString()

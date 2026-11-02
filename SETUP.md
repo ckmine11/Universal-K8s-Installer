@@ -92,7 +92,7 @@ docker compose -f docker-compose.prod.yml restart backend
 
 ### Self-hosted: license
 
-Without a license a self-hosted server allows 1 cluster and 2 nodes. The license key raises those **cluster and node limits**; the platform owner (the first user, who is `superadmin`) pastes it under **Settings → Activate License Key**. The server needs the vendor's public key at `backend/data/public.pem` to verify it. Which **features** a workspace may use follows its owner's subscription plan, not the license — see [LICENSING_GUIDE.md](LICENSING_GUIDE.md).
+Without a license a self-hosted server is on the Free plan: 1 cluster, 2 nodes, 1 team member. A license key sets the cluster and node limits and gives **every workspace on the server its plan** (Pro, or Enterprise) and its team seats. The platform owner (the first user, who is `superadmin`) pastes it under **Settings → Activate License Key**; the server needs the vendor's public key at `backend/data/public.pem` to verify it. See [LICENSING_GUIDE.md](LICENSING_GUIDE.md).
 
 ### Update
 

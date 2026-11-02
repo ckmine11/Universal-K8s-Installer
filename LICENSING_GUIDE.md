@@ -6,14 +6,15 @@
 
 ## 1. What a license does — and does not do
 
-| | Controlled by |
-|---|---|
-| **How many clusters and nodes** the self-hosted server may manage | **The license** (instance-wide) |
-| **Which features** a workspace may use (Free vs Pro / Enterprise features) | The workspace owner's **subscription plan**, not the license |
+A license is **instance-wide**: while it is active, it applies to every workspace on the server.
 
-Without a license a self-hosted server allows **1 cluster and 2 nodes**. An expired license blocks deploying and scaling until a valid one is activated (clusters keep running).
+| | With an active license | Without one |
+|---|---|---|
+| Clusters and nodes the server may manage | the license's `maxClusters` / `maxNodes` | 1 cluster, 2 nodes |
+| Plan of every workspace — features (also background checks such as GitOps, CVE and certificate alerts, Helm drift), backups, compliance reports, custom roles, approvals, all alert channels | **Enterprise** for a license named `ENTERPRISE…`, otherwise **Pro** (`PRO`, `EVALUATION`, `TRIAL`…) | the workspace owner's own plan (Free) |
+| Team seats per workspace | the license's `maxMembers`, or **no limit** when it has none | 1 |
 
-> **Known gap:** activating a license does not change the workspace's subscription plan. On a self-hosted server the platform owner (`superadmin`) passes every plan check, but other members — and Pro background checks such as GitOps alerts, CVE alerts, Helm drift and certificate alerts — follow the owner's plan, which is Free by default. Until this is fixed, self-hosted Pro features fully work only for the platform owner.
+A workspace whose own plan is higher (Enterprise) keeps it. When the license expires, is signed by another key or is bound to another server, the server falls back to the "without" column at once — clusters keep running, but deploying and scaling are blocked until a valid license is activated. The plan is re-checked at least every minute, so activating takes effect immediately.
 
 ---
 
@@ -24,7 +25,7 @@ Without a license a self-hosted server allows **1 cluster and 2 nodes**. An expi
 - Each KubeEZ server verifies a license **offline** with the vendor's public key at `backend/data/public.pem` (inside the container: `/app/data/public.pem`).
 - A license may be **bound to one server** by its **System ID** (shown under **Settings → License Status**). A bound license is refused on any other server.
 
-A license carries: `plan` (a name such as `PRO`, `ENTERPRISE`, `EVALUATION`), `maxClusters`, `maxNodes`, an expiry, and optionally `systemId`.
+A license carries: `plan` (a name such as `PRO`, `ENTERPRISE`, `EVALUATION`), `maxClusters`, `maxNodes`, an expiry, and optionally `maxMembers` (team seats per workspace) and `systemId`.
 
 ---
 
@@ -53,13 +54,14 @@ Without it, activation answers "Missing Public Key for License Verification".
 ### From the command line
 
 ```bash
-node scripts/license-generator.js create-license <PLAN> <MAX_CLUSTERS> <MAX_NODES> <VALIDITY_DAYS>
+node scripts/license-generator.js create-license <PLAN> <MAX_CLUSTERS> <MAX_NODES> <VALIDITY_DAYS> [MAX_MEMBERS]
 
-node scripts/license-generator.js create-license ENTERPRISE 50 500 365   # 1 year, 50 clusters, 500 nodes
-node scripts/license-generator.js create-license EVALUATION 2 10 30      # 30-day evaluation
+node scripts/license-generator.js create-license ENTERPRISE 50 500 365      # 1 year, 50 clusters, 500 nodes, no seat limit
+node scripts/license-generator.js create-license PRO 5 25 365 10            # 10 team members per workspace
+node scripts/license-generator.js create-license EVALUATION 2 10 30         # 30-day evaluation (Pro features)
 ```
 
-Defaults: `PRO 5 25 365`. Licenses from the command line are **not bound** to a System ID.
+Defaults: `PRO 5 25 365`, no seat limit. Licenses from the command line are **not bound** to a System ID.
 
 Without Node.js on your machine:
 
@@ -72,7 +74,7 @@ docker run --rm -v "$(pwd)/backend:/app" -w /app node:22-alpine \
 
 ### From the vendor portal (bound to a server)
 
-On a KubeEZ server that has `backend/scripts/vendor-keys/private.pem`, the platform owner opens **`/vendor-portal`**, enters the plan, limits, validity and the customer's **System ID**, and generates the key. The license works only on that server.
+On a KubeEZ server that has `backend/scripts/vendor-keys/private.pem`, the platform owner opens **`/vendor-portal`**, enters the plan, limits, validity and the customer's **System ID**, and generates the key. The license works only on that server. (The portal's API, `POST /api/license/generate`, also takes an optional `maxMembers`.)
 
 The output is a long string starting with `eyJhbGciOiJSUzI1Ni…` — send it to the customer.
 
