@@ -1,467 +1,130 @@
-# 🚀 Real Kubernetes Installation - Complete Guide
+# Your First Real Cluster — Preparing Servers
 
-## ✅ **Your Code is 100% Ready for Real Installation!**
-
----
-
-## 🎯 **What You Need:**
-
-### **Minimum Requirements:**
-- **3 Linux Machines** (Physical or Virtual)
-- **SSH Access** (Username/Password or SSH Key)
-- **Internet Connection** on all machines
+*Version 2.3.0 · November 2026.* How to get servers ready (local VMs, cloud VMs or your own hardware) and install a real Kubernetes cluster on them with KubeEZ, end to end.
 
 ---
 
-## 📋 **Quick Setup Options:**
+## 1. What you need
 
-### **Option 1: VirtualBox (FREE - Recommended for Testing)**
+| | Minimum | Better |
+|---|---|---|
+| Servers | 1 (control-plane that also runs apps) | 1 control-plane + 2 workers, or 3 control-planes for high availability |
+| Control-plane | 2 vCPU, 4 GB RAM, 20 GB disk | 4 vCPU, 8 GB RAM |
+| Worker | 2 vCPU, 2 GB RAM, 20 GB disk | sized for your apps and add-ons |
+| OS | Ubuntu 22.04 / 24.04, Debian 12, Rocky 9, Alma 9, Fedora, Amazon Linux 2023, RHEL 8 / 9 | the same OS on every server |
+| Login | root, or a sudo user (see [SUDO_SETUP.md](SUDO_SETUP.md)), over SSH | SSH keys |
+| Network | servers reach each other; outbound HTTPS for images | a fixed IP per server |
 
-#### **Step 1: Install VirtualBox**
-```powershell
-# Download from: https://www.virtualbox.org/wiki/Downloads
-# Install VirtualBox on your Windows machine
-```
-
-#### **Step 2: Download Ubuntu ISO**
-```
-https://ubuntu.com/download/server
-Download: Ubuntu 22.04 LTS Server
-```
-
-#### **Step 3: Create 3 VMs**
-
-**VM 1 - Master Node:**
-```
-Name: k8s-master
-RAM: 4096 MB (4GB)
-CPU: 2 cores
-Disk: 20 GB
-Network: Bridged Adapter (to get real IP)
-ISO: Ubuntu 22.04 Server
-```
-
-**VM 2 - Worker Node 1:**
-```
-Name: k8s-worker1
-RAM: 4096 MB (4GB)
-CPU: 2 cores
-Disk: 20 GB
-Network: Bridged Adapter
-ISO: Ubuntu 22.04 Server
-```
-
-**VM 3 - Worker Node 2:**
-```
-Name: k8s-worker2
-RAM: 4096 MB (4GB)
-CPU: 2 cores
-Disk: 20 GB
-Network: Bridged Adapter
-ISO: Ubuntu 22.04 Server
-```
-
-#### **Step 4: Install Ubuntu on Each VM**
-
-```bash
-# During installation:
-1. Select "Ubuntu Server"
-2. Configure network (DHCP is fine)
-3. Create user: ubuntu
-4. Set password: ubuntu123 (or your choice)
-5. Install OpenSSH server: YES ✓
-6. No additional packages needed
-7. Reboot after installation
-```
-
-#### **Step 5: Configure Each VM**
-
-**Login to each VM and run:**
-
-```bash
-# Update system
-sudo apt-get update
-sudo apt-get upgrade -y
-
-# Install SSH server (if not installed)
-sudo apt-get install -y openssh-server
-
-# Enable SSH
-sudo systemctl enable ssh
-sudo systemctl start ssh
-
-# Check IP address
-ip addr show
-
-# Example output:
-# inet 192.168.1.100/24  <- This is your IP
-```
-
-#### **Step 6: Note Down IPs**
-
-```
-Master:  192.168.1.100 (your actual IP)
-Worker1: 192.168.1.101 (your actual IP)
-Worker2: 192.168.1.102 (your actual IP)
-```
-
-#### **Step 7: Test SSH from Windows**
-
-```powershell
-# From Windows PowerShell
-ssh ubuntu@192.168.1.100
-# Enter password: ubuntu123
-# If connected successfully, you're ready!
-```
+KubeEZ prepares the rest itself: firewall ports, kernel modules and settings, swap off, containerd, kubeadm and the network plugin.
 
 ---
 
-### **Option 2: AWS EC2 (Cloud - Costs Money)**
+## 2. Where to get servers
 
-#### **Step 1: Create AWS Account**
-```
-https://aws.amazon.com/free/
-Sign up for free tier
-```
+### A. Local virtual machines (free, for learning)
 
-#### **Step 2: Launch 3 EC2 Instances**
+**VirtualBox, VMware or Hyper-V:** create the VMs with a **bridged** network adapter (so they get addresses on your LAN), install Ubuntu Server 22.04 with **OpenSSH server**, and note each VM's IP (`ip -4 addr`).
 
-```
-Instance Type: t2.medium (2 vCPU, 4GB RAM)
-AMI: Ubuntu Server 22.04 LTS
-Storage: 20 GB gp3
-Security Group: 
-  - SSH (22) from My IP
-  - Custom TCP (6443) from Anywhere (for K8s API)
-  - All Traffic between instances
-Key Pair: Create new or use existing
-```
-
-#### **Step 3: Get Instance Details**
-
-```
-Master:  ec2-xx-xx-xx-xx.compute.amazonaws.com
-Worker1: ec2-yy-yy-yy-yy.compute.amazonaws.com
-Worker2: ec2-zz-zz-zz-zz.compute.amazonaws.com
-
-SSH Key: your-key.pem
-Username: ubuntu
-```
-
-#### **Step 4: Test SSH**
-
-```powershell
-# From Windows PowerShell
-ssh -i "your-key.pem" ubuntu@ec2-xx-xx-xx-xx.compute.amazonaws.com
-```
-
----
-
-### **Option 3: Vagrant (Easy Automation)**
-
-#### **Step 1: Install Vagrant & VirtualBox**
-```powershell
-# Download Vagrant: https://www.vagrantup.com/downloads
-# Download VirtualBox: https://www.virtualbox.org/
-```
-
-#### **Step 2: Create Vagrantfile**
-
-Create file: `C:\Users\Joy\vagrant-k8s\Vagrantfile`
+**Vagrant** (VirtualBox underneath) creates them in one command. `Vagrantfile`:
 
 ```ruby
 Vagrant.configure("2") do |config|
-  # Master Node
-  config.vm.define "master" do |master|
-    master.vm.box = "ubuntu/jammy64"
-    master.vm.hostname = "k8s-master"
-    master.vm.network "private_network", ip: "192.168.56.10"
-    master.vm.provider "virtualbox" do |vb|
-      vb.memory = "4096"
-      vb.cpus = 2
-    end
-  end
-
-  # Worker Node 1
-  config.vm.define "worker1" do |worker|
-    worker.vm.box = "ubuntu/jammy64"
-    worker.vm.hostname = "k8s-worker1"
-    worker.vm.network "private_network", ip: "192.168.56.11"
-    worker.vm.provider "virtualbox" do |vb|
-      vb.memory = "4096"
-      vb.cpus = 2
-    end
-  end
-
-  # Worker Node 2
-  config.vm.define "worker2" do |worker|
-    worker.vm.box = "ubuntu/jammy64"
-    worker.vm.hostname = "k8s-worker2"
-    worker.vm.network "private_network", ip: "192.168.56.12"
-    worker.vm.provider "virtualbox" do |vb|
-      vb.memory = "4096"
-      vb.cpus = 2
+  config.vm.box = "ubuntu/jammy64"
+  { "cp1" => "192.168.56.10", "worker1" => "192.168.56.11", "worker2" => "192.168.56.12" }.each do |name, ip|
+    config.vm.define name do |n|
+      n.vm.hostname = name
+      n.vm.network "private_network", ip: ip
+      n.vm.provider "virtualbox" do |vb|
+        vb.cpus = 2
+        vb.memory = name == "cp1" ? 4096 : 2048
+      end
+      # allow password login for KubeEZ (lab only)
+      n.vm.provision "shell", inline: "echo 'vagrant:vagrant' | chpasswd && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null; systemctl restart ssh"
     end
   end
 end
 ```
 
-#### **Step 3: Start VMs**
-
-```powershell
-cd C:\Users\Joy\vagrant-k8s
-vagrant up
+```bash
+vagrant up        # user: vagrant / password: vagrant (lab only)
 ```
 
-#### **Step 4: Get SSH Details**
+KubeEZ must be able to reach those addresses. A host-only network (`192.168.56.x`) is usually reachable from KubeEZ running on the same machine; if not, use a bridged network or install a **Gateway Agent** on the host.
 
-```powershell
-vagrant ssh-config
+### B. Cloud virtual machines
 
-# Output will show:
-# Host master
-#   HostName 127.0.0.1
-#   User vagrant
-#   Port 2222
-#   IdentityFile C:/Users/Joy/vagrant-k8s/.vagrant/...
-```
+Any cloud (AWS EC2, Azure, GCP, Oracle, DigitalOcean, Hetzner…): Ubuntu 22.04, 2 vCPU / 4 GB for the control-plane, 20 GB disk, all servers in **one private network / VPC**.
 
-**For KubeEZ, use:**
-```
-Master IP: 192.168.56.10
-Worker1 IP: 192.168.56.11
-Worker2 IP: 192.168.56.12
-Username: vagrant
-Password: vagrant
-```
+Firewall (security group) rules:
+
+| From | To | Ports |
+|---|---|---|
+| KubeEZ server (or your IP) | every node | TCP 22 (SSH) |
+| the cluster's own nodes | each other | **all traffic** (simplest: a rule allowing the security group itself) |
+| you / your apps | control-plane | TCP 6443 (Kubernetes API, kubectl) |
+| the internet | workers | TCP 30000–32767 (NodePort apps), or 80 / 443 for an ingress |
+
+With SSH keys: paste or import the private key in the wizard (a `.pem` file works), user `ubuntu` (Ubuntu images), `ec2-user` (Amazon Linux) or `rocky` / `almalinux`.
+
+> **High availability in the cloud:** KubeEZ's virtual IP (kube-vip) moves between control-planes with ARP, which most cloud networks do not allow. In a cloud, use one control-plane, or test HA on your own network / VMs.
+
+### C. Your own servers
+
+Bare metal or VMs on your LAN: same requirements. For high availability, pick a **free IP in the same network** as the control-planes, outside the DHCP range, for the virtual IP.
 
 ---
 
-## 🎯 **Using KubeEZ with Real Nodes:**
+## 3. Check each server
 
-### **Step 1: Open KubeEZ**
-```
-http://localhost:5173
-```
+From the machine that runs KubeEZ:
 
-### **Step 2: Configure Cluster (Step 1)**
-```
-Cluster Name: my-real-cluster
-Kubernetes Version: v1.28.0
-Network Plugin: Calico
+```bash
+ssh <user>@<server-ip> 'cat /etc/os-release | head -2; nproc; free -g | head -2; df -h / | tail -1; sudo -n true && echo sudo-ok'
 ```
 
-### **Step 3: Add Real Nodes (Step 2)**
+If SSH is refused, the server has no SSH service:
 
-**Master Node:**
-```
-IP: 192.168.1.100 (your actual VM IP)
-Username: ubuntu
-Password: ubuntu123
+```bash
+sudo apt-get update && sudo apt-get install -y openssh-server && sudo systemctl enable --now ssh
 ```
 
-**Worker Node 1:**
-```
-IP: 192.168.1.101
-Username: ubuntu
-Password: ubuntu123
-```
-
-**Worker Node 2:**
-```
-IP: 192.168.1.102
-Username: ubuntu
-Password: ubuntu123
-```
-
-### **Step 4: Verify Each Node**
-
-Click **"Verify"** button on each node.
-
-**You'll see REAL verification:**
-```
-[INFO] Checking SSH connectivity to master node: 192.168.1.100
-[SUCCESS] ✓ Connected to master node: 192.168.1.100 (ubuntu)
-[INFO] Running pre-flight checks on master node: 192.168.1.100
-[INFO] Checking OS compatibility...
-[INFO] ID=ubuntu
-[INFO] VERSION_ID="22.04"
-[INFO] ✓ OS is compatible (Ubuntu 22.04)
-[INFO] Checking CPU count...
-[INFO] 2
-[INFO] ✓ CPU count is sufficient (2 cores)
-[INFO] Checking memory...
-[INFO] total        used        free
-[INFO] Mem:          3.8Gi       0.5Gi       3.0Gi
-[INFO] ✓ Memory is sufficient (3.8GB)
-[SUCCESS] ✓ Pre-flight checks passed for 192.168.1.100
-```
-
-### **Step 5: Select Add-ons (Step 3)**
-```
-✓ Ingress Controller
-✓ Kubernetes Dashboard
-□ Monitoring (optional)
-□ Logging (optional)
-```
-
-### **Step 6: Review & Install (Step 4)**
-
-Click **"Install Cluster"**
-
-**Deployment Plan will show:**
-```
-Phase 1: Pre-flight Checks (2-3 min)
-Phase 2: Install Container Runtime (3-5 min)
-  Node: 192.168.1.100 [Ubuntu 22.04.3 LTS]
-  → Update apt package index
-  → Add Docker GPG key
-  → Install containerd
-  ...
-Phase 3: Install Kubernetes (4-6 min)
-  ...
-```
-
-Click **"Confirm & Start Installation"**
-
-### **Step 7: Watch REAL Installation**
-
-**You'll see actual command output:**
-```
-[INFO] 🚀 Starting Kubernetes cluster installation...
-[INFO] Checking SSH connectivity to all nodes...
-[SUCCESS] ✓ Connected to master node: 192.168.1.100 (ubuntu)
-[SUCCESS] ✓ Connected to worker node: 192.168.1.101 (ubuntu)
-[SUCCESS] ✓ Connected to worker node: 192.168.1.102 (ubuntu)
-[INFO] Installing containerd on master node: 192.168.1.100
-[INFO] =========================================
-[INFO] Installing Container Runtime (containerd)
-[INFO] =========================================
-[INFO] Disabling swap...
-[INFO] Loading kernel modules...
-[INFO] Configuring sysctl parameters...
-[INFO] Installing containerd on Ubuntu...
-[INFO] Get:1 http://archive.ubuntu.com/ubuntu jammy InRelease [270 kB]
-[INFO] Get:2 http://archive.ubuntu.com/ubuntu jammy-updates InRelease [128 kB]
-[INFO] Fetched 15.2 MB in 3s (4,234 kB/s)
-[INFO] Reading package lists...
-[INFO] Building dependency tree...
-[INFO] The following NEW packages will be installed:
-[INFO]   containerd.io
-[INFO] Unpacking containerd.io (1.6.24-1) ...
-[INFO] Setting up containerd.io (1.6.24-1) ...
-[INFO] Starting containerd...
-[INFO] ✓ containerd installed and running successfully
-[SUCCESS] ✓ containerd installed on 192.168.1.100
-... (continues for 15-30 minutes)
-```
-
-### **Step 8: Get Real Kubeconfig**
-
-After installation completes:
-```
-[SUCCESS] ✅ Kubernetes cluster is ready!
-[INFO] Cluster endpoint: https://192.168.1.100:6443
-```
-
-Click **"Download Kubeconfig"**
-
-### **Step 9: Use Your Real Cluster**
-
-```powershell
-# Save kubeconfig
-$env:KUBECONFIG="C:\Users\Joy\Downloads\my-real-cluster-kubeconfig.yaml"
-
-# Install kubectl (if not installed)
-# Download from: https://kubernetes.io/docs/tasks/tools/install-kubectl-windows/
-
-# Test cluster
-kubectl get nodes
-
-# Output:
-# NAME          STATUS   ROLES           AGE   VERSION
-# k8s-master    Ready    control-plane   5m    v1.28.0
-# k8s-worker1   Ready    <none>          3m    v1.28.0
-# k8s-worker2   Ready    <none>          3m    v1.28.0
-
-# Deploy test application
-kubectl create deployment nginx --image=nginx
-kubectl expose deployment nginx --port=80 --type=NodePort
-kubectl get svc nginx
-
-# Access your app
-# http://192.168.1.100:<NodePort>
-```
+With a hosted KubeEZ and servers in a private network, install a **Gateway Agent** first (KubeEZ → Gateway Agents → Generate Token → run the command on any machine in that network).
 
 ---
 
-## 🎊 **Summary:**
+## 4. Install the cluster
 
-### **Your Code:**
-- ✅ 100% Ready for real installation
-- ✅ OS-specific scripts (Ubuntu/CentOS)
-- ✅ Real SSH execution
-- ✅ Production-ready
+1. **Deploy cluster** in the sidebar.
+2. **Servers:** add the control-plane(s) and workers — IP, SSH user, password or key. KubeEZ checks each one (connection, OS, CPU, memory, ports) and shows what to fix.
+3. **Cluster:** Kubernetes version (1.27 – 1.37), network plugin (Flannel or Calico) and, with 2+ control-planes, the virtual IP.
+4. **Add-ons:** Nginx Ingress and the KubeEZ Explorer are selected; add monitoring, storage, cert-manager… (**Customize** to change settings first).
+5. **Review and start.** Every step streams a live log. A failure shows its reason and a fix; **Auto-Fix & Resume** or **Resume installation** continues where it stopped.
 
-### **What You Need:**
-- ❌ Real Linux machines (VMs or Cloud)
-- ❌ SSH access to those machines
-
-### **Recommended:**
-**Use VirtualBox + Vagrant** (Easiest & Free):
-```powershell
-# 1. Install VirtualBox & Vagrant
-# 2. Create Vagrantfile (provided above)
-# 3. Run: vagrant up
-# 4. Use IPs: 192.168.56.10, 192.168.56.11, 192.168.56.12
-# 5. Username: vagrant, Password: vagrant
-# 6. Install via KubeEZ
-```
+A cluster takes about 15–30 minutes, depending on the servers, their download speed and the add-ons.
 
 ---
 
-## 🚀 **Quick Start (VirtualBox):**
+## 5. Use it
 
-```powershell
-# 1. Install VirtualBox
-# Download: https://www.virtualbox.org/
-
-# 2. Install Vagrant
-# Download: https://www.vagrantup.com/
-
-# 3. Create project folder
-mkdir C:\Users\Joy\k8s-cluster
-cd C:\Users\Joy\k8s-cluster
-
-# 4. Create Vagrantfile (copy content from above)
-notepad Vagrantfile
-# Paste the Vagrant configuration
-
-# 5. Start VMs
-vagrant up
-# Wait 5-10 minutes for VMs to start
-
-# 6. Verify VMs
-vagrant status
-# Should show: master, worker1, worker2 running
-
-# 7. Test SSH
-vagrant ssh master
-# If connected, you're ready!
-
-# 8. Open KubeEZ
-# http://localhost:5173
-
-# 9. Add nodes:
-# Master: 192.168.56.10, vagrant/vagrant
-# Worker1: 192.168.56.11, vagrant/vagrant
-# Worker2: 192.168.56.12, vagrant/vagrant
-
-# 10. Install cluster!
+```bash
+# cluster page → Kubeconfig → save as ~/.kube/kubeez-<cluster>.yaml
+export KUBECONFIG=~/.kube/kubeez-<cluster>.yaml
+kubectl get nodes -o wide          # every node Ready
+kubectl get pods -A                # system pods Running
+kubectl create deployment hello --image=nginx --replicas=2
+kubectl expose deployment hello --port=80 --type=NodePort
+kubectl get svc hello              # open http://<worker-ip>:<node-port>
 ```
+
+Or skip kubectl: the cluster's **Explorer** shows everything, and **Apps → Install an app** deploys Helm charts with a preview.
 
 ---
 
-**Aapka code ready hai! Bas VMs chahiye!** 🚀
+## 6. Next steps
 
-**Recommended: Use Vagrant - 10 minutes mein ready!** ✅
+1. **Alerts** — add a channel so auto-healing can reach you.
+2. **Backups** — take a snapshot, and connect **Offsite Backup** in the cluster's Backups tab.
+3. **Team** — invite people with the right roles.
+4. **Upgrade** later from the cluster page — one version at a time, after a safety check and a snapshot.
+
+When something fails, the job log says why; more in [TROUBLESHOOTING.md](TROUBLESHOOTING.md) and the [USER_GUIDE.md](USER_GUIDE.md).

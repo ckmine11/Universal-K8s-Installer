@@ -45,6 +45,14 @@ Everything since 2.2.0 (about 250 changes). The built-in guide (Help → Docs) d
 - `.env.example` documents SSO (`OIDC_*`) and feature flags.
 - Documentation rewritten in English for this version: README, SETUP, USER_GUIDE, FEATURES_EXPLAINED, TESTING_GUIDE, UI guide (UI_ENHANCEMENTS), engineering notes (IMPROVEMENTS), API (CI and ChatOps), and the in-app Docs.
 - The Gateway Agent page's "connected" message is in English (it was Roman Hindi since 2.2.0).
+- All other guides rewritten for this version: DEPLOY, DOCKER_GUIDE, DOCKER_QUICKSTART, REAL_INSTALLATION_GUIDE, SUDO_SETUP, MULTI_SITE_SETUP (host nginx now passes WebSockets for the Explorer and terminals), LICENSING_GUIDE.
+
+### Fixed
+- `docker-compose.prod.yml` now passes `OIDC_*`, `KUBEEZ_FEATURES*`, `KUBEEZ_ALLOW_PRIVATE_SSH`, `ALERT_EMAILS_PER_DAY_*` and `AUDIT_RETENTION_DAYS` from `.env` to the backend — before, those settings had no effect in Docker.
+- `docker-compose.yml` (development) takes `KUBEEZ_MODE` and `APP_SECRET` from `.env` instead of always running in SaaS mode.
+
+### Known issue
+- On self-hosted servers a license key raises the cluster and node limits but does not change the workspace's feature plan: Pro features fully work only for the platform owner, and Pro background checks stay off (see LICENSING_GUIDE.md).
 
 ### Not yet verified
 - Features added on 2026-10-30 and later are covered by automated tests with simulated clusters, registries and Git providers; they have not been run against real clusters yet.

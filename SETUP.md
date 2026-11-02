@@ -39,8 +39,8 @@ openssl rand -hex 32        # paste the result as APP_SECRET in .env
 
 | Setting | Needed | What for |
 |---|---|---|
-| `APP_SECRET` | **yes** | Encrypts stored credentials and signs sessions. Keep it safe and never change it — stored secrets become unreadable. |
-| `KUBEEZ_MODE` | yes | `selfhosted` or `saas`. |
+| `APP_SECRET` | **strongly recommended** | Encrypts stored credentials and signs sessions (64 hex characters; at least 32, or production refuses to start). Keep it safe and never change it — stored secrets become unreadable. Without it KubeEZ generates `data/master.key` and uses that instead — then that file must be backed up with the data. |
+| `KUBEEZ_MODE` | yes | `selfhosted` or `saas` (the compose files default to `saas`). |
 | `KUBEEZ_PUBLIC_URL` | production | The address people open (e.g. `https://kubeez.example.com`); used in alert, email and webhook links. |
 | `ALLOWED_ORIGINS` | sometimes | Extra browser origins allowed to call the API. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | recommended | Password reset codes, invites, sign-up confirmation, email alerts. Gmail needs an App Password; for inbox delivery use your own domain with SPF, DKIM and DMARC. |
@@ -69,7 +69,7 @@ cd backend && npm install && npm run dev      # API on :3000, restarts on change
 cd frontend && npm install && npm run dev     # console on :5173, API proxied to :3000
 ```
 
-Open **http://localhost:5173**. On a fresh self-hosted server the first screen creates the **first administrator** — there is no default password.
+Open **http://localhost:5173**. With `KUBEEZ_MODE=selfhosted` in `.env`, the first screen of a fresh server creates the **first administrator** — there is no default password. The compose files default to SaaS mode; there, create the platform owner with `make-superadmin.js` (section 5).
 
 ---
 
@@ -92,7 +92,7 @@ docker compose -f docker-compose.prod.yml restart backend
 
 ### Self-hosted: license
 
-Without a license KubeEZ runs on the Free plan. An admin pastes a license key under **Settings → License** to unlock Pro / Enterprise (clusters, nodes and features of that plan).
+Without a license a self-hosted server allows 1 cluster and 2 nodes. The license key raises those **cluster and node limits**; the platform owner (the first user, who is `superadmin`) pastes it under **Settings → Activate License Key**. The server needs the vendor's public key at `backend/data/public.pem` to verify it. Which **features** a workspace may use follows its owner's subscription plan, not the license — see [LICENSING_GUIDE.md](LICENSING_GUIDE.md).
 
 ### Update
 

@@ -1,134 +1,76 @@
-# Passwordless Sudo Setup for KubeEZ
+# Root and sudo on cluster servers
 
-## Problem
+*Version 2.3.0 · November 2026.* KubeEZ installs and runs Kubernetes on your servers as root. This page explains how it gets root, and what to do when it cannot.
 
-When connecting to Ubuntu/Debian VMs using a **non-root user**, KubeEZ automation scripts fail with:
+---
 
-```
-sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
-sudo: a password is required
-```
+## 1. What KubeEZ needs
 
-This happens because KubeEZ executes all automation scripts with `sudo`, but your SSH user doesn't have passwordless sudo configured.
+Every automation script (install, join, upgrade, backups, add-ons) runs with root rights on the node. You can give KubeEZ either:
 
-## Solution
+| Login | What happens |
+|---|---|
+| **root** (password or SSH key) | Nothing else to set up. |
+| **A normal user with a password** | KubeEZ sets up **passwordless sudo** for that user by itself on the first connection (see below). |
+| **A normal user with an SSH key** (no password) | KubeEZ cannot set it up — do it once by hand (section 3), or connect as root. |
 
-You have **two options**:
+The same applies to every server of a cluster, and to SSH added later to an imported on-prem cluster.
 
-### Option 1: Use Root User (Simplest)
+---
 
-Connect to your VMs using the `root` user directly:
-- **Username**: `root`
-- **Password**: Your root password or SSH key
+## 2. What KubeEZ does automatically
 
-This bypasses the sudo requirement entirely.
+When it connects as a user other than `root`, KubeEZ:
 
-### Option 2: Configure Passwordless Sudo (Recommended for Security)
+1. checks `sudo -n true` — if it works, nothing changes;
+2. otherwise uses the password you entered once to write `/etc/sudoers.d/kubeez-<user>` with `<user> ALL=(ALL) NOPASSWD:ALL` and mode `0440`;
+3. checks `sudo -n true` again.
 
-If you prefer to use a non-root user (e.g., `ubuntu`, `admin`, etc.), you need to configure passwordless sudo.
+The password is piped to `sudo -S` for that one command and not stored on the node. User names are checked (letters, digits, `.`, `_`, `-`) before they go into the sudoers file.
 
-#### Automatic Setup (Easiest)
+---
 
-1. **SSH into each VM** as your non-root user:
-   ```bash
-   ssh your-user@192.168.220.90
-   ```
+## 3. Doing it by hand
 
-2. **Download and run the setup script**:
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/your-repo/kubeez/main/backend/src/automation/setup-passwordless-sudo.sh | bash
-   ```
-
-   Or if you have the KubeEZ repository cloned:
-   ```bash
-   bash backend/src/automation/setup-passwordless-sudo.sh
-   ```
-
-3. **Enter your sudo password** when prompted (this will be the ONLY time).
-
-4. **Verify** by running:
-   ```bash
-   sudo whoami
-   ```
-   It should print `root` without asking for a password.
-
-5. **Repeat** for all VMs (master and worker nodes).
-
-#### Manual Setup
-
-If you prefer to configure it manually:
-
-1. **SSH into the VM** as your user.
-
-2. **Edit the sudoers file**:
-   ```bash
-   sudo visudo -f /etc/sudoers.d/kubeez-$(whoami)
-   ```
-
-3. **Add this line** (replace `your-username` with your actual username):
-   ```
-   your-username ALL=(ALL) NOPASSWD:ALL
-   ```
-
-4. **Save and exit** (Ctrl+X, then Y, then Enter in nano).
-
-5. **Verify**:
-   ```bash
-   sudo whoami
-   ```
-
-6. **Repeat** for all VMs.
-
-## Verification
-
-After setup, test that passwordless sudo works:
+On each server, as the user KubeEZ will use (you type the sudo password once):
 
 ```bash
-# Should return 'root' without asking for password
-sudo whoami
-
-# Should succeed without password prompt
-sudo ls /root
-```
-
-## Security Note
-
-Passwordless sudo allows the user to execute any command as root without authentication. This is required for automation but should only be configured on:
-- Dedicated Kubernetes nodes
-- VMs that are not exposed to untrusted users
-- Environments where you trust the SSH access controls
-
-For production environments, consider:
-- Using SSH key-based authentication (no passwords)
-- Restricting sudo to specific commands if possible
-- Implementing proper firewall rules and network segmentation
-
-## Troubleshooting
-
-### "sudo: /etc/sudoers.d/kubeez-user is world writable"
-
-The sudoers file has incorrect permissions. Fix with:
-```bash
+echo "$(whoami) ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/kubeez-$(whoami)
 sudo chmod 0440 /etc/sudoers.d/kubeez-$(whoami)
+sudo visudo -c        # must say the files are parsed OK
 ```
 
-### Still asking for password
+Or copy and run the helper from this repository, which does the same with checks:
 
-1. Check if the file exists:
-   ```bash
-   ls -la /etc/sudoers.d/
-   ```
+```bash
+scp backend/src/automation/setup-passwordless-sudo.sh <user>@<server>:/tmp/
+ssh <user>@<server> 'bash /tmp/setup-passwordless-sudo.sh'
+```
 
-2. Verify the content:
-   ```bash
-   sudo cat /etc/sudoers.d/kubeez-$(whoami)
-   ```
+### Check it
 
-3. Check for syntax errors:
-   ```bash
-   sudo visudo -c
-   ```
+```bash
+ssh <user>@<server> 'sudo -n true && sudo -n whoami'    # prints: root — with no password prompt
+```
 
-### Permission denied
+---
 
-Make sure you're running the setup script with your regular user (not root), and that you have sudo access with a password initially.
+## 4. Problems
+
+| You see | Fix |
+|---|---|
+| `sudo: a terminal is required to read the password` or `a password is required` | Passwordless sudo is not set up: section 3, or connect as root. |
+| "needs sudo without a password, and KubeEZ has no password to set that up (SSH key login)" | You used an SSH key for a normal user — run the command from the message once on that server. |
+| "Cannot configure passwordless sudo for user …" | The password is wrong, or the user is not allowed to use sudo at all. Add the user to the `sudo` group (Ubuntu / Debian) or `wheel` (RHEL family) as root, then retry. |
+| `/etc/sudoers.d/kubeez-… is world writable` | `sudo chmod 0440 /etc/sudoers.d/kubeez-<user>` |
+| Still asks for a password | A later rule in `/etc/sudoers` overrides it — check with `sudo -l`; files in `/etc/sudoers.d` with a `.` or `~` in the name are ignored. |
+
+---
+
+## 5. Security note
+
+Passwordless sudo means anyone who can sign in as that user is root on the server. That is the same power KubeEZ needs to run Kubernetes. Keep it to the one user KubeEZ uses, protect that login (SSH keys, no shared passwords), and remove the file when the server leaves KubeEZ:
+
+```bash
+sudo rm /etc/sudoers.d/kubeez-<user>
+```

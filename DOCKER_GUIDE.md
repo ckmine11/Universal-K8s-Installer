@@ -1,502 +1,127 @@
-# 🐳 KubeEZ - Docker Deployment Guide
+# KubeEZ Docker Guide
 
-## 📋 Prerequisites
-
-- **Docker**: Version 20.10 or higher
-- **Docker Compose**: Version 2.0 or higher
-
-### Install Docker Desktop (Windows)
-
-1. Download from: https://www.docker.com/products/docker-desktop/
-2. Install and restart your computer
-3. Verify installation:
-```powershell
-docker --version
-docker-compose --version
-```
+*Version 2.3.0 · November 2026.* Everything about running KubeEZ in Docker: the images, the two compose files, data, updates, backups and troubleshooting. The short version: [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md). Full server setup: [SETUP.md](SETUP.md).
 
 ---
 
-## 🚀 Quick Start with Docker Compose
+## 1. Requirements
 
-### 1. Build and Start All Services
-
-```powershell
-# Navigate to project directory
-cd C:\Users\Joy\.gemini\antigravity\scratch\kubeez
-
-# Build and start all services
-docker-compose up --build
-```
-
-**That's it!** 🎉 Your application is now running:
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:3000
-- **Health Check**: http://localhost:3000/api/health
-
-### 2. Run in Background (Detached Mode)
-
-```powershell
-# Start services in background
-docker-compose up -d --build
-
-# View logs
-docker-compose logs -f
-
-# View specific service logs
-docker-compose logs -f backend
-docker-compose logs -f frontend
-```
-
-### 3. Stop Services
-
-```powershell
-# Stop all services
-docker-compose down
-
-# Stop and remove volumes
-docker-compose down -v
-```
+- **Linux server:** Docker Engine with the Compose plugin (`curl -fsSL https://get.docker.com | sudo sh`).
+- **Windows / macOS (development):** Docker Desktop.
+- About 1 GB RAM for KubeEZ itself (production limits: backend 512 MB, frontend 128 MB) and a few GB of disk for images and data.
 
 ---
 
-## 🔧 Docker Commands Reference
+## 2. The images
 
-### Building
-
-```powershell
-# Build all services
-docker-compose build
-
-# Build specific service
-docker-compose build backend
-docker-compose build frontend
-
-# Build without cache
-docker-compose build --no-cache
-```
-
-### Running
-
-```powershell
-# Start services
-docker-compose up
-
-# Start in background
-docker-compose up -d
-
-# Start specific service
-docker-compose up backend
-```
-
-### Monitoring
-
-```powershell
-# View running containers
-docker-compose ps
-
-# View logs (all services)
-docker-compose logs
-
-# Follow logs in real-time
-docker-compose logs -f
-
-# View last 100 lines
-docker-compose logs --tail=100
-
-# View specific service logs
-docker-compose logs backend
-docker-compose logs frontend
-```
-
-### Managing
-
-```powershell
-# Stop services
-docker-compose stop
-
-# Start stopped services
-docker-compose start
-
-# Restart services
-docker-compose restart
-
-# Restart specific service
-docker-compose restart backend
-
-# Remove stopped containers
-docker-compose rm
-```
-
-### Cleanup
-
-```powershell
-# Stop and remove containers
-docker-compose down
-
-# Remove containers and volumes
-docker-compose down -v
-
-# Remove containers, volumes, and images
-docker-compose down -v --rmi all
-
-# Remove all unused Docker resources
-docker system prune -a
-```
+| Image | Built from | Contents |
+|---|---|---|
+| **backend** | `backend/Dockerfile` | Node.js 22 (Alpine) running `src/server.js` on port 3000; **kubectl 1.34**, **helm 3.19** and **bash** copied from official images (for connected clusters, run in a per-cluster sandbox); the Gateway Agent bundle built at image build time. Health check on `/api/health`. No `apk add`, so it builds behind firewalls that block the Alpine CDN. |
+| **frontend** | `frontend/Dockerfile` | The React console built with Vite (Node 22), served by nginx on port 80. Its nginx sends the page security headers. |
+| **proxy** (production only) | `nginx:alpine` + `nginx/production.conf` | Routes `/api`, `/ws`, the Explorer streams and the agent downloads to the backend, everything else to the frontend; restores the visitor's IP from Cloudflare. |
 
 ---
 
-## 📁 Docker Files Overview
+## 3. The two compose files
 
-### 1. `docker-compose.yml`
-Main orchestration file that defines:
-- **backend** service (Node.js API)
-- **frontend** service (React + Nginx)
-- **Network** configuration
-- **Volume** mounts
-- **Health checks**
+| | `docker-compose.yml` (development) | `docker-compose.prod.yml` (production) |
+|---|---|---|
+| Ports | backend `3000`, console `5173` | proxy `80` and `8090` (backend and frontend not published) |
+| Mode | `KUBEEZ_MODE` from `.env`, default `saas` | same |
+| Settings | `KUBEEZ_MODE`, `APP_SECRET` and fixed dev values | every setting from `.env` (see `.env.example`) |
+| Code | `./backend/src` mounted (edit and restart) | baked into the image |
+| Data | `./backend/data`, `./backend/logs` (folders) | volumes `kubeez-data`, `kubeez-logs` |
+| Limits | none | backend 512 MB, frontend 128 MB |
 
-### 2. `backend/Dockerfile`
-Backend container configuration:
-- Base image: `node:18-alpine`
-- Installs dependencies
-- Copies source code
-- Exposes port 3000
-- Runs Node.js server
-
-### 3. `frontend/Dockerfile`
-Frontend multi-stage build:
-- **Stage 1**: Build React app with Node.js
-- **Stage 2**: Serve with Nginx
-- Optimized production build
-- Smaller final image size
-
-### 4. `frontend/nginx.conf`
-Nginx configuration:
-- Serves static files
-- Proxies API requests to backend
-- WebSocket support
-- Security headers
-- Caching strategy
+Compose reads `.env` in the project folder for the `${…}` values. Every setting is explained in [SETUP.md](SETUP.md#3-configure).
 
 ---
 
-## 🔍 Troubleshooting
+## 4. Commands
 
-### Problem: Port Already in Use
-
-```powershell
-# Find process using port 3000
-netstat -ano | findstr :3000
-
-# Kill the process (replace PID)
-taskkill /PID <PID> /F
-
-# Or change port in docker-compose.yml
-ports:
-  - "3001:3000"  # Use 3001 instead
-```
-
-### Problem: Build Fails
-
-```powershell
-# Clean Docker cache
-docker-compose down -v
-docker system prune -a
-
-# Rebuild from scratch
-docker-compose build --no-cache
-docker-compose up
-```
-
-### Problem: Cannot Connect to Backend
-
-```powershell
-# Check if backend is running
-docker-compose ps
-
-# Check backend logs
-docker-compose logs backend
-
-# Verify health check
-curl http://localhost:3000/api/health
-```
-
-### Problem: Frontend Shows Blank Page
-
-```powershell
-# Check frontend logs
-docker-compose logs frontend
-
-# Rebuild frontend
-docker-compose build --no-cache frontend
-docker-compose up frontend
-```
-
-### Problem: WebSocket Connection Fails
-
-```powershell
-# Check nginx configuration
-docker-compose exec frontend cat /etc/nginx/conf.d/default.conf
-
-# Restart services
-docker-compose restart
-```
-
----
-
-## 🔐 Environment Variables
-
-### Create `.env` file
-
-```powershell
-# Copy example file
-copy .env.example .env
-
-# Edit .env file with your values
-notepad .env
-```
-
-### Example `.env` file:
-
-```env
-# Backend
-NODE_ENV=production
-PORT=3000
-
-# Frontend (build time)
-VITE_API_URL=http://localhost:3000
-```
-
----
-
-## 📊 Container Health Monitoring
-
-### Check Container Health
-
-```powershell
-# View container health status
-docker-compose ps
-
-# Inspect specific container
-docker inspect kubeez-backend
-
-# View health check logs
-docker inspect --format='{{json .State.Health}}' kubeez-backend
-```
-
-### Health Check Endpoints
-
-- **Backend**: http://localhost:3000/api/health
-- **Frontend**: http://localhost:5173 (should load UI)
-
----
-
-## 🚀 Production Deployment
-
-### Build Production Images
-
-```powershell
-# Build optimized production images
-docker-compose -f docker-compose.yml build
-
-# Tag images for registry
-docker tag kubeez-backend:latest yourusername/kubeez-backend:v1.0.0
-docker tag kubeez-frontend:latest yourusername/kubeez-frontend:v1.0.0
-
-# Push to Docker Hub
-docker push yourusername/kubeez-backend:v1.0.0
-docker push yourusername/kubeez-frontend:v1.0.0
-```
-
-### Deploy to Server
+Add `-f docker-compose.prod.yml` to each command in production.
 
 ```bash
-# On production server
-git clone https://github.com/yourusername/kubeez.git
-cd kubeez
+# start / build
+docker compose up -d --build               # build and start everything
+docker compose up -d --build backend       # rebuild one service
+docker compose build --no-cache            # clean rebuild
 
-# Create .env file with production values
-nano .env
+# look
+docker compose ps                          # state and health
+docker compose logs -f backend             # follow a log
+docker compose logs --tail 200 proxy
+docker stats                               # CPU / memory per container
 
-# Start services
-docker-compose up -d
+# inside
+docker exec -it kubeez-backend sh
+docker exec -it kubeez-backend node scripts/make-superadmin.js <user> <password> <email>   # SaaS platform owner
+docker exec -it kubeez-backend node scripts/reset-password.js <user> <new-password>
 
-# View logs
-docker-compose logs -f
+# stop
+docker compose restart backend
+docker compose down                        # stop; data is kept
+docker compose down -v                     # stop AND DELETE the volumes (all KubeEZ data) — careful
 ```
 
 ---
 
-## 🔄 Development with Docker
+## 5. Updating
 
-### Hot Reload Development Mode
-
-Create `docker-compose.dev.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  backend:
-    build:
-      context: ./backend
-    volumes:
-      - ./backend/src:/app/src
-    command: node --watch src/server.js
-    
-  frontend:
-    build:
-      context: ./frontend
-      target: builder
-    volumes:
-      - ./frontend/src:/app/src
-    command: npm run dev
-    ports:
-      - "5173:5173"
+```bash
+git pull
+docker compose -f docker-compose.prod.yml up -d --build backend frontend
 ```
 
-Run development mode:
-```powershell
-docker-compose -f docker-compose.dev.yml up
-```
+Data in the volumes is kept. Read [CHANGELOG.md](CHANGELOG.md) first, and update when no install, upgrade or restore is running — a restart stops jobs in progress (a stopped install can be resumed from the console).
 
 ---
 
-## 📈 Performance Optimization
+## 6. Data and backups
 
-### Reduce Image Size
+`/app/data` (volume `kubeez-data`) holds everything: clusters (credentials encrypted), users, settings, delivery data, alert channels, AI settings, the audit trail, license and System ID, and — when `APP_SECRET` is not set — `master.key`.
 
-```powershell
-# View image sizes
-docker images | findstr kubeez
+Back it up together with your `.env` (or at least `APP_SECRET`):
 
-# Use multi-stage builds (already implemented)
-# Use Alpine base images (already implemented)
-# Remove unnecessary files (.dockerignore)
+```bash
+docker run --rm -v kubeez-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/kubeez-data-$(date +%F).tgz -C /data .
 ```
 
-### Optimize Build Time
+Restore onto a stopped server:
 
-```powershell
-# Use build cache
-docker-compose build
-
-# Parallel builds
-docker-compose build --parallel
+```bash
+docker compose -f docker-compose.prod.yml down
+docker run --rm -v kubeez-data:/data -v "$PWD":/backup alpine \
+  sh -c "rm -rf /data/* && tar xzf /backup/kubeez-data-YYYY-MM-DD.tgz -C /data"
+docker compose -f docker-compose.prod.yml up -d
 ```
+
+KubeEZ also keeps daily copies of its own data inside the volume (`data/backups`) — useful for mistakes, not for a lost disk.
 
 ---
 
-## 🔒 Security Best Practices
+## 7. HTTPS and domains
 
-### 1. Don't Run as Root
+The production proxy speaks plain HTTP on port 80. Put HTTPS in front:
 
-Add to Dockerfile:
-```dockerfile
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
-USER nodejs
-```
+- **Cloudflare** in front of port 80 — [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md).
+- **Your own reverse proxy** with a certificate, forwarding to port 80 or 8090 with WebSocket upgrades and long timeouts — the host-nginx example in [MULTI_SITE_SETUP.md](MULTI_SITE_SETUP.md) works for one site too.
 
-### 2. Scan for Vulnerabilities
-
-```powershell
-# Scan images
-docker scan kubeez-backend
-docker scan kubeez-frontend
-```
-
-### 3. Use Secrets
-
-```powershell
-# Don't commit .env file
-# Use Docker secrets in production
-# Use environment variables for sensitive data
-```
+Then set `KUBEEZ_PUBLIC_URL=https://…` in `.env` and restart the backend.
 
 ---
 
-## 📚 Additional Resources
+## 8. Troubleshooting
 
-### Docker Documentation
-- Docker Compose: https://docs.docker.com/compose/
-- Dockerfile Best Practices: https://docs.docker.com/develop/develop-images/dockerfile_best-practices/
-- Multi-stage Builds: https://docs.docker.com/build/building/multi-stage/
+| Symptom | Look at | Fix |
+|---|---|---|
+| Backend restarts in a loop | `docker compose logs backend` | Production refuses an `APP_SECRET` shorter than 32 characters or the shipped placeholder — set a real one. |
+| Proxy waits forever | `docker compose ps` | The proxy starts only when the backend is healthy (up to ~40 s); see the backend log. |
+| `Bind for 0.0.0.0:80 failed` | `sudo ss -ltnp \| grep :80` | Another web server owns port 80 — stop it, or follow [MULTI_SITE_SETUP.md](MULTI_SITE_SETUP.md). |
+| Console shows "Bad gateway" | proxy and backend logs | The backend is down or still starting. |
+| Explorer / terminal do not connect | the proxy in front of KubeEZ | WebSocket `Upgrade` headers are not passed through. |
+| Image build fails on `npm install` | build output | The server cannot reach the npm registry (proxy / firewall). |
+| Settings in `.env` have no effect | `docker compose config` | Only the variables listed in the compose file are passed — check the name, then `up -d backend`. |
 
-### Nginx
-- Nginx Docs: https://nginx.org/en/docs/
-- Reverse Proxy: https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/
-
----
-
-## 🎯 Common Use Cases
-
-### 1. Development
-
-```powershell
-docker-compose up
-# Edit code, see changes reflected
-```
-
-### 2. Testing
-
-```powershell
-docker-compose up -d
-# Run tests against containers
-docker-compose down
-```
-
-### 3. Production
-
-```powershell
-docker-compose up -d
-# Monitor with logs
-docker-compose logs -f
-```
-
-### 4. CI/CD
-
-```yaml
-# .github/workflows/docker.yml
-- name: Build and Test
-  run: |
-    docker-compose build
-    docker-compose up -d
-    # Run tests
-    docker-compose down
-```
-
----
-
-## ✅ Verification Checklist
-
-After running `docker-compose up`, verify:
-
-- [ ] Backend container is running: `docker-compose ps`
-- [ ] Frontend container is running: `docker-compose ps`
-- [ ] Backend health check passes: http://localhost:3000/api/health
-- [ ] Frontend loads: http://localhost:5173
-- [ ] API calls work from frontend
-- [ ] WebSocket connection works
-- [ ] Logs are visible: `docker-compose logs`
-
----
-
-## 🎉 Success!
-
-Your KubeEZ application is now running in Docker! 🐳
-
-**Access your application:**
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3000
-
-**Next steps:**
-1. Test the wizard flow
-2. Configure a test cluster
-3. Monitor installation logs
-4. Deploy to production
-
----
-
-**Happy Dockerizing! 🚀**
+More: [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

@@ -47,7 +47,7 @@ cp .env.example .env          # set APP_SECRET (openssl rand -hex 32) and, for e
 docker compose up -d --build  # development: frontend :5173, backend :3000
 ```
 
-Open **http://localhost:5173**. On a fresh self-hosted server the first screen creates the **first administrator** — there is no default password.
+Open **http://localhost:5173**. With `KUBEEZ_MODE=selfhosted` in `.env`, the first screen of a fresh server creates the **first administrator** — there is no default password. (The compose files default to SaaS mode, where the platform owner is created with `make-superadmin.js`, below.)
 
 ### Production
 
@@ -74,8 +74,8 @@ git pull && docker compose -f docker-compose.prod.yml up -d --build backend fron
 
 | Variable | Purpose |
 |---|---|
-| `APP_SECRET` | **Required.** Encrypts stored credentials and signs sessions — 64 random hex characters. Keep it; changing it makes stored secrets unreadable. |
-| `KUBEEZ_MODE` | `saas` (hosted, nodes through Gateway Agents) or `selfhosted` (direct SSH, license key). |
+| `APP_SECRET` | **Strongly recommended.** Encrypts stored credentials and signs sessions — 64 random hex characters. Keep it; changing it makes stored secrets unreadable. Without it a key is generated in `data/master.key`. |
+| `KUBEEZ_MODE` | `saas` (hosted, nodes through Gateway Agents) or `selfhosted` (direct SSH, license key). The compose files default to `saas`. |
 | `KUBEEZ_PUBLIC_URL` | Public address (e.g. `https://k8scluster.space`) — used in alert and email links. |
 | `ALLOWED_ORIGINS` | Extra browser origins allowed to call the API (the site's own address always is). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | Email: password reset codes, welcome / invite emails, email alerts. Port 465 = TLS, 587 = STARTTLS. Gmail needs an App Password; for inbox delivery use your own domain via Brevo / Resend / SES with SPF, DKIM and DMARC. |

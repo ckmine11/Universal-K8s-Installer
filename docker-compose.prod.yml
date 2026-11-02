@@ -60,6 +60,27 @@ services:
       - SMTP_PASS=${SMTP_PASS:-}
       - EMAIL_FROM=${EMAIL_FROM:-}
       - EMAIL_REPLY_TO=${EMAIL_REPLY_TO:-}
+      # daily alert-email allowance per workspace (empty = 20 free / 200 paid)
+      - ALERT_EMAILS_PER_DAY_FREE=${ALERT_EMAILS_PER_DAY_FREE:-}
+      - ALERT_EMAILS_PER_DAY_PAID=${ALERT_EMAILS_PER_DAY_PAID:-}
+      # how long the audit trail is kept (empty = the default)
+      - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-}
+      # Single sign-on with any OpenID Connect provider (empty = no SSO button).
+      # Callback URL: <KUBEEZ_PUBLIC_URL>/api/auth/oauth/oidc/callback
+      - OIDC_ISSUER=${OIDC_ISSUER:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_NAME=${OIDC_NAME:-}
+      - OIDC_SCOPES=${OIDC_SCOPES:-}
+      - OIDC_GROUPS_CLAIM=${OIDC_GROUPS_CLAIM:-}
+      - OIDC_ROLE_MAP=${OIDC_ROLE_MAP:-}
+      - OIDC_DEFAULT_ROLE=${OIDC_DEFAULT_ROLE:-}
+      - OIDC_WORKSPACE=${OIDC_WORKSPACE:-}
+      # hosted mode only: allow SSH to private addresses (only when KubeEZ runs inside the clusters' own network)
+      - KUBEEZ_ALLOW_PRIVATE_SSH=${KUBEEZ_ALLOW_PRIVATE_SSH:-}
+      # Feature flags: which features this server offers (empty = all on)
+      - KUBEEZ_FEATURES=${KUBEEZ_FEATURES:-}
+      - KUBEEZ_FEATURES_DEFAULT=${KUBEEZ_FEATURES_DEFAULT:-}
     volumes:
       - kubeez-data:/app/data
       - kubeez-logs:/app/logs

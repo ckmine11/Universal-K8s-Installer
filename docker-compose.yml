@@ -12,7 +12,9 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
-      - KUBEEZ_MODE=saas
+      # from .env (saas = sign-up + platform owner by script; selfhosted = the first visitor creates the admin)
+      - KUBEEZ_MODE=${KUBEEZ_MODE:-saas}
+      - APP_SECRET=${APP_SECRET:-}
       - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:8090
     volumes:
       - ./backend/src:/app/src

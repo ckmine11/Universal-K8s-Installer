@@ -1,49 +1,63 @@
-# 🏗️ Multi-Site VPS Setup Guide
-# Run this on your VPS to install host-level Nginx as shared reverse proxy
+# Running KubeEZ next to other sites on one server
 
-## This is needed because Cloudflare Free plan only proxies to port 80/443
-## Multiple domains on one VPS need a shared Nginx that routes by domain name
+*Version 2.3.0 · November 2026.* How to host KubeEZ on a server that already serves other websites, with one shared nginx on port 80 that routes by domain name (for example behind Cloudflare, which proxies only to ports 80 / 443 on the free plan).
 
 ---
 
-## Architecture After Setup
+## 1. The layout
 
 ```
-Cloudflare (k8scluster.space) ──┐
-                                 ├──▶ Host Nginx (:80)
-Cloudflare (yourother.com) ─────┘        │
-                                         ├─▶ k8scluster.space → KubeEZ Docker (:8090)
-                                         └─▶ yourother.com → Existing Docker (:EXISTING_PORT)
+Cloudflare (kubeez.example.com) ──┐
+                                   ├──▶ host nginx :80 ──┬─▶ kubeez.example.com → KubeEZ proxy container (127.0.0.1:8090)
+Cloudflare (other-site.com) ───────┘                     └─▶ other-site.com     → your other app (127.0.0.1:<port>)
+```
+
+KubeEZ's own proxy container (`kubeez-proxy`, nginx) keeps routing inside KubeEZ: `/api`, `/ws`, the Explorer streams and the agent downloads to the backend, everything else to the frontend. The host nginx only picks the site by domain.
+
+---
+
+## 2. Free port 80 for the host nginx
+
+`docker-compose.prod.yml` publishes the KubeEZ proxy on **both** 80 and 8090. On a shared server, port 80 belongs to the host nginx, so change the proxy's `ports:` to:
+
+```yaml
+    ports:
+      - "127.0.0.1:8090:80"     # only the host nginx reaches it
+```
+
+Then restart KubeEZ:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d proxy
 ```
 
 ---
 
-## Step 1: Install Host Nginx
+## 3. Install nginx on the host
 
 ```bash
-sudo apt update
-sudo apt install -y nginx
-sudo systemctl enable nginx
-sudo systemctl start nginx
+sudo apt update && sudo apt install -y nginx
+sudo systemctl enable --now nginx
 ```
 
-## Step 2: Create Nginx Config for KubeEZ
+---
 
-```bash
-sudo nano /etc/nginx/sites-available/k8scluster.space
-```
+## 4. The KubeEZ site
 
-Paste this config (copy exactly):
+`/etc/nginx/sites-available/kubeez.example.com`:
 
 ```nginx
-# KubeEZ - k8scluster.space
+# WebSockets only when the client asks for one (Explorer, terminals, live logs)
+map $http_upgrade $kz_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 80;
-    server_name k8scluster.space www.k8scluster.space;
+    server_name kubeez.example.com;
 
-    client_max_body_size 10M;
-
-    # Restore real IP from Cloudflare
+    # Cloudflare → the visitor's real IP (ranges: https://www.cloudflare.com/ips/)
     set_real_ip_from 173.245.48.0/20;
     set_real_ip_from 103.21.244.0/22;
     set_real_ip_from 103.22.200.0/22;
@@ -61,93 +75,76 @@ server {
     set_real_ip_from 131.0.72.0/22;
     real_ip_header CF-Connecting-IP;
 
-    # API + WebSocket → Backend
-    location /api {
-        proxy_pass http://127.0.0.1:8090;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 300s;
-        proxy_read_timeout 300s;
-    }
+    client_max_body_size 20m;
 
-    location /ws {
+    location / {
         proxy_pass http://127.0.0.1:8090;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection $kz_upgrade;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto https;
+        # Explorer streams (server-sent events) and long jobs: no buffering, long timeouts
+        proxy_buffering off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
     }
-
-    # Everything else → Frontend
-    location / {
-        proxy_pass http://127.0.0.1:8090;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
 }
 ```
 
-## Step 3: Enable the Site
+Enable it:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/k8scluster.space /etc/nginx/sites-enabled/
-sudo nginx -t        # Test config
-sudo systemctl reload nginx
+sudo ln -s /etc/nginx/sites-available/kubeez.example.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-## Step 4: Create Config for Your Existing Site (if not done already)
+KubeEZ's inner proxy answers any domain name, so you only change `server_name` here. Set `KUBEEZ_PUBLIC_URL=https://kubeez.example.com` (and add it to `ALLOWED_ORIGINS` if you use another address too) in `.env`, then `docker compose -f docker-compose.prod.yml up -d backend`.
 
-```bash
-sudo nano /etc/nginx/sites-available/yourother.com
-```
+---
+
+## 5. Your other site
+
+`/etc/nginx/sites-available/other-site.com`:
 
 ```nginx
-# Your existing site
 server {
     listen 80;
-    server_name yourother.com www.yourother.com;
+    server_name other-site.com www.other-site.com;
 
     location / {
-        proxy_pass http://127.0.0.1:YOUR_EXISTING_PORT;
+        proxy_pass http://127.0.0.1:<its port>;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
     }
 }
 ```
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/yourother.com /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-> Replace `YOUR_EXISTING_PORT` with the actual port your existing Docker app runs on.
-
-## Step 5: Remove Default Nginx Site (optional, recommended)
-
-```bash
-sudo rm /etc/nginx/sites-enabled/default
-sudo systemctl reload nginx
+sudo ln -s /etc/nginx/sites-available/other-site.com /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default      # the "Welcome to nginx" page
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ---
 
-## Now your existing site should continue working on its domain,
-## and KubeEZ will be available on k8scluster.space!
+## 6. Cloudflare
+
+For each domain: an **A record** to the server's IP, **proxied** (orange cloud), SSL/TLS mode **Full** (or **Full (strict)** with an origin certificate on the host nginx), and **WebSockets** on (Network settings). Long Helm and install jobs run in the background, so Cloudflare's 100-second request limit does not cut them off. More: [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md).
+
+---
+
+## 7. Check
+
+```bash
+curl -sI -H 'Host: kubeez.example.com' http://127.0.0.1/ | head -1          # 200
+curl -s  -H 'Host: kubeez.example.com' http://127.0.0.1/api/health           # {"status":…}
+curl -sI -H 'Host: other-site.com'     http://127.0.0.1/ | head -1          # your other site
+```
+
+In the console, open a cluster's **Explorer** and a **terminal** — both use WebSockets; if they fail, the `Upgrade` / `Connection` headers are not passed.

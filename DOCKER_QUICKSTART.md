@@ -1,137 +1,65 @@
-# 🐳 KubeEZ - Docker Quick Start
+# KubeEZ with Docker — Quick Start
 
-## ⚡ One Command Setup
-
-```powershell
-cd C:\Users\Joy\.gemini\antigravity\scratch\kubeez
-docker-compose up --build
-```
-
-**Access at:** http://localhost:5173 🚀
+*Version 2.3.0 · November 2026.* The shortest way to run KubeEZ. Details: [DOCKER_GUIDE.md](DOCKER_GUIDE.md) · production: [SETUP.md](SETUP.md).
 
 ---
 
-## 📋 Essential Commands
+## Try it locally (development)
 
-### Start
-```powershell
-docker-compose up              # Start (foreground)
-docker-compose up -d           # Start (background)
-docker-compose up --build      # Build and start
+```bash
+git clone https://github.com/ckmine11/Universal-K8s-Installer.git
+cd Universal-K8s-Installer
+cp .env.example .env
+docker compose up -d --build
 ```
 
-### Stop
-```powershell
-docker-compose down            # Stop all
-docker-compose stop            # Stop (keep containers)
-docker-compose restart         # Restart all
+| | Address |
+|---|---|
+| Console | http://localhost:5173 |
+| API | http://localhost:3000/api/health |
+
+The development compose runs in **SaaS mode** by default. Either create the platform owner:
+
+```bash
+docker exec -it kubeez-backend node scripts/make-superadmin.js admin 'a-strong-password' admin@example.com
+docker compose restart backend
 ```
 
-### Logs
-```powershell
-docker-compose logs            # View all logs
-docker-compose logs -f         # Follow logs
-docker-compose logs backend    # Backend logs only
-docker-compose logs frontend   # Frontend logs only
+or set `KUBEEZ_MODE=selfhosted` in `.env` before the first start — then the first screen creates the first administrator.
+
+## Run it for real (production)
+
+```bash
+cp .env.example .env              # set APP_SECRET (openssl rand -hex 32), KUBEEZ_MODE, KUBEEZ_PUBLIC_URL, SMTP_*
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-### Status
-```powershell
-docker-compose ps              # List containers
-docker ps                      # All running containers
+nginx answers on **:80** (and **:8090**); put HTTPS in front (Cloudflare or your own proxy). See [SETUP.md](SETUP.md).
+
+## Everyday commands
+
+```bash
+docker compose ps                                  # what runs (add -f docker-compose.prod.yml in production)
+docker compose logs -f backend                     # follow the backend log
+docker compose restart backend                     # restart one service
+git pull && docker compose up -d --build           # update
+docker compose down                                # stop (data stays)
 ```
 
-### Cleanup
-```powershell
-docker-compose down -v         # Remove containers + volumes
-docker system prune -a         # Clean everything
-```
+## What it creates
 
----
+| | Development | Production |
+|---|---|---|
+| Containers | `kubeez-backend`, `kubeez-frontend` | `kubeez-proxy`, `kubeez-backend`, `kubeez-frontend` |
+| KubeEZ data | `./backend/data` (a folder) | volume `kubeez-data` |
+| Logs | `./backend/logs` | volume `kubeez-logs` |
 
-## 🎯 What Gets Created
+**Back up the data** (and keep `APP_SECRET` with it) — it holds your clusters, credentials (encrypted), settings and audit trail.
 
-### Containers
-- `kubeez-backend` - Node.js API (port 3000)
-- `kubeez-frontend` - React + Nginx (port 5173)
+## If something is wrong
 
-### Network
-- `kubeez-network` - Bridge network for communication
-
-### Volumes
-- Backend logs mounted to `./backend/logs`
-
----
-
-## 🔍 Troubleshooting
-
-### Port Already in Use
-```powershell
-# Change ports in docker-compose.yml
-ports:
-  - "3001:3000"  # Backend
-  - "5174:80"    # Frontend
-```
-
-### Build Fails
-```powershell
-docker-compose down -v
-docker-compose build --no-cache
-docker-compose up
-```
-
-### Cannot Connect
-```powershell
-# Check if running
-docker-compose ps
-
-# Check logs
-docker-compose logs backend
-
-# Test backend
-curl http://localhost:3000/api/health
-```
-
----
-
-## 📁 Files Created
-
-```
-kubeez/
-├── docker-compose.yml          # Main orchestration
-├── .env.example                # Environment template
-├── DOCKER_GUIDE.md             # Full documentation
-│
-├── backend/
-│   ├── Dockerfile              # Backend image
-│   └── .dockerignore           # Exclude files
-│
-└── frontend/
-    ├── Dockerfile              # Frontend image
-    ├── nginx.conf              # Nginx config
-    └── .dockerignore           # Exclude files
-```
-
----
-
-## ✅ Verification
-
-After starting, check:
-
-1. **Backend Health**: http://localhost:3000/api/health
-2. **Frontend UI**: http://localhost:5173
-3. **Container Status**: `docker-compose ps`
-4. **Logs**: `docker-compose logs -f`
-
----
-
-## 🚀 Next Steps
-
-1. ✅ Run `docker-compose up --build`
-2. ✅ Open http://localhost:5173
-3. ✅ Test the wizard flow
-4. ✅ Monitor logs in terminal
-
----
-
-**For detailed documentation, see:** `DOCKER_GUIDE.md`
+| Problem | Fix |
+|---|---|
+| Port already in use | Stop what uses 3000 / 5173 (or 80 / 8090), or change the left side of `ports:` in the compose file. |
+| The console loads but sign-in fails | `docker compose logs backend` — usually `APP_SECRET` too short in production, or the backend still starting (healthcheck). |
+| Build fails downloading packages | Check the server's internet / proxy; `docker compose build --no-cache`. |
