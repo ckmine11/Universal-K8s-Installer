@@ -1,3 +1,5 @@
+> **Note (2026-11-02, v2.3.0):** this file describes an older version of KubeEZ and is kept for history. The current feature list is in [README.md](README.md), the full user guide is built into the console (**Help → Docs**), and changes are in [CHANGELOG.md](CHANGELOG.md).
+
 # KubeEZ - Quick Test Guide
 
 ## 🧪 Test 1: Fresh Installation (5 minutes)

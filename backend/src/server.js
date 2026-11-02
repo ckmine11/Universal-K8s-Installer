@@ -178,7 +178,7 @@ app.get('/api/config', (req, res) => {
     res.json({
         mode,
         tunnelsEnabled: mode === 'saas',
-        version: '2.1.0',
+        version: '2.3.0',
         features: {
             saasTunnels: mode === 'saas',
             incidentRemediation: true,

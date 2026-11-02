@@ -4,7 +4,7 @@ import {
     Bell, BookOpen, Server, Terminal, CheckCircle2, Cloud, Cpu, Shield, Users, Activity,
     Copy, Check, ArrowUpCircle, RotateCcw, Puzzle, DatabaseBackup, HeartPulse, Search,
     LifeBuoy, LayoutGrid, Info, AlertTriangle, Plus, HardDrive, Compass, ShieldCheck, Rocket,
-    HelpCircle, Lock, Settings as SettingsIcon, X, Bot, PlugZap } from 'lucide-react'
+    HelpCircle, Lock, Settings as SettingsIcon, X, Bot, PlugZap, Boxes, Layers, GitBranch, ToggleLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 // ── Small building blocks ────────────────────────────────────────────────────
@@ -131,6 +131,17 @@ const NAV = [
         { id: 'addon-manage', label: 'Health, Logs & Uninstall', k: 'repair reinstall logs failing' },
         { id: 'explorer', label: 'KubeEZ Explorer', k: 'ui resources topology timeline helm' },
         { id: 's3', label: 'S3 Object Storage', k: 'seaweedfs bucket' }
+    ] },
+    { title: 'Apps & Delivery', items: [
+        { id: 'apps', label: 'Helm Apps', k: 'helm install upgrade rollback values release chart preview risk drift restore' },
+        { id: 'delivery-settings', label: 'Environments & Delivery', k: 'environment protected chart repository freeze compare promote promotion pipeline registry pull secret auto-rollback' },
+        { id: 'gitops', label: 'GitOps', k: 'argo cd argocd flux sync kustomization pull request merge request github gitlab bitbucket promote' },
+        { id: 'ci', label: 'CI Webhook & Previews', k: 'deploy token webhook github actions gitlab ci jenkins preview environment pull request lead time' },
+        { id: 'chat-deploy', label: 'Deploy from Chat', k: 'chatops slack telegram deploy confirm' },
+        { id: 'guards', label: 'Deploy Guards', k: 'cve gate trivy cosign signature signing key sign verify risk score' },
+        { id: 'operations', label: 'Day-2 Operations', k: 'hibernate wake schedule sleep debug container canary rollout argo rollouts keda autoscaling' },
+        { id: 'insight', label: 'Security, Certificates & Metrics', k: 'trivy vulnerabilities cve certificates cert-manager renew expiry dora lead time cost metrics prometheus external secrets' },
+        { id: 'features', label: 'Features & Plans', k: 'feature flags turn off on upgrade pro free' }
     ] },
     { title: 'Backups', items: [
         { id: 'etcd', label: 'Cluster Snapshots', k: 'etcd backup restore undo' },
@@ -266,7 +277,10 @@ export default function Docs() {
                                 [Puzzle, 'Add-ons', '25+ ready add-ons (monitoring, storage, GitOps, security, logging) with settings and updates.'],
                                 [DatabaseBackup, 'Back up', 'Cluster snapshots with preview and undo, volume data, encrypted offsite copies, disaster recovery.'],
                                 [HeartPulse, 'Heal', 'Watches every cluster around the clock, fixes common problems and explains the rest.'],
-                                [ShieldCheck, 'Comply', 'CERT-In, DPDP, ISO 27001 and CIS checks, audit trail and auditor-ready reports.']
+                                [ShieldCheck, 'Comply', 'CERT-In, DPDP, ISO 27001 and CIS checks, audit trail and auditor-ready reports.'],
+                                [Boxes, 'Ship apps', 'Helm apps with previews, risk scores and drift; environments, promotions, CI webhook, preview environments, deploy from chat.'],
+                                [GitBranch, 'GitOps', 'Argo CD and Flux apps on one list, Sync now, new apps, promotions by pull request.'],
+                                [Bot, 'Ask AI', 'Questions about your clusters in English or Hinglish, answered from live data by the AI you connect.']
                             ].map(([Icon, t, d]) => (
                                 <div key={t} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
                                     <div className="flex items-center gap-2 mb-1"><Icon className="w-4 h-4 text-blue-400" /><span className="text-sm font-black text-white">{t}</span></div>
@@ -294,8 +308,10 @@ export default function Docs() {
                             ['Explorer', 'Opens the KubeEZ Explorer of a cluster: every resource, logs, topology and changes.'],
                             ['Incidents', 'Problems auto-healing found, what it did, and what still needs you.'],
                             ['Compliance', 'Compliance scores, findings, reports, audit trail and terminal access.'],
-                            ['Deploy cluster · Gateway Agents', 'The install wizard, and the agents that reach servers in private networks.'],
-                            ['Team & Roles · Alerts · Settings', 'Members and roles, alert channels and rules, plan and security settings (admins).'],
+                            ['AI', 'Ask AI, Fleet, Create YAML, Advisor, What changed and AI settings.'],
+                            ['Connected clusters', 'Bring in clusters you already run (EKS, AKS, GKE, k3s, …), their connection agents and setup guides.'],
+                            ['Deploy cluster · Gateway Agents · Delivery', 'The install wizard, the agents that reach servers in private networks, and how your team ships apps (environments, repositories, freezes, tokens, previews, promotions).'],
+                            ['Team & Roles · Approvals · Alerts · Settings · Features', 'Members and roles, two-person approvals, alert channels and rules, plan and security settings, and which features are on (admins).'],
                             ['Docs · Plans', 'This guide, and what each plan includes.']
                         ]} />
                         <P>Press <C>Ctrl</C> + <C>K</C> (<C>⌘K</C> on a Mac) anywhere to jump to a cluster or page. The <B>✦</B> button in the top bar lists new add-on versions, and the bell shows open incidents.</P>
@@ -391,6 +407,10 @@ export default function Docs() {
                         <Table head={['Tab', 'What you find there']} rows={[
                             ['Overview', 'Version, network plugin, nodes and API address, a health score, and live CPU, memory and disk.'],
                             ['Explorer', 'Every resource in the cluster: YAML, logs, events, topology, timeline and Helm releases.'],
+                            ['Apps', <>Helm releases: install, upgrade with a preview and a risk score, roll back, drift. Below them: canary rollouts, autoscaling, app metrics, cost per app, hibernate and debug containers. See <button onClick={() => go('apps')} className="text-blue-400 hover:underline">Helm Apps</button>.</>],
+                            ['GitOps', 'Argo CD and Flux apps: sync and health, Sync now, new apps.'],
+                            ['Security · Certificates', 'Trivy vulnerabilities and misconfigurations; cert-manager certificates, expiry and Renew now.'],
+                            ['Delivery', 'DORA delivery metrics of the cluster.'],
                             ['Add-ons', <><B>Access & logins</B>: addresses, usernames and passwords of the add-ons. <B>Manage & logs</B>: health, logs, settings, updates, install and uninstall.</>],
                             ['Backups', 'Cluster snapshots, restore, offsite backup, volume backups and disaster recovery.']
                         ]} />
@@ -518,7 +538,108 @@ export default function Docs() {
                     </Section>
 
                     {/* ── Backups ─────────────────────────────────────── */}
-                    <Section id="etcd" Icon={DatabaseBackup} color="text-cyan-400" title="Cluster Snapshots"
+                    {/* ── Apps & Delivery ─────────────────────────────── */}
+                    <Section id="apps" Icon={Boxes} color="text-blue-400" title="Helm Apps"
+                        intro="Your own apps on a cluster, as Helm releases — not only KubeEZ's add-ons. Open a cluster → Apps.">
+                        <Table head={['', '']} rows={[
+                            ['Releases', 'Every Helm release with its chart, version, revision, status and environment. Members limited to some namespaces see only theirs.'],
+                            ['Install / Upgrade', <>Pick a chart from one of the workspace&apos;s <B>chart repositories</B> (https or oci://), a version and values (YAML). Secrets show as ••••••; leave them so to keep the current value. <B>Preview changes</B> runs a server-side dry run and shows every resource that is added, changed or removed, line by line.</>],
+                            ['Assess risk (Pro)', <>A score from 0 to 100 with its reasons: data removed, storage or networking changed, permissions or CRDs changed, scale to 0, a chart major version jump, a protected environment, failed deploys of this app in the last 14 days, open problems in the namespace, vulnerable or unsigned images. The connected AI then explains what could go wrong, what to check and how to undo it. The score never depends on the AI.</>],
+                            ['Roll back · Uninstall', 'History of every revision; roll back to any of them. Uninstall is for admins.'],
+                            ['Check drift (Pro)', <>Compares every release with what Helm deployed (<C>helm get manifest</C> against the live objects, a dry run). Shows what was changed by hand (kubectl edit / scale, a deleted Service) line by line; replicas an autoscaler (HPA / KEDA) sets are not drift. <B>Restore</B> applies the deployed revision again. An hourly check alerts when an app drifts.</>]
+                        ]} />
+                        <Note>Installs and upgrades run as jobs: Helm waits until the pods are ready and rolls a failed upgrade back by itself. A <B>protected environment</B> asks a second person first, a <B>change freeze</B> stops changes (admins may override with a reason), and the environment&apos;s CVE and signature policies are checked before Helm changes anything.</Note>
+                    </Section>
+
+                    <Section id="delivery-settings" Icon={Layers} color="text-blue-400" title="Environments & Delivery"
+                        intro="Sidebar → Delivery: how your team ships apps, for the whole workspace.">
+                        <Table head={['', '']} rows={[
+                            ['Environments', <>A name for a namespace on a cluster (dev, staging, prod). Per environment: <B>protected</B> (every deploy, rollback and uninstall needs a second person), a <B>CVE gate</B>, a <B>signature policy</B> and <B>auto-rollback</B> (off / suggest / by itself when a deploy breaks its workload within an hour).</>],
+                            ['Chart repositories', 'The only places apps may be deployed from. A password is stored encrypted and never shown again.'],
+                            ['Change freezes', 'No deploys, rollbacks or GitOps syncs on the clusters they cover, up to 31 days (e.g. "Diwali sale"). Admins may override with a reason, which is recorded.'],
+                            ['Compare & promote', <>The same app in two environments: chart version and every value that differs (secrets masked). <B>Promote</B> (Pro) deploys the source&apos;s chart version and the values you pick (image.tag by default) into the target; everything else keeps the target&apos;s own values.</>],
+                            ['Registries (Pro)', 'Registry logins, written as image pull secrets into the namespaces you choose. The signature gate uses them for private registries too.'],
+                            ['Signing keys (Pro)', 'cosign public keys the signature gate trusts — see Deploy Guards.'],
+                            ['Cost prices', 'The price of a CPU core and a GB of memory per month, for Cost per app.']
+                        ]} />
+                    </Section>
+
+                    <Section id="gitops" Icon={GitBranch} color="text-emerald-400" title="GitOps"
+                        intro="Argo CD and Flux apps of a cluster on one list. Open a cluster → GitOps.">
+                        <Table head={['', '']} rows={[
+                            ['View & sync', <>Every Argo CD Application and Flux Kustomization / HelmRelease: synced or not, healthy or not, repository, revision and what drifted. <B>Sync now</B> / <B>Refresh</B> asks the tool to do its own job; KubeEZ never edits an app&apos;s spec or prunes. <B>Explain with AI</B> on an app with a problem.</>],
+                            ['Alerts (Pro)', 'Checked every 3 minutes: a failed sync, an unhealthy app or one out of sync for 30 minutes becomes an incident and an alert.'],
+                            ['New app (Pro)', <>From a public https Git repository, into one namespace. <B>Argo CD</B>: its own AppProject — only that repository, only that namespace, nothing cluster-wide. <B>Flux</B>: a GitRepository and a Kustomization run as their own ServiceAccount that may only change that namespace; revision = a branch, a full commit SHA or <C>refs/tags/…</C>. Neither ever prunes; <B>Remove</B> leaves what was deployed running.</>],
+                            ['Promote by pull request (Pro)', <>Delivery → <B>Promote by pull request</B>: add a <B>GitHub</B>, <B>GitLab</B> or <B>Bitbucket</B> account, then change values in a YAML file (e.g. <C>image.tag</C> in <C>apps/web/prod.yaml</C>). KubeEZ makes a branch and opens a pull request (a merge request on GitLab, sub-groups allowed); Argo CD / Flux deploy it once merged. Comments and layout of the file stay. Self-hosted GitHub Enterprise or GitLab: change the API address. Bitbucket: an access token, or an app password with your user name.</>]
+                        ]} />
+                    </Section>
+
+                    <Section id="ci" Icon={Rocket} color="text-rose-400" title="CI Webhook & Previews"
+                        intro="Deploy from your pipeline (GitHub Actions, GitLab CI, Jenkins) without giving it a cluster login.">
+                        <P>Delivery → <B>Deploy tokens</B> (admins, Pro): a token deploys exactly one release (cluster, namespace, chart, repository) and may change only the values you list. It is shown once, stored as a hash, expires (30–365 days) and can be revoked. Protected environments, freezes, the CVE gate and the signature policy still apply — a token never overrides them.</P>
+                        <Code>{`curl -fsS -X POST https://<your-kubeez>/api/hooks/deploy \\
+  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"set": {"image.tag": "'"$GIT_SHA"'"}, "commit": {"sha": "'"$GIT_SHA"'", "time": "'"$(git log -1 --format=%cI)"'"}}'`}</Code>
+                        <P>The <C>commit</C> is optional: with it, the deploy counts for the DORA <B>lead time for changes</B> (commit → running). <C>GET /api/hooks/jobs/&lt;id&gt;</C> with the same token follows the job.</P>
+                        <H4>Preview environments (Pro)</H4>
+                        <P>A short-lived copy of an app for one pull request or branch, in its own namespace (<C>web-pr-42</C>): the chart and version of the release it copies, its values plus what you change. It removes itself when it expires (default 72 hours, up to 14 days) — the whole namespace goes. KubeEZ deletes only namespaces it created for a preview. Start one under Delivery → <B>Preview environments</B>, or from CI with a token made with <B>Previews too</B>:</P>
+                        <Code>{`curl -fsS -X POST https://<your-kubeez>/api/hooks/preview -H "Authorization: Bearer $KUBEEZ_TOKEN" \\
+  -H "Content-Type: application/json" -d '{"pr": 42, "set": {"image.tag": "'"$GIT_SHA"'"}, "ttlHours": 72}'
+# when the pull request is closed:
+curl -fsS -X DELETE https://<your-kubeez>/api/hooks/preview -H "Authorization: Bearer $KUBEEZ_TOKEN" \\
+  -H "Content-Type: application/json" -d '{"pr": 42}'`}</Code>
+                    </Section>
+
+                    <Section id="chat-deploy" Icon={Bot} color="text-violet-400" title="Deploy from Chat"
+                        intro="Let a Slack or Telegram ChatOps channel deploy an app — only what an admin allowed for that chat (Pro).">
+                        <Steps items={[
+                            <>An admin turns ChatOps on for the channel (AI settings), then allows an app under Delivery → <B>Deploy from chat</B>: the channel, a non-protected environment, the release, its repository, the value it sets (image.tag) and, optionally, which chat users may do it.</>,
+                            <>In the chat: <C>deploy web 1.4.2 to staging</C> (or <C>web 1.4.2 staging pe deploy karo</C>; in Telegram groups <C>/deploy web 1.4.2 staging</C>). KubeEZ repeats what it will do and gives a code.</>,
+                            <>The same person replies <C>confirm 4821</C> within 5 minutes (or <C>cancel</C>). The deploy runs, and the result is posted in the chat when it finishes.</>
+                        ]} />
+                        <P><C>deploy list</C> shows what the chat may deploy. Only the one value changes; the chart version stays the one that runs. Protected environments and change freezes always refuse; the CVE gate and signature policy apply; every deploy is in the audit trail. This works without an AI; questions such as “how to deploy nginx” still go to the AI.</P>
+                    </Section>
+
+                    <Section id="guards" Icon={ShieldCheck} color="text-emerald-400" title="Deploy Guards"
+                        intro="Checks that run before Helm changes anything — on every deploy path: the Apps tab, the CI webhook, previews, promotions and chat.">
+                        <Table head={['', '']} rows={[
+                            ['CVE gate (Pro)', 'Per environment: warn or block when an image of the deploy has critical (or high) vulnerabilities in the Trivy Operator\'s reports. An image Trivy has not scanned yet is listed, never blocked.'],
+                            ['Signature gate (Pro)', <>Per environment: warn or block images that are not signed with <B>cosign</B> by one of the workspace&apos;s <B>signing keys</B> (Delivery → Signing keys: paste <C>cosign.pub</C>). KubeEZ reads the signature from the registry itself and verifies it with the key — key-based signing only (no keyless / Fulcio, no transparency log). With <B>block</B>, an image that cannot be checked (registry not reachable) counts as unsigned, and with no keys every image fails.</>],
+                            ['Override', 'A blocked deploy can be pushed through only by an admin, with a reason that is recorded in the audit trail.'],
+                            ['Deploy risk (Pro)', 'The risk score and AI review in the deploy dialog — see Helm Apps.']
+                        ]} />
+                        <P>The preview of a deploy shows both gates: every image with ✓ / ✗, why, and what will be blocked.</P>
+                    </Section>
+
+                    <Section id="operations" Icon={Activity} color="text-sky-400" title="Day-2 Operations"
+                        intro="In a cluster's Apps tab, below the releases.">
+                        <Table head={['', '']} rows={[
+                            ['Hibernate / Wake', 'Scale every Deployment and StatefulSet of a namespace to 0 (dev at night, a paused project) and back to exactly what it was. Protected environments need a second person; system namespaces are for admins.'],
+                            ['Scheduled hibernate (Pro)', 'A namespace sleeps and wakes on a clock, e.g. dev 21:00 → 09:00 on weekdays, in your time zone. Skipped (with an alert) during a change freeze.'],
+                            ['Debug containers (Pro)', 'Add an ephemeral busybox or netshoot container to a running pod — also needs terminal access.'],
+                            ['Canary rollouts (Pro)', 'Argo Rollouts (add-on): see canary / blue-green steps, then promote, promote fully, abort or retry.'],
+                            ['Autoscaling (Pro)', 'KEDA (add-on): a wizard for ScaledObjects on a schedule, CPU / memory or a Prometheus query.']
+                        ]} />
+                    </Section>
+
+                    <Section id="insight" Icon={Shield} color="text-amber-400" title="Security, Certificates & Metrics"
+                        intro="Read-only views per cluster, each in its own tab.">
+                        <Table head={['Tab', 'What you find there']} rows={[
+                            ['Security', 'From the Trivy Operator (add-on): image vulnerabilities per workload (critical / high with the fixed version) and failed misconfiguration checks. New CVE alerts (Pro) every 30 minutes tell you when a fixable critical vulnerability shows up; critical CVEs also lower the risk score. External Secrets (Pro): sync status of each ExternalSecret, Sync now.'],
+                            ['Certificates', <>From cert-manager (add-on): every certificate with days left, renewal date and issuer, worst first (expired, failing, expiring within 14 days); the issuers; ACME challenges that are stuck, with the reason. <B>Renew now</B> asks cert-manager to issue a certificate again (permission <C>cert:renew</C>: admins and operators; it can need two people). Certificate alerts (Pro) every 6 hours: failing, expired, or 14 / 7 / 3 / 1 days before expiry.</>],
+                            ['Delivery', <>DORA metrics over 7, 14 or 30 days: deployment frequency, change failure rate, failed deployment recovery time and <B>lead time for changes</B> (from deploys whose CI sent the commit), each graded Elite / High / Medium / Low, with a daily chart and the failed rollouts.</>],
+                            ['Apps → Metrics', 'CPU, memory, restarts and network per workload from Prometheus.'],
+                            ['Apps → Cost', 'Monthly cost of each namespace and app from its CPU / memory requests, and the money left idle.']
+                        ]} />
+                    </Section>
+
+                    <Section id="features" Icon={ToggleLeft} color="text-slate-300" title="Features & Plans"
+                        intro="Newer features can be switched on one by one.">
+                        <P>Admins open <B>Features</B> in the sidebar to turn a feature off (or back on) for the workspace; whoever runs the KubeEZ server decides which are available at all (<C>KUBEEZ_FEATURES=&quot;gitops=on,helmApps=off&quot;</C> and <C>KUBEEZ_FEATURES_DEFAULT=on|off</C>, or the platform console). A feature that is off disappears from the pages and its background checks stop.</P>
+                        <P>Free workspaces see every feature; the ones in the Pro plan ask to upgrade. Free includes the GitOps view and sync, Security, Certificates, DORA, Helm apps, app metrics, cost per app and Hibernate / Wake. <B>Pro and Enterprise include every feature</B> — Enterprise differs only in quantities (clusters, nodes, members).</P>
+                    </Section>
+
+                    <Section id="etcd"Icon={DatabaseBackup} color="text-cyan-400" title="Cluster Snapshots"
                         intro="A snapshot saves the whole cluster state (apps, services, settings, secrets) so you can go back to it. Find them in the cluster's Backups tab.">
                         <Table head={['', '']} rows={[
                             ['When', <><B>Backup Now</B>, plus automatically before every upgrade and every restore.</>],
@@ -674,7 +795,7 @@ export default function Docs() {
                         <Note><B>Kubeconfig downloads follow the role:</B> cluster-admins get the admin kubeconfig; everyone else gets a kubeconfig of their own (a 24-hour token) that can do exactly what their role allows on that cluster.</Note>
 
                         <H4>Two-person approval (Pro)</H4>
-                        <P>Protect dangerous actions so that one person cannot do them alone, for admins too. On <B>Approvals</B>, tick the actions: remove a cluster, upgrade Kubernetes, restore an etcd snapshot, rebuild a control-plane, uninstall or reinstall an add-on, restore volume backups. It needs at least two people who can approve.</P>
+                        <P>Protect dangerous actions so that one person cannot do them alone, for admins too. On <B>Approvals</B>, tick the actions: remove a cluster, upgrade Kubernetes, restore an etcd snapshot, rebuild a control-plane, uninstall or reinstall an add-on, restore volume backups, run an AI fix or apply AI-written YAML, sync a GitOps app, deploy / roll back / uninstall / promote a Helm app, promote a canary rollout, hibernate a namespace, add a debug container, renew a certificate. Deploys into a <B>protected environment</B> always ask, whatever is ticked. It needs at least two people who can approve.</P>
                         <Steps items={[
                             'Someone starts a protected action as usual. A dialog asks why; they send the request.',
                             <>The approvers get an alert. On <B>Approvals</B>, another person approves or denies it, optionally with a comment. Nobody can approve their own request.</>,
@@ -813,8 +934,14 @@ export default function Docs() {
                             ['Alerts', '1 channel, critical alerts', 'All channels and alert types, rules'],
                             ['Advanced add-on settings (YAML)', '—', '✓'],
                             ['Custom roles, per-cluster and namespace access, access review', 'Admin / Operator / Viewer', '✓'],
-                            ['Two-person approval, temporary access', '—', '✓']
+                            ['Two-person approval, temporary access', '—', '✓'],
+                            ['Helm apps, GitOps view & sync, Security, Certificates, DORA, app metrics, cost per app, hibernate', '✓', '✓'],
+                            ['GitOps alerts & new apps, promotion PRs (GitHub / GitLab / Bitbucket), promotion pipeline', '—', '✓'],
+                            ['Deploy tokens & CI webhook, preview environments, deploy from chat', '—', '✓'],
+                            ['CVE gate, image signature gate, deploy risk, Helm drift, auto-rollback', '—', '✓'],
+                            ['New CVE alerts, certificate alerts, scheduled hibernate, debug containers, canary rollouts, KEDA, registries, External Secrets', '—', '✓']
                         ]} />
+                        <P>Pro and Enterprise include every feature; a Free workspace sees the others and is asked to upgrade.</P>
                         <P>Cluster, node and member limits depend on the plan. See <Link to="/pricing" className="text-blue-400 hover:underline">Plans</Link>.</P>
                     </Section>
 
@@ -833,7 +960,12 @@ export default function Docs() {
                             ['Offsite test fails', 'Check the endpoint (address only, no bucket), that the bucket exists, and the keys.'],
                             ['AccessDenied on :30833', 'Normal: that is the S3 API. Use the Web UI on :30834.'],
                             ['Explorer does not open', 'Install it from the cluster’s Explorer tab. Behind a Gateway Agent, reinstall the agent with the same command.'],
-                            ['No password reset email', 'Ask a workspace admin to reset it under Team & Roles.']
+                            ['No password reset email', 'Ask a workspace admin to reset it under Team & Roles.'],
+                            ['Deploy "Blocked by the CVE / signature policy"', 'Fix or sign the image, add the signing key (Delivery → Signing keys), or an admin deploys it anyway with a reason.'],
+                            ['423 Change freeze', 'A freeze covers this cluster. Wait for it to end, or an admin overrides it with a reason.'],
+                            ['428 Needs approval', 'The action is protected: a second person approves it on Approvals, then it runs.'],
+                            ['"… is turned off" / "part of the Pro plan"', 'An admin turned the feature off (Features), or the workspace plan does not include it (Plans).'],
+                            ['Chat says "This chat may not deploy anything"', 'An admin allows apps for that channel under Delivery → Deploy from chat, and ChatOps is on for it (AI settings).']
                         ]} />
                         <Note>Still stuck? Send the error message and the last lines of the job log to your KubeEZ support contact.</Note>
                     </Section>
@@ -859,6 +991,8 @@ export default function Docs() {
                                 [<C key="u">KUBEEZ_PUBLIC_URL</C>, 'The address people open KubeEZ at, so links in alerts and emails go to the right place.'],
                                 [<C key="o">KUBEEZ_OPEN_SIGNUP</C>, 'Leave empty: only the admin adds people (Team → Add member) and the login page shows no "Create account". Set to true to let anyone who can open the login page create their own workspace.'],
                                 [<C key="g">GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET</C>, 'The "Continue with Google / GitHub" buttons on the sign-in page (each appears once its two keys are set). Create an OAuth app with the provider and register the callback URL <KUBEEZ_PUBLIC_URL>/api/auth/oauth/google/callback (or …/github/callback). Only a verified email is accepted; an account with that email is linked, otherwise a new workspace opens (where sign-up is open).'],
+                                [<C key="sso">OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_NAME, OIDC_WORKSPACE, OIDC_DEFAULT_ROLE, OIDC_ROLE_MAP, OIDC_GROUPS_CLAIM, OIDC_SCOPES</C>, 'Single sign-on with any OpenID Connect provider (Okta, Azure AD / Entra ID, Keycloak, Google Workspace…): a "Sign in with …" button. New people join OIDC_WORKSPACE with OIDC_DEFAULT_ROLE (none by default) unless OIDC_ROLE_MAP maps one of their groups to a role.'],
+                                [<C key="f">KUBEEZ_FEATURES, KUBEEZ_FEATURES_DEFAULT</C>, 'Which features this server offers, e.g. KUBEEZ_FEATURES="gitops=on,helmApps=off"; KUBEEZ_FEATURES_DEFAULT=off starts with everything off so you can turn features on one by one.'],
                                 [<C key="t">TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY</C>, 'An "I am human" check (Cloudflare Turnstile) on sign-up and forgot password, against bots. Create a widget in the Cloudflare dashboard → Turnstile and paste both keys; empty = off.'],
                                 ['HTTPS', 'Put KubeEZ behind HTTPS before using Gateway Agents for real servers.']
                             ]} />

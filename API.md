@@ -1,5 +1,34 @@
 # 📡 KubeEZ API Documentation
 
+> **v2.3.0 (2026-11-02).** The console uses the REST API under `/api` with an httpOnly session cookie (an `Authorization: Bearer <token>` header also works). Every route checks the member's role, cluster and namespace access, the workspace's feature flags (403 `FEATURE_OFF`), its plan (402 `UPGRADE_REQUIRED`), two-person approval (428) and change freezes (423). The endpoint list further below is from an older version; the public endpoints for CI and chat are documented here.
+
+## Deploy from CI — `/api/hooks` (a deploy token, no session)
+
+Create a token under **Delivery → Deploy tokens** (admins, Pro). A token deploys one release (cluster, namespace, chart, repository) and may change only the values it lists.
+
+| Method & path | Body | What it does |
+|---|---|---|
+| `POST /api/hooks/deploy` | `{ "set": { "image.tag": "1.4.2" }, "version"?: "1.5.0", "commit"?: { "sha": "…", "time": "ISO date" } }` | Upgrades the token's release with the live values plus `set`. A `commit` counts for the DORA lead time once the deploy succeeds. → `202` and the job. |
+| `GET /api/hooks/jobs/:id` | — | The job: `running`, `done` or `failed` (with `error`, `warnings`, `cve`, `signatures`). |
+| `POST /api/hooks/preview` | `{ "pr": 42 } or { "branch": "feature/login" }, "set"?, "ttlHours"?: 1–336` | A preview environment (token made with "previews"): a copy of the token's release in `<release>-pr-42`. → `202`, the preview and its job. |
+| `DELETE /api/hooks/preview` | `{ "pr": 42 }` or `{ "branch": "…" }` | Removes the preview's namespace. |
+
+Header: `Authorization: Bearer kzt_…`. Answers: `401` unknown / expired / revoked token · `403` a value the token may not set, a protected environment (`PROTECTED`), or a token without previews · `409` read-only cluster · `423` change freeze · `400` bad input. The CVE gate and image signature policy of the environment apply; a token never overrides them.
+
+```bash
+curl -fsS -X POST https://<your-kubeez>/api/hooks/deploy \
+  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" \
+  -d '{"set": {"image.tag": "'"$GIT_SHA"'"}, "commit": {"sha": "'"$GIT_SHA"'", "time": "'"$(git log -1 --format=%cI)"'"}}'
+```
+
+## ChatOps — `/api/chatops/slack/:channelId`
+
+The Slack slash command posts here; every request must carry Slack's signature made with the channel's signing secret (checked on the raw body, within 5 minutes). Telegram uses the channel's bot. Commands: questions for KubeEZ AI, `incidents`, `why 2`, `fix 2`, `deploy list`, `deploy web 1.4.2 to staging` → `confirm 4821`.
+
+---
+
+# Older endpoint reference
+
 ## Base URL
 ```
 http://localhost:3000/api

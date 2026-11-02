@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-11-02
+
+Everything since 2.2.0 (about 250 changes). The built-in guide (Help → Docs) describes each feature.
+
+### Added — shipping apps
+- **Helm apps** per cluster: install / upgrade from the workspace's chart repositories with a server-side dry-run diff, roll back to any revision, values with secrets masked.
+- **Delivery settings**: environments (protected = a second person for every deploy), chart repositories, change freezes (admin override with a reason), compare environments, **promotion pipeline**, **auto-rollback** of deploys that break their workload, registry pull secrets, cost prices.
+- **Deploy tokens and CI webhook** (`POST /api/hooks/deploy`): one release per token, only the listed values; an optional commit gives the DORA **lead time for changes**.
+- **Preview environments** per pull request or branch (UI and `POST/DELETE /api/hooks/preview`), removed by themselves when they expire.
+- **Deploy from chat** (Slack / Telegram ChatOps): `deploy web 1.4.2 to staging`, confirmed with a code by the same person; only apps an admin allowed for that channel.
+- **Deploy guards** on every deploy path: a **CVE gate** (Trivy reports) and an **image signature gate** (cosign, verified in the registry against the workspace's signing keys), warn or block.
+- **Deploy risk**: a 0–100 score from the diff, the release history and open problems, explained by the connected AI.
+- **Helm drift**: what was changed by hand, compared with `kubectl diff` against the deployed manifest; restore in one click; hourly alerts.
+
+### Added — GitOps
+- Argo CD and Flux apps on one list with sync, health and drift; **Sync now** / **Refresh**; alerts; **Explain with AI**.
+- New **Argo CD apps** (own AppProject) and **Flux apps** (own namespace-only ServiceAccount), locked to one namespace, never pruned.
+- **Promotions by pull request** on **GitHub, GitLab** (merge requests, sub-groups) **and Bitbucket**.
+
+### Added — security & insight
+- **Security** tab (Trivy Operator): vulnerabilities and misconfigurations per workload; alerts for new fixable critical CVEs; critical CVEs in the risk score; External Secrets status.
+- **Certificates** tab (cert-manager): certificates by state and expiry, issuers, stuck ACME challenges, **Renew now** (`cert:renew`), alerts at 14 / 7 / 3 / 1 days.
+- **Delivery** tab: DORA metrics (deployment frequency, change failure rate, recovery time, lead time).
+- App metrics from Prometheus, **cost per app**, Hibernate / Wake (also on a schedule), debug containers, Argo Rollouts canaries, KEDA autoscaling wizard.
+- Add-ons: External Secrets, Argo Rollouts, KEDA (30 add-ons in all).
+
+### Added — platform
+- **KubeEZ AI**: Ask AI from live cluster data in English / Hindi / Hinglish, bring your own AI (OpenRouter sign-in, cloud keys, or offline Ollama / vLLM / LM Studio), Install Doctor, incident explanations with dry-run fixes and undo, Create YAML, Fleet, Advisor, What changed, ChatOps in Slack and Telegram, MCP server, quality tests and model comparison, usage and budgets.
+- **Connect existing clusters** (EKS, AKS, GKE, OKE, DOKS, LKE, k3s, RKE2, OpenShift…): KubeEZ agent, connect command or kubeconfig; read-only or full manage; node pools and upgrades through the cloud account; SSH for on-prem.
+- **Team**: custom roles, per-cluster / per-label / per-namespace access, two-person approvals, temporary access, access review; sign-in with Google / GitHub and **SSO with any OpenID Connect provider** (`OIDC_*`).
+- **Feature flags** (server-wide `KUBEEZ_FEATURES` and per workspace on the Features page) and **plan gating**: Free sees every feature, Pro and Enterprise include all of them.
+- Compliance Center (CERT-In, DPDP, ISO 27001, CIS) with a tamper-evident audit trail; auto-healing 2.0; alert routing and escalation; safe etcd restore, disaster recovery and volume backups; KubeEZ Explorer; node shells; new themes.
+
+### Changed
+- Version numbers aligned: backend, frontend and `/api/config` report 2.3.0.
+- `.env.example` documents SSO (`OIDC_*`) and feature flags.
+
+### Not yet verified
+- Features added on 2026-10-30 and later are covered by automated tests with simulated clusters, registries and Git providers; they have not been run against real clusters yet.
+
+---
+
 ## [2.2.0] - 2026-06-19
 
 ### Added
