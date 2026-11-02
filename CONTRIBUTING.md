@@ -1,433 +1,113 @@
-# 🤝 Contributing to KubeEZ
+# Contributing to KubeEZ
 
-Thank you for your interest in contributing to KubeEZ! This document provides guidelines and instructions for contributing.
+*Version 2.3.0 · November 2026.* How to set up the code, the conventions the codebase follows, and what a change needs before it is merged.
 
----
-
-## 📋 Table of Contents
-
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [Project Structure](#project-structure)
-- [Making Changes](#making-changes)
-- [Testing](#testing)
-- [Submitting Changes](#submitting-changes)
-- [Coding Standards](#coding-standards)
+Be respectful and constructive in issues and reviews. **Never post a vulnerability publicly** — report it privately to the maintainers.
 
 ---
 
-## 📜 Code of Conduct
+## 1. Set up
 
-- Be respectful and inclusive
-- Welcome newcomers and help them get started
-- Focus on constructive feedback
-- Respect differing viewpoints and experiences
+Requirements: **Node.js 20+** (22 recommended), **Docker** (for the full stack and end-to-end tests), Git.
 
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- Docker and Docker Compose
-- Git
-- Basic knowledge of Kubernetes
-- Familiarity with React and Express.js
-
-### Fork and Clone
-
-1. Fork the repository on GitHub
-2. Clone your fork:
 ```bash
-git clone https://github.com/YOUR_USERNAME/Universal-K8s-Installer.git
+git clone https://github.com/<you>/Universal-K8s-Installer.git
 cd Universal-K8s-Installer
+cp .env.example .env
+
+# everything in Docker: console :5173, API :3000
+docker compose up -d --build
+
+# or each part with hot reload
+cd backend  && npm install && npm run dev     # API on :3000
+cd frontend && npm install && npm run dev     # console on :5173, /api proxied to :3000
 ```
 
-3. Add upstream remote:
-```bash
-git remote add upstream https://github.com/ckmine11/Universal-K8s-Installer.git
-```
+Set `KUBEEZ_MODE=selfhosted` in `.env` to get the first-admin screen on a fresh data folder; in SaaS mode create the platform owner with `node scripts/make-superadmin.js <user> <password> <email>` (in `backend/`). Your local data lives in `backend/data` — never commit it.
 
 ---
 
-## 💻 Development Setup
+## 2. Where things are
 
-### Local Development
+| Path | What |
+|---|---|
+| `backend/src/server.js` | Express app, middleware order, route mounting, background loops |
+| `backend/src/routes/` | REST API — one file per area |
+| `backend/src/services/` | the logic: cluster access, automation, healing, AI (`ai/`), Helm apps, GitOps, delivery, security… |
+| `backend/src/config/permissions.js` | roles → permissions (the API enforces it; `frontend/src/config/permissions.js` mirrors it for display) |
+| `backend/src/services/features.js` | feature flags and which plan includes each |
+| `backend/src/automation/` | Bash scripts run on cluster nodes |
+| `backend/tests/` | `node:test` suites |
+| `frontend/src/pages/`, `components/` | React console (Vite + Tailwind) |
+| `frontend/src/pages/Docs.jsx` | the in-app user guide |
+| `tests/e2e/` | end-to-end runs on real distros in Docker |
 
-1. **Install dependencies:**
-```bash
-# Backend
-cd backend
-npm install
-
-# Frontend
-cd ../frontend
-npm install
-```
-
-2. **Start development servers:**
-```bash
-# Using Docker Compose (recommended)
-docker-compose up -d --build
-
-# Or run separately:
-# Backend
-cd backend
-npm run dev
-
-# Frontend
-cd frontend
-npm run dev
-```
-
-3. **Access the application:**
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:3000
+Module maps and design notes: [IMPROVEMENTS.md](IMPROVEMENTS.md), [UI_ENHANCEMENTS.md](UI_ENHANCEMENTS.md), [TESTING_GUIDE.md](TESTING_GUIDE.md).
 
 ---
 
-## 📂 Project Structure
+## 3. Conventions
 
-```
-kubeez/
-├── backend/
-│   ├── src/
-│   │   ├── automation/       # Bash scripts for K8s installation
-│   │   ├── middleware/       # Express middleware
-│   │   ├── routes/          # API route handlers
-│   │   ├── services/        # Business logic
-│   │   └── utils/           # Helper functions
-│   ├── data/                # Persistent data storage
-│   ├── logs/                # Application logs
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   │   ├── components/      # Reusable React components
-│   │   ├── pages/          # Page components
-│   │   ├── services/       # API client services
-│   │   └── utils/          # Helper functions
-│   └── Dockerfile
-├── docs/                    # Documentation
-└── docker-compose.yml
-```
+### Backend (Node.js, ES modules)
+- Match the surrounding code: small functions, the comment density and naming of the file you are in. Each service starts with a comment saying what it does and why.
+- **Validate every input** with a strict pattern before it reaches a shell, a file path or a URL; quote shell values with the file's `q()` helper. Reject `__proto__` / `constructor` / `prototype` in value paths.
+- **Every route checks access**: `requirePermission(...)`, the cluster rule (`canSeeCluster`, `canOn`) and namespace limits; a cluster or namespace the member may not see answers **404**.
+- New features get a **feature flag** in `services/features.js` (`plan: 'free'` or `'pro'` — never Enterprise-only) and `requireFeature(...)` on their routes.
+- Changes go through the existing gates where they apply: two-person approval (`requireApproval`), change freezes (`checkFreeze`), protected environments, the CVE and signature gates.
+- Set `req.auditDetail` so the audit trail says what happened.
+- Secrets are encrypted with `utils/cryptoUtils.js` and never sent to the browser; values in API answers are masked.
+- In SaaS mode, outbound connections go through `assertDirectConnectAllowed` (no private / internal addresses).
+- Services that run commands expose `_test.useConnect(fn)`; services that call outside APIs take a `fetchImpl` — so they can be tested without a cluster.
+- Errors carry an HTTP `status` and a message a person can act on ("what happened — what to do").
+
+### Frontend (React + Tailwind)
+- Function components and hooks; call the API with `apiFetch` and show the server's error message.
+- Use the shared classes (`kz-card`, `kz-input`, `kz-btn-primary`, `kz-btn-ghost`) and `lucide-react` icons.
+- Hide what a member may not use (`can(role, …)`, `useFeatures()`), but never rely on that for security — the API decides.
+- Icon-only buttons need an `aria-label`; never show state by colour alone.
+- Preview before change, confirm the irreversible, mask secrets — see [UI_ENHANCEMENTS.md](UI_ENHANCEMENTS.md).
+
+### Bash (node scripts)
+- `#!/bin/bash`, `set -e` where safe, quoted variables, idempotent steps (re-running must be safe).
+- Report failures as `KUBEEZ_FAIL|CODE|reason|fix` and progress as `KUBEEZ_PROGRESS|…` so the console can explain them.
+- Support every listed distro (apt and dnf / yum paths).
+
+### Docs and language
+- Everything — UI text, docs, commit messages — in clear English.
+- A user-visible change updates the in-app guide (`Docs.jsx`) and, where relevant, [USER_GUIDE.md](USER_GUIDE.md), [README.md](README.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## 🔧 Making Changes
-
-### Branch Naming Convention
-
-- `feature/` - New features (e.g., `feature/add-helm-support`)
-- `fix/` - Bug fixes (e.g., `fix/ssh-connection-timeout`)
-- `docs/` - Documentation updates (e.g., `docs/update-api-guide`)
-- `refactor/` - Code refactoring (e.g., `refactor/cleanup-services`)
-- `test/` - Adding tests (e.g., `test/add-unit-tests`)
-
-### Create a Branch
+## 4. Tests
 
 ```bash
-git checkout -b feature/your-feature-name
+cd backend && npm test                 # must stay green (~750 tests)
+cd frontend && npm run build           # must build (there are no frontend unit tests yet)
+bash -n backend/src/automation/<script>.sh
 ```
 
-### Commit Message Format
-
-Follow conventional commits:
-
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, etc.)
-- `refactor`: Code refactoring
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
-
-**Examples:**
-```bash
-git commit -m "feat(monitoring): add Prometheus metrics endpoint"
-git commit -m "fix(ssh): resolve connection timeout issue"
-git commit -m "docs(api): update authentication examples"
-```
+A new feature's tests cover: input checks (400), every role and a namespace-limited member (200 / 403 / 404), the gates (feature off 403, plan 402, approval 428, freeze 423, read-only cluster 409), the exact commands sent to the cluster, and the audit entry. How-to and examples: [TESTING_GUIDE.md](TESTING_GUIDE.md). Changes to install, upgrade or backup scripts should also pass the matching end-to-end scenario (`bash tests/e2e/e2e.sh <scenario> <distro>`).
 
 ---
 
-## 🧪 Testing
+## 5. Commits and pull requests
 
-### Running Tests
-
-```bash
-# Backend tests
-cd backend
-npm test
-
-# Frontend tests
-cd frontend
-npm test
-
-# Run specific test file
-npm test -- path/to/test.js
-```
-
-### Writing Tests
-
-- Place tests in `__tests__` directories
-- Name test files with `.test.js` or `.spec.js` suffix
-- Write descriptive test names
-- Aim for good code coverage
-
-**Example:**
-```javascript
-// backend/src/services/__tests__/backupService.test.js
-import { BackupService } from '../backupService.js';
-
-describe('BackupService', () => {
-  test('should create backup successfully', async () => {
-    const result = await BackupService.createBackup();
-    expect(result.success).toBe(true);
-  });
-});
-```
+- Branch from `master`: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`.
+- Commit messages in the style of the history — a type, an optional scope, and what changed for the user:
+  ```
+  feat: preview environments per pull request
+  fix(explorer): a 502 says who answered it and why
+  docs: rewrite the setup guide for 2.3.0
+  ```
+- One topic per pull request. Describe what changed, why, and how you tested it (including anything not tested on a real cluster).
+- CI must pass: script syntax, backend tests, frontend build, and the install / upgrade jobs that apply.
 
 ---
 
-## 📤 Submitting Changes
+## 6. Where help is welcome
 
-### Before Submitting
-
-1. **Update your branch:**
-```bash
-git fetch upstream
-git rebase upstream/master
-```
-
-2. **Run tests:**
-```bash
-npm test
-```
-
-3. **Check code style:**
-```bash
-npm run lint
-```
-
-4. **Build successfully:**
-```bash
-docker-compose build
-```
-
-### Create Pull Request
-
-1. Push your branch:
-```bash
-git push origin feature/your-feature-name
-```
-
-2. Go to GitHub and create a Pull Request
-
-3. Fill in the PR template:
-   - **Title:** Clear, descriptive title
-   - **Description:** What changes were made and why
-   - **Related Issues:** Link to related issues
-   - **Testing:** How you tested the changes
-   - **Screenshots:** If UI changes, include screenshots
-
-### PR Review Process
-
-- Maintainers will review your PR
-- Address any feedback or requested changes
-- Once approved, your PR will be merged
-
----
-
-## 💎 Coding Standards
-
-### JavaScript/Node.js
-
-- Use ES6+ features
-- Use `const` and `let`, avoid `var`
-- Use async/await instead of callbacks
-- Add JSDoc comments for functions
-- Keep functions small and focused
-
-**Example:**
-```javascript
-/**
- * Creates a backup of cluster data
- * @param {string} clusterId - The cluster ID to backup
- * @returns {Promise<Object>} Backup result
- */
-async function createBackup(clusterId) {
-  // Implementation
-}
-```
-
-### React
-
-- Use functional components with hooks
-- Keep components small and reusable
-- Use meaningful component and prop names
-- Add PropTypes or TypeScript types
-
-**Example:**
-```javascript
-import React, { useState, useEffect } from 'react';
-
-export function ClusterCard({ cluster, onSelect }) {
-  const [status, setStatus] = useState('loading');
-  
-  useEffect(() => {
-    // Fetch cluster status
-  }, [cluster.id]);
-  
-  return (
-    <div className="cluster-card">
-      {/* Component JSX */}
-    </div>
-  );
-}
-```
-
-### Bash Scripts
-
-- Add shebang: `#!/bin/bash`
-- Use `set -e` for error handling
-- Add comments for complex logic
-- Use meaningful variable names
-- Quote variables: `"$VARIABLE"`
-
-**Example:**
-```bash
-#!/bin/bash
-set -e
-
-CLUSTER_NAME=${1:-"default"}
-
-echo "Installing cluster: $CLUSTER_NAME"
-# Implementation
-```
-
-### CSS
-
-- Use meaningful class names
-- Follow BEM naming convention when appropriate
-- Keep selectors simple
-- Use CSS variables for theming
-
----
-
-## 🎯 Areas for Contribution
-
-### High Priority
-
-- [ ] Add unit and integration tests
-- [ ] Improve error handling and logging
-- [ ] Add support for more Linux distributions
-- [ ] Enhance monitoring dashboards
-- [ ] Add cluster upgrade automation
-
-### Medium Priority
-
-- [ ] Add more add-ons (cert-manager, ArgoCD, etc.)
-- [ ] Improve UI/UX
-- [ ] Add multi-cluster management
-- [ ] Create CLI tool
-- [ ] Add backup/restore functionality
-
-### Documentation
-
-- [ ] Add video tutorials
-- [ ] Improve API documentation
-- [ ] Create architecture diagrams
-- [ ] Write blog posts/use cases
-- [ ] Translate documentation
-
----
-
-## 🐛 Reporting Bugs
-
-### Before Reporting
-
-1. Check existing issues
-2. Try the latest version
-3. Review troubleshooting guide
-
-### Bug Report Template
-
-```markdown
-**Describe the bug**
-A clear description of what the bug is.
-
-**To Reproduce**
-Steps to reproduce:
-1. Go to '...'
-2. Click on '...'
-3. See error
-
-**Expected behavior**
-What you expected to happen.
-
-**Screenshots**
-If applicable, add screenshots.
-
-**Environment:**
-- OS: [e.g., Ubuntu 22.04]
-- Docker version:
-- KubeEZ version:
-- Browser: [if frontend issue]
-
-**Logs**
-```
-Paste relevant logs here
-```
-
-**Additional context**
-Any other context about the problem.
-```
-
----
-
-## 💡 Feature Requests
-
-We welcome feature requests! Please:
-
-1. Check if the feature already exists or is planned
-2. Clearly describe the feature and use case
-3. Explain why it would be valuable
-4. Consider contributing the implementation
-
----
-
-## 📞 Getting Help
-
-- **GitHub Discussions:** Ask questions and discuss ideas
-- **GitHub Issues:** Report bugs and request features
-- **Documentation:** Check existing docs first
-
----
-
-## 🏆 Recognition
-
-Contributors will be:
-- Listed in CONTRIBUTORS.md
-- Mentioned in release notes
-- Credited in documentation
-
----
-
-## 📄 License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
-
----
-
-**Thank you for contributing to KubeEZ!** 🚀
+- Running the newer features (GitOps actions, Helm apps, delivery, previews, chat deploy, signature gate, drift, certificates) against **real clusters** and reporting what breaks.
+- Frontend tests and a linter.
+- A database store (PostgreSQL) instead of JSON files.
+- A Content-Security-Policy for the console.
+- Keyless (Fulcio / Rekor) cosign verification; Bitbucket Server; a newer Node.js runtime for the Gateway Agent.

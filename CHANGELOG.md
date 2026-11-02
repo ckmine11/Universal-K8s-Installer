@@ -45,7 +45,7 @@ Everything since 2.2.0 (about 250 changes). The built-in guide (Help → Docs) d
 - `.env.example` documents SSO (`OIDC_*`) and feature flags.
 - Documentation rewritten in English for this version: README, SETUP, USER_GUIDE, FEATURES_EXPLAINED, TESTING_GUIDE, UI guide (UI_ENHANCEMENTS), engineering notes (IMPROVEMENTS), API (CI and ChatOps), and the in-app Docs.
 - The Gateway Agent page's "connected" message is in English (it was Roman Hindi since 2.2.0).
-- All other guides rewritten for this version: DEPLOY, DOCKER_GUIDE, DOCKER_QUICKSTART, REAL_INSTALLATION_GUIDE, SUDO_SETUP, MULTI_SITE_SETUP (host nginx now passes WebSockets for the Explorer and terminals), LICENSING_GUIDE.
+- All other guides rewritten for this version: DEPLOY, DOCKER_GUIDE, DOCKER_QUICKSTART, REAL_INSTALLATION_GUIDE, SUDO_SETUP, MULTI_SITE_SETUP (host nginx now passes WebSockets for the Explorer and terminals), LICENSING_GUIDE, TROUBLESHOOTING, CLOUDFLARE_SETUP (Tunnel or proxied DNS) and CONTRIBUTING.
 
 ### Fixed
 - `docker-compose.prod.yml` now passes `OIDC_*`, `KUBEEZ_FEATURES*`, `KUBEEZ_ALLOW_PRIVATE_SSH`, `ALERT_EMAILS_PER_DAY_*` and `AUDIT_RETENTION_DAYS` from `.env` to the backend — before, those settings had no effect in Docker.
