@@ -6,7 +6,11 @@ import { canAccessResource } from '../utils/access.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { deliveryStore, checkFreeze } from '../services/deliveryStore.js'
 import { listCharts } from '../services/chartCatalog.js'
-import { listReleases, valuesOf, compareValues, RELEASE, cleanDeploy, deploy, jobView } from '../services/helmApps.js'
+import { listReleases, valuesOf, compareValues, RELEASE, cleanDeploy, deploy, jobView, findJob } from '../services/helmApps.js'
+import { previewKey, previewNamespace, startPreview, removePreview, MAX_PREVIEWS } from '../services/previews.js'
+import { cleanRule } from '../services/chatDeploy.js'
+import { notificationStore } from '../services/notificationStore.js'
+import { aiStore } from '../services/ai/aiStore.js'
 import { requireApproval } from '../services/approvals.js'
 import { capabilities } from '../services/clusterAccess.js'
 import { apiTokens } from '../services/apiTokens.js'
@@ -14,7 +18,7 @@ import { cleanRegistry } from '../services/appMetrics.js'
 import { cleanRates, DEFAULT_RATES } from '../services/costs.js'
 import { cleanSchedule } from '../services/hibernateSchedule.js'
 import { SYSTEM_NS } from '../services/gitops.js'
-import { cleanPromotion, openPromotionPr } from '../services/gitPromote.js'
+import { cleanPromotion, openPromotionPr, PROVIDERS } from '../services/gitPromote.js'
 
 // Delivery settings of the workspace (mounted at /api/delivery):
 //   environments  GET (members see those on clusters they see) · POST/PUT/DELETE env:manage
@@ -32,6 +36,8 @@ router.use('/tokens', requireFeature('deployTokens'))
 router.use('/git', requireFeature('gitopsPromote'))
 router.use('/promote', requireFeature('gitopsPromote'))
 router.use('/registries', requireFeature('registries'))
+router.use('/previews', requireFeature('helmApps'), requireFeature('previews'))
+router.use('/chat-deploy', requireFeature('chatDeploy'))
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message })
 const clustersOf = async (user) => (await clusterStore.getClusters().catch(() => [])).filter(c => canAccessResource(user, c) && c.orgId === user.orgId)
 const orgOnly = (req, res, next) => req.user?.orgId ? next() : res.status(400).json({ error: 'Delivery settings belong to a workspace' })
@@ -161,6 +167,75 @@ router.post('/promote-release', requirePermission('app:deploy'), promoteTarget, 
     } catch (e) { fail(res, e) }
 })
 
+// ── preview environments: a short-lived copy of an app per pull request / branch ──
+// Copying the base needs app:values there (its values are copied) and app:deploy;
+// a member limited to some namespaces may only make previews whose namespace is theirs.
+const previewView = (p, cluster) => ({ ...p, clusterName: cluster?.clusterName || p.clusterId, job: jobView(findJob(p.jobId)), expired: Date.parse(p.expiresAt) <= Date.now() })
+router.get('/previews', async (req, res) => {
+    const clusters = await clustersOf(req.user)
+    res.json({
+        previews: deliveryStore.previews(req.user.orgId).flatMap(p => { const c = clusters.find(x => x.id === p.clusterId); const n = c && accessOn(req.user, c).namespaces; return c && canSeeCluster(req.user, c) && (!n || nsMatches(n, p.namespace)) ? [previewView(p, c)] : [] }),
+        canCreate: canOn(req.user, 'app:deploy'), max: MAX_PREVIEWS
+    })
+})
+router.post('/previews', requirePermission('app:deploy'), async (req, res) => {
+    try {
+        const b = req.body || {}
+        const env = deliveryStore.environment(req.user.orgId, String(b.envId || ''))
+        const cluster = env && (await clustersOf(req.user)).find(c => c.id === env.clusterId)
+        const nss = cluster && accessOn(req.user, cluster).namespaces
+        if (!env || !cluster || !canSeeCluster(req.user, cluster) || (nss && !nsMatches(nss, env.namespace))) return res.status(404).json({ error: 'Environment not found' })
+        if (!canOn(req.user, 'app:values', cluster) || !canOn(req.user, 'app:deploy', cluster)) return res.status(403).json({ error: `Your role may not copy and deploy apps on ${cluster.clusterName}.`, requiredPermission: 'app:deploy' })
+        if (!RELEASE.test(String(b.release || ''))) return res.status(400).json({ error: 'Not a valid release name' })
+        const { key, label } = previewKey(b)
+        const namespace = previewNamespace(b.release, key)
+        if (nss && !nsMatches(nss, namespace)) return res.status(403).json({ error: `You may not deploy into namespace ${namespace}` })
+        const w = capabilities(cluster).helmApps
+        if (w?.ok === false) return res.status(409).json({ error: w.why })
+        const repo = deliveryStore.repoCredentials(req.user.orgId, String(b.repoId || ''))
+        if (!repo) return res.status(400).json({ error: 'Pick the chart repository the app comes from' })
+        const override = checkFreeze(req.user, cluster, b)
+        const r = await startPreview({ orgId: req.user.orgId, cluster, base: { namespace: env.namespace, release: b.release }, key, label, set: b.set, ttlHours: b.ttlHours, repo, by: req.user.username })
+        req.auditDetail = `preview ${r.preview.namespace} of ${env.name}/${b.release} (${label}) until ${r.preview.expiresAt.slice(0, 16)}${Object.keys(r.preview.set).length ? ` set ${Object.entries(r.preview.set).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}${override ? ` — ${override}` : ''}`
+        res.status(202).json({ preview: previewView(r.preview, cluster), job: jobView(r.job) })
+    } catch (e) { fail(res, e) }
+})
+router.delete('/previews/:pid', async (req, res) => {
+    const p = deliveryStore.previews(req.user.orgId).find(x => x.id === req.params.pid)
+    const cluster = p && (await clustersOf(req.user)).find(c => c.id === p.clusterId)
+    const nss = cluster && accessOn(req.user, cluster).namespaces
+    if (!p || !cluster || !canSeeCluster(req.user, cluster) || (nss && !nsMatches(nss, p.namespace))) return res.status(404).json({ error: 'Preview not found' })
+    if (!canOn(req.user, 'app:delete', cluster)) return res.status(403).json({ error: 'Your role may not remove apps on this cluster', requiredPermission: 'app:delete' })
+    try {
+        await removePreview(req.user.orgId, cluster, p)
+        req.auditDetail = `remove preview ${p.namespace} (${p.label})`
+        res.json({ success: true })
+    } catch (e) { fail(res, e) }
+})
+
+// ── deploy from chat: what each Slack / Telegram channel may deploy (admins, like deploy tokens) ──
+router.get('/chat-deploy', requirePermission('token:manage'), (req, res) => {
+    const envs = new Map(deliveryStore.environments(req.user.orgId).map(e => [e.id, e]))
+    res.json({
+        rules: deliveryStore.chatDeployRules(req.user.orgId).map(r => ({ ...r, envName: envs.get(r.envId)?.name || null })),
+        channels: notificationStore.channels(req.user.orgId).filter(c => ['slack', 'telegram'].includes(c.type)).map(c => ({ id: c.id, name: c.name, type: c.type, chatops: aiStore.chatops(req.user.orgId, c.id).enabled }))
+    })
+})
+router.post('/chat-deploy', requirePermission('token:manage'), async (req, res) => {
+    try {
+        const clusters = await clustersOf(req.user)
+        const environments = deliveryStore.environments(req.user.orgId).filter(e => clusters.some(c => c.id === e.clusterId))
+        const spec = cleanRule(req.body, { channels: notificationStore.channels(req.user.orgId), environments, repos: deliveryStore.repos(req.user.orgId) })
+        const env = environments.find(e => e.id === spec.envId)
+        // a chat can never do more than the person who allows it
+        if (!canOn(req.user, 'app:deploy', clusters.find(c => c.id === env.clusterId))) return res.status(403).json({ error: 'You may not deploy on that cluster yourself', requiredPermission: 'app:deploy' })
+        const r = deliveryStore.saveChatDeployRule(req.user.orgId, { ...spec, createdBy: req.user.username })
+        req.auditDetail = `chat ${spec.channelName} (${spec.channelType}) may deploy ${spec.release} to ${env.name} (sets ${spec.key})${spec.allowedUsers.length ? `, only ${spec.allowedUsers.join(', ')}` : ''}`
+        res.json({ ...r, envName: env.name })
+    } catch (e) { fail(res, e) }
+})
+router.delete('/chat-deploy/:rid', requirePermission('token:manage'), (req, res) => deliveryStore.removeChatDeployRule(req.user.orgId, req.params.rid) ? res.json({ success: true }) : res.status(404).json({ error: 'Rule not found' }))
+
 // ── cost prices ──
 router.get('/costs', (req, res) => res.json({ rates: deliveryStore.costRates(req.user.orgId, DEFAULT_RATES), canManage: canOn(req.user, 'env:manage') }))
 router.put('/costs', requirePermission('env:manage'), (req, res) => { try { res.json({ rates: deliveryStore.saveCostRates(req.user.orgId, cleanRates(req.body)) }) } catch (e) { fail(res, e) } })
@@ -216,8 +291,8 @@ router.post('/tokens', requirePermission('token:manage'), async (req, res) => {
 })
 router.delete('/tokens/:tokenId', requirePermission('token:manage'), (req, res) => apiTokens.revoke(req.user.orgId, req.params.tokenId, req.user.username) ? res.json({ success: true }) : res.status(404).json({ error: 'Token not found' }))
 
-// ── Git accounts and promotions by pull request (GitOps level 3) ──
-router.get('/git', (req, res) => res.json({ accounts: deliveryStore.gitAccounts(req.user.orgId), canManage: canOn(req.user, 'gitrepo:manage') }))
+// ── Git accounts and promotions by pull / merge request (GitOps level 3): GitHub, GitLab, Bitbucket ──
+router.get('/git', (req, res) => res.json({ accounts: deliveryStore.gitAccounts(req.user.orgId), canManage: canOn(req.user, 'gitrepo:manage'), providers: Object.fromEntries(Object.entries(PROVIDERS).map(([k, p]) => [k, { label: p.label, api: p.api, request: p.request, tokenHint: p.tokenHint }])) }))
 const saveGit = (req, res) => { try { res.json(deliveryStore.saveGitAccount(req.user.orgId, { ...req.body, id: req.params.accountId || undefined }, { by: req.user.username })) } catch (e) { fail(res, e) } }
 router.post('/git', requirePermission('gitrepo:manage'), saveGit)
 router.put('/git/:accountId', requirePermission('gitrepo:manage'), saveGit)
@@ -226,9 +301,9 @@ router.post('/promote', requirePermission('gitops:create'), async (req, res) => 
     const account = deliveryStore.gitAccountCredentials(req.user.orgId, String(req.body?.accountId || ''))
     if (!account?.token) return res.status(400).json({ error: 'Pick one of the workspace\'s Git accounts' })
     try {
-        const p = cleanPromotion(req.body)
+        const p = cleanPromotion(req.body, account.provider || 'github')
         const pr = await openPromotionPr(account, p, { by: req.user.username })
-        req.auditDetail = `pull request #${pr.number} on ${p.repo} (${p.path}): ${pr.changes.map(c => `${c.key} → ${c.to}`).join(', ')}`
+        req.auditDetail = `${PROVIDERS[pr.provider].label} ${PROVIDERS[pr.provider].request} #${pr.number} on ${p.repo} (${p.path}): ${pr.changes.map(c => `${c.key} → ${c.to}`).join(', ')}`
         res.json({ success: true, ...pr })
     } catch (e) { fail(res, e) }
 })

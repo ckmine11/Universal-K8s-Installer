@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomicSync } from '../utils/atomicWrite.js'
 import { encrypt, decrypt } from '../utils/cryptoUtils.js'
+import { PROVIDERS as GIT_PROVIDERS } from './gitPromote.js'
 
 // Delivery settings per workspace (orgId):
 //   environments  name → a namespace on a cluster (dev / staging / prod…);
@@ -38,7 +39,7 @@ class DeliveryStore {
     _write(all) { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAtomicSync(FILE, JSON.stringify(all, null, 2)) }
     _org(all, orgId) {
         const o = all[orgId || '_'] ||= {}
-        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []; o.registries ||= []; o.hibernateSchedules ||= []
+        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []; o.registries ||= []; o.hibernateSchedules ||= []; o.previews ||= []; o.chatDeploy ||= []
         return o
     }
     _edit(orgId, fn) { const all = this._read(); const o = this._org(all, orgId); const r = fn(o); this._write(all); return r }
@@ -66,7 +67,7 @@ class DeliveryStore {
             return env
         })
     }
-    removeEnvironment(orgId, envId) { return this._edit(orgId, (o) => { const n = o.environments.length; o.environments = o.environments.filter(e => e.id !== envId); return n !== o.environments.length }) }
+    removeEnvironment(orgId, envId) { return this._edit(orgId, (o) => { const n = o.environments.length; o.environments = o.environments.filter(e => e.id !== envId); o.chatDeploy = o.chatDeploy.filter(r => r.envId !== envId); return n !== o.environments.length }) }
 
     // ── chart repositories ──
     repos(orgId) { return this._org(this._read(), orgId).repos.map(r => ({ id: r.id, name: r.name, url: r.url, username: r.username || null, hasPassword: !!r.password })).sort((a, b) => a.name.localeCompare(b.name)) }
@@ -126,7 +127,7 @@ class DeliveryStore {
     removeFreeze(orgId, freezeId) { return this._edit(orgId, (o) => { const n = o.freezes.length; o.freezes = o.freezes.filter(f => f.id !== freezeId); return n !== o.freezes.length }) }
 
     // ── Git accounts (pull requests for promotions) ──
-    gitAccounts(orgId) { return this._org(this._read(), orgId).git.map(g => ({ id: g.id, name: g.name, provider: g.provider, apiUrl: g.apiUrl, hasToken: !!g.token })) }
+    gitAccounts(orgId) { return this._org(this._read(), orgId).git.map(g => ({ id: g.id, name: g.name, provider: g.provider || 'github', apiUrl: g.apiUrl, username: g.username || null, hasToken: !!g.token })) }
     gitAccountCredentials(orgId, accountId) {
         const g = this._org(this._read(), orgId).git.find(x => x.id === accountId)
         if (!g) return null
@@ -137,19 +138,24 @@ class DeliveryStore {
     saveGitAccount(orgId, input, { by } = {}) {
         const name = String(input?.name || '').trim().toLowerCase()
         if (!REPO_NAME.test(name)) bad('Name: lowercase letters, digits and dashes')
+        const provider = input?.provider || 'github'
+        if (!GIT_PROVIDERS[provider]) bad(`Provider: ${Object.keys(GIT_PROVIDERS).join(', ')}`)
         let api
-        try { api = new URL(String(input?.apiUrl || 'https://api.github.com')) } catch { bad('API address is not a valid URL') }
+        try { api = new URL(String(input?.apiUrl || GIT_PROVIDERS[provider].api)) } catch { bad('API address is not a valid URL') }
         if (api.protocol !== 'https:' || api.username || api.password || api.search) bad('Use an https:// API address without user, password or ?query')
         const token = String(input?.token || '')
-        if (!input?.id && token.length < 20) bad('Paste a GitHub token (fine-grained, "Contents" and "Pull requests": read and write)')
+        if (!input?.id && token.length < 20) bad(`Paste ${GIT_PROVIDERS[provider].tokenHint}`)
+        // Bitbucket app passwords go with the user name (Basic auth); access tokens without one
+        const username = provider === 'bitbucket' && input?.username ? String(input.username).trim().slice(0, 100) : null
+        if (username && !/^[\w.@+-]+$/.test(username)) bad('The user name has characters that are not allowed')
         return this._edit(orgId, (o) => {
             const cur = input.id ? o.git.find(g => g.id === input.id) : null
             if (input.id && !cur) throw Object.assign(new Error('Git account not found'), { status: 404 })
             if (o.git.some(g => g.name === name && g.id !== input.id)) bad(`There is already a Git account called ${name}`)
             if (!cur && o.git.length >= 20) bad('Up to 20 Git accounts')
-            const rec = { id: cur?.id || id(), name, provider: 'github', apiUrl: api.toString().replace(/\/+$/, ''), token: token ? encrypt(token.slice(0, 500)) : cur?.token || null, updatedAt: new Date().toISOString(), updatedBy: by || null }
+            const rec = { id: cur?.id || id(), name, provider, apiUrl: api.toString().replace(/\/+$/, ''), username, token: token ? encrypt(token.slice(0, 500)) : cur?.token || null, updatedAt: new Date().toISOString(), updatedBy: by || null }
             if (cur) Object.assign(cur, rec); else o.git.push(rec)
-            return { id: rec.id, name, provider: 'github', apiUrl: rec.apiUrl, hasToken: !!rec.token }
+            return { id: rec.id, name, provider, apiUrl: rec.apiUrl, username, hasToken: !!rec.token }
         })
     }
     removeGitAccount(orgId, accountId) { return this._edit(orgId, (o) => { const n = o.git.length; o.git = o.git.filter(g => g.id !== accountId); return n !== o.git.length }) }
@@ -196,10 +202,41 @@ class DeliveryStore {
     }
     removeHibernateSchedule(orgId, sid) { return this._edit(orgId, (o) => { const n = o.hibernateSchedules.length; o.hibernateSchedules = o.hibernateSchedules.filter(s => s.id !== sid); return n !== o.hibernateSchedules.length }) }
 
+    // ── preview environments (services/previews.js) ──
+    previews(orgId) { return this._org(this._read(), orgId).previews.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) }
+    allPreviews() { return Object.entries(this._read()).flatMap(([orgId, o]) => (o.previews || []).map(p => ({ ...p, orgId }))) }
+    previewAt(orgId, clusterId, namespace) { return this.previews(orgId).find(p => p.clusterId === clusterId && p.namespace === namespace) || null }
+    savePreview(orgId, rec, { max = 30 } = {}) {
+        return this._edit(orgId, (o) => {
+            const cur = o.previews.find(p => p.id === rec.id)
+            if (!cur && o.previews.length >= max) bad(`Up to ${max} preview environments at a time — remove one first`)
+            if (cur) Object.assign(cur, rec); else o.previews.push(rec)
+            return cur || rec
+        })
+    }
+    updatePreview(orgId, pid, patch) { return this._edit(orgId, (o) => { const p = o.previews.find(x => x.id === pid); if (p) Object.assign(p, patch); return p || null }) }
+    removePreviewRecord(orgId, pid) { return this._edit(orgId, (o) => { const n = o.previews.length; o.previews = o.previews.filter(p => p.id !== pid); return n !== o.previews.length }) }
+
+    // ── deploy from chat (services/chatDeploy.js): what each Slack / Telegram channel may deploy ──
+    chatDeployRules(orgId, channelId = null) { return this._org(this._read(), orgId).chatDeploy.filter(r => !channelId || r.channelId === channelId) }
+    saveChatDeployRule(orgId, rec) {
+        return this._edit(orgId, (o) => {
+            if (o.chatDeploy.some(r => r.channelId === rec.channelId && r.envId === rec.envId && r.release === rec.release)) bad('That chat may already deploy this app to this environment')
+            if (o.chatDeploy.length >= 100) bad('Up to 100 chat deploy rules')
+            const r = { id: id(), ...rec, createdAt: new Date().toISOString() }
+            o.chatDeploy.push(r)
+            return r
+        })
+    }
+    removeChatDeployRule(orgId, rid) { return this._edit(orgId, (o) => { const n = o.chatDeploy.length; o.chatDeploy = o.chatDeploy.filter(r => r.id !== rid); return n !== o.chatDeploy.length }) }
+
     /** Remove everything about a cluster that is gone. */
     dropCluster(orgId, clusterId) {
         this._edit(orgId, (o) => {
+            const gone = new Set(o.environments.filter(e => e.clusterId === clusterId).map(e => e.id))
             o.environments = o.environments.filter(e => e.clusterId !== clusterId)
+            o.previews = o.previews.filter(p => p.clusterId !== clusterId)
+            o.chatDeploy = o.chatDeploy.filter(r => !gone.has(r.envId))
             for (const f of o.freezes) f.clusterIds = (f.clusterIds || []).filter(c => c !== clusterId)
         })
     }

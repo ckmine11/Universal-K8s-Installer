@@ -313,7 +313,7 @@ describe('GitOps level 2: Argo CD apps KubeEZ creates', () => {
     const ok = { name: 'shop-web', repoURL: 'https://github.com/acme/deploy.git', path: 'apps/web', targetRevision: 'main', namespace: 'team-a' }
 
     test('requests are checked: https public repos, folder paths, names', () => {
-        assert.deepEqual(gitops.cleanCreateApp(ok), { ...ok, autoSync: false })
+        assert.deepEqual(gitops.cleanCreateApp(ok), { ...ok, tool: 'argocd', autoSync: false })
         for (const b of [{ ...ok, repoURL: 'http://x/y' }, { ...ok, repoURL: 'https://u:tok@github.com/a/b' }, { ...ok, repoURL: 'git@github.com:a/b' }, { ...ok, path: '../../etc' }, { ...ok, path: 'a;b' }, { ...ok, name: 'Shop' }, { ...ok, targetRevision: 'main;x' }, { ...ok, namespace: 'A' }])
             assert.throws(() => gitops.cleanCreateApp(b), (e) => e.status === 400, JSON.stringify(b))
     })

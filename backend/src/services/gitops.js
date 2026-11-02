@@ -104,6 +104,7 @@ function fluxObj(o, kind, repos) {
     const namespaces = new Set([target, ...inv].filter(Boolean))
     return {
         id: `${kind}/${md.namespace}/${md.name}`, tool: 'flux', kind, namespace: md.namespace, name: md.name, project: null,
+        managed: kind === 'Kustomization' && md.labels?.[MANAGED_BY] === 'kubeez',
         source: {
             repo: repo || (ref.kind ? `${ref.kind}/${refNs}/${ref.name}` : null),
             path: helm ? null : str(spec.path, 200), chart: helm ? str(chart.chart || ref.name, 120) : null,
@@ -316,10 +317,12 @@ const REVISION = /^[\w.\-/]{1,100}$/
 // where KubeEZ itself and the cluster's own controllers live: admins only
 export const SYSTEM_NS = /^(kube-.*|argocd|flux-system|kubeez.*|cert-manager|ingress-nginx|metallb-system|longhorn-system|velero|trivy-system|kyverno|gatekeeper-system)$/
 
-/** A "new app" request → the checked spec, or 400. */
+/** A "new app" request → the checked spec, or 400. tool: argocd (default) or flux. */
 export function cleanCreateApp(body) {
     const b = body || {}
     const bad = (m) => { throw Object.assign(new Error(m), { status: 400 }) }
+    const tool = b.tool ?? 'argocd'
+    if (!['argocd', 'flux'].includes(tool)) bad('tool: argocd or flux')
     if (!APP_NAME.test(String(b.name || ''))) bad('Name: lowercase letters, digits and dashes, up to 40')
     let u
     try { u = new URL(String(b.repoURL || '')) } catch { bad('The Git repository is not a valid URL') }
@@ -330,7 +333,8 @@ export function cleanCreateApp(body) {
     const targetRevision = String(b.targetRevision || 'HEAD')
     if (!REVISION.test(targetRevision)) bad('Revision: a branch, tag or commit')
     if (!NAMESPACE.test(String(b.namespace || ''))) bad('Namespace is not a valid Kubernetes namespace')
-    return { name: b.name, repoURL: u.toString().replace(/\/$/, ''), path, targetRevision, namespace: b.namespace, autoSync: !!b.autoSync }
+    // Flux always reconciles by itself — there is no "manual sync" app
+    return { tool, name: b.name, repoURL: u.toString().replace(/\/$/, ''), path, targetRevision, namespace: b.namespace, autoSync: tool === 'flux' ? true : !!b.autoSync }
 }
 
 /** The AppProject + Application for a spec, in the Argo CD namespace. */
@@ -388,6 +392,77 @@ export async function deleteArgoApp(cluster, app, { connect } = {}) {
         const r = await ssh.execCommand(`${KUBECTL} -n ${q(app.namespace)} delete applications.argoproj.io ${q(app.name)} --cascade=orphan --wait=false --request-timeout=30s && ${KUBECTL} -n ${q(app.namespace)} delete appprojects.argoproj.io ${q(`kubeez-${app.name}`)} --ignore-not-found --request-timeout=30s`, { timeoutMs: 60e3 })
         if (r.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
         return { message: `${app.name} removed from Argo CD. What it deployed is still running — delete it yourself if it should go.` }
+    } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
+}
+
+// ── creating Flux apps ──
+// Flux has no AppProject: each app gets its own ServiceAccount bound to the
+// namespace-only `admin` ClusterRole, and the Kustomization runs as it
+// (kustomize-controller impersonates it). So what is in Git lands only in that
+// one namespace — never cluster-wide, never elsewhere. Objects live in the
+// target namespace; prune is off, as for Argo CD apps.
+const fluxSa = (name) => `kubeez-flux-${name}`
+/** Revision → a Flux GitRepository ref: HEAD → main, a full SHA → commit, refs/… → name, else a branch. */
+export function fluxRef(rev) {
+    if (!rev || rev === 'HEAD') return { branch: 'main' }
+    if (/^[0-9a-f]{40}$/i.test(rev)) return { commit: rev.toLowerCase() }
+    if (rev.startsWith('refs/')) return { name: rev }
+    return { branch: rev }
+}
+/** ServiceAccount + RoleBinding + GitRepository + Kustomization, all in the target namespace. */
+export function fluxAppManifests(spec, by = 'kubeez') {
+    const labels = { [MANAGED_BY]: 'kubeez' }
+    const annotations = { 'kubeez.io/created-by': String(by).replace(/[^\w.@-]/g, '').slice(0, 60) || 'kubeez' }
+    const md = (name) => ({ name, namespace: spec.namespace, labels, annotations })
+    const sa = fluxSa(spec.name)
+    return {
+        apiVersion: 'v1', kind: 'List', items: [
+            { apiVersion: 'v1', kind: 'ServiceAccount', metadata: md(sa) },
+            {
+                apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding', metadata: md(sa),
+                roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'admin' },
+                subjects: [{ kind: 'ServiceAccount', name: sa, namespace: spec.namespace }]
+            },
+            { apiVersion: 'source.toolkit.fluxcd.io/v1', kind: 'GitRepository', metadata: md(spec.name), spec: { interval: '1m', url: spec.repoURL, ref: fluxRef(spec.targetRevision) } },
+            {
+                apiVersion: 'kustomize.toolkit.fluxcd.io/v1', kind: 'Kustomization', metadata: md(spec.name),
+                spec: { interval: '5m', path: spec.path ? `./${spec.path}` : './', prune: false, sourceRef: { kind: 'GitRepository', name: spec.name }, targetNamespace: spec.namespace, serviceAccountName: sa, timeout: '3m' }
+            }
+        ]
+    }
+}
+
+/** Create (or update) a Flux app KubeEZ manages. → { message } */
+export async function createFluxApp(cluster, spec, { by, connect } = {}) {
+    const ssh = await (connect || defaultConnect)(cluster)
+    try {
+        // a Kustomization or GitRepository with this name that KubeEZ did not create is not taken over
+        for (const [res, kind] of [['kustomizations.kustomize.toolkit.fluxcd.io', 'Kustomization'], ['gitrepositories.source.toolkit.fluxcd.io', 'GitRepository']]) {
+            const cur = await ssh.execCommand(`${KUBECTL} -n ${q(spec.namespace)} get ${res} ${q(spec.name)} -o jsonpath='{.metadata.labels.app\\.kubernetes\\.io/managed-by}' --request-timeout=20s 2>/dev/null`)
+            if (!cur.code && String(cur.stdout || '').trim() !== 'kubeez') throw Object.assign(new Error(`A Flux ${kind} called ${spec.name} already exists in ${spec.namespace} and was not created by KubeEZ — pick another name.`), { status: 409 })
+        }
+        const ns = await ssh.execCommand(`${KUBECTL} get namespace ${q(spec.namespace)} --request-timeout=20s >/dev/null 2>&1 || ${KUBECTL} create namespace ${q(spec.namespace)} --request-timeout=20s`, { timeoutMs: 45e3 })
+        if (ns.code) throw Object.assign(new Error(`Could not create namespace ${spec.namespace}: ${String(ns.stderr || ns.stdout || '').trim().slice(0, 300)}`), { status: 502 })
+        const r = await ssh.execCommand(`${KUBECTL} apply -f - --request-timeout=30s`, { stdin: JSON.stringify(fluxAppManifests(spec, by)), timeoutMs: 60e3 })
+        if (r.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
+        return { message: `Flux app ${spec.name} created in ${spec.namespace} — it deploys ${spec.repoURL}${spec.path ? `/${spec.path}` : ''} (${Object.values(fluxRef(spec.targetRevision))[0]}) into ${spec.namespace} and reconciles every 5 minutes.` }
+    } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
+}
+
+/** Remove a Flux app KubeEZ created: Kustomization, GitRepository, ServiceAccount, RoleBinding. What it deployed stays (prune is off). */
+export async function deleteFluxApp(cluster, app, { connect } = {}) {
+    if (!app.managed) throw Object.assign(new Error('KubeEZ removes only the apps it created — remove this one with Flux.'), { status: 409 })
+    const ssh = await (connect || defaultConnect)(cluster)
+    const n = q(app.namespace), sa = q(fluxSa(app.name))
+    try {
+        const r = await ssh.execCommand([
+            `${KUBECTL} -n ${n} delete kustomizations.kustomize.toolkit.fluxcd.io ${q(app.name)} --wait=false --request-timeout=30s`,
+            `${KUBECTL} -n ${n} delete gitrepositories.source.toolkit.fluxcd.io ${q(app.name)} --ignore-not-found --request-timeout=30s`,
+            `${KUBECTL} -n ${n} delete rolebinding ${sa} --ignore-not-found --request-timeout=30s`,
+            `${KUBECTL} -n ${n} delete serviceaccount ${sa} --ignore-not-found --request-timeout=30s`
+        ].join(' && '), { timeoutMs: 90e3 })
+        if (r.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
+        return { message: `${app.name} removed from Flux. What it deployed is still running — delete it yourself if it should go.` }
     } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
 }
 

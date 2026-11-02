@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save, KeyRound, GitPullRequest, Container } from 'lucide-react'
+import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save, KeyRound, GitPullRequest, Container, Eye, MessageSquare } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import PageHeader from '../components/ui/PageHeader'
@@ -35,14 +35,19 @@ export default function DeliverySettings() {
     const [cmpResult, setCmpResult] = useState(null)
     const [tokens, setTokens] = useState(null)      // null: not allowed to manage tokens
     const [newToken, setNewToken] = useState(null)
-    const [tokForm, setTokForm] = useState({ name: '', clusterId: '', namespace: '', release: '', repoId: '', chart: '', keys: 'image.tag', expiresDays: 90 })
+    const [tokForm, setTokForm] = useState({ name: '', clusterId: '', namespace: '', release: '', repoId: '', chart: '', keys: 'image.tag', expiresDays: 90, previews: false })
+    const [newTokenPreviews, setNewTokenPreviews] = useState(false)
+    const [previews, setPreviews] = useState(null)
+    const [pvForm, setPvForm] = useState({ envId: '', release: '', pr: '', branch: '', set: 'image.tag=', repoId: '', ttlHours: 72, busy: false })
+    const [chat, setChat] = useState(null)      // null: not allowed to manage chat deploys
+    const [chatForm, setChatForm] = useState({ channelId: '', envId: '', release: '', repoId: '', key: 'image.tag', allowedUsers: '' })
     const [regs, setRegs] = useState(null)
     const [costRates, setCostRates] = useState(null)
     const [costCanManage, setCostCanManage] = useState(false)
     const [regForm, setRegForm] = useState({ name: '', server: '', username: '', password: '' })
     const [sync, setSync] = useState({ registryId: '', clusterId: '', namespaces: '', defaultServiceAccount: false })
     const [git, setGit] = useState(null)
-    const [gitForm, setGitForm] = useState({ name: '', apiUrl: 'https://api.github.com', token: '' })
+    const [gitForm, setGitForm] = useState({ provider: 'github', name: '', apiUrl: 'https://api.github.com', username: '', token: '' })
     const [pr, setPr] = useState({ accountId: '', repo: '', base: 'main', path: '', set: '', busy: false, result: null })
 
     const load = useCallback(async () => {
@@ -52,6 +57,8 @@ export default function DeliverySettings() {
         } catch (err) { setError(err.message) }
         apiFetch('/api/delivery/costs').then(r => r.ok ? r.json() : null).then(d => { if (d) { setCostRates(d.rates); setCostCanManage(d.canManage) } }).catch(() => { })
         apiFetch('/api/delivery/tokens').then(r => r.ok ? r.json() : null).then(d => setTokens(d ? d.tokens : null)).catch(() => setTokens(null))
+        apiFetch('/api/delivery/previews').then(r => r.ok ? r.json() : null).then(setPreviews).catch(() => setPreviews(null))
+        apiFetch('/api/delivery/chat-deploy').then(r => r.ok ? r.json() : null).then(setChat).catch(() => setChat(null))
         apiFetch('/api/clusters').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
     }, [])
     useEffect(() => { load() }, [load])
@@ -69,7 +76,7 @@ export default function DeliverySettings() {
     const createToken = async () => {
         try {
             const d = await json(await apiFetch('/api/delivery/tokens', { method: 'POST', body: JSON.stringify({ ...tokForm, allowedKeys: tokForm.keys.split(',').map(s => s.trim()).filter(Boolean) }) }))
-            setNewToken(d.token); toast({ title: 'Token created', message: 'Copy it now — it is shown once.', type: 'success' }); load()
+            setNewToken(d.token); setNewTokenPreviews(!!d.record?.previews); toast({ title: 'Token created', message: 'Copy it now — it is shown once.', type: 'success' }); load()
         } catch (e) { toast({ title: 'No token', message: e.message, type: 'error' }) }
     }
     // "image.tag=1.4.2, replicas=3" → { "image.tag": "1.4.2", replicas: 3 }
@@ -81,6 +88,16 @@ export default function DeliverySettings() {
             setPr(p => ({ ...p, busy: false, result: d }))
         } catch (e) { setPr(p => ({ ...p, busy: false })); toast({ title: 'No pull request', message: e.message, type: 'error' }) }
     }
+    const createPreview = async () => {
+        setPvForm(p => ({ ...p, busy: true }))
+        try {
+            const set = parseSet(pvForm.set.split(',').filter(x => !/=\s*$/.test(x)).join(','))
+            const d = await json(await apiFetch('/api/delivery/previews', { method: 'POST', body: JSON.stringify({ envId: pvForm.envId, release: pvForm.release, ...(pvForm.pr ? { pr: Number(pvForm.pr) } : { branch: pvForm.branch }), set, repoId: pvForm.repoId, ttlHours: Number(pvForm.ttlHours) }) }))
+            toast({ title: 'Preview started', message: `${d.preview.namespace} on ${d.preview.clusterName} — until ${new Date(d.preview.expiresAt).toLocaleString()}`, type: 'success' }); load()
+        } catch (e) { toast({ title: 'No preview', message: e.message, type: 'error' }) } finally { setPvForm(p => ({ ...p, busy: false })) }
+    }
+    const providers = git?.providers || { github: { label: 'GitHub', api: 'https://api.github.com', request: 'pull request' } }
+    const prProvider = providers[git?.accounts.find(a => a.id === pr.accountId)?.provider || 'github'] || providers.github
     const [promo, setPromo] = useState({ keys: 'image.tag', repoId: '', busy: false, result: null })
     const promoteRelease = async () => {
         setPromo(p => ({ ...p, busy: true, result: null }))
@@ -236,12 +253,16 @@ export default function DeliverySettings() {
                             <code className="block font-mono text-slate-200 break-all">{newToken}</code>
                             <pre className="whitespace-pre-wrap font-mono text-slate-400">{`curl -fsS -X POST ${window.location.origin}/api/hooks/deploy \\\n  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" \\\n  -d '{"set": {"image.tag": "'"$GIT_SHA"'"}, "commit": {"sha": "'"$GIT_SHA"'", "time": "'"$(git log -1 --format=%cI)"'"}}'`}</pre>
                             <p className="text-slate-500">The commit is optional — with it, each deploy counts for the DORA lead time (commit → running).</p>
+                            {newTokenPreviews && <>
+                                <p className="text-slate-300 pt-1">Preview environments — on a pull request, and when it is closed:</p>
+                                <pre className="whitespace-pre-wrap font-mono text-slate-400">{`curl -fsS -X POST ${window.location.origin}/api/hooks/preview \\\n  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" \\\n  -d '{"pr": '"$PR_NUMBER"', "set": {"image.tag": "'"$GIT_SHA"'"}, "ttlHours": 72}'\n\ncurl -fsS -X DELETE ${window.location.origin}/api/hooks/preview \\\n  -H "Authorization: Bearer $KUBEEZ_TOKEN" -H "Content-Type: application/json" -d '{"pr": '"$PR_NUMBER"'}'`}</pre>
+                            </>}
                         </div>
                     )}
                     <ul className="space-y-1.5">{tokens.map(t => (
                         <li key={t.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
                             <span className="font-semibold text-white">{t.name}</span><span className="font-mono text-slate-500">{t.hint}</span>
-                            <span className="text-slate-400">{clusters.find(c => c.id === t.clusterId)?.clusterName || t.clusterId} · {t.namespace}/{t.release} · may set {t.allowedKeys.join(', ')}</span>
+                            <span className="text-slate-400">{clusters.find(c => c.id === t.clusterId)?.clusterName || t.clusterId} · {t.namespace}/{t.release} · may set {t.allowedKeys.join(', ')}{t.previews ? ' · previews' : ''}</span>
                             <span className={t.revokedAt || t.expired ? 'text-red-300' : 'text-slate-500'}>{t.revokedAt ? 'revoked' : t.expired ? 'expired' : `until ${t.expiresAt.slice(0, 10)}`}{t.lastUsedAt ? ` · used ${new Date(t.lastUsedAt).toLocaleString()}` : ' · never used'}</span>
                             {!t.revokedAt && <button onClick={() => window.confirm(`Revoke ${t.name}? Pipelines using it stop deploying.`) && send(`/api/delivery/tokens/${t.id}`, 'DELETE', null, 'Revoked')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300">Revoke</button>}
                         </li>
@@ -255,38 +276,95 @@ export default function DeliverySettings() {
                         <input className="kz-input !w-32" placeholder="chart" value={tokForm.chart} onChange={e => setTokForm(f => ({ ...f, chart: e.target.value }))} aria-label="Chart" />
                         <input className="kz-input !w-40" placeholder="image.tag" value={tokForm.keys} onChange={e => setTokForm(f => ({ ...f, keys: e.target.value }))} aria-label="Values it may change (comma separated)" />
                         <select className="kz-input !w-28" value={tokForm.expiresDays} onChange={e => setTokForm(f => ({ ...f, expiresDays: Number(e.target.value) }))} aria-label="Expires after">{[30, 90, 180, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select>
+                        {featureOn('previews') && <label className="flex items-center gap-1.5 text-xs text-slate-300" title="The pipeline may also start and remove preview environments of this app (one per pull request)"><input type="checkbox" checked={tokForm.previews} onChange={e => setTokForm(f => ({ ...f, previews: e.target.checked }))} /> Previews too</label>}
                         <button onClick={createToken} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Create token</button>
                     </div>
                 </Section>
             )}
 
+            {previews && featureOn('previews') && (
+                <Section Icon={Eye} title="Preview environments" hint={`A short-lived copy of an app for one pull request or branch, in its own namespace (web-pr-42): the chart and version of the app it copies, its values plus what you change (the PR's image.tag). It removes itself when it expires — the whole namespace goes. From CI: a deploy token with "Previews too". Up to ${previews.max} at a time.`}>
+                    <ul className="space-y-1.5">{previews.previews.map(p => (
+                        <li key={p.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
+                            <span className="font-semibold text-white font-mono">{p.namespace}</span>
+                            <span className="text-slate-400">{p.label} · copy of {p.baseNamespace}/{p.release} on {p.clusterName} · {p.chart} {p.version || ''}{Object.keys(p.set || {}).length ? ` · ${Object.entries(p.set).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}</span>
+                            {p.job && <span className={p.job.status === 'failed' ? 'text-red-300' : p.job.status === 'done' ? 'text-emerald-300' : 'text-blue-300'} title={p.job.error || ''}>{p.job.status === 'running' ? 'deploying…' : p.job.status === 'done' ? 'running' : 'deploy failed'}</span>}
+                            <span className={p.expired ? 'text-amber-200' : 'text-slate-500'}>{p.expired ? 'expired — being removed' : `until ${new Date(p.expiresAt).toLocaleString()}`}</span>
+                            {p.error && <span className="text-red-300" title={p.error}>could not be removed</span>}
+                            <button onClick={() => window.confirm(`Remove preview ${p.namespace}? The namespace and everything in it is deleted.`) && send(`/api/delivery/previews/${p.id}`, 'DELETE', null, 'Preview removed')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${p.namespace}`}><Trash2 className="w-3 h-3" /></button>
+                        </li>
+                    ))}{!previews.previews.length && <li className="text-sm text-slate-500">No previews running.</li>}</ul>
+                    {previews.canCreate && (
+                        <div className="flex flex-wrap items-end gap-2">
+                            <select className="kz-input !w-44" value={pvForm.envId} onChange={e => setPvForm(f => ({ ...f, envId: e.target.value }))} aria-label="Copy the app from environment"><option value="">Copy from…</option>{(envs?.environments || []).map(e => <option key={e.id} value={e.id}>{e.name} ({e.clusterName}/{e.namespace})</option>)}</select>
+                            <input className="kz-input !w-28" placeholder="release" value={pvForm.release} onChange={e => setPvForm(f => ({ ...f, release: e.target.value }))} aria-label="Release" />
+                            <input className="kz-input !w-24" placeholder="PR #" inputMode="numeric" value={pvForm.pr} onChange={e => setPvForm(f => ({ ...f, pr: e.target.value.replace(/\D/g, ''), branch: '' }))} aria-label="Pull request number" />
+                            <span className="text-xs text-slate-500 pb-2">or</span>
+                            <input className="kz-input !w-36" placeholder="branch" value={pvForm.branch} onChange={e => setPvForm(f => ({ ...f, branch: e.target.value, pr: '' }))} aria-label="Branch" />
+                            <input className="kz-input !w-48" placeholder="image.tag=pr-42" value={pvForm.set} onChange={e => setPvForm(f => ({ ...f, set: e.target.value }))} aria-label="Values to change" />
+                            <select className="kz-input !w-32" value={pvForm.repoId} onChange={e => setPvForm(f => ({ ...f, repoId: e.target.value }))} aria-label="Chart repository"><option value="">Repository…</option>{(repos?.repos || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+                            <select className="kz-input !w-28" value={pvForm.ttlHours} onChange={e => setPvForm(f => ({ ...f, ttlHours: Number(e.target.value) }))} aria-label="Remove after">{[[8, '8 hours'], [24, '1 day'], [72, '3 days'], [168, '7 days'], [336, '14 days']].map(([h, l]) => <option key={h} value={h}>{l}</option>)}</select>
+                            <button onClick={createPreview} disabled={pvForm.busy || !pvForm.envId || !pvForm.release || !pvForm.repoId || (!pvForm.pr && !pvForm.branch.trim())} className="kz-btn-primary !py-2 !text-xs">{pvForm.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Start preview</button>
+                        </div>
+                    )}
+                </Section>
+            )}
+
+            {chat && featureOn('chatDeploy') && (
+                <Section Icon={MessageSquare} title="Deploy from chat" hint={'Let a Slack or Telegram ChatOps channel deploy an app: "deploy web 1.4.2 to staging", then "confirm 4821" from the same person within 5 minutes. Only the one value you pick (image.tag) changes; the chart version stays. Protected environments and change freezes always refuse; the CVE gate applies. Leave users empty to allow everyone in that chat.'}>
+                    <ul className="space-y-1.5">{chat.rules.map(r => (
+                        <li key={r.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
+                            <span className="font-semibold text-white">{r.channelName}</span><span className="text-slate-500">{r.channelType}</span>
+                            <span className="text-slate-400">may deploy <span className="font-mono text-slate-200">{r.release}</span> → {r.envName || 'removed environment'} · sets {r.key}</span>
+                            <span className="text-slate-500">{r.allowedUsers.length ? `only ${r.allowedUsers.join(', ')}` : 'anyone in the chat'}</span>
+                            {!chat.channels.find(c => c.id === r.channelId)?.chatops && <span className="flex items-center gap-1 text-amber-200"><AlertTriangle className="w-3 h-3" />ChatOps is off for this channel (AI settings)</span>}
+                            <button onClick={() => window.confirm(`Stop ${r.channelName} deploying ${r.release}?`) && send(`/api/delivery/chat-deploy/${r.id}`, 'DELETE', null, 'Removed')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove chat deploy of ${r.release}`}><Trash2 className="w-3 h-3" /></button>
+                        </li>
+                    ))}{!chat.rules.length && <li className="text-sm text-slate-500">No chat may deploy yet.</li>}</ul>
+                    {chat.channels.length ? (
+                        <div className="flex flex-wrap items-end gap-2">
+                            <select className="kz-input !w-40" value={chatForm.channelId} onChange={e => setChatForm(f => ({ ...f, channelId: e.target.value }))} aria-label="Chat channel"><option value="">Channel…</option>{chat.channels.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}</select>
+                            <select className="kz-input !w-44" value={chatForm.envId} onChange={e => setChatForm(f => ({ ...f, envId: e.target.value }))} aria-label="Environment"><option value="">Environment…</option>{(envs?.environments || []).filter(e => !e.protected).map(e => <option key={e.id} value={e.id}>{e.name} ({e.clusterName}/{e.namespace})</option>)}</select>
+                            <input className="kz-input !w-28" placeholder="release" value={chatForm.release} onChange={e => setChatForm(f => ({ ...f, release: e.target.value }))} aria-label="Release" />
+                            <select className="kz-input !w-32" value={chatForm.repoId} onChange={e => setChatForm(f => ({ ...f, repoId: e.target.value }))} aria-label="Chart repository"><option value="">Repository…</option>{(repos?.repos || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+                            <input className="kz-input !w-28" placeholder="image.tag" value={chatForm.key} onChange={e => setChatForm(f => ({ ...f, key: e.target.value }))} aria-label="Value it sets" />
+                            <input className="kz-input !w-44" placeholder="users: @asha, ravi" value={chatForm.allowedUsers} onChange={e => setChatForm(f => ({ ...f, allowedUsers: e.target.value }))} aria-label="Allowed chat users (comma separated, empty = everyone)" />
+                            <button onClick={async () => { if (await send('/api/delivery/chat-deploy', 'POST', chatForm, 'Chat may deploy')) setChatForm({ channelId: '', envId: '', release: '', repoId: '', key: 'image.tag', allowedUsers: '' }) }} disabled={!chatForm.channelId || !chatForm.envId || !chatForm.release || !chatForm.repoId} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Allow</button>
+                        </div>
+                    ) : <p className="text-xs text-slate-500">Add a Slack or Telegram alert channel first (Alerts), then turn ChatOps on for it (AI settings).</p>}
+                </Section>
+            )}
+
             {git && featureOn('gitopsPromote') && (
-                <Section Icon={GitPullRequest} title="Promote by pull request" hint="Change values in a YAML file of a GitHub repository (e.g. image.tag in apps/web/prod.yaml) — KubeEZ opens a pull request; Argo CD / Flux deploy it once it is merged. The token needs Contents and Pull requests: read and write.">
+                <Section Icon={GitPullRequest} title="Promote by pull request" hint="Change values in a YAML file of a GitHub, GitLab or Bitbucket repository (e.g. image.tag in apps/web/prod.yaml) — KubeEZ opens a pull request (a merge request on GitLab); Argo CD / Flux deploy it once it is merged. Self-hosted GitHub Enterprise / GitLab: change the API address.">
                     <ul className="space-y-1.5">{git.accounts.map(a => (
                         <li key={a.id} className="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
-                            <span className="font-semibold text-white">{a.name}</span><span className="text-slate-400 font-mono">{a.apiUrl}</span>{a.hasToken && <span className="text-slate-500">(token set)</span>}
+                            <span className="font-semibold text-white">{a.name}</span><span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-slate-300">{providers[a.provider]?.label || a.provider}</span><span className="text-slate-400 font-mono">{a.apiUrl}</span>{a.username && <span className="text-slate-500">as {a.username}</span>}{a.hasToken && <span className="text-slate-500">(token set)</span>}
                             {git.canManage && <button onClick={() => window.confirm(`Remove ${a.name}?`) && send(`/api/delivery/git/${a.id}`, 'DELETE', null, 'Removed')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${a.name}`}><Trash2 className="w-3 h-3" /></button>}
                         </li>
                     ))}</ul>
                     {git.canManage && (
                         <div className="flex flex-wrap items-end gap-2">
-                            <input className="kz-input !w-32" placeholder="name (github)" value={gitForm.name} onChange={e => setGitForm(f => ({ ...f, name: e.target.value }))} aria-label="Account name" />
-                            <input className="kz-input !w-60" placeholder="https://api.github.com" value={gitForm.apiUrl} onChange={e => setGitForm(f => ({ ...f, apiUrl: e.target.value }))} aria-label="API address" />
-                            <input className="kz-input !w-56" type="password" placeholder="token" value={gitForm.token} onChange={e => setGitForm(f => ({ ...f, token: e.target.value }))} aria-label="GitHub token" autoComplete="new-password" />
-                            <button onClick={async () => { if (await send('/api/delivery/git', 'POST', gitForm, 'Git account added')) setGitForm({ name: '', apiUrl: 'https://api.github.com', token: '' }) }} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Add</button>
+                            <select className="kz-input !w-32" value={gitForm.provider} onChange={e => { const p = e.target.value; setGitForm(f => ({ ...f, provider: p, apiUrl: providers[p]?.api || f.apiUrl, username: '' })) }} aria-label="Git provider">{Object.entries(providers).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}</select>
+                            <input className="kz-input !w-32" placeholder={`name (${gitForm.provider})`} value={gitForm.name} onChange={e => setGitForm(f => ({ ...f, name: e.target.value }))} aria-label="Account name" />
+                            <input className="kz-input !w-60" placeholder={providers[gitForm.provider]?.api} value={gitForm.apiUrl} onChange={e => setGitForm(f => ({ ...f, apiUrl: e.target.value }))} aria-label="API address" />
+                            {gitForm.provider === 'bitbucket' && <input className="kz-input !w-36" placeholder="user (app password)" value={gitForm.username} onChange={e => setGitForm(f => ({ ...f, username: e.target.value }))} aria-label="Bitbucket user name (only with an app password)" />}
+                            <input className="kz-input !w-56" type="password" placeholder="token" value={gitForm.token} onChange={e => setGitForm(f => ({ ...f, token: e.target.value }))} aria-label={`${providers[gitForm.provider]?.label || 'Git'} token`} autoComplete="new-password" />
+                            <button onClick={async () => { if (await send('/api/delivery/git', 'POST', gitForm, 'Git account added')) setGitForm({ provider: 'github', name: '', apiUrl: providers.github.api, username: '', token: '' }) }} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Add</button>
+                            {providers[gitForm.provider]?.tokenHint && <p className="w-full text-[11px] text-slate-500">Token: {providers[gitForm.provider].tokenHint}.</p>}
                         </div>
                     )}
                     {git.accounts.length > 0 && (
                         <div className="rounded-lg border border-white/[0.07] p-3 space-y-2">
                             <div className="flex flex-wrap items-end gap-2">
                                 <select className="kz-input !w-36" value={pr.accountId} onChange={e => setPr(p => ({ ...p, accountId: e.target.value }))} aria-label="Git account"><option value="">Account…</option>{git.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
-                                <input className="kz-input !w-44" placeholder="owner/repo" value={pr.repo} onChange={e => setPr(p => ({ ...p, repo: e.target.value }))} aria-label="Repository" />
+                                <input className="kz-input !w-44" placeholder={prProvider.label === 'GitLab' ? 'group/project' : prProvider.label === 'Bitbucket' ? 'workspace/repo' : 'owner/repo'} value={pr.repo} onChange={e => setPr(p => ({ ...p, repo: e.target.value }))} aria-label="Repository" />
                                 <input className="kz-input !w-24" placeholder="main" value={pr.base} onChange={e => setPr(p => ({ ...p, base: e.target.value }))} aria-label="Base branch" />
                                 <input className="kz-input !w-56" placeholder="apps/web/prod.yaml" value={pr.path} onChange={e => setPr(p => ({ ...p, path: e.target.value }))} aria-label="File" />
                                 <input className="kz-input !w-56" placeholder="image.tag=1.4.2, replicas=3" value={pr.set} onChange={e => setPr(p => ({ ...p, set: e.target.value }))} aria-label="Values to set" />
-                                <button onClick={promote} disabled={pr.busy} className="kz-btn-primary !py-2 !text-xs">{pr.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitPullRequest className="w-3.5 h-3.5" />} Open pull request</button>
+                                <button onClick={promote} disabled={pr.busy} className="kz-btn-primary !py-2 !text-xs">{pr.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitPullRequest className="w-3.5 h-3.5" />} Open {prProvider.request}</button>
                             </div>
-                            {pr.result && <p className="text-xs text-emerald-200">Pull request <a href={pr.result.url} target="_blank" rel="noopener noreferrer" className="underline">#{pr.result.number}</a> opened: {pr.result.changes.map(c => `${c.key} ${c.from ?? '—'} → ${c.to}`).join(', ')}</p>}
+                            {pr.result && <p className="text-xs text-emerald-200">{pr.result.provider === 'gitlab' ? 'Merge request' : 'Pull request'} <a href={pr.result.url} target="_blank" rel="noopener noreferrer" className="underline">#{pr.result.number}</a> opened: {pr.result.changes.map(c => `${c.key} ${c.from ?? '—'} → ${c.to}`).join(', ')}</p>}
                         </div>
                     )}
                 </Section>

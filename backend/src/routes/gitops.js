@@ -1,12 +1,12 @@
 import express from 'express'
-import { requireFeature } from '../services/features.js'
+import { requireFeature, features } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
 import { canSeeCluster, canOn, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { requireApproval } from '../services/approvals.js'
 import { capabilities } from '../services/clusterAccess.js'
-import { readGitops, summarize, visibleTo, cleanSyncRequest, runSync, cleanCreateApp, createArgoApp, deleteArgoApp, SYSTEM_NS } from '../services/gitops.js'
+import { readGitops, summarize, visibleTo, cleanSyncRequest, runSync, cleanCreateApp, createArgoApp, deleteArgoApp, createFluxApp, deleteFluxApp, SYSTEM_NS } from '../services/gitops.js'
 import { checkFreeze } from '../services/deliveryStore.js'
 
 // GitOps view (mounted at /api/clusters):
@@ -39,9 +39,11 @@ router.get('/:id/gitops', requirePermission('gitops:view'), async (req, res) => 
         const apps = r.apps.filter(a => visibleTo(a, match))
         const write = capabilities(cluster).gitopsSync
         const mayAct = canOn(req.user, 'gitops:sync', cluster) && write?.ok !== false
+        // the tools a new app can be made with (Argo CD, Flux) — when installed and the member may create
+        const createTools = write?.ok !== false && canOn(req.user, 'gitops:create', cluster) && features.isOn(req.user.orgId, 'gitopsCreate') ? ['argocd', 'flux'].filter(t => r.tools[t].state === 'ok') : []
         res.json({
             ...r, apps: apps.map(a => ({ ...a, canSync: mayAct && (!a.destination.external || isAdmin(req.user)), canDelete: !!a.managed && write?.ok !== false && canOn(req.user, 'gitops:delete', cluster) })),
-            canCreate: write?.ok !== false && canOn(req.user, 'gitops:create', cluster) && r.tools.argocd.state === 'ok',
+            canCreate: createTools.length > 0, createTools,
             summary: summarize(apps), hidden: r.apps.length - apps.length,
             canSync: mayAct, readOnlyReason: write?.ok === false ? write.why : null
         })
@@ -84,10 +86,12 @@ router.post('/:id/gitops/apps', requirePermission('gitops:create'), validCreate,
     if (SYSTEM_NS.test(spec.namespace) && !isAdmin(req.user)) return res.status(403).json({ error: `${spec.namespace} is a system namespace — only an admin may deploy there.` })
     try {
         const r = await withTimeout(readGitops(cluster, { fresh: true }), 90e3, 'The cluster did not answer in time')
-        if (r.tools.argocd.state !== 'ok') return res.status(409).json({ error: r.tools.argocd.state === 'missing' ? 'Argo CD is not installed on this cluster — install it from Add-ons first.' : r.tools.argocd.message })
+        const tool = r.tools[spec.tool], label = spec.tool === 'flux' ? 'Flux' : 'Argo CD'
+        if (tool.state !== 'ok') return res.status(409).json({ error: tool.state === 'missing' ? `${label} is not installed on this cluster — install it from Add-ons first.` : tool.message || `${label} could not be read` })
         const override = checkFreeze(req.user, cluster, req.body)
-        req.auditDetail = `create argocd Application ${spec.name} from ${spec.repoURL}${spec.path ? `/${spec.path}` : ''}@${spec.targetRevision} into ${spec.namespace}${spec.autoSync ? ' (auto-sync)' : ''}${override ? ` — ${override}` : ''}`
-        res.json({ success: true, ...await withTimeout(createArgoApp(cluster, spec, { by: req.user.username }), 90e3, 'The cluster did not answer in time') })
+        req.auditDetail = `create ${spec.tool === 'flux' ? 'flux Kustomization' : 'argocd Application'} ${spec.name} from ${spec.repoURL}${spec.path ? `/${spec.path}` : ''}@${spec.targetRevision} into ${spec.namespace}${spec.autoSync ? ' (auto-sync)' : ''}${override ? ` — ${override}` : ''}`
+        const create = spec.tool === 'flux' ? createFluxApp : createArgoApp
+        res.json({ success: true, ...await withTimeout(create(cluster, spec, { by: req.user.username }), 90e3, 'The cluster did not answer in time') })
     } catch (e) { fail(res, e) }
 })
 
@@ -98,11 +102,13 @@ router.delete('/:id/gitops/apps/:ns/:name', requirePermission('gitops:delete'), 
     if (write?.ok === false) return res.status(409).json({ error: write.why })
     try {
         const r = await withTimeout(readGitops(cluster, { fresh: true }), 90e3, 'The cluster did not answer in time')
-        const app = r.apps.find(a => a.kind === 'Application' && a.namespace === req.params.ns && a.name === req.params.name)
+        // ?kind=Kustomization for a Flux app; an Argo CD Application otherwise
+        const kind = req.query.kind === 'Kustomization' ? 'Kustomization' : 'Application'
+        const app = r.apps.find(a => a.kind === kind && a.namespace === req.params.ns && a.name === req.params.name)
         if (!app || !visibleTo(app, matcherFor(req.user, cluster))) return res.status(404).json({ error: 'App not found on this cluster' })
         const override = checkFreeze(req.user, cluster, req.body)
-        req.auditDetail = `remove argocd Application ${app.namespace}/${app.name}${override ? ` — ${override}` : ''}`
-        res.json({ success: true, ...await withTimeout(deleteArgoApp(cluster, app), 90e3, 'The cluster did not answer in time') })
+        req.auditDetail = `remove ${app.tool} ${kind} ${app.namespace}/${app.name}${override ? ` — ${override}` : ''}`
+        res.json({ success: true, ...await withTimeout((kind === 'Kustomization' ? deleteFluxApp : deleteArgoApp)(cluster, app), 90e3, 'The cluster did not answer in time') })
     } catch (e) { fail(res, e) }
 })
 

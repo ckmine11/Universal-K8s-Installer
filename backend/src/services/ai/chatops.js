@@ -14,8 +14,10 @@
 //   "kitne namespace hain" / "failing pods" what is in a cluster — answered by
 //                                         KubeEZ from the live cluster, no AI
 //   anything else                         answered by AI from the live facts
-// Read-only from chat: nothing changes a cluster. Off until an admin turns it
-// on for a channel; only that channel's own chat; 20 questions an hour.
+// Read-only from chat: nothing changes a cluster — except a deploy an admin
+// allowed for that channel, confirmed with a code (services/chatDeploy.js).
+// Off until an admin turns it on for a channel; only that channel's own chat;
+// 20 questions an hour.
 import { incidentDetector } from '../incidentDetector.js'
 import { clusterStore } from '../clusterStore.js'
 import { auditLog } from '../auditLog.js'
@@ -145,6 +147,12 @@ const user = (orgId, who, source) => ({ id: `chat:${source}`, username: `${who} 
  * ctx: { orgId, chatKey, who, source: 'Telegram' | 'Slack', text, send?(progressText) }
  */
 export async function handleChat(ctx) {
+    // "deploy web 1.4.2 to staging" / "confirm 4821" — only in a team chat, works without an AI
+    if (ctx.channelId && ctx.source !== 'Web') {
+        const { handleDeployChat } = await import('../chatDeploy.js')
+        const d = await handleDeployChat(ctx)
+        if (d) return d
+    }
     const state = chatState(ctx.chatKey)
     if (Date.now() - state.lastAt > MEMORY_MS) { state.history = []; state.lastTarget = null }
     const r = await answer(ctx)
@@ -344,7 +352,7 @@ async function lookInto({ ctx, u, sc, cluster, t, state }) {
 }
 
 function helpText() {
-    return 'I am KubeEZ AI — I answer through the AI connected to this workspace, from live data of your clusters. Ask me:\n• "status" — clusters and risk\n• "incidents" — open problems, numbered\n• "how many namespaces", "show nodes" — what runs in a cluster\n• "check the logs of web-2" — the problem in a pod, its cause and the fix\n• "why 2" — the cause of problem 2\n• "fix 2" — the suggested fix with its dry-run (applied in KubeEZ)\n• "what changed prod 6h" — the change timeline\n• anything about Kubernetes'
+    return 'I am KubeEZ AI — I answer through the AI connected to this workspace, from live data of your clusters. Ask me:\n• "status" — clusters and risk\n• "incidents" — open problems, numbered\n• "how many namespaces", "show nodes" — what runs in a cluster\n• "check the logs of web-2" — the problem in a pod, its cause and the fix\n• "why 2" — the cause of problem 2\n• "fix 2" — the suggested fix with its dry-run (applied in KubeEZ)\n• "what changed prod 6h" — the change timeline\n• "deploy list", "deploy web 1.4.2 to staging" — when an admin allowed this chat to deploy\n• anything about Kubernetes'
 }
 
 export function _reset() { chats.clear() }

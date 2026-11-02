@@ -102,12 +102,12 @@ async function chatopsReply(orgId, channel, msg) {
     if (!aiStore.chatops(orgId, channel.id).enabled) return null
     // in groups, only messages meant for the bot: /ask …, a mention, or a reply to it
     const group = msg.chat?.type !== 'private'
-    if (group && !/^\/(ask|kubeez|help|start)\b/i.test(msg.text) && !/@\w*bot\b/i.test(msg.text) && !msg.reply_to_message?.from?.is_bot) return null
+    if (group && !/^\/(ask|kubeez|help|start|deploy|confirm|cancel)\b/i.test(msg.text) && !/@\w*bot\b/i.test(msg.text) && !msg.reply_to_message?.from?.is_bot) return null
     const { handleChat } = await import('./ai/chatops.js')
     const token = channel.config.botToken, chat_id = msg.chat.id
     const who = msg.from?.username ? `@${msg.from.username}` : [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || 'Telegram user'
     const send = (text) => tg(token, 'sendMessage', { chat_id, text: String(text).slice(0, 4000), reply_to_message_id: msg.message_id, disable_web_page_preview: true }).catch(() => { })
-    const r = await handleChat({ orgId, chatKey: `tg:${chat_id}`, who, source: 'Telegram', text: msg.text, send })
+    const r = await handleChat({ orgId, channelId: channel.id, chatKey: `tg:${chat_id}`, who, source: 'Telegram', text: msg.text, send, later: send })
     await send(r.reply)
     return { ok: true, chatops: true, reply: r.reply }
 }

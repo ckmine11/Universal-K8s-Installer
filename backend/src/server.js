@@ -100,6 +100,7 @@ import featureRoutes from './routes/features.js'
 import { startAutoRollback } from './services/autoRollback.js'
 import { startHibernateSchedules } from './services/hibernateSchedule.js'
 import { startCveAlerts } from './services/cveAlerts.js'
+import { startPreviewSweeper } from './services/previews.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -647,6 +648,7 @@ server.listen(PORT, () => {
     startAiDigest()               // the daily / weekly AI digest to the alert channels (AI settings)
     startCveAlerts().catch(e => console.error(`[CveAlerts] ${e.message}`))   // new fixable critical CVEs → alert channels
     startHibernateSchedules().catch(e => console.error(`[HibernateSchedule] ${e.message}`))   // namespaces that sleep and wake on a clock
+    startPreviewSweeper().catch(e => console.error(`[Previews] ${e.message}`))   // expired preview environments are removed
     startAutoRollback().catch(e => console.error(`[AutoRollback] ${e.message}`))   // roll back Helm deploys that break their workload (per environment)
     import('./services/ai/providers.js').then(m => m.ensureServerModel()).catch(() => { })   // KubeEZ AI server model (background)
     import('./services/ai/runbookHooks.js').then(m => m.startRunbooks()).catch(e => console.warn('[KubeEZ AI] runbooks not started:', e.message))   // learned runbooks

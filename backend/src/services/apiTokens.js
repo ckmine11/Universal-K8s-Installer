@@ -44,6 +44,8 @@ class ApiTokens {
             id: randomBytes(6).toString('hex'), orgId, name, hash: hash(token), hint: `${token.slice(0, 8)}…${token.slice(-4)}`,
             clusterId: input.clusterId, namespace: input.namespace, release: input.release, repoId: input.repoId, chart: input.chart,
             version: input.version ? String(input.version).slice(0, 60) : null, allowedKeys: keys,
+            // may also create / remove preview environments of this release (POST/DELETE /api/hooks/preview)
+            previews: input.previews === true,
             createdAt: new Date().toISOString(), createdBy: by || null, expiresAt: new Date(Date.now() + days * 86400e3).toISOString(), lastUsedAt: null, revokedAt: null
         }
         all.push(rec); this._write(all)

@@ -42,7 +42,8 @@ router.post('/slack/:channelId', express.raw({ type: 'application/x-www-form-url
     res.json({ response_type: 'ephemeral', text: '🔎 …' })
     const post = (text) => postRequest(responseUrl, { response_type: 'in_channel', replace_original: false, text: String(text).slice(0, 3500) }, { timeoutMs: 15000 }).catch(() => { })
     try {
-        const r = await handleChat({ orgId: found.orgId, chatKey: `slack:${body.team_id}:${body.channel_id}`, who: body.user_name || 'Slack user', source: 'Slack', text: body.text || 'help' })
+        // later: the result of a deploy confirmed from Slack (the response URL lasts 30 minutes)
+        const r = await handleChat({ orgId: found.orgId, channelId: found.ch.id, chatKey: `slack:${body.team_id}:${body.channel_id}`, who: body.user_name || 'Slack user', source: 'Slack', text: body.text || 'help', later: post })
         await post(r.reply)
     } catch (e) { await post(`⚠ ${e.message}`) }
 })

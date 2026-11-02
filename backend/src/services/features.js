@@ -13,8 +13,8 @@ import { authService } from './authService.js'
 export const FEATURES = {
     gitops:          { label: 'GitOps view & sync', group: 'GitOps', description: 'Argo CD / Flux apps per cluster, Sync now, AI explain' },
     gitopsAlerts:    { label: 'GitOps alerts', group: 'GitOps', description: 'Checks Argo CD / Flux every 3 minutes: sync failed / unhealthy incidents and alerts', background: true, plan: 'pro' },
-    gitopsCreate:    { label: 'Create Argo CD apps', group: 'GitOps', description: 'New Argo CD apps from a Git repository, locked to one namespace', plan: 'pro' },
-    gitopsPromote:   { label: 'Promote by pull request', group: 'GitOps', description: 'GitHub accounts and pull requests that change values in Git', plan: 'pro' },
+    gitopsCreate:    { label: 'Create GitOps apps', group: 'GitOps', description: 'New Argo CD or Flux apps from a Git repository, locked to one namespace', plan: 'pro' },
+    gitopsPromote:   { label: 'Promote by pull request', group: 'GitOps', description: 'GitHub, GitLab and Bitbucket accounts; pull / merge requests that change values in Git', plan: 'pro' },
     security:        { label: 'Security (Trivy)', group: 'Security', description: 'Image vulnerabilities and misconfigurations per workload' },
     externalSecrets: { label: 'External Secrets status', group: 'Security', description: 'Sync status of ExternalSecrets, Sync now', plan: 'pro' },
     dora:            { label: 'Delivery metrics (DORA)', group: 'Insight', description: 'Deploy frequency, change failure rate, recovery time' },
@@ -31,7 +31,9 @@ export const FEATURES = {
     cveAlerts:       { label: 'New CVE alerts', group: 'Security', description: 'An alert when a new critical vulnerability with a fix shows up in a running image (checked every 30 minutes)', plan: 'pro', background: true },
     costs:           { label: 'Cost per app', group: 'Insight', description: 'Monthly cost of each namespace and app from its CPU / memory requests, and the money left idle' },
     hibernateSchedule: { label: 'Scheduled hibernate', group: 'Operations', description: 'Namespaces sleep and wake on a clock (e.g. dev 21:00 → 09:00 on weekdays)', plan: 'pro', background: true },
-    promotion:       { label: 'Promotion pipeline', group: 'Apps', description: 'Promote an app from one environment to the next (chart version and chosen values)', plan: 'pro' }
+    promotion:       { label: 'Promotion pipeline', group: 'Apps', description: 'Promote an app from one environment to the next (chart version and chosen values)', plan: 'pro' },
+    chatDeploy:      { label: 'Deploy from chat', group: 'Apps', description: 'Slack / Telegram: "deploy web 1.4.2 to staging", confirmed with a code — only the apps an admin allowed for that chat', plan: 'pro' },
+    previews:        { label: 'Preview environments', group: 'Apps', description: 'A short-lived copy of an app in its own namespace per pull request or branch, removed by itself when it expires', plan: 'pro', background: true }
 }
 export const FEATURE_KEYS = Object.keys(FEATURES)
 // plans: free < pro < enterprise (the workspace owner's subscription, as for backups and alerts)
