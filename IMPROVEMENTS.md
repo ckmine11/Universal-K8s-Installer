@@ -1,230 +1,72 @@
-> **Note (2026-11-02, v2.3.0):** this file describes an older version of KubeEZ and is kept for history. The current feature list is in [README.md](README.md), the full user guide is built into the console (**Help → Docs**), and changes are in [CHANGELOG.md](CHANGELOG.md).
+# Engineering Notes — Safety, Reliability and Known Gaps
 
-# 🎉 Safe Improvements Implementation Summary
-
-## ✅ Completed Enhancements
-
-All improvements have been implemented **without modifying existing functionality**. Your running project will continue to work exactly as before.
+*Version 2.3.0 · November 2026.* How KubeEZ is built to be safe to run against production clusters, and what is still missing. For features see [README.md](README.md); for changes, [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-### 📚 **Phase 1: Documentation** ✅
+## 1. Principles
 
-#### New Files Created:
-1. **`API.md`** - Comprehensive API documentation
-   - All endpoints documented with examples
-   - Authentication guide
-   - WebSocket API documentation
-   - Error response formats
-   - Complete usage examples
-
-2. **`TROUBLESHOOTING.md`** - Detailed troubleshooting guide
-   - Common issues and solutions
-   - Installation problems
-   - Network issues
-   - SSH connection problems
-   - Docker/container issues
-   - Debugging tips and commands
-
-3. **`CONTRIBUTING.md`** - Contribution guidelines
-   - Development setup
-   - Code standards
-   - Testing guidelines
-   - PR process
-   - Branch naming conventions
-
-4. **`CHANGELOG.md`** - Version history tracking
-   - All changes documented
-   - Semantic versioning
-   - Migration guides
+1. **Explain, don't stack-trace.** Scripts print machine-readable lines (`KUBEEZ_FAIL|code|reason|fix`, `KUBEEZ_PROGRESS|…`) that the console turns into a reason and a fix.
+2. **Preview before change.** Add-on settings, Helm deploys, etcd restores and AI fixes show what will change (a dry run or a diff) before anything runs.
+3. **Undo is part of the change.** Failed add-on changes and Helm upgrades roll back by themselves; etcd restores can be undone; AI fixes record their undo.
+4. **Ask the tool to do its own job.** GitOps sync uses Argo CD's operation / Flux's reconcile annotation; certificate renewal uses cert-manager's Issuing condition; KubeEZ never edits an app's spec or prunes.
+5. **Never read what you don't need.** KubeEZ never reads Kubernetes Secrets for its views (GitOps, Trivy, cert-manager, drift); Secret values in Helm diffs are hashed.
+6. **Least privilege everywhere.** A deploy token deploys one release; a chat channel deploys only the apps an admin allowed; a Flux app runs as a ServiceAccount that may only change its namespace; an Argo CD app gets its own AppProject.
 
 ---
 
-### 🔧 **Phase 2: Backend Enhancements** ✅
+## 2. Access control
 
-#### New Services:
-1. **`backend/src/services/backupService.js`**
-   - Automatic cluster data backups
-   - Manual backup creation
-   - Restore from backup
-   - Cleanup old backups
-   - Backup statistics
-   - Scheduled auto-backups
+- **Roles** are enforced by the API (`backend/src/config/permissions.js`, mirrored in the frontend only for display). Every route checks the role, the cluster rule (per cluster or label) and namespace limits.
+- **Two-person approval** (`services/approvals.js`): protected actions return `428` until a second person approves that exact request (method, path and body hash), once.
+- **Protected environments** always need approval for deploy, rollback, uninstall and promotion.
+- **Change freezes** return `423`; only admins may override, with a reason that is recorded.
+- **Feature flags** (`services/features.js`): a feature can be off on the server or for a workspace (`403 FEATURE_OFF`); a plan that lacks it answers `402 UPGRADE_REQUIRED`. Background work stops when a feature is off.
+- **Audit trail** (`services/auditLog.js`): monthly JSONL files chained with SHA-256, so edits are detectable; kept 400 days.
 
-#### New Routes:
-2. **`backend/src/routes/health.js`**
-   - `/api/health` - Basic health check
-   - `/api/health/detailed` - System metrics (CPU, memory, uptime)
-   - `/api/health/backups` - Backup system status
+## 3. Secrets and credentials
 
-#### New Middleware:
-3. **`backend/src/middleware/rateLimiter.js`**
-   - API rate limiting (100 req/15min)
-   - Auth rate limiting (5 req/15min)
-   - Cluster operation limiting (10 req/hour)
+- Node passwords, SSH keys, bot tokens, webhook URLs, chart-repository and registry passwords, Git tokens, cloud credentials and AI keys are **encrypted at rest** with `APP_SECRET` and never sent back to the browser.
+- Deploy tokens (`kzt_…`) are shown once and stored as a SHA-256 hash, with an expiry and revocation.
+- Helm values that look like secrets are masked (`••••••`); sending the mask back keeps the real value.
+- Text sent to an AI engine is redacted (secrets, optionally emails and IPs) and wrapped as untrusted data, with prompt-injection detection.
 
-4. **`backend/src/middleware/logger.js`**
-   - Request logging with timestamps
-   - Response time tracking
-   - Sensitive data sanitization
-   - Error logging
+## 4. Network safety
 
----
+- In SaaS mode the server never opens SSH, webhooks, Git API, registry or S3 connections to **private or internal addresses** (`utils/netGuard.js`); private servers are reached only through their own Gateway Agent.
+- Registry downloads follow redirects one hop at a time, each checked, and drop credentials when leaving the registry (blob CDNs).
+- Sessions are httpOnly cookies; a password change ends other sessions; login lockout; CORS limited to the site and `ALLOWED_ORIGINS`.
+- Slack ChatOps requests must carry Slack's signature (checked on the raw body, 5-minute window). Chat deploys need a confirmation code from the same person.
 
-### 🎯 **Phase 3: Additional Add-ons** ✅
+## 5. Cluster commands
 
-#### New Add-on Scripts:
-1. **`backend/src/automation/addons/cert-manager.sh`**
-   - Automatic TLS certificate management
-   - Self-signed issuer included
-   - Let's Encrypt template
+- Every value that reaches a shell is validated against a strict pattern (names, namespaces, versions, paths) **and** single-quoted.
+- Commands for connected clusters run on the KubeEZ server in a per-cluster sandbox: its own user, no access to KubeEZ's files, only `kubectl` and `helm`.
+- Long jobs (installs, upgrades, Helm deploys) run in the background with polling, so a proxy timeout (Cloudflare's 100 s) never cuts them off.
+- One running job per release / cluster; a second one is refused with `409`.
 
-2. **`backend/src/automation/addons/longhorn.sh`**
-   - Distributed block storage
-   - UI access on port 30080
-   - Default StorageClass configuration
+## 6. Data
 
-3. **`backend/src/automation/addons/argocd.sh`**
-   - GitOps continuous delivery
-   - UI access on port 30443
-   - Initial password retrieval
-   - CLI usage examples
+- State is kept in JSON files under `backend/data`, written atomically (`utils/atomicWrite.js`).
+- KubeEZ backs up its own data daily.
+- Preview environments are tracked by a namespace label (`kubeez.io/preview=<id>`); KubeEZ deletes only namespaces that carry its own label.
+
+## 7. Testing
+
+About 750 backend tests (`node:test`) cover the API gates for every role, auto-healing, backups, AI safety and the delivery features, using in-process servers and fake cluster connections. End-to-end runs install real clusters on 7 Linux distributions in Docker. See [TESTING_GUIDE.md](TESTING_GUIDE.md).
 
 ---
 
-### 🧪 **Phase 4: Testing Infrastructure** ✅
+## 8. Known gaps
 
-#### Test Structure:
-1. **`backend/tests/README.md`** - Testing guidelines
-2. **`backend/tests/unit/backupService.test.js`** - Sample unit tests
-3. Test folders created:
-   - `backend/tests/unit/`
-   - `backend/tests/integration/`
-   - `backend/tests/e2e/`
-
----
-
-### 📦 **Updated Files**
-
-1. **`backend/package.json`**
-   - Version bumped to 2.1.0
-   - Added `express-rate-limit` dependency
-   - Added test scripts (placeholders)
-   - Updated keywords
-
----
-
-## 🚀 How to Use New Features
-
-### 1. **Enable Backup Service** (Optional)
-
-Add to your `backend/src/server.js`:
-
-```javascript
-import { BackupService } from './services/backupService.js';
-
-// Schedule automatic backups every 24 hours
-BackupService.scheduleAutoBackup(24);
-```
-
-### 2. **Enable Enhanced Health Checks** (Optional)
-
-Add to your `backend/src/server.js`:
-
-```javascript
-import { healthRouter } from './routes/health.js';
-
-app.use('/api/health', healthRouter);
-```
-
-### 3. **Enable Rate Limiting** (Optional)
-
-Add to your `backend/src/server.js`:
-
-```javascript
-import { apiLimiter } from './middleware/rateLimiter.js';
-
-app.use('/api/', apiLimiter);
-```
-
-### 4. **Enable Request Logging** (Optional)
-
-Add to your `backend/src/server.js`:
-
-```javascript
-import { requestLogger } from './middleware/logger.js';
-
-app.use(requestLogger);
-```
-
-### 5. **Install New Add-ons**
-
-```bash
-# cert-manager
-chmod +x backend/src/automation/addons/cert-manager.sh
-./backend/src/automation/addons/cert-manager.sh
-
-# Longhorn Storage
-chmod +x backend/src/automation/addons/longhorn.sh
-./backend/src/automation/addons/longhorn.sh
-
-# ArgoCD
-chmod +x backend/src/automation/addons/argocd.sh
-./backend/src/automation/addons/argocd.sh
-```
-
----
-
-## 📊 New API Endpoints
-
-### Health Checks:
-- `GET /api/health` - Basic health
-- `GET /api/health/detailed` - Detailed metrics
-- `GET /api/health/backups` - Backup status
-
----
-
-## 🔒 Security Improvements
-
-- ✅ Rate limiting prevents API abuse
-- ✅ Request logging for audit trails
-- ✅ Sensitive data sanitization in logs
-- ✅ Backup system for data recovery
-
----
-
-## 📈 What's Next?
-
-All these features are **optional** and can be enabled gradually:
-
-1. **Immediate**: Use the documentation (API.md, TROUBLESHOOTING.md)
-2. **Week 1**: Enable backup service
-3. **Week 2**: Enable rate limiting and logging
-4. **Week 3**: Install new add-ons as needed
-5. **Week 4**: Add unit tests
-
----
-
-## ⚠️ Important Notes
-
-- ✅ **No breaking changes** - Existing code untouched
-- ✅ **All features optional** - Enable when ready
-- ✅ **Backward compatible** - Works with current setup
-- ✅ **Production safe** - Tested and documented
-
----
-
-## 🎯 Installation
-
-To use the new features, you need to install the new dependency:
-
-```bash
-cd backend
-npm install express-rate-limit
-```
-
-Then optionally enable features in `server.js` as shown above.
-
----
-
-**Your project is now enhanced with production-ready features while maintaining 100% backward compatibility!** 🚀
+| Gap | Impact | Direction |
+|---|---|---|
+| **Not yet run on real clusters:** features from 2026-10-30 on (GitOps actions, Helm apps, delivery, previews, chat deploy, signature gate, drift, certificates) | Bugs that simulated clusters, registries and Git providers cannot show | Run each against a real cluster, real registries and real GitHub / GitLab / Bitbucket accounts |
+| **JSON-file storage** | One backend instance per installation; no horizontal scaling | A database (PostgreSQL) |
+| **No Content-Security-Policy header** | Less defence in depth against XSS | Enable CSP once the frontend's needs are mapped |
+| **No frontend tests or linter** | UI regressions are caught only by building and manual checks | Component tests and ESLint |
+| **Cosign: key-based only** | No keyless (Fulcio) signatures, no Rekor transparency-log check | Add keyless verification |
+| **Bitbucket: Cloud only** | Bitbucket Server / Data Center promotions are not supported | A Server adapter |
+| **Helm drift scope** | Only fields the chart sets count; fields added by hand outside the chart are not shown; up to 40 releases per check | Accept, or add a three-way comparison |
+| **Gateway Agent bundles Node 18** | Node 18 is end-of-life | Move the portable runtime to Node 22 |
+| **Older docs** | Some guides in the repository (e.g. DEPLOY.md, DOCKER_GUIDE.md) predate 2.3.0 | Keep README, SETUP, USER_GUIDE and the in-app Docs as the reference |

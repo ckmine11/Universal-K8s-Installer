@@ -1,380 +1,132 @@
-> **Note (2026-11-02, v2.3.0):** this file describes an older version of KubeEZ and is kept for history. The current feature list is in [README.md](README.md), the full user guide is built into the console (**Help → Docs**), and changes are in [CHANGELOG.md](CHANGELOG.md).
+# KubeEZ Setup Guide
 
-# 🚀 KubeEZ - Complete Setup Guide
-
-## 📋 Prerequisites
-
-### System Requirements
-- **Node.js**: v18.0.0 or higher
-- **npm**: v9.0.0 or higher
-- **Operating System**: Windows, macOS, or Linux
-
-### Target VM Requirements (for Kubernetes installation)
-- **OS**: Ubuntu 20.04/22.04, RHEL 8/9, Rocky Linux 8/9, or CentOS Stream
-- **CPU**: Minimum 2 cores (4+ recommended for production)
-- **RAM**: Minimum 2GB (4GB+ recommended)
-- **Disk**: Minimum 20GB free space
-- **Network**: Internet connectivity required
-- **SSH**: SSH access with sudo privileges
+*Version 2.3.0 · November 2026.* How to run the KubeEZ server itself — for development, and in production. For using KubeEZ once it runs, see [USER_GUIDE.md](USER_GUIDE.md).
 
 ---
 
-## 🏗️ Installation
+## 1. Two editions
 
-### Step 1: Clone or Download the Project
+| `KUBEEZ_MODE` | What it is | How it reaches your servers |
+|---|---|---|
+| `selfhosted` | You run KubeEZ for your own team. The first visitor creates the first administrator; a license key raises the plan (without one: Free). | Directly over SSH, or through Gateway Agents. |
+| `saas` | The hosted, multi-workspace edition (anyone may sign up). The platform owner is created with a script. | Through each workspace's Gateway Agent; never directly to private addresses. |
+
+---
+
+## 2. Requirements
+
+- A Linux server (a VPS is fine: 2 vCPU, 4 GB RAM, 20 GB disk) with **Docker** and **Docker Compose**.
+- Outbound access to your cluster servers (SSH, port 22) — or Gateway Agents for networks it cannot reach.
+- For development without Docker: **Node.js 20 or newer** (the images use Node 22 LTS).
+
+Install Docker on Ubuntu / Debian:
 
 ```bash
-cd C:\Users\Joy\.gemini\antigravity\scratch\kubeez
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER && newgrp docker
 ```
 
-### Step 2: Install Dependencies
+---
+
+## 3. Configure
 
 ```bash
-# Install root dependencies
-npm install
-
-# Install frontend dependencies
-cd frontend
-npm install
-
-# Install backend dependencies
-cd ../backend
-npm install
-
-# Return to root
-cd ..
+git clone https://github.com/ckmine11/Universal-K8s-Installer.git
+cd Universal-K8s-Installer
+cp .env.example .env
+openssl rand -hex 32        # paste the result as APP_SECRET in .env
 ```
 
-### Step 3: Start the Application
+| Setting | Needed | What for |
+|---|---|---|
+| `APP_SECRET` | **yes** | Encrypts stored credentials and signs sessions. Keep it safe and never change it — stored secrets become unreadable. |
+| `KUBEEZ_MODE` | yes | `selfhosted` or `saas`. |
+| `KUBEEZ_PUBLIC_URL` | production | The address people open (e.g. `https://kubeez.example.com`); used in alert, email and webhook links. |
+| `ALLOWED_ORIGINS` | sometimes | Extra browser origins allowed to call the API. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | recommended | Password reset codes, invites, sign-up confirmation, email alerts. Gmail needs an App Password; for inbox delivery use your own domain with SPF, DKIM and DMARC. |
+| `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET` | optional | "Continue with Google / GitHub". Callback: `<KUBEEZ_PUBLIC_URL>/api/auth/oauth/<provider>/callback`. |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ROLE_MAP`, `OIDC_DEFAULT_ROLE`, `OIDC_WORKSPACE`, `OIDC_NAME`, `OIDC_SCOPES`, `OIDC_GROUPS_CLAIM` | optional | Single sign-on with any OpenID Connect provider. Groups map to roles (`kubeez-admins=admin,dev=viewer`); unmapped people get `OIDC_DEFAULT_ROLE` (`none` by default). Callback: `…/api/auth/oauth/oidc/callback`. |
+| `KUBEEZ_OPEN_SIGNUP` | optional | `true` lets anyone create a workspace on a self-hosted server. |
+| `KUBEEZ_FEATURES`, `KUBEEZ_FEATURES_DEFAULT` | optional | Which features the server offers: `KUBEEZ_FEATURES="gitops=on,previews=off"`; `KUBEEZ_FEATURES_DEFAULT=off` starts with everything off. |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | optional | Cloudflare Turnstile on sign-up and forgot password. |
+| `STRIPE_*` | hosted edition | Billing. |
+| `ALERT_EMAILS_PER_DAY_FREE`, `ALERT_EMAILS_PER_DAY_PAID` | optional | Daily alert-email allowance per workspace (default 20 / 200). |
+
+The full list with comments is in [.env.example](.env.example).
+
+---
+
+## 4. Run for development
 
 ```bash
-# Start both frontend and backend (from root directory)
-npm run dev
+docker compose up -d --build     # frontend http://localhost:5173, backend http://localhost:3000
 ```
 
-**OR** start them separately:
+Or without Docker, in two terminals:
 
 ```bash
-# Terminal 1 - Backend
-cd backend
-npm run dev
-
-# Terminal 2 - Frontend
-cd frontend
-npm run dev
+cd backend && npm install && npm run dev      # API on :3000, restarts on changes
+cd frontend && npm install && npm run dev     # console on :5173, API proxied to :3000
 ```
 
-### Step 4: Access the Application
-
-- **Frontend UI**: http://localhost:5173
-- **Backend API**: http://localhost:3000
-- **API Health Check**: http://localhost:3000/api/health
+Open **http://localhost:5173**. On a fresh self-hosted server the first screen creates the **first administrator** — there is no default password.
 
 ---
 
-## 🎯 Usage Guide
-
-### Creating Your First Kubernetes Cluster
-
-#### Step 1: Cluster Basics
-1. Open http://localhost:5173 in your browser
-2. Enter a **Cluster Name** (e.g., `my-production-cluster`)
-3. Select **Kubernetes Version** (default: v1.28.0)
-4. Choose **Network Plugin**:
-   - **Calico**: Recommended for production (supports network policies)
-   - **Flannel**: Lightweight, simple overlay network
-5. Click **Next Step**
-
-#### Step 2: Configure Nodes
-
-**Master Nodes (Control Plane):**
-1. Click **Add Master** to add master nodes
-2. For each master node, provide:
-   - **IP Address**: e.g., `192.168.1.10`
-   - **SSH Username**: e.g., `ubuntu` or `root`
-   - **SSH Password**: (optional if using SSH key)
-   - **SSH Key Path**: (optional, e.g., `~/.ssh/id_rsa`)
-3. For HA clusters, add 3 or 5 master nodes
-
-**Worker Nodes:**
-1. Click **Add Worker** to add worker nodes
-2. Provide the same SSH details as master nodes
-3. Add as many workers as needed
-
-**Important Notes:**
-- At least 1 master node is required
-- Worker nodes are optional (can run workloads on master in dev)
-- For production HA, use 3 or 5 master nodes (odd number)
-- Ensure all nodes can communicate with each other
-
-#### Step 3: Select Features
-
-Choose the add-ons you want to install:
-
-- **🌐 Ingress Controller** (Nginx)
-  - HTTP/HTTPS routing for your applications
-  - Recommended for production
-
-- **📊 Monitoring Stack** (Prometheus + Grafana)
-  - Metrics collection and visualization
-  - Essential for production monitoring
-
-- **📝 Logging Stack** (EFK - Elasticsearch, Fluentd, Kibana)
-  - Centralized log aggregation
-  - Useful for debugging and auditing
-
-- **🎛️ Kubernetes Dashboard**
-  - Web UI for cluster management
-  - Great for beginners
-
-#### Step 4: Review & Install
-
-1. Review your configuration
-2. Ensure all details are correct
-3. Click **Install Cluster**
-4. Watch the real-time installation progress!
-
-### Monitoring Installation
-
-The installation dashboard shows:
-- **Progress Bar**: Overall installation progress (0-100%)
-- **Current Step**: What's happening right now
-- **Real-time Logs**: Live output from all installation steps
-- **Status Cards**: Installation state, timing, and cluster info
-
-### After Installation
-
-When installation completes:
-1. Click **Download Kubeconfig** to get your cluster credentials
-2. Save the file as `kubeconfig.yaml`
-3. Use it to connect to your cluster:
+## 5. Run in production
 
 ```bash
-export KUBECONFIG=./kubeconfig.yaml
-kubectl get nodes
-kubectl get pods --all-namespaces
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
----
+This starts nginx (ports **80** and **8090**) in front of the frontend and the backend. KubeEZ's data lives in the Docker volume `kubeez-data` (`/app/data` in the backend), its logs in `kubeez-logs`.
 
-## 🔧 Configuration
+**Put it behind HTTPS** before connecting real servers or Gateway Agents — for example Cloudflare in front of port 80 ([CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md)), or your own reverse proxy with a certificate. Set `KUBEEZ_PUBLIC_URL` to the https address.
 
-### Backend Configuration
+### Hosted edition: create the platform owner
 
-Edit `backend/src/server.js` to change:
-- **Port**: Default is 3000
-- **WebSocket path**: Default is `/ws`
-
-### Frontend Configuration
-
-Edit `frontend/vite.config.js` to change:
-- **Port**: Default is 5173
-- **API proxy**: Points to backend at localhost:3000
-
----
-
-## 📡 API Reference
-
-### POST /api/clusters/install
-
-Start a new cluster installation.
-
-**Request Body:**
-```json
-{
-  "clusterName": "my-cluster",
-  "k8sVersion": "1.28.0",
-  "networkPlugin": "calico",
-  "masterNodes": [
-    {
-      "ip": "192.168.1.10",
-      "username": "ubuntu",
-      "password": "secret",
-      "sshKey": ""
-    }
-  ],
-  "workerNodes": [
-    {
-      "ip": "192.168.1.11",
-      "username": "ubuntu",
-      "password": "secret",
-      "sshKey": ""
-    }
-  ],
-  "addons": {
-    "ingress": true,
-    "monitoring": false,
-    "logging": false,
-    "dashboard": true
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "installationId": "uuid-here",
-  "message": "Installation started successfully",
-  "status": "pending"
-}
-```
-
-### GET /api/clusters/:id/status
-
-Get installation status.
-
-**Response:**
-```json
-{
-  "id": "uuid-here",
-  "status": "running",
-  "progress": 65,
-  "currentStep": "Installing network plugin...",
-  "logs": [...]
-}
-```
-
-### WebSocket: ws://localhost:3000/ws/installation/:id
-
-Real-time installation updates.
-
-**Message Types:**
-```json
-// Log message
-{
-  "type": "log",
-  "level": "info",
-  "message": "Installing containerd..."
-}
-
-// Progress update
-{
-  "type": "progress",
-  "progress": 50,
-  "step": "Initializing control plane..."
-}
-
-// Status change
-{
-  "type": "status",
-  "status": "completed",
-  "clusterInfo": {
-    "name": "my-cluster",
-    "version": "1.28.0",
-    "nodes": 3,
-    "endpoint": "https://192.168.1.10:6443"
-  }
-}
-```
-
----
-
-## 🛠️ Troubleshooting
-
-### Frontend Issues
-
-**Problem**: Frontend won't start
 ```bash
-# Solution: Clear node_modules and reinstall
-cd frontend
-rm -rf node_modules package-lock.json
-npm install
-npm run dev
+docker exec -it kubeez-backend node scripts/make-superadmin.js <username> <password> <email>
+docker compose -f docker-compose.prod.yml restart backend
 ```
 
-**Problem**: Can't connect to backend
-- Check if backend is running on port 3000
-- Check `frontend/vite.config.js` proxy settings
+### Self-hosted: license
 
-### Backend Issues
+Without a license KubeEZ runs on the Free plan. An admin pastes a license key under **Settings → License** to unlock Pro / Enterprise (clusters, nodes and features of that plan).
 
-**Problem**: Backend won't start
+### Update
+
 ```bash
-# Solution: Check Node.js version
-node --version  # Should be v18+
-
-# Reinstall dependencies
-cd backend
-rm -rf node_modules package-lock.json
-npm install
-npm run dev
+git pull
+docker compose -f docker-compose.prod.yml up -d --build backend frontend
 ```
 
-**Problem**: WebSocket connection fails
-- Ensure backend is running
-- Check firewall settings
-- Verify WebSocket path in frontend code
-
-### Installation Issues
-
-**Problem**: SSH connection fails
-- Verify IP address is correct and reachable
-- Check SSH credentials (username/password or key)
-- Ensure SSH service is running on target nodes
-- Check firewall rules (port 22 should be open)
-
-**Problem**: Pre-flight checks fail
-- Ensure nodes meet minimum requirements (2 CPU, 2GB RAM, 20GB disk)
-- Disable swap: `sudo swapoff -a`
-- Check internet connectivity
-
-**Problem**: Installation hangs
-- Check logs for specific errors
-- Verify all nodes can communicate
-- Ensure required ports are open (6443, 2379-2380, 10250-10252)
+Data in the `kubeez-data` volume is kept. Check [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ---
 
-## 🔒 Security Best Practices
+## 6. After the first start
 
-### SSH Security
-- Use SSH keys instead of passwords when possible
-- Restrict SSH access to specific IPs
-- Use strong passwords if keys aren't available
-
-### Cluster Security
-- Change default credentials after installation
-- Enable RBAC (enabled by default in modern K8s)
-- Use network policies to restrict pod communication
-- Regularly update Kubernetes and add-ons
-
-### KubeEZ Application
-- Don't expose backend API to the internet
-- Use HTTPS in production (add reverse proxy)
-- Store SSH credentials securely (consider using a secrets manager)
+1. Sign in as the first administrator (or the platform owner).
+2. **Alerts** — add at least one channel (Telegram, Slack, Teams, WhatsApp, email or webhook).
+3. **Gateway Agents** — install one in every network KubeEZ cannot reach directly.
+4. **Team & Roles** — invite your team.
+5. **AI settings** — connect an AI engine if you want KubeEZ AI (OpenRouter sign-in, a cloud API key, or an offline model).
+6. **Delivery** — add environments and chart repositories if you will ship apps with KubeEZ.
+7. **Features** — turn off what your team will not use.
 
 ---
 
-## 📚 Additional Resources
+## 7. Operating the KubeEZ server
 
-### Kubernetes Documentation
-- Official Docs: https://kubernetes.io/docs/
-- kubeadm Guide: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/
+| Task | How |
+|---|---|
+| Back up KubeEZ itself | It keeps daily config backups; also back up the `kubeez-data` volume **and** your `APP_SECRET` together. |
+| Reset a password when nobody can sign in | `docker exec -it kubeez-backend node scripts/reset-password.js <username> <new-password>` |
+| See logs | `docker compose -f docker-compose.prod.yml logs -f backend` |
+| Health | `GET /api/health` |
+| Move to a new server | Copy the `kubeez-data` volume and `.env` (same `APP_SECRET`), then start as above. |
 
-### Network Plugins
-- Calico: https://docs.tigera.io/calico/latest/about/
-- Flannel: https://github.com/flannel-io/flannel
+**Limits to know:** KubeEZ stores its state in JSON files (written atomically, credentials encrypted), so one installation runs as **one backend instance** — it does not scale horizontally. The browser Content-Security-Policy header is not enabled yet; put KubeEZ on its own domain.
 
-### Add-ons
-- Nginx Ingress: https://kubernetes.github.io/ingress-nginx/
-- Prometheus: https://prometheus.io/docs/
-- Kubernetes Dashboard: https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/
-
----
-
-## 🤝 Support
-
-- **Issues**: Report bugs on GitHub Issues
-- **Discussions**: Join our Discord community
-- **Email**: support@kubeez.io
-- **Documentation**: https://docs.kubeez.io
-
----
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
----
-
-**Made with ❤️ by the KubeEZ Team**
+More: [DEPLOY.md](DEPLOY.md) · [TROUBLESHOOTING.md](TROUBLESHOOTING.md) · [SUDO_SETUP.md](SUDO_SETUP.md) · [MULTI_SITE_SETUP.md](MULTI_SITE_SETUP.md)

@@ -1,213 +1,119 @@
-> **Note (2026-11-02, v2.3.0):** this file describes an older version of KubeEZ and is kept for history. The current feature list is in [README.md](README.md), the full user guide is built into the console (**Help → Docs**), and changes are in [CHANGELOG.md](CHANGELOG.md).
+# KubeEZ Testing Guide
 
-# KubeEZ - Quick Test Guide
-
-## 🧪 Test 1: Fresh Installation (5 minutes)
-
-### Step-by-Step:
-
-1. **Open Browser**
-   - Go to `http://localhost:5173`
-   - Press `Ctrl+Shift+R` (hard refresh)
-   - Open Console (F12)
-
-2. **Start New Installation**
-   - Click "New Installation" button
-   - Should navigate to `/install`
-
-3. **Step 1: Cluster Config**
-   - Enter cluster name: `test-cluster`
-   - Select K8s version: `1.28.0`
-   - Select network: `flannel`
-   - Click "Continue"
-
-4. **Step 2: Add Master Node**
-   - Enter IP: `192.168.1.10` (your master IP)
-   - Username: `root`
-   - Password: `your-password`
-   - Click "Kickstart Diagnostics"
-   
-   **Expected:**
-   - Button should show "Scanning..."
-   - Console should show: `[NodeVerification] handleVerify called`
-   - After 5-10 seconds: Status should show "READY" or "READY-WITH-WARNINGS"
-   
-   **If button is disabled:**
-   - Check console for: `[NodeVerification] Missing required fields`
-   - Verify IP and username are filled
-
-5. **Add Worker (Optional)**
-   - Click "Add Worker Node"
-   - Fill details
-   - Verify
-
-6. **Continue to Add-ons**
-   - Click "Continue"
-   - Should go to Step 3
-
-7. **Step 3: Select Add-ons**
-   - Check "Dashboard"
-   - Click "Continue"
-
-8. **Step 4: Review**
-   - Verify all details are correct
-   - Click "Launch Kubernetes Installation"
-
-9. **Monitor Dashboard**
-   - Should navigate to `/dashboard/:id`
-   - Watch logs stream
-   - Progress bar should update
-   - Wait for "✅ Cluster Installation Complete!"
-
-10. **After Completion**
-    - Click "Download Kubeconfig"
-    - Click "Scale This Cluster" (should go to scale wizard)
-    - Click "Go Home" (should go to home page)
+*Version 2.3.0 · November 2026.* What is tested, how to run it, how to write a new test, and how to check a release by hand.
 
 ---
 
-## 🔄 Test 2: Scale Existing Cluster (3 minutes)
+## 1. The test layers
 
-### Prerequisites:
-- Have at least one cluster created from Test 1
-
-### Step-by-Step:
-
-1. **From Home Page**
-   - Should see saved cluster in list
-   - Click "Intelligent Scale" button
-   - Should navigate to `/scale`
-
-2. **Verify Bridge Master**
-   - Should see "Bridge Master" section
-   - Should show existing master details (read-only)
-   - IP, username should be pre-filled
-
-3. **Add New HA Master**
-   - Click "Add HA Master"
-   - Enter new master IP: `192.168.1.11`
-   - Username: `root`
-   - Password: `your-password`
-   - Click "Kickstart Diagnostics"
-   - Wait for "READY" status
-
-4. **Review**
-   - Click "Continue"
-   - Should show:
-     - Existing Bridge Master (marked as EXISTING/IGNORED)
-     - New HA Master (marked as NEW)
-
-5. **Launch Scaling**
-   - Click "Launch Kubernetes Installation"
-   - Monitor dashboard
-   - Should see "Patching Cluster for HA Support"
-   - Should see "Joining additional Master node"
-
-6. **Verify Success**
-   - Cluster should have 2 masters now
-   - Click "Go Home"
+| Layer | Where | What it proves | Time |
+|---|---|---|---|
+| **Backend tests** | `backend/tests/*.test.js` (71 files, ~750 tests) | API gates for every role, services, safety rules — with fake clusters | ~45 s |
+| **Frontend build** | `frontend` (`npm run build`) | The console compiles (there are no frontend unit tests yet) | ~30 s |
+| **Script syntax** | every `*.sh` under `backend/src/automation` and `tests` | `bash -n` parses each script | seconds |
+| **Upgrade-script scenarios** | `tests/upgrade-script/` | `upgrade-cluster.sh` on failure and happy paths (stubbed commands) | ~3 min |
+| **End-to-end** | `tests/e2e/e2e.sh` | Real kubeadm clusters in privileged systemd containers on 7 distros | 5–30 min each |
 
 ---
 
-## 🐛 Common Issues & Solutions
+## 2. Backend tests
 
-### Issue: "Kickstart Diagnostics" button is grayed out
-**Solution:**
-- Make sure IP and Username are filled
-- Check console for validation errors
-- Try typing in fields again
+```bash
+cd backend
+npm install
+npm test                                  # everything (node --test)
+node --test tests/delivery-guard.test.js  # one file
+```
 
-### Issue: Button doesn't do anything when clicked
-**Solution:**
-- Open Console (F12)
-- Look for errors
-- Check if `[NodeVerification] handleVerify called` appears
-- If not, frontend code might not be updated - do hard refresh
+Node's built-in runner; no extra dependencies. Tests never touch `backend/data`: each sets `KUBEEZ_DATA_DIR` to a throw-away directory before importing services.
 
-### Issue: Verification fails with "SSH connection failed"
-**Solution:**
-- Verify node IP is reachable: `ping 192.168.1.10`
-- Verify SSH is running: `ssh root@192.168.1.10`
-- Check firewall rules
-- Verify credentials are correct
+### Two styles
 
-### Issue: Page is blank after completion
-**Solution:**
-- Check browser console for React errors
-- Do hard refresh (Ctrl+Shift+R)
-- Check if `clusterInfo.nodes` error appears
-- If yes, we already fixed this - just refresh
+**In-process (most tests).** Import the services and routes, mount them on a small Express app with a fake signed-in user, and replace the cluster connection with a fake:
 
-### Issue: Data lost on page refresh
-**Solution:**
-- This is expected for install mode
-- For scale mode, data should persist via localStorage
-- If not working, check console for localStorage errors
+```js
+import { tempDataDir, paidOrgs } from './helpers/server.js'
+const DATA = tempDataDir()
+process.env.KUBEEZ_DATA_DIR = DATA
+paidOrgs(DATA, ['org-a'])                 // a Pro / Enterprise workspace (Pro features answer 402 otherwise)
+
+const helm = await import('../src/services/helmApps.js')
+helm._test.useConnect(async () => ({      // every command "runs" on a fake control-plane
+    execCommand: async (cmd) => /HELM list/.test(cmd) ? { code: 0, stdout: '[]' } : { code: 0, stdout: '{}' },
+    dispose() { }
+}))
+
+app.use((req, res, next) => { req.user = USERS[req.get('x-test-user')]; next() })   // admin / operator / viewer / scoped
+```
+
+Services that run commands expose `_test.useConnect(fn)` (helmApps, gitops, previews, certManager, security, hibernate, externalSecrets…). Services that call outside APIs take a `fetchImpl` (Git providers, registries, chart repositories).
+
+**Real server.** `helpers/server.js → startServer()` boots `src/server.js` in a child process on a random port with its own data directory; `client(server)` makes JSON calls. Used for sign-in, sessions, CORS and other end-to-end API behaviour.
+
+### What every new feature's tests cover
+
+1. **Input checks** — bad names, paths, versions and `__proto__` keys answer `400`.
+2. **Every role** — admin, operator, viewer and a member limited to some namespaces: who gets `200`, `403` or `404` (a cluster or namespace you may not see is "not found").
+3. **Gates** — feature off (`403 FEATURE_OFF`), plan (`402`), approval (`428`), change freeze (`423`), read-only connected cluster (`409`).
+4. **The commands sent to the cluster** — quoted, and nothing runs when a check fails.
+5. **The audit trail** — the action is recorded with a useful detail.
+
+Example files to copy from: `delivery-next.test.js` (Git providers, Flux, previews, chat deploy), `delivery-guard.test.js` (cosign with a fake registry, risk, drift, cert-manager), `phase3.test.js` (deploy tokens, CVE gate), `helm-apps.test.js`.
 
 ---
 
-## 📊 Expected Console Output (Normal Flow)
+## 3. End-to-end tests
 
-### During Verification:
-```
-[NodeVerification] handleVerify called with node: {ip: "192.168.1.10", username: "root", hasPassword: true, hasSSHKey: false}
-Verification response status: 200
-Verification result: {status: "ready", osInfo: {...}, resources: {...}}
-```
+Need Docker on a Linux host with cgroups v2 (GitHub's Ubuntu runners or Docker Desktop work). Each "node" is a privileged systemd container, so kubeadm, containerd and kubelet really run.
 
-### During Installation:
-```
-WebSocket connected
-[Installation] Starting installation...
-[Installation] Installing container runtime...
-[Installation] Installing Kubernetes components...
+```bash
+bash tests/e2e/e2e.sh install ubuntu2204            # single-node cluster (default Kubernetes 1.35)
+bash tests/e2e/e2e.sh upgrade ubuntu2204 rocky9 debian12   # 1.35 → 1.36 → 1.37 on every node
+bash tests/e2e/e2e.sh ha-vip ubuntu2204             # 3 control-planes + kube-vip failover
+bash tests/e2e/e2e.sh clean                         # remove every e2e container
 ```
 
-### During Scaling:
-```
-[Installation] Patching Cluster for HA Support
-[Installation] Checking current cluster configuration...
-[Installation] ✓ ConfigMap updated successfully
-[Installation] Joining additional Master node 2: 192.168.1.11
-```
+| Scenario | Checks |
+|---|---|
+| `install`, `cluster` | A fresh cluster; or one left running for manual testing |
+| `upgrade`, `restore-upgrade` | Real upgrades; restoring a pre-upgrade snapshot then upgrading again |
+| `restore`, `restore-ha`, `recover`, `offsite`, `velero` | etcd restore (multi-node, HA), disaster recovery, offsite backups, volume backups |
+| `ha-vip` | Failover of the virtual IP when its holder dies |
+| `addons`, `helm-addons`, `platform-addons`, `takeover` | Add-on lifecycle; Helm-managed add-ons; old add-ons taken over by Helm (`ONLY=metallb,…` for a subset) |
+| `explorer`, `access`, `ai-ops`, `compliance` | Explorer behind the proxy, namespace access, AI fixes with undo, compliance evidence |
+| `agent`, `agent-health` | Gateway Agent as a service, crash / reboot recovery, topology through the agent |
+
+Distros: `ubuntu2204 ubuntu2404 debian12 rocky9 alma9 fedora amzn2023`. Scenarios that drive the KubeEZ API need `npm install` in `backend/` first.
 
 ---
 
-## ✅ Success Criteria
+## 4. Continuous integration
 
-- [ ] Can create fresh cluster
-- [ ] Can verify nodes before installation
-- [ ] Installation completes successfully
-- [ ] Can download kubeconfig
-- [ ] Can scale existing cluster
-- [ ] Navigation works correctly
-- [ ] No console errors (except warnings)
-- [ ] Data persists on refresh (scale mode)
+`.github/workflows/ci.yml` runs on every push to `master`, on pull requests, on demand and **nightly** (03:00 IST, to catch upstream Kubernetes / containerd / distro changes):
+
+- **Checks** (every run, ~2 min): script syntax, backend tests, frontend build.
+- **Upgrade script scenarios**.
+- **Install matrix** across distros and Kubernetes versions.
+- Real-node jobs: S3 + offsite backup, etcd restore (Ubuntu + Rocky), add-on management, Gateway Agent, topology through the agent, multi-node upgrade.
 
 ---
 
-## 🚨 If Nothing Works
+## 5. Manual release check
 
-1. **Restart Everything:**
-   ```bash
-   cd C:\Users\Joy\.gemini\antigravity\scratch\kubeez
-   docker-compose down
-   docker-compose up -d
-   ```
+Automated tests use simulated clusters, registries and Git providers. Before a release, check the newer features on a real cluster (a 1-node `e2e.sh cluster` works for most):
 
-2. **Clear Browser Cache:**
-   - Ctrl+Shift+Delete
-   - Clear "Cached images and files"
-   - Close and reopen browser
+| Area | Check |
+|---|---|
+| Install / upgrade | Deploy a cluster from the wizard; upgrade it one version; resume a stopped install |
+| Add-ons | Install Argo CD, Flux, cert-manager, Trivy Operator, Argo Rollouts, KEDA |
+| Helm apps | Add a chart repository; install with a preview; **Assess risk** (with and without an AI connected); upgrade; roll back |
+| Drift | `kubectl scale` a release's Deployment by hand → **Check drift** shows it → **Restore** |
+| Guards | An environment with CVE gate = block and signature policy = block: an unsigned image is blocked; sign it with `cosign sign --key` and add `cosign.pub` → it passes; admin override with a reason |
+| CI | A deploy token: `POST /api/hooks/deploy` with a commit; DORA lead time appears; a token with previews: `POST` then `DELETE /api/hooks/preview` |
+| Previews | A preview's namespace is created, deployed, listed, and removed when it expires |
+| Chat | ChatOps on for a Slack / Telegram channel, an allowed app: `deploy … to …` → `confirm ####` → result posted |
+| GitOps | Sync now on Argo CD and Flux apps; a new Argo CD app and a new Flux app; promotion PRs on GitHub, GitLab and Bitbucket |
+| Certificates | A Let's Encrypt staging certificate; Renew now; an expiring / failing one shows and alerts |
+| Roles | Repeat a few of the above as operator, viewer and a namespace-limited member |
 
-3. **Check Logs:**
-   ```bash
-   docker logs kubeez-backend
-   docker logs kubeez-frontend
-   ```
-
-4. **Share Console Output:**
-   - Open browser console (F12)
-   - Try the action that's failing
-   - Copy all console output
-   - Share with me
+Record what was run and the result in the pull request or release notes.

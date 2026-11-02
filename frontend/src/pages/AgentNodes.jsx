@@ -524,7 +524,7 @@ export default function AgentNodes() {
                                         Gateway Connected — Ready to Deploy!
                                     </h3>
                                     <p className="text-sm text-slate-400 max-w-lg">
-                                        Aapka Gateway Agent <span className="text-emerald-400 font-bold">online</span> hai. Ab aap apne local servers per Kubernetes cluster deploy kar sakte hain. Tunnel ke through SSH traffic automatically route hoga.
+                                        Your Gateway Agent is <span className="text-emerald-400 font-bold">online</span>. You can now deploy Kubernetes clusters on servers in its network — SSH traffic goes through the agent's tunnel automatically.
                                     </p>
                                     <div className="flex items-center gap-4 mt-3">
                                         <div className="flex items-center gap-1.5">
