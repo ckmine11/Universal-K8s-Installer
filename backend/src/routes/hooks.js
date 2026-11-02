@@ -8,6 +8,7 @@ import { auditLog } from '../services/auditLog.js'
 import { valuesOf, cleanDeploy, deploy, findJob, jobView, VERSION } from '../services/helmApps.js'
 import { leadTimes, cleanCommit } from '../services/leadTime.js'
 import { previewKey, previewNamespace, startPreview, removePreview } from '../services/previews.js'
+import { signGateFor } from '../services/signGate.js'
 
 // The deploy webhook for CI (mounted at /api/hooks, no session — a deploy token):
 //   POST /api/hooks/deploy     Authorization: Bearer kzt_…   { set: { "image.tag": "1.4.2" }, version?, commit?: { sha, time } }
@@ -49,7 +50,7 @@ router.post('/deploy', async (req, res) => {
         const d = cleanDeploy({ release: t.release, namespace: t.namespace, chart: t.chart, version }, repo)
         const values = applySet(await valuesOf(cluster, t.namespace, t.release), req.body?.set, t.allowedKeys)
         const what = `${t.namespace}/${t.release} ${t.chart}${version ? ` ${version}` : ''}${req.body?.set ? ` set ${Object.entries(req.body.set).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}`
-        const j = await deploy(cluster, d, { by: `token:${t.name}`, values, gate: env?.cvePolicy && features.usable(t.orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null })
+        const j = await deploy(cluster, d, { by: `token:${t.name}`, values, gate: env?.cvePolicy && features.usable(t.orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null, sign: await signGateFor(t.orgId, env) })
         if (commit) j.promise?.then(() => { if (j.status === 'done') leadTimes.record(t.orgId, { clusterId: cluster.id, namespace: t.namespace, release: t.release, ...commit, deployedAt: j.finishedAt, by: `token:${t.name}` }) }).catch(() => { })
         record(true, 202, `deploy ${what}${commit ? ` commit ${commit.sha.slice(0, 12)}` : ''}`)
         res.status(202).json(jobView(j))
@@ -82,7 +83,7 @@ router.post('/preview', async (req, res) => {
         if (!repo) throw Object.assign(new Error('The chart repository of this token was removed'), { status: 409 })
         // the base environment's CVE policy also guards its previews
         const env = deliveryStore.environmentAt(t.orgId, cluster.id, t.namespace)
-        const r = await startPreview({ orgId: t.orgId, cluster, base: { namespace: t.namespace, release: t.release }, key, label, set: req.body?.set, allowedKeys: t.allowedKeys, ttlHours: req.body?.ttlHours, repo, by: `token:${t.name}`, gate: env?.cvePolicy && features.usable(t.orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null })
+        const r = await startPreview({ orgId: t.orgId, cluster, base: { namespace: t.namespace, release: t.release }, key, label, set: req.body?.set, allowedKeys: t.allowedKeys, ttlHours: req.body?.ttlHours, repo, by: `token:${t.name}`, gate: env?.cvePolicy && features.usable(t.orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null, sign: await signGateFor(t.orgId, env) })
         record(true, 202, `preview ${r.preview.namespace} (${label})${req.body?.set ? ` set ${Object.entries(req.body.set).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}`)
         res.status(202).json({ preview: { id: r.preview.id, namespace: r.preview.namespace, expiresAt: r.preview.expiresAt }, job: jobView(r.job) })
     } catch (e) { record(false, e.status || 500, e.message.slice(0, 300)); fail(res, e) }

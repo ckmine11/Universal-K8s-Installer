@@ -41,6 +41,7 @@ export const PERMISSIONS = {
     'registry:manage':     ['admin'],
     'security:view':       ['admin', 'operator', 'viewer'],
     'metrics:view':        ['admin', 'operator', 'viewer'],
+    'cert:renew':          ['admin', 'operator'],
 
     'team:view':           ['admin'],
     'team:manage':         ['admin'],

@@ -8,6 +8,10 @@ import { requireApproval, protectedTarget } from '../services/approvals.js'
 import { capabilities } from '../services/clusterAccess.js'
 import { deliveryStore, checkFreeze } from '../services/deliveryStore.js'
 import { listReleases, releaseDetail, cleanDeploy, previewDeploy, deploy, rollback, uninstall, findJob, jobView, RELEASE, NAMESPACE } from '../services/helmApps.js'
+import { signGateFor } from '../services/signGate.js'
+import { scoreRisk, riskFacts, explainRisk } from '../services/deployRisk.js'
+import { checkDrift } from '../services/helmDrift.js'
+import { incidentDetector } from '../services/incidentDetector.js'
 
 // Helm apps of one cluster (mounted at /api/clusters):
 //   GET    /:id/apps                         releases (+ environment, freeze, what you may do)
@@ -38,6 +42,11 @@ function gateFor(req, cluster, namespace) {
     if (!policy || !features.usable(cluster.orgId, 'cveGate')) return null
     const why = String(req.body?.overrideCve || '').trim()
     return { policy, override: ['admin', 'superadmin'].includes(req.user.role) && why.length >= 3 ? why.slice(0, 200) : null }
+}
+// the environment's image signature policy; only an admin may push past "block", with a reason
+function signFor(req, cluster, namespace) {
+    const why = String(req.body?.overrideSign || '').trim()
+    return signGateFor(cluster.orgId, deliveryStore.environmentAt(cluster.orgId, cluster.id, namespace), ['admin', 'superadmin'].includes(req.user.role) && why.length >= 3 ? why.slice(0, 200) : null)
 }
 const always = (action) => async (req) => protectedTarget(req.user.orgId, action, req.params.id, req.originalUrl.split('?')[0], req.body)
 
@@ -100,7 +109,57 @@ router.post('/:id/apps/preview', requirePermission('app:deploy'), requirePermiss
     if (!cluster) return
     try {
         const d = deployRequest(req, cluster)
-        res.json(await withTimeout(previewDeploy(cluster, d, { gate: gateFor(req, cluster, d.namespace) }), 130e3, 'The dry run did not finish in time'))
+        res.json(await withTimeout(previewDeploy(cluster, d, { gate: gateFor(req, cluster, d.namespace), sign: await signFor(req, cluster, d.namespace) }), 130e3, 'The dry run did not finish in time'))
+    } catch (e) { fail(res, e) }
+})
+
+// deploy risk: KubeEZ's score from the dry run and what it knows, explained by the AI (when the member may ask it)
+router.post('/:id/apps/risk', requireFeature('deployRisk'), requirePermission('app:deploy'), requirePermission('app:values'), async (req, res) => {
+    const cluster = await visibleCluster(req, res)
+    if (!cluster) return
+    try {
+        const d = deployRequest(req, cluster)
+        const env = deliveryStore.environmentAt(cluster.orgId, cluster.id, d.namespace)
+        const [preview, releases] = await withTimeout(Promise.all([
+            previewDeploy(cluster, d, { gate: gateFor(req, cluster, d.namespace), sign: await signFor(req, cluster, d.namespace) }),
+            listReleases(cluster)
+        ]), 130e3, 'The dry run did not finish in time')
+        const current = releases.find(r => r.namespace === d.namespace && r.name === d.release) || null
+        const history = current ? (await releaseDetail(cluster, d.namespace, d.release).catch(() => ({ history: [] }))).history : []
+        const incidents = incidentDetector.getIncidents().filter(i => i.clusterId === cluster.id && i.namespace === d.namespace && !['resolved', 'cleared'].includes(i.status))
+        const toVersion = d.version || /-(v?\d[\w.+-]*)$/.exec(preview.chart || '')?.[1] || null
+        const risk = scoreRisk({ preview, current, toVersion, env, history, incidents })
+        let ai = null
+        if (!canOn(req.user, 'ai:use')) ai = { unavailable: 'Your role may not ask KubeEZ AI — the score above is KubeEZ\'s own.' }
+        else {
+            try { ai = await explainRisk(req.user, riskFacts({ release: d.release, namespace: d.namespace, cluster, preview, current, toVersion, env, history, incidents, risk })) }
+            catch (e) { ai = { unavailable: e.none || e.code === 'AI_OFF' ? e.message : `The AI did not answer: ${String(e.message).slice(0, 200)}` } }
+        }
+        req.auditDetail = `deploy risk ${d.namespace}/${d.release}: ${risk.score}/100 ${risk.level}${ai?.level ? `, AI: ${ai.level}` : ''}`
+        res.json({ risk, ai, preview })
+    } catch (e) { fail(res, e) }
+})
+
+// Helm drift: what was changed by hand since Helm deployed it (a dry-run diff; nothing changes)
+router.get('/:id/apps/drift', requireFeature('helmDrift'), requirePermission('app:view'), async (req, res) => {
+    const cluster = await visibleCluster(req, res)
+    if (!cluster) return
+    try {
+        const all = await withTimeout(listReleases(cluster), 90e3, 'The cluster did not answer in time')
+        const mine = all.filter(r => inScope(req.user, cluster, r.namespace))
+        const results = await withTimeout(checkDrift(cluster, mine), 600e3, 'The drift check did not finish in time')
+        res.json({ releases: results, drifted: results.filter(r => r.drifted).length, checked: results.length, skipped: Math.max(0, mine.length - results.length), at: new Date().toISOString() })
+    } catch (e) { fail(res, e) }
+})
+router.get('/:id/apps/:ns/:name/drift', requireFeature('helmDrift'), requirePermission('app:view'), async (req, res) => {
+    const cluster = await visibleCluster(req, res)
+    if (!cluster) return
+    const { ns, name } = req.params
+    if (!NAMESPACE.test(ns) || !RELEASE.test(name)) return res.status(400).json({ error: 'Not a valid release' })
+    if (!inScope(req.user, cluster, ns)) return res.status(404).json({ error: 'Release not found' })
+    try {
+        const [r] = await withTimeout(checkDrift(cluster, [{ namespace: ns, name }]), 120e3, 'The drift check did not finish in time')
+        res.json(r)
     } catch (e) { fail(res, e) }
 })
 
@@ -112,8 +171,9 @@ router.post('/:id/apps', requirePermission('app:deploy'), validDeploy, requireAp
         const d = deployRequest(req, cluster)
         const override = checkFreeze(req.user, cluster, req.body)
         const gate = gateFor(req, cluster, d.namespace)
-        req.auditDetail = `deploy ${d.namespace}/${d.release} chart ${d.repo.name}/${d.chart}${d.version ? ` ${d.version}` : ''}${override ? ` — ${override}` : ''}${gate?.override ? ` — CVE policy overridden: ${gate.override}` : ''}`
-        const j = await deploy(cluster, d, { by: req.user.username, gate })
+        const sign = await signFor(req, cluster, d.namespace)
+        req.auditDetail = `deploy ${d.namespace}/${d.release} chart ${d.repo.name}/${d.chart}${d.version ? ` ${d.version}` : ''}${override ? ` — ${override}` : ''}${gate?.override ? ` — CVE policy overridden: ${gate.override}` : ''}${sign?.override ? ` — signature policy overridden: ${sign.override}` : ''}`
+        const j = await deploy(cluster, d, { by: req.user.username, gate, sign })
         res.status(202).json(jobView(j))
     } catch (e) { fail(res, e) }
 })

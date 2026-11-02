@@ -9,6 +9,7 @@ import { listCharts } from '../services/chartCatalog.js'
 import { listReleases, valuesOf, compareValues, RELEASE, cleanDeploy, deploy, jobView, findJob } from '../services/helmApps.js'
 import { previewKey, previewNamespace, startPreview, removePreview, MAX_PREVIEWS } from '../services/previews.js'
 import { cleanRule } from '../services/chatDeploy.js'
+import { signGateFor, cleanPublicKey } from '../services/signGate.js'
 import { notificationStore } from '../services/notificationStore.js'
 import { aiStore } from '../services/ai/aiStore.js'
 import { requireApproval } from '../services/approvals.js'
@@ -38,6 +39,7 @@ router.use('/promote', requireFeature('gitopsPromote'))
 router.use('/registries', requireFeature('registries'))
 router.use('/previews', requireFeature('helmApps'), requireFeature('previews'))
 router.use('/chat-deploy', requireFeature('chatDeploy'))
+router.use('/signing-keys', requireFeature('signGate'))
 const fail = (res, e) => res.status(e.status || 500).json({ error: e.message })
 const clustersOf = async (user) => (await clusterStore.getClusters().catch(() => [])).filter(c => canAccessResource(user, c) && c.orgId === user.orgId)
 const orgOnly = (req, res, next) => req.user?.orgId ? next() : res.status(400).json({ error: 'Delivery settings belong to a workspace' })
@@ -162,7 +164,7 @@ router.post('/promote-release', requirePermission('app:deploy'), promoteTarget, 
         const d = cleanDeploy({ release: b.release, namespace: to.env.namespace, chart: src.chart, version: src.version }, repo)
         const policy = to.env.cvePolicy && features.usable(req.user.orgId, 'cveGate') ? to.env.cvePolicy : null
         req.auditDetail = `promote ${b.release} ${src.chart} ${src.version || ''} from ${from.env.name} to ${to.env.name}${moved.length ? ` (${moved.join(', ')})` : ''}${override ? ` — ${override}` : ''}`
-        const j = await deploy(to.cluster, d, { by: req.user.username, values, gate: policy ? { policy, override: null } : null })
+        const j = await deploy(to.cluster, d, { by: req.user.username, values, gate: policy ? { policy, override: null } : null, sign: await signGateFor(req.user.orgId, to.env) })
         res.status(202).json({ ...jobView(j), clusterId: to.cluster.id, promoted: { chart: src.chart, version: src.version, values: moved } })
     } catch (e) { fail(res, e) }
 })
@@ -195,7 +197,8 @@ router.post('/previews', requirePermission('app:deploy'), async (req, res) => {
         const repo = deliveryStore.repoCredentials(req.user.orgId, String(b.repoId || ''))
         if (!repo) return res.status(400).json({ error: 'Pick the chart repository the app comes from' })
         const override = checkFreeze(req.user, cluster, b)
-        const r = await startPreview({ orgId: req.user.orgId, cluster, base: { namespace: env.namespace, release: b.release }, key, label, set: b.set, ttlHours: b.ttlHours, repo, by: req.user.username })
+        // the base environment's policies also guard its previews
+        const r = await startPreview({ orgId: req.user.orgId, cluster, base: { namespace: env.namespace, release: b.release }, key, label, set: b.set, ttlHours: b.ttlHours, repo, by: req.user.username, gate: env.cvePolicy && features.usable(req.user.orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null, sign: await signGateFor(req.user.orgId, env) })
         req.auditDetail = `preview ${r.preview.namespace} of ${env.name}/${b.release} (${label}) until ${r.preview.expiresAt.slice(0, 16)}${Object.keys(r.preview.set).length ? ` set ${Object.entries(r.preview.set).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}${override ? ` — ${override}` : ''}`
         res.status(202).json({ preview: previewView(r.preview, cluster), job: jobView(r.job) })
     } catch (e) { fail(res, e) }
@@ -212,6 +215,17 @@ router.delete('/previews/:pid', async (req, res) => {
         res.json({ success: true })
     } catch (e) { fail(res, e) }
 })
+
+// ── signing keys: the cosign public keys environments with a signature policy trust ──
+router.get('/signing-keys', (req, res) => res.json({ keys: deliveryStore.signingKeys(req.user.orgId), canManage: canOn(req.user, 'env:manage') }))
+router.post('/signing-keys', requirePermission('env:manage'), (req, res) => {
+    try {
+        const k = deliveryStore.saveSigningKey(req.user.orgId, { name: req.body?.name, key: cleanPublicKey(req.body?.publicKey) }, { by: req.user.username })
+        req.auditDetail = `trust signing key ${k.name} (${k.type}, ${k.fingerprint})`
+        res.json(k)
+    } catch (e) { fail(res, e) }
+})
+router.delete('/signing-keys/:kid', requirePermission('env:manage'), (req, res) => deliveryStore.removeSigningKey(req.user.orgId, req.params.kid) ? res.json({ success: true }) : res.status(404).json({ error: 'Key not found' }))
 
 // ── deploy from chat: what each Slack / Telegram channel may deploy (admins, like deploy tokens) ──
 router.get('/chat-deploy', requirePermission('token:manage'), (req, res) => {

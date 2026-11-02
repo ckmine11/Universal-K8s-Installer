@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save, KeyRound, GitPullRequest, Container, Eye, MessageSquare } from 'lucide-react'
+import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, AlertTriangle, Save, KeyRound, GitPullRequest, Container, Eye, MessageSquare, ShieldCheck } from 'lucide-react'
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import PageHeader from '../components/ui/PageHeader'
@@ -40,6 +40,8 @@ export default function DeliverySettings() {
     const [previews, setPreviews] = useState(null)
     const [pvForm, setPvForm] = useState({ envId: '', release: '', pr: '', branch: '', set: 'image.tag=', repoId: '', ttlHours: 72, busy: false })
     const [chat, setChat] = useState(null)      // null: not allowed to manage chat deploys
+    const [signKeys, setSignKeys] = useState(null)
+    const [keyForm, setKeyForm] = useState({ name: '', publicKey: '' })
     const [chatForm, setChatForm] = useState({ channelId: '', envId: '', release: '', repoId: '', key: 'image.tag', allowedUsers: '' })
     const [regs, setRegs] = useState(null)
     const [costRates, setCostRates] = useState(null)
@@ -59,6 +61,7 @@ export default function DeliverySettings() {
         apiFetch('/api/delivery/tokens').then(r => r.ok ? r.json() : null).then(d => setTokens(d ? d.tokens : null)).catch(() => setTokens(null))
         apiFetch('/api/delivery/previews').then(r => r.ok ? r.json() : null).then(setPreviews).catch(() => setPreviews(null))
         apiFetch('/api/delivery/chat-deploy').then(r => r.ok ? r.json() : null).then(setChat).catch(() => setChat(null))
+        apiFetch('/api/delivery/signing-keys').then(r => r.ok ? r.json() : null).then(setSignKeys).catch(() => setSignKeys(null))
         apiFetch('/api/clusters').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
     }, [])
     useEffect(() => { load() }, [load])
@@ -129,6 +132,12 @@ export default function DeliverySettings() {
                                         <option value="off">CVE gate: off</option><option value="warn:CRITICAL">warn on critical</option><option value="block:CRITICAL">block critical</option><option value="warn:HIGH">warn on high+</option><option value="block:HIGH">block high+</option>
                                     </select>
                                 ) : e.cvePolicy && <span className="text-slate-400">CVE gate: {e.cvePolicy.mode} {e.cvePolicy.severity.toLowerCase()}</span>}
+                                {featureOn('signGate') && (envs.canManage ? (
+                                    <select className="kz-input !w-auto !py-1 !text-[11px]" value={e.signPolicy?.mode || 'off'} aria-label={`Image signature policy of ${e.name}`} title="Images must be signed (cosign) with a workspace signing key"
+                                        onChange={ev => send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, signPolicy: { mode: ev.target.value } }, 'Signature policy saved')}>
+                                        <option value="off">Signatures: off</option><option value="warn">warn if unsigned</option><option value="block">block unsigned</option>
+                                    </select>
+                                ) : e.signPolicy && <span className="text-slate-400">signatures: {e.signPolicy.mode}</span>)}
                                 {featureOn('autoRollback') && (envs.canManage ? (
                                     <select className="kz-input !w-auto !py-1 !text-[11px]" value={e.autoRollback || 'off'} aria-label={`Auto-rollback of ${e.name}`} title="When a Helm deploy breaks its workload within an hour"
                                         onChange={ev => send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, autoRollback: ev.target.value }, 'Auto-rollback saved')}>
@@ -279,6 +288,25 @@ export default function DeliverySettings() {
                         {featureOn('previews') && <label className="flex items-center gap-1.5 text-xs text-slate-300" title="The pipeline may also start and remove preview environments of this app (one per pull request)"><input type="checkbox" checked={tokForm.previews} onChange={e => setTokForm(f => ({ ...f, previews: e.target.checked }))} /> Previews too</label>}
                         <button onClick={createToken} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Create token</button>
                     </div>
+                </Section>
+            )}
+
+            {signKeys && featureOn('signGate') && (
+                <Section Icon={ShieldCheck} title="Signing keys" hint="Public keys of cosign (cosign.pub). An environment with a signature policy accepts only images signed with one of these keys — KubeEZ checks the signature in the registry before each deploy (key-based signing; no transparency log, no keyless). Private registries use the logins under Registries.">
+                    <ul className="space-y-1.5">{signKeys.keys.map(k => (
+                        <li key={k.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
+                            <span className="font-semibold text-white">{k.name}</span><span className="text-slate-400">{k.type.toUpperCase()}</span><span className="font-mono text-slate-500">{k.fingerprint}</span>
+                            <span className="text-slate-500">added {k.createdAt.slice(0, 10)}{k.createdBy ? ` by ${k.createdBy}` : ''}</span>
+                            {signKeys.canManage && <button onClick={() => window.confirm(`Stop trusting ${k.name}? Images signed only with it will fail the signature policy.`) && send(`/api/delivery/signing-keys/${k.id}`, 'DELETE', null, 'Key removed')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${k.name}`}><Trash2 className="w-3 h-3" /></button>}
+                        </li>
+                    ))}{!signKeys.keys.length && <li className="text-sm text-slate-500">No keys yet — with a signature policy, every image fails until one is added.</li>}</ul>
+                    {signKeys.canManage && (
+                        <div className="flex flex-wrap items-end gap-2">
+                            <input className="kz-input !w-36" placeholder="name (release)" value={keyForm.name} onChange={e => setKeyForm(f => ({ ...f, name: e.target.value }))} aria-label="Key name" />
+                            <textarea className="kz-input !w-96 font-mono !text-[11px] min-h-[64px]" placeholder={'-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----'} value={keyForm.publicKey} onChange={e => setKeyForm(f => ({ ...f, publicKey: e.target.value }))} aria-label="Public key (PEM)" spellCheck={false} />
+                            <button onClick={async () => { if (await send('/api/delivery/signing-keys', 'POST', keyForm, 'Key trusted')) setKeyForm({ name: '', publicKey: '' }) }} disabled={!keyForm.name || !keyForm.publicKey.trim()} className="kz-btn-primary !py-2 !text-xs"><Plus className="w-3.5 h-3.5" /> Trust key</button>
+                        </div>
+                    )}
                 </Section>
             )}
 

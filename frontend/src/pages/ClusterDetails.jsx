@@ -29,7 +29,7 @@ import {
     ArrowUpCircle,
     Database,
     LayoutGrid,
-    Package, PlugZap, GitBranch, ShieldAlert, Gauge, Boxes } from 'lucide-react'
+    Package, PlugZap, GitBranch, ShieldAlert, Gauge, Boxes, BadgeCheck } from 'lucide-react'
 import { ClusterTopology3D, OrbitalTerminal } from '../components/LazyHeavy'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
@@ -40,6 +40,7 @@ import GitOpsTab from '../components/gitops/GitOpsTab'
 import AppsTab from '../components/apps/AppsTab'
 import SecurityTab from '../components/security/SecurityTab'
 import DoraTab from '../components/delivery/DoraTab'
+import CertificatesTab from '../components/security/CertificatesTab'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
 import RiskCard from '../components/ai/RiskCard'
@@ -51,6 +52,7 @@ const TABS = [
     { key: 'apps', label: 'Apps', hint: 'Helm install, upgrade, roll back', Icon: Boxes, permission: 'app:view', feature: 'helmApps' },
     { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch, permission: 'gitops:view', feature: 'gitops' },
     { key: 'security', label: 'Security', hint: 'vulnerabilities, misconfig', Icon: ShieldAlert, permission: 'security:view', feature: 'security' },
+    { key: 'certificates', label: 'Certificates', hint: 'cert-manager, expiry, renew', Icon: BadgeCheck, permission: 'security:view', feature: 'certManager' },
     { key: 'delivery', label: 'Delivery', hint: 'DORA metrics', Icon: Gauge, permission: 'metrics:view', feature: 'dora' },
     { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
     { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
@@ -632,6 +634,9 @@ export default function ClusterDetails({ onScaleCluster }) {
 
             {/* ── Delivery (DORA) ─────────────────────────────────────── */}
             {tab === 'delivery' && <DoraTab clusterId={id} />}
+
+            {/* ── Certificates (cert-manager) ─────────────────────────── */}
+            {tab === 'certificates' && <CertificatesTab clusterId={id} canInstall={canManageAddons} onOpenAddons={() => setParams({ tab: 'addons', section: 'manage' })} />}
 
 
             {/* UPGRADE MODAL */}

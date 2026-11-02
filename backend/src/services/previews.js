@@ -88,7 +88,7 @@ export async function deleteNamespace(cluster, ns, id, { connect = defaultConnec
  * set: values to change; allowedKeys: what may be set (null = anything — a member who may see values).
  * → { preview, job }
  */
-export async function startPreview({ orgId, cluster, base, key, label, set, allowedKeys = null, ttlHours, repo, by, gate = null, connect }) {
+export async function startPreview({ orgId, cluster, base, key, label, set, allowedKeys = null, ttlHours, repo, by, gate = null, sign = null, connect }) {
     const opts = connect ? { connect } : {}
     set = cleanSet(set)
     const ttl = cleanTtl(ttlHours)
@@ -101,7 +101,7 @@ export async function startPreview({ orgId, cluster, base, key, label, set, allo
     const values = applySet(await valuesOf(cluster, base.namespace, base.release, opts), set, allowedKeys || Object.keys(set))
     const d = cleanDeploy({ release: base.release, namespace, chart: src.chart, version: src.version }, repo)
     await ensureNamespace(cluster, namespace, id, opts)
-    const job = await deploy(cluster, d, { by, values, gate, ...opts })
+    const job = await deploy(cluster, d, { by, values, gate, sign, ...opts })
     const now = new Date()
     const preview = deliveryStore.savePreview(orgId, {
         id, clusterId: cluster.id, namespace, key, label, baseNamespace: base.namespace, release: base.release, chart: src.chart, version: src.version, repoId: repo.id,

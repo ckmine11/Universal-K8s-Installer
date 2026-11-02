@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Boxes, RefreshCw, Loader2, AlertTriangle, Plus, ChevronDown, ChevronRight, Undo2, Trash2, ArrowUpCircle, Eye, Lock, Snowflake, Search, X, CheckCircle2, XCircle } from 'lucide-react'
+import { Boxes, RefreshCw, Loader2, AlertTriangle, Plus, ChevronDown, ChevronRight, Undo2, Trash2, ArrowUpCircle, Eye, Lock, Snowflake, Search, X, CheckCircle2, XCircle, Gauge, Sparkles, GitCompare } from 'lucide-react'
 import { apiFetch, useAuth } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import OpsPanel from './OpsPanel'
@@ -57,8 +57,10 @@ function JobBar({ job, onClose }) {
 }
 
 // ── install / upgrade ──
+const RISK = { low: 'border-emerald-400/25 text-emerald-100', medium: 'border-amber-400/30 text-amber-100', high: 'border-red-400/30 text-red-200' }
 function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose, onStarted }) {
     const { toast } = useToast()
+    const featureOn = useFeatures()
     const [repos, setRepos] = useState([])
     const [repoId, setRepoId] = useState(start?.repoId || '')
     const [charts, setCharts] = useState(null)
@@ -68,7 +70,9 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
     const [busy, setBusy] = useState(false)
     const [override, setOverride] = useState('')
     const [overrideCve, setOverrideCve] = useState('')
-    const set = (k) => (e) => { setForm(f => ({ ...f, [k]: e.target.value })); setPreview(null) }
+    const [overrideSign, setOverrideSign] = useState('')
+    const [assessment, setAssessment] = useState(null)
+    const set = (k) => (e) => { setForm(f => ({ ...f, [k]: e.target.value })); setPreview(null); setAssessment(null) }
     const repo = repos.find(r => r.id === repoId)
 
     useEffect(() => { apiFetch('/api/delivery/repos').then(json).then(d => { setRepos(d.repos); if (!repoId && d.repos[0]) setRepoId(d.repos[0].id) }).catch(e => toast({ title: 'Repositories', message: e.message, type: 'error' })) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -80,7 +84,13 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
     }, [repoId, q])
     const chart = charts?.charts?.find(c => c.name === form.chart)
     const env = environments.find(e => e.namespace === form.namespace)
-    const body = () => ({ ...form, repoId, version: form.version || undefined, ...(override ? { overrideFreeze: override } : {}), ...(overrideCve ? { overrideCve } : {}) })
+    const body = () => ({ ...form, repoId, version: form.version || undefined, ...(override ? { overrideFreeze: override } : {}), ...(overrideCve ? { overrideCve } : {}), ...(overrideSign ? { overrideSign } : {}) })
+    // KubeEZ's risk score of this deploy (from the dry run) and the AI's view of it
+    const doAssess = async () => {
+        setBusy(true); setAssessment({ loading: true })
+        try { const d = await json(await apiFetch(`/api/clusters/${clusterId}/apps/risk`, { method: 'POST', body: JSON.stringify(body()) })); setAssessment(d); setPreview(d.preview) }
+        catch (e) { setAssessment({ error: e.message }) } finally { setBusy(false) }
+    }
 
     const doPreview = async () => {
         setBusy(true); setPreview(null)
@@ -159,10 +169,36 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
                                 {preview.cve.blocked && isAdmin && <input className="kz-input !text-xs" value={overrideCve} onChange={e => setOverrideCve(e.target.value)} placeholder="Deploy anyway as admin — why? (recorded in the audit trail)" />}
                             </div>
                         )}
+                        {preview.signatures && (
+                            <div className={`rounded-lg border p-2.5 text-[11px] space-y-1 ${preview.signatures.blocked ? 'border-red-400/30 text-red-200' : preview.signatures.failing.length ? 'border-amber-400/30 text-amber-100' : 'border-emerald-400/25 text-emerald-100'}`}>
+                                <p className="font-semibold">Image signature policy of this environment: {preview.signatures.mode}{preview.signatures.blocked ? ' — this deploy will be blocked' : preview.signatures.failing.length ? ' — not every image is signed, deploy allowed' : ' — every image is signed'}</p>
+                                {preview.signatures.signed.map(s => <p key={s.image} className="font-mono break-all text-emerald-200">✓ {s.image} — key {s.key}</p>)}
+                                {preview.signatures.failing.map(f => <p key={f.image} className="font-mono break-all">✗ {f.image}: {f.status === 'invalid' ? 'signed with a key this workspace does not trust' : f.status === 'error' ? `could not be checked — ${f.message}` : 'not signed'}</p>)}
+                                {preview.signatures.blocked && isAdmin && <input className="kz-input !text-xs" value={overrideSign} onChange={e => setOverrideSign(e.target.value)} placeholder="Deploy anyway as admin — why? (recorded in the audit trail)" />}
+                            </div>
+                        )}
                         {preview.notes && <pre className="text-[11px] text-slate-400 whitespace-pre-wrap max-h-32 overflow-auto">{preview.notes}</pre>}
                     </div>
                 ))}
+                {assessment && (assessment.loading ? <p className="flex items-center gap-1.5 text-xs text-slate-400"><Loader2 className="w-3.5 h-3.5 animate-spin" />Assessing the risk (dry run, history, open problems, AI)…</p>
+                    : assessment.error ? <p className="text-xs text-red-300 break-words">{assessment.error}</p> : (
+                        <div className={`rounded-xl border p-3 space-y-2 text-xs ${RISK[assessment.risk.level]}`}>
+                            <p className="flex items-center gap-1.5 font-semibold"><Gauge className="w-3.5 h-3.5" />Deploy risk: {assessment.risk.level} ({assessment.risk.score}/100){assessment.ai?.level && assessment.ai.level !== assessment.risk.level ? ` — the AI rates it ${assessment.ai.level}` : ''}</p>
+                            {assessment.risk.factors.length ? <ul className="space-y-0.5 text-[11px]">{assessment.risk.factors.map(f => <li key={f.key}><span className="font-mono text-slate-400">+{f.points}</span> {f.label}</li>)}</ul> : <p className="text-[11px]">KubeEZ found no risk factors.</p>}
+                            {assessment.ai?.summary && (
+                                <div className="rounded-lg border border-white/10 bg-black/20 p-2.5 space-y-1.5 text-[11px] text-slate-200">
+                                    <p className="flex items-center gap-1.5 font-semibold text-violet-200"><Sparkles className="w-3.5 h-3.5" />KubeEZ AI <span className="font-normal text-slate-500">({assessment.ai.engine?.provider} {assessment.ai.engine?.model})</span></p>
+                                    <p>{assessment.ai.summary}</p>
+                                    {assessment.ai.risks.length > 0 && <><p className="font-semibold text-slate-300">What could go wrong</p><ul className="list-disc pl-4">{assessment.ai.risks.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
+                                    {assessment.ai.checks.length > 0 && <><p className="font-semibold text-slate-300">Check</p><ul className="list-disc pl-4">{assessment.ai.checks.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
+                                    {assessment.ai.rollback && <p><span className="font-semibold text-slate-300">If it goes wrong:</span> {assessment.ai.rollback}</p>}
+                                </div>
+                            )}
+                            {assessment.ai?.unavailable && <p className="text-[11px] text-slate-400">{assessment.ai.unavailable}</p>}
+                        </div>
+                    ))}
                 <div className="flex justify-end gap-2">
+                    {featureOn('deployRisk') && <button onClick={doAssess} disabled={busy || !repoId || !form.chart || !form.release || !form.namespace} className="kz-btn-ghost !py-2 !text-xs" title="KubeEZ's risk score from the dry run, the history and open problems — explained by the AI"><Gauge className="w-3.5 h-3.5" /> Assess risk</button>}
                     <button onClick={doPreview} disabled={busy || !repoId || !form.chart || !form.release || !form.namespace} className="kz-btn-ghost !py-2 !text-xs">{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Preview changes</button>
                     <button onClick={doDeploy} disabled={busy || !repoId || !form.chart || !form.release || !form.namespace || (freeze && !override)} className="kz-btn-primary !py-2 !text-xs"><ArrowUpCircle className="w-3.5 h-3.5" /> {start?.release ? 'Upgrade' : 'Install'}</button>
                 </div>
@@ -171,7 +207,7 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
     )
 }
 
-function ReleaseRow({ clusterId, r, can, isAdmin, freeze, onJob, onUpgrade }) {
+function ReleaseRow({ clusterId, r, can, isAdmin, freeze, drift, onJob, onUpgrade }) {
     const { toast } = useToast()
     const [open, setOpen] = useState(false)
     const [detail, setDetail] = useState(null)
@@ -183,11 +219,12 @@ function ReleaseRow({ clusterId, r, can, isAdmin, freeze, onJob, onUpgrade }) {
         const ov = askOverride()
         if (freeze && !ov) return toast({ title: 'Change freeze', message: `${freeze.reason} — until ${new Date(freeze.until).toLocaleString()}`, type: 'error' })
         if (kind === 'uninstall' && !window.confirm(`Uninstall ${r.namespace}/${r.name}? Its resources are deleted.`)) return
+        if (kind === 'restore' && !window.confirm(`Restore ${r.namespace}/${r.name} to what Helm deployed (revision ${r.revision})? Changes made by hand are undone.`)) return
         setBusy(kind)
         try {
             const url = kind === 'uninstall' ? `/api/clusters/${clusterId}/apps/${r.namespace}/${r.name}` : `/api/clusters/${clusterId}/apps/${r.namespace}/${r.name}/rollback`
             onJob(await json(await apiFetch(url, { method: kind === 'uninstall' ? 'DELETE' : 'POST', body: JSON.stringify({ ...(revision ? { revision } : {}), ...(ov ? { overrideFreeze: ov } : {}) }) })))
-        } catch (e) { toast({ title: kind === 'uninstall' ? 'Not uninstalled' : 'Not rolled back', message: e.message, type: 'error' }) } finally { setBusy(null) }
+        } catch (e) { toast({ title: kind === 'uninstall' ? 'Not uninstalled' : kind === 'restore' ? 'Not restored' : 'Not rolled back', message: e.message, type: 'error' }) } finally { setBusy(null) }
     }
     return (
         <li className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
@@ -199,12 +236,29 @@ function ReleaseRow({ clusterId, r, can, isAdmin, freeze, onJob, onUpgrade }) {
                     </p>
                     <p className="text-[11px] text-slate-400 font-mono">{r.chart}{r.version ? ` ${r.version}` : ''}{r.appVersion ? ` · app ${r.appVersion}` : ''} · revision {r.revision}{r.updated ? ` · ${String(r.updated).slice(0, 16)}` : ''}</p>
                 </div>
+                {drift?.drifted && <button onClick={() => setOpen(true)} className="rounded-md border border-amber-400/30 px-1.5 py-0.5 text-[10px] text-amber-200" title="Changed by hand since Helm deployed it"><GitCompare className="inline w-2.5 h-2.5 mr-0.5" />drift: {drift.resources.length} resource{drift.resources.length === 1 ? '' : 's'}</button>}
+                {drift?.error && <span className="text-[10px] text-slate-500" title={drift.error}>drift not checked</span>}
                 <span className={`text-[11px] font-semibold ${STATUS[r.status] || 'text-slate-300'}`}>{r.status}</span>
                 {can.deploy && <button onClick={() => onUpgrade(r, detail)} className="kz-btn-ghost !py-1 !px-2 !text-[11px]"><ArrowUpCircle className="w-3 h-3" /> Upgrade</button>}
                 {can.delete && <button onClick={() => act('uninstall')} disabled={!!busy} className="kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300"><Trash2 className="w-3 h-3" /> Uninstall</button>}
             </div>
             {open && (
                 <div className="mt-3 ml-7 space-y-3">
+                    {drift?.drifted && (
+                        <div className="rounded-lg border border-amber-400/25 bg-amber-500/[0.04] p-2.5 space-y-2 text-[11px]">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <p className="flex-1 text-amber-100">Changed by hand since Helm deployed revision {r.revision} — the next upgrade overwrites it. Put the change into the values, or restore what Helm deployed.</p>
+                                {can.deploy && <button onClick={() => act('restore', r.revision)} disabled={!!busy} className="kz-btn-ghost !py-1 !px-2 !text-[11px]"><Undo2 className="w-3 h-3" /> Restore</button>}
+                            </div>
+                            {drift.resources.map(x => (
+                                <details key={`${x.kind}/${x.namespace}/${x.name}`}>
+                                    <summary className="cursor-pointer font-mono text-slate-200">{x.kind} {x.namespace ? `${x.namespace}/` : ''}{x.name}{x.missing ? <span className="text-red-300"> — deleted</span> : ` — ${x.lines.length + x.more} line${x.lines.length + x.more === 1 ? '' : 's'}`}</summary>
+                                    {!x.missing && <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-black/30 p-2 font-mono leading-snug">{x.lines.map((l, k) => <div key={k} className={l[0] === '+' ? 'text-emerald-300' : 'text-red-300'} title={l[0] === '+' ? 'what Helm deployed' : 'what runs now'}>{l}</div>)}{x.more ? <div className="text-slate-500">…{x.more} more</div> : null}</pre>}
+                                </details>
+                            ))}
+                            <p className="text-slate-500"><span className="text-red-300">−</span> runs now · <span className="text-emerald-300">+</span> what Helm deployed</p>
+                        </div>
+                    )}
                     {!detail && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
                     {detail?.error && <p className="text-xs text-red-300">{detail.error}</p>}
                     {detail?.history && (
@@ -244,6 +298,13 @@ export default function AppsTab({ clusterId }) {
     }, [clusterId])
     useEffect(() => { load() }, [load])
     const [job, follow, clearJob] = useJob(clusterId, load)
+    // Helm drift: what was changed by hand since Helm deployed it (a dry-run diff of every release)
+    const [drift, setDrift] = useState(null)
+    const checkDrift = async () => {
+        setDrift({ loading: true })
+        try { setDrift(await json(await apiFetch(`/api/clusters/${clusterId}/apps/drift`))) } catch (e) { setDrift({ error: e.message }) }
+    }
+    const driftOf = (r) => drift?.releases?.find(x => x.namespace === r.namespace && x.release === r.name) || null
 
     const needle = q.trim().toLowerCase()
     const releases = (data?.releases || []).filter(r => !needle || [r.name, r.namespace, r.chart, r.environment?.name].some(v => v && String(v).toLowerCase().includes(needle)))
@@ -258,10 +319,13 @@ export default function AppsTab({ clusterId }) {
                         <h3 className="text-base font-semibold text-white">Apps</h3>
                         <p className="text-xs text-slate-400">Helm releases on this cluster — install and upgrade with a preview of what changes, roll back to any revision, see the values.</p>
                     </div>
+                    {featureOn('helmDrift') && data?.releases?.length > 0 && <button onClick={checkDrift} disabled={drift?.loading} className="kz-btn-ghost !py-1.5 !text-xs" title="Compare every release with what Helm deployed (a dry run — nothing changes)">{drift?.loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitCompare className="w-3.5 h-3.5" />} Check drift</button>}
                     {data?.can?.deploy && <button onClick={() => setDialog({})} className="kz-btn-primary !py-1.5 !text-xs"><Plus className="w-3.5 h-3.5" /> Install an app</button>}
                     <button onClick={load} disabled={loading} className="kz-btn-ghost !py-1.5 !text-xs" aria-label="Read again"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /></button>
                 </div>
                 <JobBar job={job} onClose={clearJob} />
+                {drift?.error && <p className="flex items-center gap-1.5 text-xs text-red-300"><AlertTriangle className="w-3.5 h-3.5" />Drift: {drift.error}</p>}
+                {drift?.releases && <p className={`flex items-center gap-1.5 rounded-xl border p-2.5 text-xs ${drift.drifted ? 'border-amber-400/25 text-amber-100' : 'border-emerald-400/25 text-emerald-100'}`}><GitCompare className="w-3.5 h-3.5" />{drift.drifted ? `${drift.drifted} of ${drift.checked} release${drift.checked === 1 ? '' : 's'} changed by hand — open one to see what and restore it.` : `No drift: all ${drift.checked} release${drift.checked === 1 ? ' is' : 's are'} as Helm deployed them.`}{drift.skipped ? ` (${drift.skipped} not checked — up to 40 at a time)` : ''}</p>}
                 {data?.freeze && <p className="flex items-center gap-1.5 rounded-xl border border-sky-400/25 bg-sky-500/[0.05] p-2.5 text-xs text-sky-100"><Snowflake className="w-3.5 h-3.5" />Change freeze until {new Date(data.freeze.until).toLocaleString()}: {data.freeze.reason}{isAdmin ? ' — admins may override with a reason.' : ''}</p>}
                 {data?.readOnlyReason && <p className="flex items-center gap-1.5 text-[11px] text-slate-400"><Lock className="w-3.5 h-3.5" />{data.readOnlyReason}</p>}
                 {data?.hidden > 0 && <p className="text-[11px] text-slate-500">{data.hidden} release{data.hidden === 1 ? '' : 's'} in namespaces you do not have.</p>}
@@ -270,7 +334,7 @@ export default function AppsTab({ clusterId }) {
                 {data && (data.releases.length ? (
                     <>
                         <div className="relative w-64"><Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search releases" className="kz-input !py-1.5 !pl-8 !text-xs" aria-label="Search releases" /></div>
-                        <ul className="space-y-2">{releases.map(r => <ReleaseRow key={`${r.namespace}/${r.name}`} clusterId={clusterId} r={r} can={data.can} isAdmin={isAdmin} freeze={data.freeze} onJob={follow} onUpgrade={upgrade} />)}</ul>
+                        <ul className="space-y-2">{releases.map(r => <ReleaseRow key={`${r.namespace}/${r.name}`} clusterId={clusterId} r={r} can={data.can} isAdmin={isAdmin} freeze={data.freeze} drift={driftOf(r)} onJob={follow} onUpgrade={upgrade} />)}</ul>
                     </>
                 ) : <p className="text-sm text-slate-500 py-2">No Helm releases{data.hidden ? ' you can see' : ''} on this cluster yet.</p>)}
             </div>

@@ -34,7 +34,8 @@ export const PROTECTED_ACTIONS = {
     'hibernate':       { label: 'Hibernate a namespace (scale it to 0)', permission: 'hibernate:manage', route: (id) => new RegExp(`^POST /api/clusters/${id}/hibernate$`) },
     'debug:ephemeral': { label: 'Add a debug container to a running pod', permission: 'debug:ephemeral', route: (id) => new RegExp(`^POST /api/clusters/${id}/debug$`) },
     'app:promote':     { label: 'Promote an app into an environment', permission: 'app:deploy', route: () => /^POST \/api\/delivery\/promote-release$/ },
-    'rollout':         { label: 'Promote or retry a canary / blue-green rollout', permission: 'app:deploy', route: (id) => new RegExp(`^POST /api/clusters/${id}/rollouts/action$`) }
+    'rollout':         { label: 'Promote or retry a canary / blue-green rollout', permission: 'app:deploy', route: (id) => new RegExp(`^POST /api/clusters/${id}/rollouts/action$`) },
+    'cert:renew':      { label: 'Renew a TLS certificate now (cert-manager)', permission: 'cert:renew', route: (id) => new RegExp(`^POST /api/clusters/${id}/certificates/renew$`) }
 }
 export const ELEVATION_MINUTES = [15, 30, 60, 120, 240, 480]
 const bad = (m, status = 400) => Object.assign(new Error(m), { status })
@@ -66,6 +67,7 @@ function summaryOf(action, cluster, path, body) {
         case 'rollout': return `${body?.action === 'promote-full' ? 'Promote fully' : body?.action === 'retry' ? 'Retry' : 'Promote'} rollout ${body?.namespace || ''}/${body?.name || ''} on ${name}`
         case 'hibernate': return `Hibernate namespace ${body?.namespace || ''} on ${name} (scale its workloads to 0)`
         case 'debug:ephemeral': return `Add a ${body?.image || 'busybox'} debug container to ${body?.namespace || ''}/${body?.pod || ''} on ${name}`
+        case 'cert:renew': return `Renew certificate ${body?.namespace || ''}/${body?.name || ''} on ${name}`
         case 'gitops:sync': return `${body?.action === 'refresh' ? 'Refresh' : 'Sync'} GitOps app ${body?.kind || 'app'} ${body?.namespace || ''}/${body?.name || ''} on ${name}`
         case 'ai:action': { const sp = body?.spec || {}; return `KubeEZ AI fix on ${name}: ${sp.type || 'action'} ${sp.kind || ''} ${sp.namespace || 'default'}/${sp.name || ''}${sp.type === 'scale' ? ` to ${sp.replicas}` : ''}` }
         default: return `${PROTECTED_ACTIONS[action]?.label || action} on ${name}`

@@ -6,6 +6,7 @@ import { auditLog } from './auditLog.js'
 import { capabilities } from './clusterAccess.js'
 import { listReleases, valuesOf, cleanDeploy, deploy, RELEASE } from './helmApps.js'
 import { applySet } from './apiTokens.js'
+import { signGateFor } from './signGate.js'
 
 // Deploy from chat (Slack / Telegram ChatOps):
 //   "deploy web 1.4.2 to staging" / "web 1.4.2 staging pe deploy karo"
@@ -127,7 +128,7 @@ export async function handleDeployChat(ctx, { now = Date.now() } = {}) {
         if (!cur) throw new Error(`${rule.release} is not installed in ${env.name} — install it once in KubeEZ`)
         const values = applySet(await valuesOf(cluster, env.namespace, rule.release), { [rule.key]: p.tag }, [rule.key])
         const d = cleanDeploy({ release: rule.release, namespace: env.namespace, chart: cur.chart, version: cur.version }, repo)
-        const j = await deploy(cluster, d, { by: `chat:${by}`, values, gate: env.cvePolicy && features.usable(orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null })
+        const j = await deploy(cluster, d, { by: `chat:${by}`, values, gate: env.cvePolicy && features.usable(orgId, 'cveGate') ? { policy: env.cvePolicy, override: null } : null, sign: await signGateFor(orgId, env) })
         audit(true, `deploy ${env.namespace}/${rule.release} ${cur.chart} ${cur.version || ''} set ${rule.key}=${p.tag} (job ${j.id})`)
         j.promise?.then(() => ctx.later?.(j.status === 'done' ? `✅ ${rule.release} ${p.tag} is running in ${env.name}.` : `❌ ${rule.release} ${p.tag} was not deployed to ${env.name}: ${String(j.error || '').slice(0, 500)}`)).catch(() => { })
         return { reply: `🚀 Deploying ${rule.release} ${p.tag} to ${env.name}… I will post here when it is done.`, jobId: j.id }

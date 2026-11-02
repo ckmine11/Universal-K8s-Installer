@@ -39,7 +39,7 @@ class DeliveryStore {
     _write(all) { fs.mkdirSync(DATA_DIR, { recursive: true }); writeFileAtomicSync(FILE, JSON.stringify(all, null, 2)) }
     _org(all, orgId) {
         const o = all[orgId || '_'] ||= {}
-        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []; o.registries ||= []; o.hibernateSchedules ||= []; o.previews ||= []; o.chatDeploy ||= []
+        o.environments ||= []; o.repos ||= []; o.freezes ||= []; o.git ||= []; o.registries ||= []; o.hibernateSchedules ||= []; o.previews ||= []; o.chatDeploy ||= []; o.signingKeys ||= []
         return o
     }
     _edit(orgId, fn) { const all = this._read(); const o = this._org(all, orgId); const r = fn(o); this._write(all); return r }
@@ -62,7 +62,10 @@ class DeliveryStore {
             if (!cur && o.environments.length >= MAX.environments) throw bad(`A workspace can have up to ${MAX.environments} environments`)
             const cve = input.cvePolicy ?? cur?.cvePolicy ?? null
             const cvePolicy = cve && cve.mode !== 'off' ? { mode: ['warn', 'block'].includes(cve.mode) ? cve.mode : bad('CVE policy: off, warn or block'), severity: cve.severity === 'HIGH' ? 'HIGH' : 'CRITICAL' } : null
-            const env = { id: cur?.id || id(), name, clusterId: input.clusterId, namespace: input.namespace, protected: !!input.protected, cvePolicy, autoRollback: ['ask', 'auto'].includes(input.autoRollback ?? cur?.autoRollback) ? (input.autoRollback ?? cur?.autoRollback) : 'off', updatedAt: new Date().toISOString(), updatedBy: by || null }
+            // image signatures (cosign): warn or block images not signed with a workspace key
+            const sig = input.signPolicy ?? cur?.signPolicy ?? null
+            const signPolicy = sig && sig.mode !== 'off' ? { mode: ['warn', 'block'].includes(sig.mode) ? sig.mode : bad('Signature policy: off, warn or block') } : null
+            const env = { id: cur?.id || id(), name, clusterId: input.clusterId, namespace: input.namespace, protected: !!input.protected, cvePolicy, signPolicy, autoRollback: ['ask', 'auto'].includes(input.autoRollback ?? cur?.autoRollback) ? (input.autoRollback ?? cur?.autoRollback) : 'off', updatedAt: new Date().toISOString(), updatedBy: by || null }
             if (cur) Object.assign(cur, env); else o.environments.push(env)
             return env
         })
@@ -201,6 +204,22 @@ class DeliveryStore {
         })
     }
     removeHibernateSchedule(orgId, sid) { return this._edit(orgId, (o) => { const n = o.hibernateSchedules.length; o.hibernateSchedules = o.hibernateSchedules.filter(s => s.id !== sid); return n !== o.hibernateSchedules.length }) }
+
+    // ── signing keys: cosign public keys the signature gate trusts (services/signGate.js) ──
+    signingKeys(orgId) { return this._org(this._read(), orgId).signingKeys.slice() }
+    saveSigningKey(orgId, { name, key }, { by } = {}) {
+        const n = String(name || '').trim().toLowerCase()
+        if (!REPO_NAME.test(n)) bad('Name: lowercase letters, digits and dashes')
+        return this._edit(orgId, (o) => {
+            if (o.signingKeys.some(k => k.name === n)) bad(`There is already a key called ${n}`)
+            if (o.signingKeys.some(k => k.fingerprint === key.fingerprint)) bad('That key is already trusted')
+            if (o.signingKeys.length >= 20) bad('Up to 20 signing keys')
+            const rec = { id: id(), name: n, pem: key.pem, fingerprint: key.fingerprint, type: key.type, createdAt: new Date().toISOString(), createdBy: by || null }
+            o.signingKeys.push(rec)
+            return rec
+        })
+    }
+    removeSigningKey(orgId, kid) { return this._edit(orgId, (o) => { const n = o.signingKeys.length; o.signingKeys = o.signingKeys.filter(k => k.id !== kid); return n !== o.signingKeys.length }) }
 
     // ── preview environments (services/previews.js) ──
     previews(orgId) { return this._org(this._read(), orgId).previews.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) }

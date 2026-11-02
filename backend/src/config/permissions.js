@@ -92,6 +92,7 @@ export const PERMISSIONS = {
     // Security & delivery insight (read-only)
     'security:view':     ['admin', 'operator', 'viewer'],   // Trivy: image vulnerabilities and misconfigurations per workload
     'metrics:view':      ['admin', 'operator', 'viewer'],   // DORA: deploy frequency, change failure rate, recovery time
+    'cert:renew':        ['admin', 'operator'],             // ask cert-manager to issue a certificate again now
 
     // Workspace administration
     'team:view':         ['admin'],
@@ -165,7 +166,8 @@ export const PERMISSION_GROUPS = [
     ]},
     { group: 'Security & delivery', items: [
         { key: 'security:view', label: 'View image vulnerabilities and misconfigurations (Trivy)' },
-        { key: 'metrics:view', label: 'View delivery metrics (DORA)' }
+        { key: 'metrics:view', label: 'View delivery metrics (DORA)' },
+        { key: 'cert:renew', label: 'Renew TLS certificates now (cert-manager)' }
     ]},
     { group: 'Workspace', items: [
         { key: 'team:manage',    label: 'Manage team & roles' },
@@ -223,7 +225,7 @@ export const CLUSTER_PERMISSIONS = [
     'gitops:view', 'gitops:sync', 'gitops:create', 'gitops:delete',
     'app:view', 'app:values', 'app:deploy', 'app:delete',
     'hibernate:manage', 'debug:ephemeral', 'autoscale:manage',
-    'security:view', 'metrics:view'
+    'security:view', 'metrics:view', 'cert:renew'
 ]
 
 // Never part of a custom role: running the workspace stays with Admins
@@ -236,7 +238,7 @@ export const BUILTIN_KUBE_LEVEL = { admin: 'admin', operator: 'edit', viewer: 'v
 // Ready-made starting points for the role builder
 export const ROLE_TEMPLATES = [
     { key: 'oncall', name: 'On-call engineer', description: 'Watches and fixes incidents, terminal with approval. Cannot delete or upgrade.',
-      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync', 'security:view', 'metrics:view', 'app:view', 'app:values', 'app:deploy', 'debug:ephemeral'] },
+      kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'incident:act', 'terminal:access', 'compliance:view', 'agent:view', 'gitops:view', 'gitops:sync', 'security:view', 'metrics:view', 'app:view', 'app:values', 'app:deploy', 'debug:ephemeral', 'cert:renew'] },
     { key: 'developer', name: 'Developer', description: 'Sees clusters and add-on addresses, works inside the cluster (Explorer). No credentials, no cluster changes.',
       kube: 'edit', permissions: ['cluster:view', 'addon:view', 'incident:view', 'compliance:view', 'gitops:view', 'security:view', 'metrics:view', 'app:view'] },
     { key: 'backup', name: 'Backup manager', description: 'Takes and restores backups. Nothing else changes.',

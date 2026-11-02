@@ -33,6 +33,11 @@ export const FEATURES = {
     hibernateSchedule: { label: 'Scheduled hibernate', group: 'Operations', description: 'Namespaces sleep and wake on a clock (e.g. dev 21:00 → 09:00 on weekdays)', plan: 'pro', background: true },
     promotion:       { label: 'Promotion pipeline', group: 'Apps', description: 'Promote an app from one environment to the next (chart version and chosen values)', plan: 'pro' },
     chatDeploy:      { label: 'Deploy from chat', group: 'Apps', description: 'Slack / Telegram: "deploy web 1.4.2 to staging", confirmed with a code — only the apps an admin allowed for that chat', plan: 'pro' },
+    signGate:        { label: 'Image signature gate', group: 'Security', description: 'Per-environment policy that warns or blocks deploys of images not signed (cosign) with a workspace key', plan: 'pro' },
+    deployRisk:      { label: 'Deploy risk', group: 'Apps', description: 'A risk score for each install / upgrade from its dry run, history and open problems — explained by the connected AI', plan: 'pro' },
+    helmDrift:       { label: 'Helm drift', group: 'Apps', description: 'Finds what was changed by hand in Helm apps (kubectl edit / scale), restores it; alerts every hour', plan: 'pro', background: true },
+    certManager:     { label: 'Certificates (cert-manager)', group: 'Security', description: 'Certificates, issuers and ACME challenges per cluster: expiry, failures, Renew now' },
+    certAlerts:      { label: 'Certificate alerts', group: 'Security', description: 'An alert when a certificate fails or is close to expiring (checked every 6 hours)', plan: 'pro', background: true },
     previews:        { label: 'Preview environments', group: 'Apps', description: 'A short-lived copy of an app in its own namespace per pull request or branch, removed by itself when it expires', plan: 'pro', background: true }
 }
 export const FEATURE_KEYS = Object.keys(FEATURES)

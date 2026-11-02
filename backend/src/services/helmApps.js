@@ -188,7 +188,7 @@ export function diffManifests(before, after) {
 }
 
 /** A dry run on the cluster (the API server checks it) and the diff against what runs now. */
-export async function previewDeploy(cluster, d, { connect = defaultConnect, gate = null } = {}) {
+export async function previewDeploy(cluster, d, { connect = defaultConnect, gate = null, sign = null, keepManifest = false } = {}) {
     const values = await finalValues(cluster, d, connect)
     const out = await previewWith(cluster, d, values, connect)
     if (gate?.policy) {
@@ -196,9 +196,13 @@ export async function previewDeploy(cluster, d, { connect = defaultConnect, gate
         const security = await (gate.read || (async () => (await import('./security.js')).readSecurity(cluster)))().catch(() => null)
         out.cve = checkImages(imagesOf(out.manifest), security, gate.policy)
     }
-    delete out.manifest
+    if (sign?.policy) out.signatures = await signCheck(out.manifest, sign)
+    if (!keepManifest) delete out.manifest
     return out
 }
+
+/** Run a script on the cluster with Helm ready (the HELM function; the drift check uses it). */
+export const helmScript = (cluster, body, { connect = defaultConnect, timeoutMs = 120e3 } = {}) => run(connect, cluster, body, { timeoutMs })
 async function previewWith(cluster, d, values, connect) {
     const body = `echo '==CUR=='; HELM get manifest ${ref(d.namespace, d.release)} 2>/dev/null; echo '==NEW=='; ${upgradeCmd(d, '--dry-run=server -o json')}`
     const r = await run(connect, cluster, body, { stdin: JSON.stringify(values), timeoutMs: 120e3 })
@@ -217,7 +221,7 @@ async function previewWith(cluster, d, values, connect) {
 const jobs = new Map()   // id → job
 const JOB_TTL = 60 * 60e3
 function sweep() { for (const [k, j] of jobs) if (j.status !== 'running' && Date.now() - Date.parse(j.finishedAt) > JOB_TTL) jobs.delete(k) }
-export const jobView = (j) => j && ({ id: j.id, clusterId: j.clusterId, action: j.action, release: j.release, namespace: j.namespace, status: j.status, by: j.by, startedAt: j.startedAt, finishedAt: j.finishedAt || null, error: j.error || null, output: j.output || null, warnings: j.warnings || [], cve: j.cve || null })
+export const jobView = (j) => j && ({ id: j.id, clusterId: j.clusterId, action: j.action, release: j.release, namespace: j.namespace, status: j.status, by: j.by, startedAt: j.startedAt, finishedAt: j.finishedAt || null, error: j.error || null, output: j.output || null, warnings: j.warnings || [], cve: j.cve || null, signatures: j.signatures || null })
 export const findJob = (jobId) => jobs.get(jobId) || null
 export const runningFor = (clusterId, namespace, release) => [...jobs.values()].find(j => j.status === 'running' && j.clusterId === clusterId && j.namespace === namespace && j.release === release) || null
 
@@ -234,32 +238,49 @@ function startJob(cluster, { action, release, namespace, by }, work) {
 }
 const must = (r, what) => { if (r?.code) throw helmError(r, what); return r }
 
-// the CVE gate: the images of the dry run against the cluster's Trivy reports
-async function cveCheck(cluster, d, values, gate, connect) {
+// the images of a deploy come from a server-side dry run of exactly what will be applied
+async function dryRunManifest(cluster, d, values, connect) {
     const r = await run(connect, cluster, upgradeCmd(d, '--dry-run=server -o json'), { stdin: JSON.stringify(values), timeoutMs: 120e3 })
     if (r?.code) throw helmError(r, 'The dry run failed')
-    let manifest = ''
-    try { manifest = JSON.parse(String(r.stdout || '').trim())?.manifest || '' } catch { }
+    try { return JSON.parse(String(r.stdout || '').trim())?.manifest || '' } catch { return '' }
+}
+// the CVE gate: the images against the cluster's Trivy reports
+async function cveCheck(cluster, manifest, gate) {
     const { imagesOf, checkImages } = await import('./cveGate.js')
     const security = await (gate.read || (async () => (await import('./security.js')).readSecurity(cluster)))().catch(() => null)
     return { ...checkImages(imagesOf(manifest), security, gate.policy), trivy: !!security && security.tools?.vulnerabilities?.state === 'ok' }
+}
+// the signature gate: every image signed with a workspace key (cosign)
+async function signCheck(manifest, sign) {
+    const { imagesOf } = await import('./cveGate.js')
+    const { checkSignatures } = await import('./signGate.js')
+    return (sign.check || checkSignatures)(imagesOf(manifest), sign.policy, { keys: sign.keys || [], credsFor: sign.credsFor, fetchImpl: sign.fetchImpl })
 }
 
 /**
  * Install or upgrade (waits for the pods; a failed upgrade is rolled back by Helm).
  * values: use exactly these (the deploy webhook) instead of the typed ones.
  * gate: { policy, override, read } — the environment's CVE policy; override = an admin's reason.
+ * sign: { policy, override, keys, credsFor } — its image signature policy (services/signGate.js).
  */
-export async function deploy(cluster, d, { by, connect = defaultConnect, values = null, gate = null } = {}) {
+export async function deploy(cluster, d, { by, connect = defaultConnect, values = null, gate = null, sign = null } = {}) {
     const final = values || await finalValues(cluster, d, connect)
     const j = startJob(cluster, { action: 'deploy', release: d.release, namespace: d.namespace, by }, async () => {
+        const manifest = gate?.policy || sign?.policy ? await dryRunManifest(cluster, d, final, connect) : null
         if (gate?.policy) {
             const { gateText } = await import('./cveGate.js')
-            const g = await cveCheck(cluster, d, final, gate, connect)
+            const g = await cveCheck(cluster, manifest, gate)
             j.cve = g
             if (g.blocked && !gate.override) throw bad(`Blocked by the CVE policy of this environment: ${gateText(g)}. Fix the image, or an admin deploys it anyway with a reason.`, 409)
             if (g.failing.length) j.warnings = [`${g.blocked ? 'CVE policy overridden' : 'Vulnerable images'}: ${gateText(g)}`]
             if (g.unscanned.length) (j.warnings ||= []).push(`Not scanned by Trivy yet: ${g.unscanned.join(', ')}`)
+        }
+        if (sign?.policy) {
+            const { signText } = await import('./signGate.js')
+            const s = await signCheck(manifest, sign)
+            j.signatures = s
+            if (s.blocked && !sign.override) throw bad(`Blocked by the image signature policy of this environment: ${signText(s)}. Sign the images with cosign, or an admin deploys it anyway with a reason.`, 409)
+            if (s.failing.length) (j.warnings ||= []).push(`${s.blocked ? 'Signature policy overridden' : 'Images without a trusted signature'}: ${signText(s)}`)
         }
         return must(await run(connect, cluster, upgradeCmd(d, '--wait --timeout 10m $RB -o json'), { stdin: JSON.stringify(final), timeoutMs: 12 * 60e3 }), `${d.release} was not deployed`)
     })

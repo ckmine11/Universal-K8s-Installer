@@ -91,6 +91,7 @@ import aiRoutes from './routes/ai.js'
 import aiOpsRoutes, { actionsRouter as aiActionsRoutes } from './routes/aiOps.js'
 import gitopsRoutes from './routes/gitops.js'
 import clusterReportRoutes from './routes/clusterReports.js'
+import certificateRoutes from './routes/certificates.js'
 import helmAppRoutes from './routes/helmApps.js'
 import deliveryRoutes from './routes/delivery.js'
 import operateRoutes from './routes/operate.js'
@@ -101,6 +102,8 @@ import { startAutoRollback } from './services/autoRollback.js'
 import { startHibernateSchedules } from './services/hibernateSchedule.js'
 import { startCveAlerts } from './services/cveAlerts.js'
 import { startPreviewSweeper } from './services/previews.js'
+import { startHelmDriftAlerts } from './services/helmDrift.js'
+import { startCertAlerts } from './services/certManager.js'
 import clusterConnectRoutes, { publicRouter as clusterImportPublic } from './routes/clusterConnect.js'
 import { startConnectionChecks } from './services/clusterImport.js'
 import { lockDownServerFiles, usesApi, capabilities, runMemberCommand } from './services/clusterAccess.js'
@@ -392,6 +395,7 @@ app.use('/api/import', clusterImportPublic)                  // the connect comm
 app.use('/api/clusters', requireAuth, aiActionsRoutes)       // safe fixes with dry-run and undo
 app.use('/api/clusters', requireAuth, gitopsRoutes)          // GitOps view: Argo CD / Flux apps, sync now
 app.use('/api/clusters', requireAuth, clusterReportRoutes)   // Security (Trivy) and DORA delivery metrics
+app.use('/api/clusters', requireAuth, certificateRoutes)     // cert-manager: certificates, issuers, challenges, renew
 app.use('/api/clusters', requireAuth, helmAppRoutes)         // Helm App Manager: releases, preview, deploy, rollback
 app.use('/api/delivery', requireAuth, deliveryRoutes)        // environments, chart repositories, change freezes, compare, tokens, promotions
 app.use('/api/clusters', requireAuth, operateRoutes)         // hibernate / wake, debug containers, External Secrets status
@@ -649,6 +653,8 @@ server.listen(PORT, () => {
     startCveAlerts().catch(e => console.error(`[CveAlerts] ${e.message}`))   // new fixable critical CVEs → alert channels
     startHibernateSchedules().catch(e => console.error(`[HibernateSchedule] ${e.message}`))   // namespaces that sleep and wake on a clock
     startPreviewSweeper().catch(e => console.error(`[Previews] ${e.message}`))   // expired preview environments are removed
+    startHelmDriftAlerts().catch(e => console.error(`[HelmDrift] ${e.message}`))   // Helm apps changed by hand → alert (hourly)
+    startCertAlerts().catch(e => console.error(`[CertAlerts] ${e.message}`))   // failing / expiring certificates → alert (6-hourly)
     startAutoRollback().catch(e => console.error(`[AutoRollback] ${e.message}`))   // roll back Helm deploys that break their workload (per environment)
     import('./services/ai/providers.js').then(m => m.ensureServerModel()).catch(() => { })   // KubeEZ AI server model (background)
     import('./services/ai/runbookHooks.js').then(m => m.startRunbooks()).catch(e => console.warn('[KubeEZ AI] runbooks not started:', e.message))   // learned runbooks
