@@ -4,6 +4,7 @@ import { apiFetch } from '../../context/AuthContext'
 import ExternalSecretsCard from './ExternalSecretsCard'
 import { useFeatures, featureUsable, featureIncluded, featuresKnown } from '../../config/features'
 import ProLock from '../ui/ProLock'
+import { markSeen } from '../../utils/badgeSeen'
 
 // Security of one cluster from the Trivy Operator's reports: image
 // vulnerabilities per workload (critical / high listed, with the fixed
@@ -102,6 +103,7 @@ export default function SecurityTab({ clusterId, canInstall, onOpenAddons }) {
             const d = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(d.error || 'Could not read the security reports')
             setData(d)
+            markSeen(clusterId, 'security')   // seen: the sidebar badge clears until something new comes
         } catch (e) { setError(e.message) } finally { setLoading(false) }
     }, [clusterId])
     useEffect(() => { load() }, [load])

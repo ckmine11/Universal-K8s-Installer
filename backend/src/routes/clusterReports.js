@@ -10,12 +10,14 @@ import { readRollouts, computeDora } from '../services/dora.js'
 import { leadTimes } from '../services/leadTime.js'
 import { readCosts, DEFAULT_RATES } from '../services/costs.js'
 import { deliveryStore } from '../services/deliveryStore.js'
-import { clusterBadges } from '../services/clusterBadges.js'
+import { clusterBadges, currentProblemKeys } from '../services/clusterBadges.js'
+import { badgeSeen } from '../services/badgeSeen.js'
 
 // Read-only reports of one cluster (mounted at /api/clusters):
 //   GET /:id/security          Trivy: vulnerabilities and misconfigurations per workload
 //   GET /:id/dora?days=&platform=1   DORA delivery metrics
-//   GET /:id/badges            sidebar counts (critical CVEs, certificates needing attention) from the last reads
+//   GET /:id/badges            sidebar counts (critical CVEs, certificates needing attention) not seen yet, from the last reads
+//   POST /:id/badges/seen      { kind } — the person opened that tab: what is there now counts as seen
 // Members limited to some namespaces see only those namespaces.
 const router = express.Router()
 // feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
@@ -50,7 +52,20 @@ router.get('/:id/badges', requirePermission('cluster:view'), async (req, res) =>
     if (!cluster) return
     const orgId = req.user?.orgId || null
     const allowed = (kind) => { const [perm, key] = BADGE_GATES[kind]; return canOn(req.user, perm, cluster) && features.isOn(orgId, key) && features.planOk(orgId, key, req.user?.role) }
-    res.json(clusterBadges(cluster, { allowed, match: matcherFor(req.user, cluster) }))
+    res.json(clusterBadges(cluster, { allowed, match: matcherFor(req.user, cluster), seen: (kind) => badgeSeen.get(req.user.id, cluster.id, kind) }))
+})
+router.post('/:id/badges/seen', requirePermission('cluster:view'), async (req, res) => {
+    const cluster = await visibleCluster(req, res)
+    if (!cluster) return
+    const kind = String(req.body?.kind || '')
+    if (!BADGE_GATES[kind]) return res.status(400).json({ error: 'kind: security or certificates' })
+    const orgId = req.user?.orgId || null
+    const [perm, key] = BADGE_GATES[kind]
+    if (!canOn(req.user, perm, cluster) || !features.isOn(orgId, key)) return res.status(403).json({ error: 'You may not open that section' })
+    // only what this person can see there (their namespaces); nothing read yet → nothing to mark
+    const keys = currentProblemKeys(cluster, kind, matcherFor(req.user, cluster))
+    if (keys) badgeSeen.mark(req.user.id, cluster.id, kind, keys)
+    res.json({ success: true, seen: keys ? keys.length : 0 })
 })
 
 const DAYS = [7, 14, 30]

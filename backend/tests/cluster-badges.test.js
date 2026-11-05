@@ -21,7 +21,7 @@ const security = {
 const certs = (states) => ({ tool: { state: 'ok' }, issuers: [], challenges: [], certificates: states.map(([namespace, state], i) => ({ namespace, name: `c${i}`, state })) })
 
 test('security badge: distinct critical CVEs, within the namespaces the member may see', () => {
-    assert.deepEqual(securityBadge(security, null), { count: 2, tone: 'red', title: '2 critical vulnerabilities' })
+    assert.deepEqual(securityBadge(security, null), { count: 2, total: 2, tone: 'red', title: '2 critical vulnerabilities' })
     assert.equal(securityBadge(security, (ns) => ns === 'shop').count, 1)
     assert.equal(securityBadge(security, (ns) => ns === 'none').count, 0)
     assert.equal(securityBadge(null, null), null)
@@ -29,8 +29,8 @@ test('security badge: distinct critical CVEs, within the namespaces the member m
 
 test('certificates badge: red for expired or failing, amber for expiring only', () => {
     const b = certificatesBadge(certs([['a', 'ok'], ['a', 'expiring'], ['b', 'failing'], ['b', 'expired']]), null)
-    assert.deepEqual(b, { count: 3, tone: 'red', title: '2 expired or failing, 1 expiring soon' })
-    assert.deepEqual(certificatesBadge(certs([['a', 'expiring'], ['b', 'expired']]), (ns) => ns === 'a'), { count: 1, tone: 'amber', title: '1 expiring soon' })
+    assert.deepEqual(b, { count: 3, total: 3, tone: 'red', title: '3 certificates need attention' })
+    assert.deepEqual(certificatesBadge(certs([['a', 'expiring'], ['b', 'expired']]), (ns) => ns === 'a'), { count: 1, total: 1, tone: 'amber', title: '1 certificate needs attention' })
     assert.equal(certificatesBadge(certs([['a', 'ok']]), null).count, 0)
     assert.equal(certificatesBadge({ ...certs([]), tool: { state: 'missing' } }, null), null)
     assert.equal(certificatesBadge(null, null), null)
@@ -57,4 +57,33 @@ test('clusterBadges: only allowed sections; never read → null and one backgrou
         securityTest.useConnect(null)
         certTest.useConnect(null)
     }
+})
+
+test('seen: what the person looked at stops counting; something new — or getting worse — counts again', () => {
+    // all three CVEs seen → no badge, the title still says they are there
+    const seenAll = securityBadge(security, null, new Set(['CVE-1', 'CVE-3']))
+    assert.deepEqual(seenAll, { count: 0, total: 2, tone: 'red', title: '2 critical vulnerabilities — seen' })
+    // one new CVE since → 1, with the total
+    assert.deepEqual(securityBadge(security, null, new Set(['CVE-1'])), { count: 1, total: 2, tone: 'red', title: '1 new critical vulnerability (2 in all)' })
+    // a certificate seen while expiring that has now expired counts again, in red
+    const c = certs([['a', 'expired']])
+    assert.equal(certificatesBadge(c, null, new Set(['a/c0:expiring'])).count, 1)
+    assert.equal(certificatesBadge(c, null, new Set(['a/c0:expired'])).count, 0)
+})
+
+test('badgeSeen: per person and cluster; marking replaces (a problem that went away counts again if it returns)', async () => {
+    // a throw-away data folder: never backend/data
+    const { tempDataDir } = await import('./helpers/server.js')
+    const dir = tempDataDir()
+    process.env.KUBEEZ_DATA_DIR = dir
+    const { DATA_DIR } = await import('../src/utils/paths.js')
+    assert.equal(DATA_DIR, dir)
+    const { badgeSeen } = await import('../src/services/badgeSeen.js')
+    badgeSeen._reset()
+    badgeSeen.mark('u1', 'c1', 'security', ['CVE-1', 'CVE-2'])
+    assert.deepEqual([...badgeSeen.get('u1', 'c1', 'security')], ['CVE-1', 'CVE-2'])
+    assert.equal(badgeSeen.get('u2', 'c1', 'security').size, 0, 'a teammate has not seen it')
+    assert.equal(badgeSeen.get('u1', 'c2', 'security').size, 0, 'another cluster')
+    badgeSeen.mark('u1', 'c1', 'security', ['CVE-2'])
+    assert.deepEqual([...badgeSeen.get('u1', 'c1', 'security')], ['CVE-2'])
 })

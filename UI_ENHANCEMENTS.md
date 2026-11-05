@@ -21,7 +21,7 @@ Every page appears in the sidebar once:
 | Sidebar group | Pages |
 |---|---|
 | Home | Clusters, Incidents, Compliance |
-| Cluster · *name* | The open (or last opened) cluster's sections — Overview, Explorer, Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups; "Choose a cluster" until one was opened. The heading is a cluster switcher that keeps the section. Security and Certificates carry count badges (`GET /api/clusters/:id/badges`, built from the last read of each report and refreshed in the background when older than 15 minutes, so polling never loads the cluster). |
+| Cluster · *name* | The open (or last opened) cluster's sections — Overview, Explorer, Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups; "Choose a cluster" until one was opened. The heading is a cluster switcher that keeps the section. Security and Certificates carry count badges of what the person has not seen yet (`GET /api/clusters/:id/badges`, built from the last read of each report and refreshed in the background when older than 15 minutes, so polling never loads the cluster). Opening the tab posts `/badges/seen`, which records the problems there now per person (`services/badgeSeen.js`); a new one counts again. |
 | Add & connect | Deploy new cluster, Existing clusters (its page has tabs: list, Add existing cluster, Connection agents, Setup guides), Gateway agents |
 | AI | Ask AI, Fleet, Create YAML, Advisor, What changed, AI settings |
 | Workspace | Delivery settings, Team & Roles, Approvals (with a badge of waiting requests), Alerts, Settings, Features |

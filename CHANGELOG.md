@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — sidebar badges
+- Security and Certificates badges count only what you have not seen yet: opening the tab clears them; a new critical CVE, or a certificate getting worse, brings them back. Per person, kept on the server.
+
 ### Changed — plans
 - **Free runs one cluster for real:** 1 cluster, **5 nodes** (was 2 — a typical 3-node cluster could not even be added), 1 member. Registries, new GitOps apps, debug containers and Helm drift moved to Free; so did the add-ons Free features need (Explorer, Ingress, cert-manager, Trivy, Argo CD, Flux).
 - **14-day Pro trial** for every new hosted workspace (`KUBEEZ_TRIAL_DAYS`, 0 = off): every feature and Pro limits; Free afterwards, nothing deleted.

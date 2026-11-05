@@ -4,6 +4,7 @@ import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import { Link } from 'react-router-dom'
 import { featureOn, featureIncluded, featuresKnown } from '../../config/features'
+import { markSeen } from '../../utils/badgeSeen'
 
 // cert-manager of one cluster: every Certificate with its expiry and state
 // (worst first), the Issuers / ClusterIssuers, and ACME Challenges that are
@@ -38,6 +39,7 @@ export default function CertificatesTab({ clusterId, canInstall, onOpenAddons })
             const d = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`)
             setData(d)
+            markSeen(clusterId, 'certificates')   // seen: the sidebar badge clears until something new comes
         } catch (e) { setError(e.message) } finally { setLoading(false) }
     }, [clusterId])
     useEffect(() => { load() }, [load])

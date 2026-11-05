@@ -154,7 +154,10 @@ export default function AppShell({ children }) {
         }
         load()
         const t = setInterval(whenVisible(load), 60000)
-        return () => { stop = true; clearInterval(t) }
+        // a section was just looked at (utils/badgeSeen.js)
+        const now = (e) => { if (e.detail?.clusterId === lastCluster.id) load() }
+        window.addEventListener('kz-badges-refresh', now)
+        return () => { stop = true; clearInterval(t); window.removeEventListener('kz-badges-refresh', now) }
     }, [lastCluster?.id])
     const sections = navSections(user, approvalsWaiting, { cluster: lastCluster, featureOn, clusterBadges })
     const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] || 'KubeEZ'

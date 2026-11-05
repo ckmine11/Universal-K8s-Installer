@@ -226,6 +226,7 @@ describe('API: who sees security and DORA', () => {
         sec._test.useConnect(async () => ({ execCommand: async () => ({ stdout: SEC_OUT }), dispose() { } }))
         dora._test.useConnect(async () => ({ execCommand: async () => ({ stdout: DORA_OUT }), dispose() { } }))
         const app = express()
+        app.use(express.json())
         app.use((req, res, next) => { req.user = U[req.get('x-test-user')]; next() })
         app.use('/api/clusters', router)
         server = await new Promise(r => { const s = app.listen(0, '127.0.0.1', () => r(s)) })
@@ -268,6 +269,16 @@ describe('API: who sees security and DORA', () => {
             assert.deepEqual((await get('custom', '/api/clusters/s1/badges')).data, {}, 'no security:view → no badges')
             assert.equal((await get('stranger', '/api/clusters/s1/badges')).status, 404)
             assert.equal((await get('nobody', '/api/clusters/s1/badges')).status, 401)
+            // the viewer opens Security: their badge clears; the scoped member's does not
+            const post = async (who, p, body) => { const r = await fetch(base + p, { method: 'POST', headers: { 'x-test-user': who, 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, data: await r.json().catch(() => null) } }
+            const seen = await post('viewer', '/api/clusters/s1/badges/seen', { kind: 'security' })
+            assert.equal(seen.status, 200, JSON.stringify(seen.data)); assert.equal(seen.data.seen, 2)
+            const after = (await get('viewer', '/api/clusters/s1/badges')).data.security
+            assert.deepEqual([after.count, after.total], [0, 2]); assert.match(after.title, /— seen$/)
+            assert.equal((await get('scoped', '/api/clusters/s1/badges')).data.security.count, 1, 'a teammate still sees theirs')
+            assert.equal((await post('viewer', '/api/clusters/s1/badges/seen', { kind: 'nope' })).status, 400)
+            assert.equal((await post('custom', '/api/clusters/s1/badges/seen', { kind: 'security' })).status, 403)
+            assert.equal((await post('stranger', '/api/clusters/s1/badges/seen', { kind: 'security' })).status, 404)
         } finally { cert._test.useConnect(null) }
     })
 
