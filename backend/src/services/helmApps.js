@@ -19,12 +19,13 @@ const MAX_VALUES = 256 * 1024
 const bad = (m, status = 400) => Object.assign(new Error(m), { status })
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
 
-// the Helm KubeEZ installs for add-ons wins over an old one on the node; Helm 4 renamed --atomic
+// the Helm KubeEZ installs for add-ons wins over an old one on the node; Helm 4 renamed
+// --atomic and lists releases in every status by default (no -a)
 const PRELUDE = [
     'H=helm; [ -x /usr/local/lib/kubeez/helm ] && H=/usr/local/lib/kubeez/helm',
     // the full path: sudo keeps its own PATH (secure_path), often without /usr/local/bin
     `H=$(command -v "$H" 2>/dev/null) || { echo 'KZHELM|NO_HELM|Helm is not installed on the control-plane yet — install any add-on once (it installs Helm), then try again.' >&2; exit 3; }`,
-    'RB=--atomic; "$H" version --short 2>/dev/null | grep -q "^v4" && RB=--rollback-on-failure',
+    'RB=--atomic; ALL=-a; "$H" version --short 2>/dev/null | grep -q "^v4" && { RB=--rollback-on-failure; ALL=; }',
     'HELM() { sudo KUBECONFIG=/etc/kubernetes/admin.conf "$H" "$@"; }'
 ].join('\n')
 const script = (body) => `${PRELUDE}\n${body}`
@@ -78,7 +79,7 @@ const json = (r, what) => {
 
 /** Every release of the cluster → [{ name, namespace, revision, status, chart, version, appVersion, updated }] */
 export async function listReleases(cluster, { connect = defaultConnect } = {}) {
-    const r = await run(connect, cluster, 'HELM list -A -a -o json --max 2000')
+    const r = await run(connect, cluster, 'HELM list -A $ALL -o json --max 2000')
     return (json(r, 'Could not list the Helm releases') || []).map(x => {
         const m = /^(.*)-(v?\d[\w.+-]*)$/.exec(x.chart || '')
         return { name: x.name, namespace: x.namespace, revision: Number(x.revision) || 0, status: x.status, chart: m ? m[1] : x.chart, version: m ? m[2] : null, appVersion: x.app_version || null, updated: x.updated || null }

@@ -60,7 +60,8 @@ delete_ns() {
 helm_remove() {
     local ns="$1" rel
     command -v helm >/dev/null 2>&1 || return 0
-    for rel in $(helm -n "$ns" list -aq 2>/dev/null); do
+    # every status: -a on Helm 3; Helm 4 lists them all by default and has no -a
+    for rel in $(helm -n "$ns" list -aq 2>/dev/null || helm -n "$ns" list -q 2>/dev/null); do
         log "Removing Helm release $rel..."
         helm -n "$ns" uninstall "$rel" --wait --timeout 5m 2>&1 | tail -2 | sed 's/^/  /' || true
     done

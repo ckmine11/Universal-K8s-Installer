@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Delivery settings**: the Cluster lists (environments, freezes, deploy tokens, registries) were empty — the page asked a route that does not exist.
 - **Chart lists of large repositories** (Bitnami: 28 MB index) took ~900 MB and blocked the server for ~10 s, so a 512 MB container restarted. Only the newest 30 versions of each chart are read now (~110 MB, the server stays responsive); two requests for the same repository share one read.
 - **Helm on RHEL-family nodes**: `sudo` did not find a Helm installed in `/usr/local/bin` ("sudo: helm: command not found"), breaking Apps, Compare, Previews and Drift; KubeEZ now runs it by its full path.
+- **Helm 4** (which KubeEZ installs) has no `helm list -a`: listing releases failed ("unknown shorthand flag: 'a'"), so Apps, Compare and Previews showed nothing, and uninstalling an add-on left its releases behind. Helm 3 and 4 both work now.
 
 ### Added
 - Sidebar: every page once, a cluster switcher, folding groups, and count badges on Security and Certificates.
