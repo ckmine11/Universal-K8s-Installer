@@ -22,7 +22,8 @@ const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
 // the Helm KubeEZ installs for add-ons wins over an old one on the node; Helm 4 renamed --atomic
 const PRELUDE = [
     'H=helm; [ -x /usr/local/lib/kubeez/helm ] && H=/usr/local/lib/kubeez/helm',
-    `command -v "$H" >/dev/null 2>&1 || { echo 'KZHELM|NO_HELM|Helm is not installed on the control-plane yet — install any add-on once (it installs Helm), then try again.' >&2; exit 3; }`,
+    // the full path: sudo keeps its own PATH (secure_path), often without /usr/local/bin
+    `H=$(command -v "$H" 2>/dev/null) || { echo 'KZHELM|NO_HELM|Helm is not installed on the control-plane yet — install any add-on once (it installs Helm), then try again.' >&2; exit 3; }`,
     'RB=--atomic; "$H" version --short 2>/dev/null | grep -q "^v4" && RB=--rollback-on-failure',
     'HELM() { sudo KUBECONFIG=/etc/kubernetes/admin.conf "$H" "$@"; }'
 ].join('\n')

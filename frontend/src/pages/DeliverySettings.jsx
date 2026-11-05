@@ -62,7 +62,7 @@ export default function DeliverySettings() {
         apiFetch('/api/delivery/previews').then(r => r.ok ? r.json() : null).then(setPreviews).catch(() => setPreviews(null))
         apiFetch('/api/delivery/chat-deploy').then(r => r.ok ? r.json() : null).then(setChat).catch(() => setChat(null))
         apiFetch('/api/delivery/signing-keys').then(r => r.ok ? r.json() : null).then(setSignKeys).catch(() => setSignKeys(null))
-        apiFetch('/api/clusters').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
+        apiFetch('/api/clusters/list').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
     }, [])
     useEffect(() => { load() }, [load])
 

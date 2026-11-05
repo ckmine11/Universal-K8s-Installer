@@ -117,6 +117,19 @@ entries:
         assert.throws(() => catalog.parseIndex('just: text'), /not a Helm repository/)
     })
 
+    test('a large index (every version ever) reads only the newest 30 per chart; other layouts still parse', async () => {
+        const version = (n, i) => `  - name: ${n}\n    version: 1.${i}.0\n    description: "${n}: chart"\n    urls:\n    - https://x.io/${n}-1.${i}.0.tgz\n`
+        const big = `apiVersion: v1\nentries:\n${['alpha', '"quoted"', 'zeta'].map(n => `  ${n}:\n${Array.from({ length: 500 }, (_, i) => version(n.replace(/"/g, ''), 499 - i)).join('')}`).join('')}generated: "2026-11-05T00:00:00Z"\n`
+        for (const charts of [catalog.parseIndex(big), await catalog.parseIndexAsync(big)]) {
+            assert.deepEqual(charts.map(c => c.name), ['alpha', 'quoted', 'zeta'])
+            assert.equal(charts[0].versions.length, 30); assert.equal(charts[0].versions[0].version, '1.499.0'); assert.equal(charts[2].versions[29].version, '1.470.0')
+            assert.equal(charts[1].description, 'quoted: chart')
+        }
+        // flow style (not Helm's layout): parsed whole
+        assert.deepEqual(catalog.parseIndex('{"apiVersion": "v1", "entries": {"web": [{"version": "2.0.0"}]}}').map(c => c.versions[0].version), ['2.0.0'])
+        assert.deepEqual(catalog.parseIndex('apiVersion: v1\nentries:\n  web:\n    - version: 3.0.0\n').map(c => c.versions[0].version), ['3.0.0'])
+    })
+
     test('fetched with its credentials only to its own host; redirects checked; OCI has no index', async () => {
         catalog._test.clear()
         const seen = []
