@@ -41,6 +41,7 @@ import AppsTab from '../components/apps/AppsTab'
 import SecurityTab from '../components/security/SecurityTab'
 import DoraTab from '../components/delivery/DoraTab'
 import CertificatesTab from '../components/security/CertificatesTab'
+import { rememberCluster, forgetCluster } from '../utils/lastCluster'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
 import RiskCard from '../components/ai/RiskCard'
@@ -111,6 +112,8 @@ export default function ClusterDetails({ onScaleCluster }) {
     const section = ADDON_SECTIONS.some(s => s.key === params.get('section')) ? params.get('section') : 'access'
     const setTab = (key) => setParams(key === 'overview' ? {} : { tab: key })
     useEffect(() => { const m = MOVED_TO_AI[params.get('tab')]; if (m) navigate(`/ai/${m}?cluster=${id}`, { replace: true }) }, [params, id])   // eslint-disable-line react-hooks/exhaustive-deps
+    // the sidebar's cluster section follows the cluster opened last
+    useEffect(() => { if (cluster?.id) rememberCluster({ id: cluster.id, name: cluster.clusterName || cluster.id }) }, [cluster?.id, cluster?.clusterName])
     const setSection = (key) => setParams({ tab: 'addons', section: key }, { replace: true })
 
     // Calculate next version options
@@ -163,6 +166,7 @@ export default function ClusterDetails({ onScaleCluster }) {
                 if (found) {
                     setCluster(found)
                 } else {
+                    forgetCluster(id)   // removed, or no longer visible to this member
                     navigate('/')
                 }
             })

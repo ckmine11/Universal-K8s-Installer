@@ -19,6 +19,7 @@
 | Sidebar group | Pages |
 |---|---|
 | (top) | Clusters, Explorer, Incidents, Compliance |
+| Cluster · *name* | The open (or last opened) cluster's sections — Overview, Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups — each opens that tab; "Choose a cluster" until one was opened |
 | AI | Ask AI, Fleet, Create YAML, Advisor, What changed, AI settings |
 | Connected clusters | Add existing cluster, Connected clusters, Connection agents, Setup guides |
 | Build | Deploy cluster, Gateway Agents, Delivery |

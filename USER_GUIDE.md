@@ -40,6 +40,7 @@ Every job shows a live log. When something fails you see the reason and the fix,
 | **Clusters** | Every cluster with health, nodes, version and add-ons. Open one to manage it. |
 | **Explorer** | A full Kubernetes UI of a cluster: resources, logs, topology, timeline. |
 | **Incidents** | Problems auto-healing found, what it did, what still needs you. |
+| **Cluster · *name*** | The sections of the cluster you opened last — Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups — one click each. |
 | **Compliance** | Scores, findings, reports, audit trail, terminal access. |
 | **AI** | Ask AI, Fleet, Create YAML, Advisor, What changed, AI settings. |
 | **Connected clusters** | Clusters you brought in, their agents and setup guides. |

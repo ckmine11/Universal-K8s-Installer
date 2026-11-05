@@ -3,8 +3,11 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     Sun, Moon, LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
     LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2,
-    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked, Layers, ToggleLeft
+    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked, Layers, ToggleLeft,
+    Gauge, Boxes, GitBranch, BadgeCheck, Activity, Package, Database
 } from 'lucide-react'
+import { useFeatures } from '../../config/features'
+import { readLastCluster } from '../../utils/lastCluster'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
 import { useInstallationTracker } from '../../context/InstallationTrackerContext'
@@ -25,8 +28,32 @@ const ROLE_META = {
     viewer: { label: 'Viewer', icon: Eye, tone: 'text-slate-300 bg-slate-500/10 border-slate-400/20' }
 }
 
+// A cluster's own sections, one sidebar item each (the cluster page's tabs);
+// shown when the member may use them and the feature is on.
+const CLUSTER_SECTIONS = [
+    { key: 'overview', label: 'Overview', icon: Gauge },
+    { key: 'apps', label: 'Apps', icon: Boxes, permission: 'app:view', feature: 'helmApps' },
+    { key: 'gitops', label: 'GitOps', icon: GitBranch, permission: 'gitops:view', feature: 'gitops' },
+    { key: 'security', label: 'Security', icon: ShieldAlert, permission: 'security:view', feature: 'security' },
+    { key: 'certificates', label: 'Certificates', icon: BadgeCheck, permission: 'security:view', feature: 'certManager' },
+    { key: 'delivery', label: 'Delivery metrics', icon: Activity, permission: 'metrics:view', feature: 'dora' },
+    { key: 'addons', label: 'Add-ons', icon: Package },
+    { key: 'backups', label: 'Backups', icon: Database },
+]
+function clusterSection(role, cluster, featureOn) {
+    if (!cluster) return { title: 'Cluster', items: [{ to: '/', label: 'Choose a cluster', icon: Boxes, end: true, match: () => false }] }
+    const base = `/cluster/${encodeURIComponent(cluster.id)}`
+    const tabOf = (loc) => new URLSearchParams(loc.search).get('tab') || 'overview'
+    return {
+        title: `Cluster · ${cluster.name}`,
+        items: CLUSTER_SECTIONS
+            .filter(s => (!s.permission || can(role, s.permission, cluster.id)) && (!s.feature || featureOn(s.feature)))
+            .map(s => ({ to: s.key === 'overview' ? base : `${base}?tab=${s.key}`, label: s.label, icon: s.icon, match: (loc) => loc.pathname === base && tabOf(loc) === s.key }))
+    }
+}
+
 // Navigation, grouped; `show` gates by role (the API enforces it too)
-export function navSections(user, approvalsWaiting = 0) {
+export function navSections(user, approvalsWaiting = 0, { cluster = null, featureOn = () => true } = {}) {
     const role = user?.role
     const isAdmin = role === 'admin' || role === 'superadmin'
     // what the member may do decides the menu (custom roles included)
@@ -42,6 +69,8 @@ export function navSections(user, approvalsWaiting = 0) {
                 { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
             ]
         },
+        // the open (or last opened) cluster's sections, so its features are one click away
+        clusterSection(role, cluster, featureOn),
         // every AI feature in one place
         {
             title: 'AI', items: [
@@ -115,7 +144,14 @@ export default function AppShell({ children }) {
     const [openIncidents, setOpenIncidents] = useState(0)
     const running = activeInstallations.filter(i => i.status === 'running')
     const [approvalsWaiting, setApprovalsWaiting] = useState(0)
-    const sections = navSections(user, approvalsWaiting)
+    const featureOn = useFeatures()
+    const [lastCluster, setLastCluster] = useState(readLastCluster)
+    useEffect(() => {
+        const on = (e) => setLastCluster(e.detail ? { id: e.detail.id, name: e.detail.name } : null)
+        window.addEventListener('kz-last-cluster', on)
+        return () => window.removeEventListener('kz-last-cluster', on)
+    }, [])
+    const sections = navSections(user, approvalsWaiting, { cluster: lastCluster, featureOn })
     const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] || 'KubeEZ'
 
     useEffect(() => { try { localStorage.setItem('kz.sidebar', collapsed ? 'collapsed' : 'open') } catch { } }, [collapsed])
