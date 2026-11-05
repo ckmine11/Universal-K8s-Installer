@@ -294,7 +294,7 @@ export default function Docs() {
                         intro="Your first cluster takes about 15–30 minutes, depending on the servers and the add-ons you pick.">
                         <Steps items={[
                             <><B>Prepare the servers.</B> One server is enough to start; three control-planes give real high availability. Check the <button onClick={() => go('requirements')} className="text-blue-400 hover:underline">server requirements</button>.</>,
-                            <><B>Connect your network</B> (hosted KubeEZ only): open <B>Gateway Agents</B> and install the agent on any machine in the same network as the servers. It needs no open ports.</>,
+                            <><B>Connect your network</B> (hosted KubeEZ only): open <B>Gateway agents</B> and install the agent on any machine in the same network as the servers. It needs no open ports.</>,
                             <><B>Deploy.</B> Click <B>Deploy cluster</B>, enter the servers&apos; IPs and SSH login, pick the Kubernetes version and add-ons, then start.</>,
                             <><B>Use it.</B> Open the cluster: download the <B>Kubeconfig</B> for kubectl, browse everything in the <B>Explorer</B>, and find the add-on logins under <B>Add-ons → Access & logins</B>.</>,
                             <><B>Stay safe.</B> Add an alert channel (<B>Alerts</B>), connect <B>Offsite Backup</B> in the cluster&apos;s Backups tab, and invite your team (<B>Team & Roles</B>).</>
@@ -304,16 +304,14 @@ export default function Docs() {
                     <Section id="console" Icon={LayoutGrid} color="text-sky-400" title="Finding Your Way"
                         intro="Everything is in the sidebar, grouped by what you want to do. On a phone, open it with the ☰ button.">
                         <Table head={['Sidebar', 'What you find there']} rows={[
-                            ['Clusters', 'All your clusters with health, nodes, version and add-ons. Open one to manage it.'],
-                            ['Explorer', 'Opens the KubeEZ Explorer of a cluster: every resource, logs, topology and changes.'],
-                            ['Incidents', 'Problems auto-healing found, what it did, and what still needs you.'],
-                            ['Compliance', 'Compliance scores, findings, reports, audit trail and terminal access.'],
+                            ['Home', 'Clusters (all your clusters with health, nodes, version and add-ons), Incidents (what auto-healing found and did) and Compliance (scores, findings, reports, audit trail).'],
+                            ['Cluster · name', 'The cluster you opened last: Overview, Explorer, Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups. Click the heading to switch cluster; you stay on the same section.'],
+                            ['Add & connect', 'Deploy new cluster (the install wizard), Existing clusters (bring in EKS, AKS, GKE, k3s, … — with tabs for connection agents and setup guides) and Gateway agents (reach servers in private networks).'],
                             ['AI', 'Ask AI, Fleet, Create YAML, Advisor, What changed and AI settings.'],
-                            ['Connected clusters', 'Bring in clusters you already run (EKS, AKS, GKE, k3s, …), their connection agents and setup guides.'],
-                            ['Deploy cluster · Gateway Agents · Delivery', 'The install wizard, the agents that reach servers in private networks, and how your team ships apps (environments, repositories, freezes, tokens, previews, promotions).'],
-                            ['Team & Roles · Approvals · Alerts · Settings · Features', 'Members and roles, two-person approvals, alert channels and rules, plan and security settings, and which features are on (admins).'],
-                            ['Docs · Plans', 'This guide, and what each plan includes.']
+                            ['Workspace', 'Delivery settings (environments, repositories, freezes, tokens, previews, promotions), Team & Roles, Approvals, Alerts, Settings and Features (admins).'],
+                            ['Help', 'This guide, and what each plan includes.']
                         ]} />
+                        <P>Each page is in the sidebar once. The arrow next to a group heading folds it (remembered in this browser). On a phone the cluster's sections are also tabs at the top of the cluster page.</P>
                         <P>Press <C>Ctrl</C> + <C>K</C> (<C>⌘K</C> on a Mac) anywhere to jump to a cluster or page. The <B>✦</B> button in the top bar lists new add-on versions, and the bell shows open incidents.</P>
                     </Section>
 
@@ -348,14 +346,14 @@ export default function Docs() {
                     <Section id="agents" Icon={Activity} color="text-emerald-400" title="Gateway Agent"
                         intro="With hosted KubeEZ, your servers are usually in a private network that KubeEZ cannot reach. The Gateway Agent is a small program you run inside that network. It connects out to KubeEZ over an encrypted connection, so you open no firewall ports.">
                         <Steps items={[
-                            <>Open <B>Gateway Agents</B> and click <B>Generate Token</B>.</>,
+                            <>Open <B>Gateway agents</B> and click <B>Generate Token</B>.</>,
                             'Copy the one-line installer and run it on any machine in the network (Linux, macOS or Windows).',
                             <>The agent shows as <B>Online</B>. Every cluster in the workspace is now managed through it.</>
                         ]} />
                         <Table head={['Situation', 'What happens']} rows={[
                             ['Network drop or restart', 'The agent reconnects by itself and runs as a service, so it comes back after a reboot.'],
                             ['Agent offline', 'You get an alert, and another one when it is back. Its clusters show as unreachable meanwhile.'],
-                            ['Agent removed from the machine', <>Gateway Agents → the agent → <B>Install / Reconnect</B> shows the same command again. Running it twice is safe.</>],
+                            ['Agent removed from the machine', <>Gateway agents → the agent → <B>Install / Reconnect</B> shows the same command again. Running it twice is safe.</>],
                             ['Agent deleted in KubeEZ', 'Its token stops working and the agent stops.']
                         ]} />
                         <P>Check the agent on Linux:</P>
@@ -366,7 +364,7 @@ export default function Docs() {
                     {/* ── Clusters ────────────────────────────────────── */}
                     <Section id="deploy" Icon={Terminal} color="text-rose-400" title="Deploy a Cluster">
                         <Steps items={[
-                            <>Click <B>Deploy cluster</B> in the sidebar (or <B>New cluster</B> in the top bar).</>,
+                            <>Click <B>Deploy new cluster</B> in the sidebar (or <B>New cluster</B> in the top bar).</>,
                             'Add the control-plane and worker servers: IP, SSH user and password or key. KubeEZ checks each one: connection, OS, CPU, memory and ports.',
                             'Pick the Kubernetes version (1.27 – 1.37) and the network plugin (Flannel or Calico).',
                             <>Choose add-ons. <B>Nginx Ingress</B> and the <B>KubeEZ Explorer</B> are selected for you; press <B>Customize</B> on an add-on to change its settings first.</>,
@@ -379,7 +377,7 @@ export default function Docs() {
 
                     <Section id="connect" Icon={PlugZap} color="text-sky-400" title="Connect an Existing Cluster"
                         intro="Bring the Kubernetes you already run into KubeEZ — EKS, AKS, GKE, OKE, DigitalOcean, Linode, k3s, RKE2, OpenShift, kubeadm or any other — without reinstalling anything.">
-                        <P>Sidebar → <B>Connected clusters</B> → <B>Add existing cluster</B>. Pick where it runs (Cloud / On-prem / Other) and the provider, give it a name, choose what KubeEZ may do, and run the one command shown — wherever <C>kubectl</C> already works for the cluster (your laptop, a bastion, a node). Every provider has a setup guide (Connected clusters → <B>Setup guides</B>) with the exact commands and troubleshooting.</P>
+                        <P>Sidebar → <B>Existing clusters</B> → <B>Add existing cluster</B>. Pick where it runs (Cloud / On-prem / Other) and the provider, give it a name, choose what KubeEZ may do, and run the one command shown — wherever <C>kubectl</C> already works for the cluster (your laptop, a bastion, a node). Every provider has a setup guide (Existing clusters → <B>Setup guides</B>) with the exact commands and troubleshooting.</P>
                         <H4>Three ways in</H4>
                         <Table head={['', '']} rows={[
                             [<B>KubeEZ agent (recommended)</B>, <>One <C>kubectl apply</C> (or <C>helm upgrade --install</C>). A small agent runs in the namespace <C>kubeez-system</C> and connects <B>out</B> to KubeEZ over HTTPS — nothing is opened towards the cluster. Works for private endpoints (EKS / AKS / GKE private clusters), firewalls and on-prem clusters behind NAT. It reaches only that cluster's API and Services.</>],
@@ -464,7 +462,7 @@ export default function Docs() {
                     <Section id="addons" Icon={Puzzle} color="text-fuchsia-400" title="Add-on Catalogue"
                         intro="Install add-ons while deploying a cluster, or later from Add-ons → Manage & logs → Install. Web UIs open on the listed port of any node's IP. Logins are under Add-ons → Access & logins.">
                         <Table head={['Add-on', 'What it does', 'Where to open it']} rows={[
-                            ['KubeEZ Explorer', 'Full Kubernetes UI inside KubeEZ, upgrade safety check, health score', 'Explorer tab / sidebar'],
+                            ['KubeEZ Explorer', 'Full Kubernetes UI inside KubeEZ, upgrade safety check, health score', 'Cluster → Explorer'],
                             ['Nginx Ingress', 'Routes HTTP / HTTPS traffic to your apps', 'Access & logins'],
                             ['Prometheus + Grafana', 'Metrics and ready dashboards, optional Alertmanager', 'Grafana :30000 · Prometheus :30090'],
                             ['Metrics Server', 'CPU and memory per pod and node (kubectl top, autoscaling)', 'Access & logins'],
@@ -517,7 +515,7 @@ export default function Docs() {
                     </Section>
 
                     <Section id="explorer" Icon={Compass} color="text-cyan-400" title="KubeEZ Explorer"
-                        intro="A complete Kubernetes UI inside KubeEZ. It is installed on new clusters by default; open it from Explorer in the sidebar or the Explorer tab of a cluster.">
+                        intro="A complete Kubernetes UI inside KubeEZ. It is installed on new clusters by default; open a cluster and choose Explorer in the sidebar.">
                         <Table head={['View', 'What you get']} rows={[
                             ['Resources', 'Every object, with YAML, events and logs, and filters for problems (crash loops, image pull errors…)'],
                             ['Topology & Timeline', 'How apps, services and ingresses connect, and what changed when'],
@@ -950,7 +948,7 @@ curl -fsS -X DELETE https://<your-kubeez>/api/hooks/preview -H "Authorization: B
                         intro="When something fails, KubeEZ shows the reason and a fix on screen. The most common cases:">
                         <Table head={['You see', 'What to do']} rows={[
                             ['SSH connection refused', <>The server has no SSH service. Run the one-line fix under <button onClick={() => go('requirements')} className="text-blue-400 hover:underline">Server Requirements</button>.</>],
-                            ['Gateway Agent offline', 'Check the machine is on and online, then run the install command again from Gateway Agents.'],
+                            ['Gateway Agent offline', 'Check the machine is on and online, then run the install command again from Gateway agents.'],
                             ['Install stopped midway', 'Click Resume Installation. Finished steps are skipped.'],
                             ['Add-on Failing or Starting for long', 'Add-ons → Manage & logs → Logs shows why (image pull, storage pending, crash). Fix it, then Repair.'],
                             ['Upgrade: "safety check found blockers"', 'Open the report, fix the listed resources, and retry.'],

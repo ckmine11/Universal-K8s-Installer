@@ -19,7 +19,7 @@ export default function ConnectHub() {
     return (
         <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex flex-wrap items-end gap-3">
-                <div className="flex-1"><PageTitle icon={PlugZap} eyebrow="Connected clusters" title="Existing clusters" description="Bring the Kubernetes you already run — EKS, AKS, GKE, OKE, k3s, OpenShift, Rancher, kubeadm or any other — into KubeEZ: monitoring, incidents, AI and advice, without reinstalling anything." /></div>
+                <div className="flex-1"><PageTitle icon={PlugZap} eyebrow="Add & connect" title="Existing clusters" description="Bring the Kubernetes you already run — EKS, AKS, GKE, OKE, k3s, OpenShift, Rancher, kubeadm or any other — into KubeEZ: monitoring, incidents, AI and advice, without reinstalling anything." /></div>
                 {can(user?.role, 'cluster:create') && <Link to="/connect/new" className="kz-btn-primary !text-xs"><Plus className="w-3.5 h-3.5" /> Add existing cluster</Link>}
             </div>
             <nav className="flex flex-wrap gap-1 rounded-2xl border border-white/10 bg-white/[0.02] p-1 w-fit" aria-label="Connected clusters">

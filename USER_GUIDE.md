@@ -35,18 +35,18 @@ Every job shows a live log. When something fails you see the reason and the fix,
 
 ## 2. Finding your way
 
-| Sidebar | What is there |
+Every page is in the sidebar once, grouped by what you want to do:
+
+| Group | What is there |
 |---|---|
-| **Clusters** | Every cluster with health, nodes, version and add-ons. Open one to manage it. |
-| **Explorer** | A full Kubernetes UI of a cluster: resources, logs, topology, timeline. |
-| **Incidents** | Problems auto-healing found, what it did, what still needs you. |
-| **Cluster · *name*** | The sections of the cluster you opened last — Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups — one click each. |
-| **Compliance** | Scores, findings, reports, audit trail, terminal access. |
+| **Home** — Clusters · Incidents · Compliance | Every cluster with health, nodes, version and add-ons; problems auto-healing found; scores, findings, reports and the audit trail. |
+| **Cluster · *name*** — Overview · Explorer · Apps · GitOps · Security · Certificates · Delivery metrics · Add-ons · Backups | The sections of the cluster you opened last, one click each. Click the heading to switch to another cluster on the same section. |
+| **Add & connect** — Deploy new cluster · Existing clusters · Gateway agents | The install wizard; clusters you already run (with tabs for adding one, its connection agents and setup guides); agents that reach servers in a private network. |
 | **AI** | Ask AI, Fleet, Create YAML, Advisor, What changed, AI settings. |
-| **Connected clusters** | Clusters you brought in, their agents and setup guides. |
-| **Deploy cluster · Gateway Agents · Delivery** | The install wizard, agents for private networks, and how your team ships apps. |
-| **Team & Roles · Approvals · Alerts · Settings · Features** | Workspace administration. |
-| **Docs · Plans** | The built-in guide and what each plan includes. |
+| **Workspace** — Delivery settings · Team & Roles · Approvals · Alerts · Settings · Features | How your team ships apps, and workspace administration. |
+| **Help** — Docs · Plans | The built-in guide and what each plan includes. |
+
+The arrow next to a group heading folds it (remembered in this browser); a folded group still shows the page you are on. On a phone the cluster's sections are also tabs at the top of the cluster page.
 
 Press **Ctrl + K** (**⌘K** on a Mac) anywhere to jump to a cluster or a page. The bell in the top bar shows open incidents. The sun / moon button switches between the light **Zen** theme and the **Dark** theme.
 
@@ -65,11 +65,11 @@ Press **Ctrl + K** (**⌘K** on a Mac) anywhere to jump to a cluster or a page. 
 | Network | Outbound HTTPS; servers reach each other on 6443, 10250 and 30000–32767 |
 | Login | root or a sudo user over SSH (port 22) |
 
-On the hosted edition, servers in a private network are reached through a **Gateway Agent**: Gateway Agents → **Generate Token** → run the one-line installer on any machine in that network. It connects out, so you open no firewall ports.
+On the hosted edition, servers in a private network are reached through a **Gateway Agent**: Add & connect → Gateway agents → **Generate Token** → run the one-line installer on any machine in that network. It connects out, so you open no firewall ports.
 
 ### Deploy
 
-1. **Deploy cluster** in the sidebar.
+1. **Deploy new cluster** in the sidebar.
 2. Add control-plane and worker servers (IP, SSH user, password or key — you can import a key file). KubeEZ checks each one: connection, OS, CPU, memory, ports.
 3. Pick the Kubernetes version (1.27 – 1.37) and the network plugin (Flannel or Calico).
 4. Choose add-ons. Nginx Ingress and the KubeEZ Explorer are selected for you; **Customize** changes an add-on's settings before install.
@@ -81,7 +81,7 @@ On the hosted edition, servers in a private network are reached through a **Gate
 
 ## 4. Connecting a cluster you already run
 
-Sidebar → **Connected clusters → Add existing cluster**. Pick where it runs and the provider, choose the access, then run the command shown wherever `kubectl` already works for that cluster.
+Sidebar → **Existing clusters → Add existing cluster**. Pick where it runs and the provider, choose the access, then run the command shown wherever `kubectl` already works for that cluster.
 
 | Way in | When to use it |
 |---|---|
@@ -162,7 +162,7 @@ Connect an AI under **AI settings → Connect AI**: **Sign in with OpenRouter** 
 
 ## 10. Shipping apps
 
-### Delivery settings (sidebar → Delivery)
+### Delivery settings (sidebar → Workspace → Delivery settings)
 
 | | |
 |---|---|

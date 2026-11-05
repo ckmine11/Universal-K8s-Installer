@@ -31,7 +31,7 @@ export default function Explorer() {
 
     return (
         <div className="max-w-5xl mx-auto">
-            <PageHeader icon={Compass} eyebrow="Overview" title="KubeEZ Explorer"
+            <PageHeader icon={Compass} eyebrow="Cluster" title="KubeEZ Explorer"
                 description="Resources, logs, topology, timeline, Helm and audit for a cluster — choose the cluster to explore." />
             {sorted.length === 0 ? (
                 <div className="glass rounded-3xl border border-white/5 p-10 text-center">

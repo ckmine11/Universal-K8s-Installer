@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate, matchPath } from 'react-router-dom'
 import {
     Sun, Moon, LayoutDashboard, Rocket, Wifi, ShieldAlert, ShieldCheck, Users, Settings, Bell, BookOpen, Zap, Crown,
-    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, Loader2, Wrench, Eye, Plus, Mail, Compass, KeyRound, UserCheck, Globe2,
-    Sparkles, Wand2, Coins, History, Bot, PlugZap, PlusCircle, Radio, BookMarked, Layers, ToggleLeft,
-    Gauge, Boxes, GitBranch, BadgeCheck, Activity, Package, Database
+    LogOut, Search, Menu, X, ChevronsLeft, ChevronsRight, ChevronDown, ChevronsUpDown, Check, Loader2, Wrench, Eye, Plus, Mail, KeyRound, UserCheck, Globe2,
+    Sparkles, Wand2, Coins, History, Bot, PlugZap, Layers, ToggleLeft, Boxes
 } from 'lucide-react'
 import { useFeatures } from '../../config/features'
+import { visibleSections, sectionLink } from '../../config/clusterSections'
 import { readLastCluster } from '../../utils/lastCluster'
 import { useAuth, apiFetch } from '../../context/AuthContext'
 import { can } from '../../config/permissions'
@@ -28,31 +28,20 @@ const ROLE_META = {
     viewer: { label: 'Viewer', icon: Eye, tone: 'text-slate-300 bg-slate-500/10 border-slate-400/20' }
 }
 
-// A cluster's own sections, one sidebar item each (the cluster page's tabs);
-// shown when the member may use them and the feature is on.
-const CLUSTER_SECTIONS = [
-    { key: 'overview', label: 'Overview', icon: Gauge },
-    { key: 'apps', label: 'Apps', icon: Boxes, permission: 'app:view', feature: 'helmApps' },
-    { key: 'gitops', label: 'GitOps', icon: GitBranch, permission: 'gitops:view', feature: 'gitops' },
-    { key: 'security', label: 'Security', icon: ShieldAlert, permission: 'security:view', feature: 'security' },
-    { key: 'certificates', label: 'Certificates', icon: BadgeCheck, permission: 'security:view', feature: 'certManager' },
-    { key: 'delivery', label: 'Delivery metrics', icon: Activity, permission: 'metrics:view', feature: 'dora' },
-    { key: 'addons', label: 'Add-ons', icon: Package },
-    { key: 'backups', label: 'Backups', icon: Database },
-]
+// The open (or last opened) cluster's sections — the same list as the cluster
+// page's (config/clusterSections.js). Its heading switches the cluster.
+const tabOf = (loc) => new URLSearchParams(loc.search).get('tab') || 'overview'
 function clusterSection(role, cluster, featureOn) {
-    if (!cluster) return { title: 'Cluster', items: [{ to: '/', label: 'Choose a cluster', icon: Boxes, end: true, match: () => false }] }
-    const base = `/cluster/${encodeURIComponent(cluster.id)}`
-    const tabOf = (loc) => new URLSearchParams(loc.search).get('tab') || 'overview'
+    if (!cluster) return { id: 'cluster', title: 'Cluster', items: [{ to: '/', label: 'Choose a cluster', icon: Boxes, end: true, match: () => false }] }
+    const base = sectionLink(cluster.id)
     return {
-        title: `Cluster · ${cluster.name}`,
-        items: CLUSTER_SECTIONS
-            .filter(s => (!s.permission || can(role, s.permission, cluster.id)) && (!s.feature || featureOn(s.feature)))
-            .map(s => ({ to: s.key === 'overview' ? base : `${base}?tab=${s.key}`, label: s.label, icon: s.icon, match: (loc) => loc.pathname === base && tabOf(loc) === s.key }))
+        id: 'cluster', title: `Cluster · ${cluster.name}`, cluster,
+        items: visibleSections(role, cluster.id, featureOn)
+            .map(s => ({ to: sectionLink(cluster.id, s.key), label: s.label, icon: s.icon, match: (loc) => loc.pathname === base && tabOf(loc) === s.key }))
     }
 }
 
-// Navigation, grouped; `show` gates by role (the API enforces it too)
+// Navigation, grouped; each page appears once. Items gate by role (the API enforces it too).
 export function navSections(user, approvalsWaiting = 0, { cluster = null, featureOn = () => true } = {}) {
     const role = user?.role
     const isAdmin = role === 'admin' || role === 'superadmin'
@@ -62,18 +51,26 @@ export function navSections(user, approvalsWaiting = 0, { cluster = null, featur
     const canAi = can(role, 'ai:use')
     return [
         {
-            title: 'Overview', items: [
+            id: 'home', title: 'Home', items: [
                 { to: '/', label: 'Clusters', icon: LayoutDashboard, end: true },
-                { to: '/explorer', label: 'Explorer', icon: Compass },
                 { to: '/incidents', label: 'Incidents', icon: ShieldAlert },
                 { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
             ]
         },
-        // the open (or last opened) cluster's sections, so its features are one click away
+        // one cluster's work: Explorer, Apps, GitOps, Security…
         clusterSection(role, cluster, featureOn),
+        // new clusters: installed by KubeEZ, or existing ones connected (its page has
+        // the connect wizard, connection agents and setup guides as tabs)
+        {
+            id: 'add', title: 'Add & connect', items: [
+                canDeploy && { to: '/install', label: 'Deploy new cluster', icon: Rocket },
+                { to: '/connect', label: 'Existing clusters', icon: PlugZap },
+                canAgents && { to: '/agents', label: 'Gateway agents', icon: Wifi },
+            ].filter(Boolean)
+        },
         // every AI feature in one place
         {
-            title: 'AI', items: [
+            id: 'ai', title: 'AI', items: [
                 canAi && { to: '/ai', label: 'Ask AI', icon: Sparkles, end: true },
                 { to: '/fleet', label: 'Fleet', icon: Globe2 },
                 canAi && { to: '/ai/create', label: 'Create YAML', icon: Wand2 },
@@ -82,24 +79,9 @@ export function navSections(user, approvalsWaiting = 0, { cluster = null, featur
                 can(role, 'ai:manage') && { to: '/ai/settings', label: 'AI settings', icon: Bot },
             ].filter(Boolean)
         },
-        // existing clusters (cloud or on-prem) brought into KubeEZ
         {
-            title: 'Connected clusters', items: [
-                can(role, 'cluster:create') && { to: '/connect/new', label: 'Add existing cluster', icon: PlusCircle },
-                { to: '/connect', label: 'Connected clusters', icon: PlugZap, end: true },
-                { to: '/connect/agents', label: 'Connection agents', icon: Radio },
-                { to: '/connect/guides', label: 'Setup guides', icon: BookMarked },
-            ].filter(Boolean)
-        },
-        {
-            title: 'Build', items: [
-                canDeploy && { to: '/install', label: 'Deploy cluster', icon: Rocket },
-                canAgents && { to: '/agents', label: 'Gateway Agents', icon: Wifi },
-                { to: '/delivery', label: 'Delivery', icon: Layers },
-            ].filter(Boolean)
-        },
-        {
-            title: 'Workspace', items: [
+            id: 'workspace', title: 'Workspace', items: [
+                { to: '/delivery', label: 'Delivery settings', icon: Layers },
                 isAdmin && { to: '/users', label: 'Team & Roles', icon: Users },
                 { to: '/approvals', label: 'Approvals', icon: UserCheck, badge: approvalsWaiting },
                 (isAdmin || can(role, 'alerts:manage')) && { to: '/alerts', label: 'Alerts', icon: Bell },
@@ -108,22 +90,25 @@ export function navSections(user, approvalsWaiting = 0, { cluster = null, featur
             ].filter(Boolean)
         },
         {
-            title: 'Help', items: [
+            id: 'help', title: 'Help', items: [
                 { to: '/docs', label: 'Docs', icon: BookOpen },
                 { to: '/pricing', label: 'Plans', icon: Zap },
             ]
         },
-        role === 'superadmin' && { title: 'Platform', items: [{ to: '/admin', label: 'Admin Console', icon: Crown }] },
+        role === 'superadmin' && { id: 'platform', title: 'Platform', items: [{ to: '/admin', label: 'Admin Console', icon: Crown }] },
     ].filter(s => s && s.items.length)
 }
 
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
-    [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway Agents'], [/^\/users/, 'Team & Roles'], [/^\/approvals/, 'Approvals'],
-    [/^\/settings/, 'Settings'], [/^\/ai\/settings/, 'AI settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/connect\/new/, 'Add existing cluster'], [/^\/connect\/agents/, 'Connection agents'], [/^\/connect\/guides/, 'Setup guides'], [/^\/connect/, 'Connected clusters'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
+    [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway agents'], [/^\/delivery/, 'Delivery settings'], [/^\/features/, 'Features'], [/^\/users/, 'Team & Roles'], [/^\/approvals/, 'Approvals'],
+    [/^\/settings/, 'Settings'], [/^\/ai\/settings/, 'AI settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/connect\/new/, 'Add existing cluster'], [/^\/connect\/agents/, 'Connection agents'], [/^\/connect\/guides/, 'Setup guides'], [/^\/connect/, 'Existing clusters'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }
+// sidebar groups folded by the person (ids), per browser
+const readFolded = () => { try { const v = JSON.parse(localStorage.getItem('kz.sidebar.folded') || '[]'); return Array.isArray(v) ? v : [] } catch { return [] } }
+const isOn = (item, loc) => item.match ? item.match(loc) : !!matchPath({ path: item.to, end: !!item.end }, loc.pathname)
 
 // Zen (default) or Midnight — the person's choice, for every page (utils/theme.js)
 function useTheme() {
@@ -138,6 +123,8 @@ export default function AppShell({ children }) {
     const navigate = useNavigate()
     const { activeInstallations } = useInstallationTracker()
     const [collapsed, setCollapsed] = useState(readCollapsed)
+    const [folded, setFolded] = useState(readFolded)
+    const toggleFold = (id) => setFolded(f => f.includes(id) ? f.filter(x => x !== id) : [...f, id])
     const [mobileOpen, setMobileOpen] = useState(false)
     const [paletteOpen, setPaletteOpen] = useState(false)
     const [theme, toggleTheme] = useTheme()
@@ -155,6 +142,7 @@ export default function AppShell({ children }) {
     const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] || 'KubeEZ'
 
     useEffect(() => { try { localStorage.setItem('kz.sidebar', collapsed ? 'collapsed' : 'open') } catch { } }, [collapsed])
+    useEffect(() => { try { localStorage.setItem('kz.sidebar.folded', JSON.stringify(folded)) } catch { } }, [folded])
     useEffect(() => { setMobileOpen(false) }, [location.pathname, location.search])
     // role or cluster rules may have changed meanwhile
     useEffect(() => { refreshAccess?.() }, [location.pathname])
@@ -219,14 +207,30 @@ export default function AppShell({ children }) {
             )}
 
             <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-4" aria-label="Main">
-                {sections.map(s => (
-                    <div key={s.title}>
-                        {(!collapsed || mobile) ? <div className="px-2.5 pb-1 text-[11.5px] font-medium text-slate-500">{s.title}</div> : <div className="kz-divider mx-2 mb-2" />}
-                        <ul className="space-y-1">
-                            {s.items.map(it => <SideLink key={it.label} item={it} compact={collapsed && !mobile} location={location} />)}
-                        </ul>
-                    </div>
-                ))}
+                {sections.map(s => {
+                    const compact = collapsed && !mobile
+                    // a folded group still shows the page you are on
+                    const shut = !compact && folded.includes(s.id)
+                    const items = shut ? s.items.filter(it => isOn(it, location)) : s.items
+                    return (
+                        <div key={s.id}>
+                            {compact ? <div className="kz-divider mx-2 mb-2" /> : (
+                                <div className="flex items-center gap-1 px-1 pb-1">
+                                    {s.cluster ? <ClusterSwitcher current={s.cluster} location={location} /> : (
+                                        <span className="flex-1 min-w-0 truncate px-1.5 text-[11.5px] font-medium text-slate-500">{s.title}</span>
+                                    )}
+                                    <button type="button" onClick={() => toggleFold(s.id)} aria-expanded={!shut} aria-label={`${shut ? 'Show' : 'Hide'} ${s.title}`}
+                                        className="p-1 rounded text-slate-600 hover:text-slate-300 hover:bg-white/5">
+                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${shut ? '-rotate-90' : ''}`} />
+                                    </button>
+                                </div>
+                            )}
+                            <ul className="space-y-1">
+                                {items.map(it => <SideLink key={it.label} item={it} compact={compact} location={location} />)}
+                            </ul>
+                        </div>
+                    )
+                })}
             </nav>
 
             <div className="p-3 shrink-0">
@@ -328,6 +332,50 @@ function SideLink({ item, compact, location }) {
                 }}
             </NavLink>
         </li>
+    )
+}
+
+// The cluster group's heading: opens another cluster on the same section
+function ClusterSwitcher({ current, location }) {
+    const navigate = useNavigate()
+    const [open, setOpen] = useState(false)
+    const [list, setList] = useState(null)
+    const ref = useRef(null)
+    useEffect(() => {
+        if (!open) return
+        apiFetch('/api/clusters/list').then(r => r.ok ? r.json() : []).then(d => setList(Array.isArray(d) ? d : [])).catch(() => setList([]))
+        const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+        document.addEventListener('mousedown', onDoc)
+        return () => document.removeEventListener('mousedown', onDoc)
+    }, [open])
+    const go = (id) => {
+        setOpen(false)
+        const here = location.pathname.startsWith('/cluster/') ? tabOf(location) : 'overview'
+        navigate(sectionLink(id, here))
+    }
+    return (
+        <div className="relative flex-1 min-w-0" ref={ref}>
+            <button type="button" onClick={() => setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open} title="Switch cluster"
+                className="w-full flex items-center gap-1 rounded px-1.5 py-0.5 text-[11.5px] font-medium text-slate-500 hover:text-slate-200 hover:bg-white/5">
+                <span className="truncate">Cluster · <span className="text-slate-300">{current.name}</span></span>
+                <ChevronsUpDown className="w-3 h-3 shrink-0 opacity-70" />
+            </button>
+            {open && (
+                <div role="listbox" aria-label="Clusters" className="absolute left-0 right-0 top-full mt-1 z-50 kz-card p-1 max-h-72 overflow-y-auto kz-rise">
+                    {!list ? <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin text-slate-500" /></div>
+                        : !list.length ? <p className="px-3 py-2 text-xs text-slate-500">No clusters</p>
+                            : list.map(c => (
+                                <button key={c.id} type="button" role="option" aria-selected={c.id === current.id} onClick={() => go(c.id)}
+                                    className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-300 hover:bg-white/5 hover:text-white">
+                                    <span className="flex-1 truncate">{c.clusterName || c.id}</span>
+                                    {c.id === current.id && <Check className="w-3.5 h-3.5 text-blue-300" />}
+                                </button>
+                            ))}
+                    <div className="kz-divider my-1" />
+                    <Link to="/" onClick={() => setOpen(false)} className="block rounded-lg px-2.5 py-2 text-[12px] text-slate-400 hover:bg-white/5 hover:text-white">All clusters</Link>
+                </div>
+            )}
+        </div>
     )
 }
 

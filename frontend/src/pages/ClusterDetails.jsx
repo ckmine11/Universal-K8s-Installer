@@ -18,7 +18,7 @@ import {
     Plus,
     ArrowLeft,
     Trash2,
-    Layers, Compass,
+    Layers,
     List,
     Terminal,
     Globe,
@@ -28,8 +28,7 @@ import {
     AlertTriangle,
     ArrowUpCircle,
     Database,
-    LayoutGrid,
-    Package, PlugZap, GitBranch, ShieldAlert, Gauge, Boxes, BadgeCheck } from 'lucide-react'
+    PlugZap } from 'lucide-react'
 import { ClusterTopology3D, OrbitalTerminal } from '../components/LazyHeavy'
 import ResumeModal from '../components/ResumeModal'
 import AddonAccessPanel from '../components/AddonAccessPanel'
@@ -42,22 +41,11 @@ import SecurityTab from '../components/security/SecurityTab'
 import DoraTab from '../components/delivery/DoraTab'
 import CertificatesTab from '../components/security/CertificatesTab'
 import { rememberCluster, forgetCluster } from '../utils/lastCluster'
+import { visibleSections } from '../config/clusterSections'
 import UpgradeSafetyCheck from '../components/explorer/UpgradeSafetyCheck'
 import HealthScoreCard from '../components/explorer/HealthScoreCard'
 import RiskCard from '../components/ai/RiskCard'
 
-// Page sections — one tab each, so nothing is buried in a long page
-const TABS = [
-    { key: 'overview', label: 'Overview', hint: 'nodes & health', Icon: LayoutGrid },
-    { key: 'explorer', label: 'Explorer', hint: 'resources, timeline, audit', Icon: Compass },
-    { key: 'apps', label: 'Apps', hint: 'Helm install, upgrade, roll back', Icon: Boxes, permission: 'app:view', feature: 'helmApps' },
-    { key: 'gitops', label: 'GitOps', hint: 'Argo CD & Flux sync', Icon: GitBranch, permission: 'gitops:view', feature: 'gitops' },
-    { key: 'security', label: 'Security', hint: 'vulnerabilities, misconfig', Icon: ShieldAlert, permission: 'security:view', feature: 'security' },
-    { key: 'certificates', label: 'Certificates', hint: 'cert-manager, expiry, renew', Icon: BadgeCheck, permission: 'security:view', feature: 'certManager' },
-    { key: 'delivery', label: 'Delivery', hint: 'DORA metrics', Icon: Gauge, permission: 'metrics:view', feature: 'dora' },
-    { key: 'addons', label: 'Add-ons', hint: 'access, manage, logs', Icon: Package },
-    { key: 'backups', label: 'Backups', hint: 'snapshots, volumes, recovery', Icon: Database }
-]
 // moved to the AI section of the sidebar (old links still work)
 const MOVED_TO_AI = { changes: 'changes', advisor: 'advisor', create: 'create' }
 const ADDON_SECTIONS = [
@@ -107,7 +95,7 @@ export default function ClusterDetails({ onScaleCluster }) {
     // refresh, back button and shared links keep the user where they were
     const [params, setParams] = useSearchParams()
     const featureOn = useFeatures()
-    const tabs = TABS.filter(t => (!t.permission || can(user?.role, t.permission, id)) && (!t.feature || featureOn(t.feature)))
+    const tabs = visibleSections(user?.role, id, featureOn)
     const tab = tabs.some(t => t.key === params.get('tab')) ? params.get('tab') : 'overview'
     const section = ADDON_SECTIONS.some(s => s.key === params.get('section')) ? params.get('section') : 'access'
     const setTab = (key) => setParams(key === 'overview' ? {} : { tab: key })
@@ -367,15 +355,22 @@ export default function ClusterDetails({ onScaleCluster }) {
                 </div>
             )}
 
-            {/* Tabs (the open tab is kept in the URL: ?tab=addons) */}
-            <div role="tablist" className="sticky top-16 z-20 mb-6 p-1 rounded-2xl bg-[#0b0b0f]/80 backdrop-blur-xl border border-white/10 flex gap-1 overflow-x-auto">
+            {/* Tabs (the open tab is kept in the URL: ?tab=addons). On wide screens the
+                sidebar's cluster group lists the same sections, so the strip is for phones only. */}
+            <div role="tablist" className="lg:hidden sticky top-16 z-20 mb-6 p-1 rounded-2xl bg-[#0b0b0f]/80 backdrop-blur-xl border border-white/10 flex gap-1 overflow-x-auto">
                 {tabs.map(t => (
                     <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={tabClass(tab === t.key)}>
-                        <t.Icon className="w-4 h-4" /> {t.label}
+                        <t.icon className="w-4 h-4" /> {t.label}
                         <span className="hidden md:inline text-[11px] font-medium opacity-60">{t.hint}</span>
                     </button>
                 ))}
             </div>
+            {(() => { const t = tabs.find(x => x.key === tab); return t && (
+                <h2 className="hidden lg:flex items-center gap-2 mb-6 text-base font-semibold text-white">
+                    <t.icon className="w-4 h-4 text-blue-300" /> {t.label}
+                    <span className="text-xs font-medium text-slate-500">{t.hint}</span>
+                </h2>
+            ) })()}
 
             {/* ── Overview ─────────────────────────────────────────────── */}
             {tab === 'overview' && (

@@ -467,7 +467,7 @@ export default function AgentNodes() {
         <div className="max-w-7xl mx-auto">
             {/* Header */}
             <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
-                <PageTitle icon={Shield} eyebrow="Build" title="Gateway Agents"
+                <PageTitle icon={Shield} eyebrow="Add & connect" title="Gateway agents"
                     description={<>Reach servers in private networks through an outbound tunnel — no inbound firewall ports.</>} />
                 <div className="flex items-center gap-3">
                     {onlineCount > 0 && (

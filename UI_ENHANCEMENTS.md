@@ -16,22 +16,23 @@
 └──────────────┴──────────────────────────────────────────────────────┘
 ```
 
+Every page appears in the sidebar once:
+
 | Sidebar group | Pages |
 |---|---|
-| (top) | Clusters, Explorer, Incidents, Compliance |
-| Cluster · *name* | The open (or last opened) cluster's sections — Overview, Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups — each opens that tab; "Choose a cluster" until one was opened |
+| Home | Clusters, Incidents, Compliance |
+| Cluster · *name* | The open (or last opened) cluster's sections — Overview, Explorer, Apps, GitOps, Security, Certificates, Delivery metrics, Add-ons, Backups; "Choose a cluster" until one was opened. The heading is a cluster switcher that keeps the section. |
+| Add & connect | Deploy new cluster, Existing clusters (its page has tabs: list, Add existing cluster, Connection agents, Setup guides), Gateway agents |
 | AI | Ask AI, Fleet, Create YAML, Advisor, What changed, AI settings |
-| Connected clusters | Add existing cluster, Connected clusters, Connection agents, Setup guides |
-| Build | Deploy cluster, Gateway Agents, Delivery |
-| Workspace | Team & Roles, Approvals (with a badge of waiting requests), Alerts, Settings, Features |
+| Workspace | Delivery settings, Team & Roles, Approvals (with a badge of waiting requests), Alerts, Settings, Features |
 | Help | Docs, Plans |
 | Platform | Admin Console (platform owner only) |
 
-Items a member may not use are not shown. On phones the sidebar opens from the ☰ button.
+Items a member may not use are not shown. Each group folds with the arrow by its heading (kept per browser in `kz.sidebar.folded`); a folded group still shows the active page. On phones the sidebar opens from the ☰ button.
 
 ### The cluster page
 
-Buttons at the top act on the whole cluster (Kubeconfig, Terminal, Scale, Upgrade); tabs hold the details: **Overview, Explorer, Apps, GitOps, Security, Certificates, Delivery, Add-ons, Backups**. A tab appears only when the member has its permission and its feature is on. The open tab is in the URL (`?tab=apps`), so links from alerts land on the right place.
+Buttons at the top act on the whole cluster (Kubeconfig, Terminal, Scale, Upgrade); the section below is chosen in the sidebar's cluster group (on phones, from tabs at the top of the page). The sections come from one list, `config/clusterSections.js`, used by both the sidebar and the page: a section appears only when the member has its permission and its feature is on. The open section is in the URL (`?tab=apps`), so links from alerts land on the right place.
 
 ---
 
@@ -95,7 +96,7 @@ Shared CSS classes: `kz-card`, `kz-input`, `kz-btn-primary`, `kz-btn-ghost` (Tai
 ## 6. Adding a screen
 
 1. Add the page under `pages/` (or a tab component under `components/<area>/`) and its route in `App.jsx`.
-2. Add it to the sidebar in `AppShell.jsx` or to the `TABS` list in `ClusterDetails.jsx`, with its `permission` and `feature`.
+2. Add a page to `navSections` in `AppShell.jsx`, or a cluster section to `config/clusterSections.js` (it then appears in the sidebar and on the cluster page), with its `permission` and `feature`. Each page goes in one place only.
 3. Call the API with `apiFetch`; show the server's error message; follow the patterns above.
 4. Document it in the in-app guide (`pages/Docs.jsx`) and in [USER_GUIDE.md](USER_GUIDE.md).
 5. `npm run build` must pass (there are no frontend unit tests yet).

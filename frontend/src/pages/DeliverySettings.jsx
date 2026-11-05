@@ -116,7 +116,7 @@ export default function DeliverySettings() {
 
     return (
         <div className="max-w-5xl mx-auto space-y-5">
-            <PageHeader eyebrow="Apps" title="Delivery" icon={Layers} description="Environments, chart repositories and change freezes for deploying apps with KubeEZ." />
+            <PageHeader eyebrow="Workspace" title="Delivery settings" icon={Layers} description="Environments, chart repositories and change freezes for deploying apps with KubeEZ." />
             {error && <p className="flex items-center gap-1.5 text-sm text-red-300"><AlertTriangle className="w-4 h-4" />{error}</p>}
 
             <Section Icon={Layers} title="Environments" hint="A name for a namespace on a cluster (dev, staging, prod). A protected environment needs a second person (Approvals) for every deploy, roll back and uninstall — so the workspace needs two admins.">
