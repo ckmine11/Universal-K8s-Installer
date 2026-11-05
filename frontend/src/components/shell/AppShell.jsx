@@ -18,6 +18,7 @@ import AuroraBackground from './AuroraBackground'
 import ChangePasswordDialog from './ChangePasswordDialog'
 import ApprovalGate from './ApprovalGate'
 import UpgradeNotice from './UpgradeNotice'
+import TrialNotice, { usePlan } from './TrialNotice'
 import { whenVisible } from '../../utils/whenVisible'
 import { getTheme, setTheme } from '../../utils/theme'
 
@@ -134,6 +135,7 @@ export default function AppShell({ children }) {
     const running = activeInstallations.filter(i => i.status === 'running')
     const [approvalsWaiting, setApprovalsWaiting] = useState(0)
     const featureOn = useFeatures()
+    const plan = usePlan(user?.id)   // the top-bar chip and the trial notice
     const [lastCluster, setLastCluster] = useState(readLastCluster)
     useEffect(() => {
         const on = (e) => setLastCluster(e.detail ? { id: e.detail.id, name: e.detail.name } : null)
@@ -302,7 +304,7 @@ export default function AppShell({ children }) {
                     </button>
 
                     <div className="flex items-center gap-2 sm:ml-auto shrink-0">
-                        <PlanChip userId={user?.id} />
+                        <PlanChip plan={plan} />
                         <button type="button" onClick={toggleTheme} className="p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition"
                             aria-label={theme === 'zen' ? 'Switch to dark theme' : 'Switch to Zen theme'} title={theme === 'zen' ? 'Dark theme' : 'Zen theme'}>
                             {theme === 'zen' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
@@ -321,6 +323,7 @@ export default function AppShell({ children }) {
                 </header>
 
                 <main className="flex-1 w-full max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+                    <TrialNotice plan={plan} userId={user?.id} />
                     <div key={location.pathname} className="kz-rise">{children}</div>
                 </main>
             </div>
@@ -334,23 +337,20 @@ export default function AppShell({ children }) {
 
 const BADGE_TONE = { blue: 'bg-blue-500', red: 'bg-red-500', amber: 'bg-amber-500' }
 
-// The plan in the top bar: a running Pro trial (days left) or Free — both lead to
-// Plans, which lists what the workspace can use. Paid plans show nothing.
-function PlanChip({ userId }) {
-    const [p, setP] = useState(null)
-    useEffect(() => {
-        setP(null)
-        if (!userId) return
-        apiFetch('/api/billing/plan').then(r => r.ok ? r.json() : null).then(setP).catch(() => { })
-    }, [userId])
+// The plan in the top bar: a running Pro trial (days left), an ended one, or
+// Free — each leads to Plan & usage. Paid plans show nothing.
+function PlanChip({ plan: p }) {
     if (!p || p.superadmin) return null
     const days = p.trial?.daysLeft
     if (!days && p.plan !== 'FREE') return null
+    const ended = !days && !!p.trial?.endedAt
+    const tone = days ? (days <= 3 ? 'border-amber-400/40 bg-amber-500/10 text-amber-200' : 'border-blue-400/30 bg-blue-500/10 text-blue-200')
+        : ended ? 'border-amber-400/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:text-white'
     return (
-        <Link to="/pricing" title={days ? 'Every feature during the trial — see what stays in Free' : 'See what Free includes and what comes with Pro'}
-            className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-semibold transition ${days ? (days <= 3 ? 'border-amber-400/40 bg-amber-500/10 text-amber-200' : 'border-blue-400/30 bg-blue-500/10 text-blue-200') : 'border-white/10 bg-white/[0.03] text-slate-300 hover:text-white'}`}>
+        <Link to="/pricing" title={days ? 'Every feature during the trial — see what stays in Free' : ended ? 'Your Pro trial has ended — see what is locked and how to get it back' : 'See what Free includes and what comes with Pro'}
+            className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-semibold transition ${tone}`}>
             <Sparkles className="w-3.5 h-3.5" />
-            {days ? `Pro trial · ${days} day${days === 1 ? '' : 's'} left` : <>Free · <span className="text-blue-300">Upgrade</span></>}
+            {days ? `Pro trial · ${days} day${days === 1 ? '' : 's'} left` : ended ? <>Trial ended · <span className="text-white">Upgrade</span></> : <>Free · <span className="text-blue-300">Upgrade</span></>}
         </Link>
     )
 }

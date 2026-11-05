@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed — plans
 - **Free runs one cluster for real:** 1 cluster, **5 nodes** (was 2 — a typical 3-node cluster could not even be added), 1 member. Registries, new GitOps apps, debug containers and Helm drift moved to Free; so did the add-ons Free features need (Explorer, Ingress, cert-manager, Trivy, Argo CD, Flux).
-- **14-day Pro trial** for every new hosted workspace (`KUBEEZ_TRIAL_DAYS`, 0 = off): every feature and Pro limits; Free afterwards, nothing deleted.
+- **14-day Pro trial** for every new hosted workspace (`KUBEEZ_TRIAL_DAYS`, 0 = off): every feature and Pro limits; Free afterwards, nothing deleted. Its last 3 days and its end are shown in a banner (what gets locked, any Free limit the workspace is over) and in the top bar ("Trial ended · Upgrade").
 - **Plan & usage** page: your plan, trial days left, usage against limits, and every feature and paid capability with ✓ or 🔒 Pro (`GET /api/billing/plan`). The top bar shows "Pro trial · N days left" / "Free · Upgrade".
 - On Free, the deploy preview names images with critical vulnerabilities the Pro CVE gate would stop, and Certificates says Pro would have alerted.
 - Plan numbers live in one place (`services/plans.js`); the nightly config backup now follows the workspace plan (it read the owner's stored plan).

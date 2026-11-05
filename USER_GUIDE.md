@@ -262,6 +262,7 @@ A live scan of each cluster mapped to **CERT-In 2022**, the **DPDP Act 2023 & Ru
 | Custom roles, two-person approval, compliance reports, backups | — | ✓ |
 
 - **Pro trial:** every new hosted workspace gets 14 days of Pro — every feature and Pro limits, no card. Afterwards it is Free; nothing is deleted, but you cannot add beyond the Free limits and Pro sections show an upgrade card.
+- **When the trial ends** you cannot miss it: in its last 3 days a banner says when it ends and what gets locked (once a day); on the day after, a banner says it ended, what is locked now and whether the workspace is over a Free limit (those clusters keep running; nothing more can be added) — with **Upgrade to Pro**. The top bar then shows **Trial ended · Upgrade**.
 - **On Free**, a Pro section shows a **Pro** card with what it does and **Upgrade to Pro**, instead of its content; a Pro button (Assess risk, a deploy token…) explains the upgrade when clicked. The server checks every one of them too.
 - **Pro and Enterprise include every feature** — Enterprise differs only in quantities and support.
 
