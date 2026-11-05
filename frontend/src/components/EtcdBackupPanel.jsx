@@ -97,10 +97,12 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
         fetchBackups()
     })
 
-    const fetchBackups = async () => {
+    // fresh: the person asked (Refresh, Try again, new off-site settings) — check the
+    // off-site storage again instead of the result the server remembers
+    const fetchBackups = async (fresh = false) => {
         setLoading(true); setError(null)
         try {
-            const res = await apiFetch(`/api/clusters/${clusterId}/etcd/backups`)
+            const res = await apiFetch(`/api/clusters/${clusterId}/etcd/backups${fresh === true ? '?fresh=1' : ''}`)
             const json = await res.json().catch(() => ({}))
             if (res.status === 402 || json.upgradeRequired) { setLocked(true); onData?.({ locked: true }); return }
             if (!res.ok) throw new Error(json.error || 'Failed to load etcd backups')
@@ -203,7 +205,7 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                         className={`p-2 rounded-xl border transition-all active:scale-95 ${showInfo ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}>
                         <Info className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={fetchBackups} disabled={loading} aria-label="Refresh"
+                    <button onClick={() => fetchBackups(true)} disabled={loading} aria-label="Refresh"
                         className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all active:scale-95 disabled:opacity-50">
                         <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                     </button>
@@ -305,7 +307,7 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                 <div className="space-y-4">
                     <div className="py-6 text-center">
                         <p className="text-red-400 text-sm mb-2">{error}</p>
-                        <button onClick={fetchBackups} className="text-xs font-bold text-blue-400 hover:underline">Try again</button>
+                        <button onClick={() => fetchBackups(true)} className="text-xs font-bold text-blue-400 hover:underline">Try again</button>
                     </div>
                     {recoverCard}
                 </div>
@@ -317,7 +319,7 @@ export default function EtcdBackupPanel({ clusterId, clusterName, masterIp, canM
                         offsite={data?.offsite}
                         canConfigure={can(user?.role, 'backup:manage')}
                         canSync={canManage}
-                        onChanged={fetchBackups}
+                        onChanged={() => fetchBackups(true)}
                     />
                 </div>
             ) : (

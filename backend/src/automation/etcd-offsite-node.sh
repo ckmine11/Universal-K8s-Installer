@@ -41,14 +41,17 @@ while IFS= read -r line; do
     k="${line%%=*}"; v="${line#*=}"
     val="$(printf '%s' "$v" | base64 -d 2>/dev/null)"
     case "$k" in
-        KZ_INSECURE|KZ_ENC_KEY|KZ_CLUSTER|KZ_PUT|KZ_GET|KZ_DEL|KZ_LIST|KZ_HOST|KZ_NAME|KZ_RECOVERY) printf -v "$k" '%s' "$val" ;;
+        KZ_INSECURE|KZ_ENC_KEY|KZ_CLUSTER|KZ_PUT|KZ_GET|KZ_DEL|KZ_LIST|KZ_HOST|KZ_NAME|KZ_RECOVERY|KZ_QUICK) printf -v "$k" '%s' "$val" ;;
         UPLOAD) UPLOADS+=("$val") ;;
         DELETE) DELETES+=("$val") ;;
     esac
 done
 case "$MODE" in test|inventory|upload|download) ;; *) fail BAD_INPUT "Unknown mode '$MODE'." ;; esac
 
-CURL=(curl -sS --retry 2 --connect-timeout 15)
+# KZ_QUICK=1 (listing for a page): one try, short timeouts — an unreachable
+# storage answers in seconds; uploads and downloads keep retrying
+if [ "${KZ_QUICK:-0}" = "1" ]; then CURL=(curl -sS --connect-timeout 6 --max-time 30)
+else CURL=(curl -sS --retry 2 --connect-timeout 15); fi
 [ "${KZ_INSECURE:-0}" = "1" ] && CURL+=(-k)
 RESP=$(mktemp /tmp/kubeez-s3.XXXXXX)
 trap 'rm -f "$RESP"' EXIT

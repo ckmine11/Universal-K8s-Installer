@@ -810,14 +810,17 @@ router.get('/:id/etcd/backups', onlyWith('etcdBackup'), requireAuth, async (req,
         const cluster = await etcdCluster(req, res)
         if (!cluster) return
         const result = await etcdBackupService.listBackups(cluster)
-        // Which snapshots also exist offsite (S3 / MinIO)?
+        // Which snapshots also exist offsite (S3 / MinIO)? A quick check, remembered
+        // a few minutes (offsiteService.list): an unreachable storage costs seconds
+        // once, not 45 s on every visit. One after the other: both may install the
+        // node tools.
         const target = offsiteStore.getConnected(req.user.orgId)
+        const r = target ? await offsiteService.list(cluster, target, { fresh: req.query.fresh === '1' }) : null
         if (target) {
-            const r = await offsiteService.list(cluster, target)
             result.offsite = {
                 connected: true, provider: target.provider, bucket: target.bucket,
                 warning: sameClusterWarning(cluster, target.endpoint),
-                remote: r.ok ? r.remote : [], error: r.ok ? null : r.error,
+                remote: r.ok ? r.remote : [], error: r.ok ? null : r.error, checkedAt: r.ok ? null : r.checkedAt || null,
                 lastSync: offsiteStore.publicView(req.user.orgId).lastSync?.[cluster.id] || null
             }
         } else {

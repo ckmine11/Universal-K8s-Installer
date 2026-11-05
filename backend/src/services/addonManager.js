@@ -53,6 +53,27 @@ async function run(ssh, cmd) {
     }
 }
 
+/**
+ * The shell script behind getStatus: the namespaces are listed once, and only an
+ * add-on whose namespace exists is looked at (before, ~110 kubectl calls in a
+ * row for 30 add-ons — 25 s on a real cluster). Same output per add-on:
+ * @@ADDON, @@NS phase, @@DETECT, @@IMAGE, its pods as JSON. If the namespaces
+ * cannot be listed, every add-on is looked at as before.
+ */
+export function statusScript(kb = KB, registry = ADDON_REGISTRY) {
+    const head = `KZNS=$(${kb} get ns -o jsonpath='{range .items[*]}{.metadata.name}={.status.phase}{"\\n"}{end}' 2>/dev/null)`
+    return [head, ...Object.entries(registry).map(([key, a]) =>
+        `echo "@@ADDON ${key}"; ` +
+        `P=$(printf '%s\\n' "$KZNS" | sed -n 's/^${a.ns}=//p'); ` +
+        `if [ -z "$KZNS" ]; then P=$(${kb} get ns ${a.ns} -o jsonpath='{.status.phase}' 2>/dev/null); fi; ` +
+        `echo "@@NS $P"; ` +
+        `if [ -n "$P" ]; then ` +
+        `echo "@@DETECT $(${kb} -n ${a.ns} get ${a.detect} -o name 2>/dev/null)"; ` +
+        (a.probe ? `echo "@@IMAGE $(${kb} -n ${a.ns} get ${a.probe} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)"; ` : '') +
+        `${kb} -n ${a.ns} get pods -o json 2>/dev/null; fi; echo`
+    )].join('; ')
+}
+
 class AddonManager {
     master(cluster) {
         const m = cluster.masterNodes?.[0]
@@ -64,14 +85,7 @@ class AddonManager {
     async getStatus(cluster) {
         const ssh = await connectCluster(cluster)
         try {
-            const script = Object.entries(ADDON_REGISTRY).map(([key, a]) =>
-                `echo "@@ADDON ${key}"; ` +
-                `echo "@@NS $(${KB} get ns ${a.ns} -o jsonpath='{.status.phase}' 2>/dev/null)"; ` +
-                `echo "@@DETECT $(${KB} -n ${a.ns} get ${a.detect} -o name 2>/dev/null)"; ` +
-                (a.probe ? `echo "@@IMAGE $(${KB} -n ${a.ns} get ${a.probe} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)"; ` : '') +
-                `${KB} -n ${a.ns} get pods -o json 2>/dev/null; echo`
-            ).join('; ')
-            const r = await run(ssh, script)
+            const r = await run(ssh, statusScript())
             if (!r.out.includes('@@ADDON')) throw new Error(`Could not read add-on status from the cluster: ${(r.err || 'no output').trim().slice(0, 300)}`)
 
             const updates = availableUpdates(cluster)

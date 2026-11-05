@@ -112,6 +112,37 @@ test('sync plan: uploads missing snapshots, deletes >45-day bundles, keeps the n
     }
 })
 
+test('listing for the Backups page: a quick check, remembered — an unreachable storage costs one wait, not one per visit', async () => {
+    const target = { provider: 'minio', endpoint: 'http://gone:9000', bucket: 'b', region: 'us-east-1', prefix: 'kubeez', accessKey: 'a', secretKey: 's', encKey: 'k' }
+    const calls = []
+    const orig = offsiteService._run
+    let reachable = false
+    offsiteService._run = async (cluster, mode, entries) => {
+        calls.push({ mode, quick: entries.some(e => e[0] === 'KZ_QUICK' && e[1] === '1') })
+        if (mode === 'inventory') return reachable ? { ok: true, local: [], remote: ['kubeez/cq/etcd-manual-x.tar.gz.enc'] } : { ok: false, code: 'UNREACHABLE', error: 'This node cannot reach gone:9000' }
+        return { ok: true, uploaded: '0', deleted: '0' }
+    }
+    try {
+        offsiteService.forgetList()
+        const a = await offsiteService.list({ id: 'cq' }, target)
+        assert.equal(a.ok, false); assert.ok(a.checkedAt)
+        assert.equal(calls[0].quick, true, 'one try, short timeouts')
+        await offsiteService.list({ id: 'cq' }, target)
+        assert.equal(calls.length, 1, 'the failure is remembered')
+        reachable = true
+        assert.equal((await offsiteService.list({ id: 'cq' }, target, { fresh: true })).ok, true, 'fresh=1 checks again')
+        assert.equal(calls.length, 2)
+        await offsiteService.sync({ id: 'cq' }, target)
+        assert.equal(calls.find(c => c.mode === 'inventory' && calls.indexOf(c) === 2).quick, false, 'an upload keeps retrying')
+        const n = calls.length
+        await offsiteService.list({ id: 'cq' }, target)
+        assert.equal(calls.length, n + 1, 'after an upload the list is read again')
+    } finally {
+        offsiteService._run = orig
+        offsiteService.forgetList()
+    }
+})
+
 test('storage on a node of the same cluster is flagged as not offsite', () => {
     const cluster = { masterNodes: [{ ip: '192.168.220.80' }], workerNodes: [{ ip: '192.168.220.81', hostname: 'worker1' }] }
     assert.match(sameClusterWarning(cluster, 'http://192.168.220.80:30833'), /node of this cluster/)

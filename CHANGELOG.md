@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plan numbers live in one place (`services/plans.js`); the nightly config backup now follows the workspace plan (it read the owner's stored plan).
 
 ### Fixed
+- **Backups tab took ~50 s** when the off-site storage could not be reached: the listing retried curl 3 × 15 s on every visit. It now makes one quick try (6 s) and remembers the result (5 min after a failure, 1 min after success); Refresh checks again.
+- **Add-ons tab took ~25 s**: ~110 kubectl calls in a row for 30 add-ons. The namespaces are listed once and only add-ons that are there are looked at.
 - **Delivery settings**: the Cluster lists (environments, freezes, deploy tokens, registries) were empty — the page asked a route that does not exist.
 - **Chart lists of large repositories** (Bitnami: 28 MB index) took ~900 MB and blocked the server for ~10 s, so a 512 MB container restarted. Only the newest 30 versions of each chart are read now (~110 MB, the server stays responsive); two requests for the same repository share one read.
 - **Helm on RHEL-family nodes**: `sudo` did not find a Helm installed in `/usr/local/bin` ("sudo: helm: command not found"), breaking Apps, Compare, Previews and Drift; KubeEZ now runs it by its full path.

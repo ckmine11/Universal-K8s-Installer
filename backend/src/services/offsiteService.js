@@ -9,6 +9,7 @@ const b64 = (s) => Buffer.from(String(s ?? ''), 'utf8').toString('base64')
 const BUCKET_RE = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/
 const REGION_RE = /^[a-z]{2}(-[a-z]+)+-\d$/
 const PREFIX_RE = /^[a-zA-Z0-9/_.-]{0,100}$/
+const listCache = new Map()   // cluster|endpoint|bucket|prefix → { value, until } (list())
 
 /**
  * Validate + normalise what the user typed. Throws an Error with a message
@@ -144,10 +145,11 @@ class OffsiteService {
     }
 
     /** Local snapshots on the node + this cluster's offsite bundles. */
-    async inventory(cluster, target) {
+    async inventory(cluster, target, { quick = false } = {}) {
         const folder = folderOf(target, cluster.id)
         const r = await this._run(cluster, 'inventory', [
             ...this._common(target, cluster.id),
+            ...(quick ? [['KZ_QUICK', '1']] : []),
             ['KZ_LIST', presign(target, { method: 'GET', query: { 'list-type': '2', prefix: `${folder}/`, 'max-keys': '1000' } })]
         ])
         if (!r.ok) return r
@@ -158,11 +160,23 @@ class OffsiteService {
         return { ok: true, local: r.local, remote }
     }
 
-    /** Offsite bundle names of this cluster. */
-    async list(cluster, target) {
-        const r = await this.inventory(cluster, target)
-        return r.ok ? { ok: true, remote: r.remote } : r
+    /**
+     * Offsite bundle names of this cluster, for a page: a quick check (no
+     * retries), remembered — 1 minute when it worked, 5 when the storage could
+     * not be reached, so reopening the Backups tab does not wait again.
+     */
+    async list(cluster, target, { fresh = false } = {}) {
+        const key = `${cluster.id}|${target.endpoint}|${target.bucket}|${target.prefix || ''}`
+        const hit = listCache.get(key)
+        if (!fresh && hit && Date.now() < hit.until) return hit.value
+        const r = await this.inventory(cluster, target, { quick: true })
+        const value = r.ok ? { ok: true, remote: r.remote } : { ...r, checkedAt: new Date().toISOString() }
+        listCache.set(key, { value, until: Date.now() + (r.ok ? 60e3 : 5 * 60e3) })
+        if (listCache.size > 500) listCache.delete(listCache.keys().next().value)
+        return value
     }
+    /** An upload, a download or new settings: list again next time. */
+    forgetList(clusterId) { for (const k of listCache.keys()) if (!clusterId || k.startsWith(`${clusterId}|`)) listCache.delete(k) }
 
     /**
      * Fetch one offsite bundle back to the control-plane: the snapshot lands in
@@ -195,6 +209,7 @@ class OffsiteService {
      * bundles older than the retention (the newest offsite bundle is always kept).
      */
     async sync(cluster, target) {
+        this.forgetList(cluster.id)   // the page lists what is there after this
         const inv = await this.inventory(cluster, target)
         if (!inv.ok) return inv
         const folder = folderOf(target, cluster.id)
