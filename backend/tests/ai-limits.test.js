@@ -21,7 +21,7 @@ delete process.env.KUBEEZ_AI_URL
 const prevMode = process.env.KUBEEZ_MODE
 process.env.KUBEEZ_MODE = 'selfhosted'
 
-const { ask, breakerState, resetBreaker, accountProblem, rateLimitWait } = await import('../src/services/ai/engine.js')
+const { ask, breakerState, resetBreaker, accountProblem, rateLimitWait, unavailableMessage } = await import('../src/services/ai/engine.js')
 const { aiStore } = await import('../src/services/ai/aiStore.js')
 const { startExam, runsOf, isRunning } = await import('../src/services/ai/quality.js')
 
@@ -52,6 +52,9 @@ describe('account problems and rate limits', () => {
     test('which errors are the account\'s, and how long a rate limit asks to wait', () => {
         for (const m of ['You have no credits remaining. Add credits…', 'This model is currently available only with a subscription.', 'Anthropic models are only available to accounts with at least one balance top-up.', 'Incorrect API key provided']) assert.equal(accountProblem({ message: m, status: 400 }), true, m)
         assert.equal(accountProblem({ message: 'whatever', status: 401 }), true)
+        // a daily quota does not come back with a retry (OpenRouter free models, 429)
+        assert.equal(accountProblem({ status: 429, message: 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day' }), true)
+        assert.equal(accountProblem({ status: 429, message: 'You exceeded the daily quota of requests' }), true)
         for (const m of ['Provider returned error', 'No answer within 60 s', 'Rate limit exceeded. Retry in 12s.']) assert.equal(accountProblem({ message: m }), false, m)
         assert.equal(rateLimitWait({ message: 'Rate limit exceeded. Max 10 requests per minute. Retry in 12s.' }), 12000)
         assert.equal(rateLimitWait({ status: 429, message: 'Too many requests' }), 10000)
@@ -114,5 +117,17 @@ describe('a fair quality test', () => {
         assert.equal(run.results.length, 16)
         assert.equal(run.results.filter(x => /Rate limit/.test((x.notes || []).join(' '))).length, 0, 'no case lost to the rate limit')
         assert.ok(run.summary.format === 100, `every case has an answer (format ${run.summary.format}%)`)
+    })
+})
+
+describe('why no engine answered', () => {
+    test('the account reason in the engine\'s words, else a rate limit, else the last error', () => {
+        const quota = 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day'
+        assert.equal(unavailableMessage([{ provider: 'OpenRouter', error: quota, account: true, rateLimited: true }]),
+            `OpenRouter cannot answer: ${quota}. Fix it in AI settings — add credits or another key, or add a second engine so KubeEZ can fall back to it.`)
+        assert.match(unavailableMessage([{ provider: 'OpenRouter', skipped: `paused — ${quota}`, account: true }]), /^OpenRouter cannot answer: Rate limit exceeded: free-models-per-day/)
+        assert.match(unavailableMessage([{ provider: 'Groq', error: 'Rate limit exceeded. Retry in 12s.', rateLimited: true }]), /^Groq is rate-limited right now/)
+        assert.equal(unavailableMessage([{ provider: 'Ollama', error: 'No answer within 60 s' }]), 'No AI engine could answer right now (Ollama: No answer within 60 s)')
+        assert.equal(unavailableMessage([]), 'No AI engine could answer right now')
     })
 })

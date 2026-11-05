@@ -36,8 +36,9 @@ export const breakerState = (orgId, p) => { const b = breaker.get(keyOf(orgId, p
 export const resetBreaker = (orgId, p) => breaker.delete(keyOf(orgId, p))
 
 // An engine whose ACCOUNT cannot answer — no credits, quota used up, a plan or top-up needed,
+// a daily quota used up (OpenRouter free models: "free-models-per-day"),
 // a wrong or revoked key: asking again does not help. It is paused longer, with the reason.
-const ACCOUNT = /no credits|out of credits|insufficient[_ ]?(quota|credits|balance|funds)|exceeded your current quota|quota (exceeded|reached)|billing|payment required|top[- ]?up|subscription|credit balance|balance (is )?(too low|insufficient)|invalid (api )?key|incorrect api key|api key (is )?(not valid|invalid|expired|revoked)|unauthori[sz]ed|authentication (failed|required)|permission denied|account (is )?(disabled|suspended|deactivated|inactive)/i
+const ACCOUNT = /per[- ]day|daily (limit|quota)|requests? per day|add \d+ credits|no credits|out of credits|insufficient[_ ]?(quota|credits|balance|funds)|exceeded your current quota|quota (exceeded|reached)|billing|payment required|top[- ]?up|subscription|credit balance|balance (is )?(too low|insufficient)|invalid (api )?key|incorrect api key|api key (is )?(not valid|invalid|expired|revoked)|unauthori[sz]ed|authentication (failed|required)|permission denied|account (is )?(disabled|suspended|deactivated|inactive)/i
 export const accountProblem = (e) => !!e && e.code !== 'BAD_URL' && ([401, 402].includes(e.status) || ACCOUNT.test(String(e.message || '')))
 const ACCOUNT_PAUSE_MS = 30 * 60 * 1000
 function noteAccount(orgId, p, reason) { breaker.set(keyOf(orgId, p), { fails: OPEN_AFTER, openUntil: Date.now() + ACCOUNT_PAUSE_MS, reason: String(reason).slice(0, 240) }) }
@@ -264,8 +265,22 @@ export async function ask(user, opts) {
         detail: `${opts.purpose || task} — ${result ? `${result.provider} (${result.model}), ${ms} ms` : 'no engine answered'}${masked ? `, ${masked} secret(s) masked` : ''}${hits.length ? ', trick text flagged' : ''}` })
 
     if (!result) throw new AiUnavailable(attempts.length && attempts.every(a => a.skipped === 'monthly AI budget reached') ? 'This month\'s AI budget is used up — cloud AI engines are paused until next month. An admin can raise the budget in AI settings → Usage & cost, or connect a model on your own machine.'
-        : attempts.some(a => a.skipped?.startsWith('daily limit')) && attempts.every(a => a.skipped || a.error) ? 'Today\'s AI limit is used up — tomorrow it resets, or add your own engine in AI settings' : 'No AI engine could answer right now', attempts)
+        : attempts.some(a => a.skipped?.startsWith('daily limit')) && attempts.every(a => a.skipped || a.error) ? 'Today\'s AI limit is used up — tomorrow it resets, or add your own engine in AI settings' : unavailableMessage(attempts), attempts)
     return { text: result.text, json: result.json, provider: result.provider, providerId: result.providerId, providerKind: result.providerKind, model: result.model, ms, attempts, masked, suspicious: hits.length > 0, traceId }
+}
+
+// Every engine failed: say why in the engine's own words when its account is the
+// problem (quota, credits, key) or it is rate-limited, and where to fix it.
+export function unavailableMessage(attempts) {
+    const account = attempts.find(a => a.account)
+    if (account) {
+        const why = String(account.error || account.skipped || '').replace(/^paused — /, '').slice(0, 240)
+        return `${account.provider} cannot answer: ${why}. Fix it in AI settings — add credits or another key, or add a second engine so KubeEZ can fall back to it.`
+    }
+    const limited = attempts.find(a => a.rateLimited)
+    if (limited) return `${limited.provider} is rate-limited right now — try again in a minute, or add a second engine in AI settings.`
+    const last = [...attempts].reverse().find(a => a.error)
+    return last ? `No AI engine could answer right now (${last.provider}: ${String(last.error).slice(0, 200)})` : 'No AI engine could answer right now'
 }
 
 /** Kill switch + autonomy level for AI-proposed actions (used by the action features). */
