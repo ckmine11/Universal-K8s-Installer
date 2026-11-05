@@ -98,6 +98,8 @@ export async function readCerts(cluster, { connect, fresh = false } = {}) {
     cache.set(cluster.id, { at: Date.now(), value })
     return value
 }
+/** The last read of a cluster, however old (null when never read) — no cluster call */
+export const lastCerts = (clusterId) => cache.get(clusterId) || null
 
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
 export const NAME = /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/

@@ -255,6 +255,22 @@ describe('API: who sees security and DORA', () => {
         assert.equal((await get('nobody', '/api/clusters/s1/dora')).status, 401)
     })
 
+    test('sidebar badges: critical CVEs from the last read, per member; nothing they may not open', async () => {
+        const cert = await import('../src/services/certManager.js')
+        cert._test.useConnect(async () => ({ execCommand: async () => ({ stdout: '', stderr: 'unreachable' }), dispose() { } }))
+        try {
+            await get('admin', '/api/clusters/s1/security')   // the Security tab was opened: its read is kept
+            const v = await get('viewer', '/api/clusters/s1/badges')
+            assert.equal(v.status, 200, JSON.stringify(v.data))
+            assert.equal(v.data.security.count, 2); assert.equal(v.data.security.tone, 'red')
+            assert.equal(v.data.certificates, null, 'certificates not read yet')
+            assert.equal((await get('scoped', '/api/clusters/s1/badges')).data.security.count, 1, 'only the shop namespace')
+            assert.deepEqual((await get('custom', '/api/clusters/s1/badges')).data, {}, 'no security:view → no badges')
+            assert.equal((await get('stranger', '/api/clusters/s1/badges')).status, 404)
+            assert.equal((await get('nobody', '/api/clusters/s1/badges')).status, 401)
+        } finally { cert._test.useConnect(null) }
+    })
+
     test('a cluster that does not answer is an error, not an empty report', async () => {
         sec._test.useConnect(async () => ({ execCommand: async () => ({ stdout: '==KZSEC:VULN==\nR\t', stderr: 'timed out' }), dispose() { } }))
         const r = await get('admin', '/api/clusters/s1/security?fresh=1')

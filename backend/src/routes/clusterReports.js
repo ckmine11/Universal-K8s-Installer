@@ -1,7 +1,7 @@
 import express from 'express'
-import { requireFeature } from '../services/features.js'
+import { requireFeature, features } from '../services/features.js'
 import { requirePermission } from '../middleware/authMiddleware.js'
-import { canSeeCluster, accessOn, nsMatches } from '../services/accessControl.js'
+import { canSeeCluster, canOn, accessOn, nsMatches } from '../services/accessControl.js'
 import { canAccessResource } from '../utils/access.js'
 import { clusterStore } from '../services/clusterStore.js'
 import { incidentDetector } from '../services/incidentDetector.js'
@@ -10,10 +10,12 @@ import { readRollouts, computeDora } from '../services/dora.js'
 import { leadTimes } from '../services/leadTime.js'
 import { readCosts, DEFAULT_RATES } from '../services/costs.js'
 import { deliveryStore } from '../services/deliveryStore.js'
+import { clusterBadges } from '../services/clusterBadges.js'
 
 // Read-only reports of one cluster (mounted at /api/clusters):
 //   GET /:id/security          Trivy: vulnerabilities and misconfigurations per workload
 //   GET /:id/dora?days=&platform=1   DORA delivery metrics
+//   GET /:id/badges            sidebar counts (critical CVEs, certificates needing attention) from the last reads
 // Members limited to some namespaces see only those namespaces.
 const router = express.Router()
 // feature flags (services/features.js): a feature that is off answers 403 FEATURE_OFF
@@ -39,6 +41,16 @@ router.get('/:id/security', requirePermission('security:view'), async (req, res)
         const match = matcherFor(req.user, cluster)
         res.json({ ...summarizeSecurity(r, { match }), at: r.at, limited: !!match })
     } catch (e) { fail(res, e) }
+})
+
+// Each badge only for a section the member may open; null = not read yet
+const BADGE_GATES = { security: ['security:view', 'security'], certificates: ['security:view', 'certManager'] }
+router.get('/:id/badges', requirePermission('cluster:view'), async (req, res) => {
+    const cluster = await visibleCluster(req, res)
+    if (!cluster) return
+    const orgId = req.user?.orgId || null
+    const allowed = (kind) => { const [perm, key] = BADGE_GATES[kind]; return canOn(req.user, perm, cluster) && features.isOn(orgId, key) && features.planOk(orgId, key, req.user?.role) }
+    res.json(clusterBadges(cluster, { allowed, match: matcherFor(req.user, cluster) }))
 })
 
 const DAYS = [7, 14, 30]

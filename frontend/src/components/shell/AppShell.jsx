@@ -31,18 +31,20 @@ const ROLE_META = {
 // The open (or last opened) cluster's sections — the same list as the cluster
 // page's (config/clusterSections.js). Its heading switches the cluster.
 const tabOf = (loc) => new URLSearchParams(loc.search).get('tab') || 'overview'
-function clusterSection(role, cluster, featureOn) {
+function clusterSection(role, cluster, featureOn, badges) {
     if (!cluster) return { id: 'cluster', title: 'Cluster', items: [{ to: '/', label: 'Choose a cluster', icon: Boxes, end: true, match: () => false }] }
     const base = sectionLink(cluster.id)
     return {
         id: 'cluster', title: `Cluster · ${cluster.name}`, cluster,
         items: visibleSections(role, cluster.id, featureOn)
-            .map(s => ({ to: sectionLink(cluster.id, s.key), label: s.label, icon: s.icon, match: (loc) => loc.pathname === base && tabOf(loc) === s.key }))
+            .map(s => ({ to: sectionLink(cluster.id, s.key), label: s.label, icon: s.icon, match: (loc) => loc.pathname === base && tabOf(loc) === s.key,
+                // Security: critical CVEs · Certificates: expired, failing or expiring (GET /:id/badges)
+                badge: badges?.[s.key]?.count, badgeTone: badges?.[s.key]?.tone, badgeTitle: badges?.[s.key]?.title }))
     }
 }
 
 // Navigation, grouped; each page appears once. Items gate by role (the API enforces it too).
-export function navSections(user, approvalsWaiting = 0, { cluster = null, featureOn = () => true } = {}) {
+export function navSections(user, approvalsWaiting = 0, { cluster = null, featureOn = () => true, clusterBadges = null } = {}) {
     const role = user?.role
     const isAdmin = role === 'admin' || role === 'superadmin'
     // what the member may do decides the menu (custom roles included)
@@ -58,7 +60,7 @@ export function navSections(user, approvalsWaiting = 0, { cluster = null, featur
             ]
         },
         // one cluster's work: Explorer, Apps, GitOps, Security…
-        clusterSection(role, cluster, featureOn),
+        clusterSection(role, cluster, featureOn, clusterBadges),
         // new clusters: installed by KubeEZ, or existing ones connected (its page has
         // the connect wizard, connection agents and setup guides as tabs)
         {
@@ -138,7 +140,23 @@ export default function AppShell({ children }) {
         window.addEventListener('kz-last-cluster', on)
         return () => window.removeEventListener('kz-last-cluster', on)
     }, [])
-    const sections = navSections(user, approvalsWaiting, { cluster: lastCluster, featureOn })
+    // the cluster group's badges, from what KubeEZ last read (polling never loads the cluster)
+    const [clusterBadges, setClusterBadges] = useState(null)
+    useEffect(() => {
+        setClusterBadges(null)
+        if (!lastCluster?.id) return
+        let stop = false
+        const load = async () => {
+            try {
+                const r = await apiFetch(`/api/clusters/${encodeURIComponent(lastCluster.id)}/badges`)
+                if (!stop && r.ok) setClusterBadges(await r.json())
+            } catch { }
+        }
+        load()
+        const t = setInterval(whenVisible(load), 60000)
+        return () => { stop = true; clearInterval(t) }
+    }, [lastCluster?.id])
+    const sections = navSections(user, approvalsWaiting, { cluster: lastCluster, featureOn, clusterBadges })
     const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] || 'KubeEZ'
 
     useEffect(() => { try { localStorage.setItem('kz.sidebar', collapsed ? 'collapsed' : 'open') } catch { } }, [collapsed])
@@ -310,6 +328,8 @@ export default function AppShell({ children }) {
     )
 }
 
+const BADGE_TONE = { blue: 'bg-blue-500', red: 'bg-red-500', amber: 'bg-amber-500' }
+
 function SideLink({ item, compact, location }) {
     const Icon = item.icon
     const custom = item.match ? item.match(location) : null
@@ -327,7 +347,7 @@ function SideLink({ item, compact, location }) {
                     return <>
                                                 <Icon className={`w-4 h-4 shrink-0 transition-colors ${active ? 'text-blue-300' : 'text-slate-500 group-hover:text-slate-300'}`} />
                         {!compact && <span className="truncate">{item.label}</span>}
-                        {!!item.badge && <span className={`${compact ? 'absolute top-1 right-1' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-[10px] font-bold text-white flex items-center justify-center`}>{item.badge > 9 ? '9+' : item.badge}</span>}
+                        {!!item.badge && <span title={item.badgeTitle} className={`${compact ? 'absolute top-1 right-1' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full ${BADGE_TONE[item.badgeTone] || BADGE_TONE.blue} text-[10px] font-bold text-white flex items-center justify-center`}>{item.badge > 9 ? '9+' : item.badge}</span>}
                     </>
                 }}
             </NavLink>

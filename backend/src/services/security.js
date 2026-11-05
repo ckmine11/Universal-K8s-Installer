@@ -171,6 +171,9 @@ export async function readSecurity(cluster, { connect, fresh = false } = {}) {
     return value
 }
 
+/** The last read of a cluster, however old (null when never read) — no cluster call */
+export const lastSecurity = (clusterId) => cache.get(clusterId) || null
+
 let testConnect = null
 async function defaultConnect(cluster) {
     if (testConnect) return testConnect(cluster)
