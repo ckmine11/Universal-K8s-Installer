@@ -8,6 +8,7 @@ import { HELM_ADDONS, isHelmAddon, normAddonKey } from '../config/helmAddons.js'
 import { addonSettingsStore, buildPlan, planFiles, writePlanCommand } from './addonSettings.js'
 import { fileURLToPath } from 'url'
 import { agentService } from './agentService.js'
+import { stdinCommands } from '../utils/stdinRelay.js'
 import { usesApi, connectCluster } from './clusterAccess.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -26,6 +27,15 @@ class AgentSSHProxy {
             // Default 10-min relay timeout — cluster/addon operations (kubectl
             // rollout status, image pulls) can run for several minutes via the
             // tunnel. Long scripts (upgrades) pass a bigger config.timeoutMs.
+            // the relay carries only a command line: stdin (kubectl apply -f -, helm -f -) goes inside it
+            if (config.stdin != null) {
+                const { steps, run } = stdinCommands(command, config.stdin)
+                for (const s of steps) {
+                    const w = await agentService.relaySSH(this.agentId, this.nodeConfig, s, 120000)
+                    if (w.exitCode) return { code: w.exitCode, stdout: w.stdout, stderr: w.stderr || 'Could not hand the input to the node' }
+                }
+                command = run
+            }
             const result = await agentService.relaySSH(this.agentId, this.nodeConfig, command, config.timeoutMs || 600000)
 
             // Handle output callbacks if provided

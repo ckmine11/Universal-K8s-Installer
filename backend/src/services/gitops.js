@@ -330,6 +330,11 @@ export function cleanCreateApp(body) {
     if (u.username || u.password || u.search || u.hash) bad('The repository address may not carry a user, password, ?query or #fragment — public repositories only for now')
     const path = String(b.path ?? '').replace(/^\/+|\/+$/g, '')
     if (!GIT_PATH.test(path) || path.split('/').includes('..')) bad('Path: a folder in the repository (letters, digits, . _ - /)')
+    // Argo CD and Flux deploy a folder (plain YAML, Kustomize or a Helm chart) — a file such as a Dockerfile is a common mistake
+    const last = path.split('/').pop()
+    if (/^(dockerfile|containerfile|makefile|jenkinsfile)$/i.test(last) || /\.(ya?ml|json|dockerfile|md|txt|sh|js|ts|py|go|java|tgz|zip)$/i.test(last)) {
+        bad(`Path must be a folder with Kubernetes manifests (YAML, Kustomize or a Helm chart), not the file ${last} — e.g. k8s/ or deploy/`)
+    }
     const targetRevision = String(b.targetRevision || 'HEAD')
     if (!REVISION.test(targetRevision)) bad('Revision: a branch, tag or commit')
     if (!NAMESPACE.test(String(b.namespace || ''))) bad('Namespace is not a valid Kubernetes namespace')
