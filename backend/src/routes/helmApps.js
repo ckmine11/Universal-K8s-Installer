@@ -109,7 +109,9 @@ router.post('/:id/apps/preview', requirePermission('app:deploy'), requirePermiss
     if (!cluster) return
     try {
         const d = deployRequest(req, cluster)
-        res.json(await withTimeout(previewDeploy(cluster, d, { gate: gateFor(req, cluster, d.namespace), sign: await signFor(req, cluster, d.namespace) }), 130e3, 'The dry run did not finish in time'))
+        // a plan without the CVE gate (Free): the preview still says which images it would stop
+        const cveHint = features.isOn(cluster.orgId, 'cveGate') && !features.planOk(cluster.orgId, 'cveGate') && features.usable(cluster.orgId, 'security') ? {} : null
+        res.json(await withTimeout(previewDeploy(cluster, d, { gate: gateFor(req, cluster, d.namespace), sign: await signFor(req, cluster, d.namespace), cveHint }), 130e3, 'The dry run did not finish in time'))
     } catch (e) { fail(res, e) }
 })
 

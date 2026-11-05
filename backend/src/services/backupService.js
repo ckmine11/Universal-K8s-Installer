@@ -364,7 +364,7 @@ export class BackupService {
             let count = 0, skipped = 0;
             owners.forEach(uid => {
                 const u = authService.getUserById(uid);
-                if (!canUseBackups(u?.subscription?.plan, u?.role)) { skipped++; return; }
+                if (!canUseBackups(u?.orgId ? authService.getOrgPlan(u.orgId) : u?.subscription?.plan, u?.role)) { skipped++; return; }
                 const r = this.createBackup('auto', uid);
                 if (r.success) { count++; this.cleanupOldBackups(uid, 10); }
                 else import('./notifier.js').then(({ notifier }) => notifier.emit(u?.orgId, {

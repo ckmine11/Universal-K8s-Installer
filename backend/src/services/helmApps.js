@@ -190,13 +190,20 @@ export function diffManifests(before, after) {
 }
 
 /** A dry run on the cluster (the API server checks it) and the diff against what runs now. */
-export async function previewDeploy(cluster, d, { connect = defaultConnect, gate = null, sign = null, keepManifest = false } = {}) {
+export async function previewDeploy(cluster, d, { connect = defaultConnect, gate = null, sign = null, keepManifest = false, cveHint = null } = {}) {
     const values = await finalValues(cluster, d, connect)
     const out = await previewWith(cluster, d, values, connect)
     if (gate?.policy) {
         const { imagesOf, checkImages } = await import('./cveGate.js')
         const security = await (gate.read || (async () => (await import('./security.js')).readSecurity(cluster)))().catch(() => null)
         out.cve = checkImages(imagesOf(out.manifest), security, gate.policy)
+    }
+    // a plan without the CVE gate: which images Pro would have stopped (never blocks)
+    if (!gate?.policy && cveHint) {
+        const { imagesOf, checkImages } = await import('./cveGate.js')
+        const security = await (cveHint.read || (async () => (await import('./security.js')).readSecurity(cluster)))().catch(() => null)
+        const r = checkImages(imagesOf(out.manifest), security, { mode: 'block', severity: 'CRITICAL' })
+        if (r.failing.length) out.cveHint = { failing: r.failing, feature: 'cveGate' }
     }
     if (sign?.policy) out.signatures = await signCheck(out.manifest, sign)
     if (!keepManifest) delete out.manifest

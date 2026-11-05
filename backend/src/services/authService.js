@@ -12,6 +12,7 @@ import dotenv from 'dotenv';
 import { DATA_DIR } from '../utils/paths.js';
 import { writeFileAtomicSync } from '../utils/atomicWrite.js'
 import { licensedPlan } from './licensePlan.js'
+import { newSubscription, effectiveSubscription } from './plans.js';
 
 dotenv.config();
 
@@ -129,7 +130,8 @@ class AuthService {
             email,
             password: hashedPassword,
             role,
-            subscription: { plan: 'FREE', maxClusters: 1, maxNodes: 2, maxMembers: 1 },
+            // hosted: Free with a Pro trial (services/plans.js); self-hosted: the license decides
+            subscription: newSubscription({ trial: process.env.KUBEEZ_MODE === 'saas' && role !== 'superadmin' }),
             createdAt: new Date().toISOString(),
             // a password sign-up confirms its email first when this server can send email
             ...(!setup && !verified && mailConfigured() ? { emailVerified: false } : verified ? { emailVerified: true } : {})
@@ -451,8 +453,13 @@ class AuthService {
             || this.users.find(u => u.orgId === orgId && String(u.subscription?.plan || '').toUpperCase() !== 'MEMBER')
     }
 
+    /** The workspace's subscription as it applies now: a running Pro trial counts as Pro (services/plans.js). */
+    orgSubscription(orgId) {
+        return effectiveSubscription(this.getOrgOwner(orgId)?.subscription)
+    }
+
     getOrgPlan(orgId) {
-        const own = String(this.getOrgOwner(orgId)?.subscription?.plan || 'FREE').toUpperCase()
+        const own = this.orgSubscription(orgId).plan
         // self-hosted: an active license gives every workspace its plan (never less than its own)
         const lic = licensedPlan()
         if (!lic) return own
@@ -463,7 +470,7 @@ class AuthService {
     seatLimit(orgId) {
         const lic = licensedPlan()
         if (lic) return lic.maxMembers
-        return this.getOrgOwner(orgId)?.subscription?.maxMembers ?? 1
+        return this.orgSubscription(orgId).maxMembers
     }
 
     getUsersByOrgId(orgId) {

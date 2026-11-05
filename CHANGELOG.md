@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — plans
+- **Free runs one cluster for real:** 1 cluster, **5 nodes** (was 2 — a typical 3-node cluster could not even be added), 1 member. Registries, new GitOps apps, debug containers and Helm drift moved to Free; so did the add-ons Free features need (Explorer, Ingress, cert-manager, Trivy, Argo CD, Flux).
+- **14-day Pro trial** for every new hosted workspace (`KUBEEZ_TRIAL_DAYS`, 0 = off): every feature and Pro limits; Free afterwards, nothing deleted.
+- **Plan & usage** page: your plan, trial days left, usage against limits, and every feature and paid capability with ✓ or 🔒 Pro (`GET /api/billing/plan`). The top bar shows "Pro trial · N days left" / "Free · Upgrade".
+- On Free, the deploy preview names images with critical vulnerabilities the Pro CVE gate would stop, and Certificates says Pro would have alerted.
+- Plan numbers live in one place (`services/plans.js`); the nightly config backup now follows the workspace plan (it read the owner's stored plan).
+
 ### Fixed
 - **Delivery settings**: the Cluster lists (environments, freezes, deploy tokens, registries) were empty — the page asked a route that does not exist.
 - **Chart lists of large repositories** (Bitnami: 28 MB index) took ~900 MB and blocked the server for ~10 s, so a 512 MB container restarted. Only the newest 30 versions of each chart are read now (~110 MB, the server stays responsive); two requests for the same repository share one read.

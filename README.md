@@ -30,7 +30,7 @@ Bring the clusters you already run (EKS, AKS, GKE, k3s, OpenShift…) too.
 | **Day-2 operations** | **Hibernate / Wake** namespaces (also on a schedule), ephemeral **debug containers**, **canary rollouts** (Argo Rollouts promote / abort), **KEDA** autoscaling wizard. |
 | **Reach anything** | **Gateway Agent**: servers in private networks are managed through an outbound tunnel — no inbound firewall ports. |
 | **Teams** | Isolated workspaces with Admin / Operator / Viewer and **custom roles**, per-cluster, per-label and per-namespace access, **two-person approvals**, temporary access, access review CSV. Sign in with username or email, Google / GitHub, or **SSO (any OpenID Connect provider)**. |
-| **Features & plans** | Newer features can be switched on one by one (server-wide and per workspace). Free workspaces see every feature and are asked to upgrade for Pro ones; **Pro and Enterprise include every feature**. |
+| **Features & plans** | Free runs one cluster for real (1 cluster, 5 nodes, 1 member; apps, GitOps, security, certificates and the add-ons they need). Pro adds alerts, deploy guards, pipelines, team features, backups and more clusters; **Pro and Enterprise include every feature**. New hosted workspaces get **14 days of Pro**. **Plan & usage** shows what a workspace can use; Pro sections on Free show an upgrade card. |
 
 **Supported node OS:** Ubuntu 22.04 / 24.04, Debian 12, Rocky Linux 9, AlmaLinux 9, Fedora, Amazon Linux 2023 (all tested end-to-end), RHEL 8 / 9. Kubernetes 1.35+ needs cgroups v2 — CentOS 7 / RHEL 7 are supported up to Kubernetes 1.34.
 

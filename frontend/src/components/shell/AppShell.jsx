@@ -94,7 +94,7 @@ export function navSections(user, approvalsWaiting = 0, { cluster = null, featur
         {
             id: 'help', title: 'Help', items: [
                 { to: '/docs', label: 'Docs', icon: BookOpen },
-                { to: '/pricing', label: 'Plans', icon: Zap },
+                { to: '/pricing', label: 'Plan & usage', icon: Zap },
             ]
         },
         role === 'superadmin' && { id: 'platform', title: 'Platform', items: [{ to: '/admin', label: 'Admin Console', icon: Crown }] },
@@ -104,7 +104,7 @@ export function navSections(user, approvalsWaiting = 0, { cluster = null, featur
 const TITLES = [
     [/^\/$/, 'Clusters'], [/^\/install/, 'Deploy a cluster'], [/^\/scale/, 'Scale cluster'], [/^\/(dashboard|installation)\//, 'Installation'],
     [/^\/cluster\//, 'Cluster'], [/^\/explorer/, 'KubeEZ Explorer'], [/^\/incidents/, 'Incidents'], [/^\/compliance/, 'Compliance'], [/^\/alerts/, 'Alerts'], [/^\/agents/, 'Gateway agents'], [/^\/delivery/, 'Delivery settings'], [/^\/features/, 'Features'], [/^\/users/, 'Team & Roles'], [/^\/approvals/, 'Approvals'],
-    [/^\/settings/, 'Settings'], [/^\/ai\/settings/, 'AI settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/connect\/new/, 'Add existing cluster'], [/^\/connect\/agents/, 'Connection agents'], [/^\/connect\/guides/, 'Setup guides'], [/^\/connect/, 'Existing clusters'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plans'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
+    [/^\/settings/, 'Settings'], [/^\/ai\/settings/, 'AI settings'], [/^\/ai\/create/, 'Create YAML'], [/^\/ai\/advisor/, 'Advisor'], [/^\/ai\/changes/, 'What changed'], [/^\/ai/, 'Ask AI'], [/^\/fleet/, 'Fleet'], [/^\/connect\/new/, 'Add existing cluster'], [/^\/connect\/agents/, 'Connection agents'], [/^\/connect\/guides/, 'Setup guides'], [/^\/connect/, 'Existing clusters'], [/^\/docs/, 'Docs'], [/^\/pricing/, 'Plan & usage'], [/^\/admin/, 'Admin Console'], [/^\/vendor-portal/, 'Vendor Portal']
 ]
 
 const readCollapsed = () => { try { return localStorage.getItem('kz.sidebar') === 'collapsed' } catch { return false } }
@@ -299,6 +299,7 @@ export default function AppShell({ children }) {
                     </button>
 
                     <div className="flex items-center gap-2 sm:ml-auto shrink-0">
+                        <PlanChip userId={user?.id} />
                         <button type="button" onClick={toggleTheme} className="p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition"
                             aria-label={theme === 'zen' ? 'Switch to dark theme' : 'Switch to Zen theme'} title={theme === 'zen' ? 'Dark theme' : 'Zen theme'}>
                             {theme === 'zen' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
@@ -329,6 +330,27 @@ export default function AppShell({ children }) {
 }
 
 const BADGE_TONE = { blue: 'bg-blue-500', red: 'bg-red-500', amber: 'bg-amber-500' }
+
+// The plan in the top bar: a running Pro trial (days left) or Free — both lead to
+// Plans, which lists what the workspace can use. Paid plans show nothing.
+function PlanChip({ userId }) {
+    const [p, setP] = useState(null)
+    useEffect(() => {
+        setP(null)
+        if (!userId) return
+        apiFetch('/api/billing/plan').then(r => r.ok ? r.json() : null).then(setP).catch(() => { })
+    }, [userId])
+    if (!p || p.superadmin) return null
+    const days = p.trial?.daysLeft
+    if (!days && p.plan !== 'FREE') return null
+    return (
+        <Link to="/pricing" title={days ? 'Every feature during the trial — see what stays in Free' : 'See what Free includes and what comes with Pro'}
+            className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-semibold transition ${days ? (days <= 3 ? 'border-amber-400/40 bg-amber-500/10 text-amber-200' : 'border-blue-400/30 bg-blue-500/10 text-blue-200') : 'border-white/10 bg-white/[0.03] text-slate-300 hover:text-white'}`}>
+            <Sparkles className="w-3.5 h-3.5" />
+            {days ? `Pro trial · ${days} day${days === 1 ? '' : 's'} left` : <>Free · <span className="text-blue-300">Upgrade</span></>}
+        </Link>
+    )
+}
 
 function SideLink({ item, compact, location }) {
     const Icon = item.icon

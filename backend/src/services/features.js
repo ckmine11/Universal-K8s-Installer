@@ -13,7 +13,7 @@ import { authService } from './authService.js'
 export const FEATURES = {
     gitops:          { label: 'GitOps view & sync', group: 'GitOps', description: 'Argo CD / Flux apps per cluster, Sync now, AI explain' },
     gitopsAlerts:    { label: 'GitOps alerts', group: 'GitOps', description: 'Checks Argo CD / Flux every 3 minutes: sync failed / unhealthy incidents and alerts', background: true, plan: 'pro' },
-    gitopsCreate:    { label: 'Create GitOps apps', group: 'GitOps', description: 'New Argo CD or Flux apps from a Git repository, locked to one namespace', plan: 'pro' },
+    gitopsCreate:    { label: 'Create GitOps apps', group: 'GitOps', description: 'New Argo CD or Flux apps from a Git repository, locked to one namespace' },
     gitopsPromote:   { label: 'Promote by pull request', group: 'GitOps', description: 'GitHub, GitLab and Bitbucket accounts; pull / merge requests that change values in Git', plan: 'pro' },
     security:        { label: 'Security (Trivy)', group: 'Security', description: 'Image vulnerabilities and misconfigurations per workload' },
     externalSecrets: { label: 'External Secrets status', group: 'Security', description: 'Sync status of ExternalSecrets, Sync now', plan: 'pro' },
@@ -25,8 +25,8 @@ export const FEATURES = {
     rollouts:        { label: 'Canary rollouts', group: 'Apps', description: 'Argo Rollouts: promote, abort, retry', plan: 'pro' },
     autoscale:       { label: 'Autoscaling (KEDA)', group: 'Apps', description: 'ScaledObjects from a wizard', plan: 'pro' },
     hibernate:       { label: 'Hibernate / Wake', group: 'Operations', description: 'Scale a namespace to 0 and back' },
-    debug:           { label: 'Debug containers', group: 'Operations', description: 'Ephemeral debug containers in running pods', plan: 'pro' },
-    registries:      { label: 'Registry pull secrets', group: 'Operations', description: 'Registry logins written as pull secrets into namespaces', plan: 'pro' },
+    debug:           { label: 'Debug containers', group: 'Operations', description: 'Ephemeral debug containers in running pods' },
+    registries:      { label: 'Registry pull secrets', group: 'Operations', description: 'Registry logins written as pull secrets into namespaces' },
     autoRollback:    { label: 'Auto-rollback', group: 'Apps', description: 'Roll back (or suggest it) when a Helm deploy breaks its workload within an hour', plan: 'pro', background: true },
     cveAlerts:       { label: 'New CVE alerts', group: 'Security', description: 'An alert when a new critical vulnerability with a fix shows up in a running image (checked every 30 minutes)', plan: 'pro', background: true },
     costs:           { label: 'Cost per app', group: 'Insight', description: 'Monthly cost of each namespace and app from its CPU / memory requests, and the money left idle' },
@@ -35,7 +35,7 @@ export const FEATURES = {
     chatDeploy:      { label: 'Deploy from chat', group: 'Apps', description: 'Slack / Telegram: "deploy web 1.4.2 to staging", confirmed with a code — only the apps an admin allowed for that chat', plan: 'pro' },
     signGate:        { label: 'Image signature gate', group: 'Security', description: 'Per-environment policy that warns or blocks deploys of images not signed (cosign) with a workspace key', plan: 'pro' },
     deployRisk:      { label: 'Deploy risk', group: 'Apps', description: 'A risk score for each install / upgrade from its dry run, history and open problems — explained by the connected AI', plan: 'pro' },
-    helmDrift:       { label: 'Helm drift', group: 'Apps', description: 'Finds what was changed by hand in Helm apps (kubectl edit / scale), restores it; alerts every hour', plan: 'pro', background: true },
+    helmDrift:       { label: 'Helm drift', group: 'Apps', description: 'Finds what was changed by hand in Helm apps (kubectl edit / scale), restores it; alerts every hour', background: true },
     certManager:     { label: 'Certificates (cert-manager)', group: 'Security', description: 'Certificates, issuers and ACME challenges per cluster: expiry, failures, Renew now' },
     certAlerts:      { label: 'Certificate alerts', group: 'Security', description: 'An alert when a certificate fails or is close to expiring (checked every 6 hours)', plan: 'pro', background: true },
     previews:        { label: 'Preview environments', group: 'Apps', description: 'A short-lived copy of an app in its own namespace per pull request or branch, removed by itself when it expires', plan: 'pro', background: true }

@@ -2,6 +2,7 @@ import express from 'express'
 import Stripe from 'stripe'
 import { authService } from '../services/authService.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
+import { PLAN_LIMITS } from '../services/plans.js'
 
 // Initialize Stripe with a dummy key for now. It will use process.env.STRIPE_SECRET_KEY
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
@@ -48,7 +49,7 @@ router.post('/create-checkout-session', express.json(), requireAuth, async (req,
             const user = authService.getUserById(userId)
             if (user) {
                 const renewsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-                user.subscription = { plan: planName, maxClusters: 10, maxNodes: 50, maxMembers: 5, billingCycle: 'monthly', renewsAt }
+                user.subscription = { plan: planName, ...PLAN_LIMITS.PRO, billingCycle: 'monthly', renewsAt }
                 authService.saveUsers()
             }
             return res.json({ url: '/settings?success=true', mock: true })
@@ -112,9 +113,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             if (periodEnd) renewsAt = new Date(periodEnd * 1000).toISOString()
             user.subscription = {
                 plan: planName,
-                maxClusters: 10,
-                maxNodes: 50,
-                maxMembers: 5,
+                ...PLAN_LIMITS.PRO,
                 billingCycle: 'monthly',
                 renewsAt,
                 // Kept so later subscription events (cancel/expire) can find this user
@@ -137,7 +136,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                 u.subscription?.stripeCustomerId === subscription.customer))
         if (user) {
             console.log(`[Stripe Webhook] Subscription ${subscription.id} ended — downgrading ${user.username} to FREE`)
-            user.subscription = { plan: 'FREE', maxClusters: 1, maxNodes: 2, maxMembers: 1 }
+            user.subscription = { plan: 'FREE', ...PLAN_LIMITS.FREE }
             authService.saveUsers()
         } else {
             console.error(`[Stripe Webhook] No user found for ended subscription ${subscription.id}`)

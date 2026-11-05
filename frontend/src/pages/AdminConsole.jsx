@@ -150,7 +150,7 @@ function OverviewSection({ onGoto }) {
                         <Boxes className="w-4 h-4 text-blue-400" />
                         <h3 className="text-sm font-black uppercase tracking-wider text-slate-200">Plan Distribution</h3>
                     </div>
-                    <PlanBar label="Free" count={stats.plans.FREE} total={stats.tenants.owners} color="bg-slate-500" />
+                    <PlanBar label={stats.trials ? `Free (${stats.trials} in Pro trial)` : 'Free'} count={stats.plans.FREE} total={stats.tenants.owners} color="bg-slate-500" />
                     <PlanBar label="Pro" count={stats.plans.PRO} total={stats.tenants.owners} color="bg-blue-500" />
                     <PlanBar label="Enterprise" count={stats.plans.ENTERPRISE} total={stats.tenants.owners} color="bg-purple-500" />
                 </div>

@@ -29,13 +29,13 @@ export default function TenantManager() {
 
     // Edit modal state
     const [editingTenant, setEditingTenant] = useState(null)
-    const [editForm, setEditForm] = useState({ plan: '', maxClusters: 1, maxNodes: 2, maxMembers: 1, billing: { ...EMPTY_BILLING } })
+    const [editForm, setEditForm] = useState({ plan: '', maxClusters: 1, maxNodes: 5, maxMembers: 1, billing: { ...EMPTY_BILLING } })
     const [saving, setSaving] = useState(false)
 
     // Plan presets — selecting a plan auto-fills the standard quotas
     // (Unlimited = 9999, NOT 0 — the backend treats 0 as "block everything")
     const PLAN_PRESETS = {
-        FREE:       { maxClusters: 1,    maxNodes: 2,    maxMembers: 1 },
+        FREE:       { maxClusters: 1,    maxNodes: 5,    maxMembers: 1 },
         PRO:        { maxClusters: 10,   maxNodes: 50,   maxMembers: 5 },
         ENTERPRISE: { maxClusters: 9999, maxNodes: 9999, maxMembers: 9999 }
     }

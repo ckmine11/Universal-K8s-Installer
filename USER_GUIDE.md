@@ -179,7 +179,7 @@ Connect an AI under **AI settings → Connect AI**: **Sign in with OpenRouter** 
 3. **Assess risk** (Pro) — a 0–100 score with its reasons, and the AI's view of what could go wrong and what to check.
 4. **Install / Upgrade.** Helm waits for the pods and rolls a failed upgrade back by itself.
 
-**Check drift** (Pro) shows what was changed by hand since Helm deployed a release; **Restore** applies the deployed revision again.
+**Check drift** (Free) shows what was changed by hand since Helm deployed a release; **Restore** applies the deployed revision again.
 
 ### From CI
 
@@ -211,7 +211,7 @@ Hibernate / Wake a namespace (also on a schedule), debug containers, canary roll
 
 Cluster → **GitOps** lists Argo CD Applications and Flux Kustomizations / HelmReleases with sync, health, revision and drift. **Sync now** and **Refresh** ask the tool to do its own job; KubeEZ never prunes.
 
-- **New app** (Pro): from a public https repository, into one namespace — with Argo CD (own AppProject) or Flux (own namespace-only ServiceAccount).
+- **New app** (Free): from a public https repository, into one namespace — with Argo CD (own AppProject) or Flux (own namespace-only ServiceAccount).
 - **Remove** (admins): deletes the app **and everything it deployed** from the cluster — Argo CD / Flux clean up first, the namespace stays. Decline the first question to remove only the app and keep its workloads running.
 - **Promote by pull request** (Pro, Delivery page): add a GitHub, GitLab or Bitbucket account, then change values in a YAML file; KubeEZ opens the pull / merge request.
 
@@ -245,7 +245,27 @@ A live scan of each cluster mapped to **CERT-In 2022**, the **DPDP Act 2023 & Ru
 
 ## 15. Features and plans
 
-Admins can turn newer features off for the workspace under **Features**. Free workspaces see every feature; Pro features ask to upgrade. **Pro and Enterprise include every feature** — Enterprise differs only in quantities. Details: the **Plans** page.
+**Plan & usage** (sidebar → Help) shows your plan, the Pro trial's days left, how much of each limit you use, and every feature with ✓ (you can use it) or 🔒 Pro. The top bar shows "Pro trial · N days left" or "Free · Upgrade".
+
+| | Free | Pro / Enterprise |
+|---|---|---|
+| Clusters · nodes · team members | 1 · 5 · 1 | Pro 10 · 50 · 5; Enterprise as agreed |
+| Deploy, upgrade, scale, connect existing clusters, auto-healing, Ask AI | ✓ | ✓ |
+| Apps (Helm) with drift check; GitOps view, sync and new apps | ✓ | ✓ |
+| Security scans, certificates, DORA, app metrics, costs, hibernate | ✓ | ✓ |
+| Registry pull secrets, debug containers | ✓ | ✓ |
+| Add-ons | Dashboard, Metrics Server, KubeEZ AI, Explorer, Ingress, cert-manager, Trivy, Argo CD, Flux | All 30, plus advanced settings |
+| Alerts | 1 channel (Telegram, email or webhook), critical only | Every channel, rules; CVE, certificate and GitOps alerts |
+| Deploy guards (CVE gate, signatures, deploy risk, auto-rollback) | — (the preview says what the CVE gate would stop) | ✓ |
+| Pipelines (deploy tokens, previews, promote by PR, promotion, deploy from chat) | — | ✓ |
+| Rollouts, KEDA, scheduled hibernate, External Secrets | — | ✓ |
+| Custom roles, two-person approval, compliance reports, backups | — | ✓ |
+
+- **Pro trial:** every new hosted workspace gets 14 days of Pro — every feature and Pro limits, no card. Afterwards it is Free; nothing is deleted, but you cannot add beyond the Free limits and Pro sections show an upgrade card.
+- **On Free**, a Pro section shows a **Pro** card with what it does and **Upgrade to Pro**, instead of its content; a Pro button (Assess risk, a deploy token…) explains the upgrade when clicked. The server checks every one of them too.
+- **Pro and Enterprise include every feature** — Enterprise differs only in quantities and support.
+
+Admins can turn newer features off for the workspace under **Features**.
 
 ---
 

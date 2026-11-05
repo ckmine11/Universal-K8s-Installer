@@ -81,6 +81,7 @@ services:
       # Feature flags: which features this server offers (empty = all on)
       - KUBEEZ_FEATURES=${KUBEEZ_FEATURES:-}
       - KUBEEZ_FEATURES_DEFAULT=${KUBEEZ_FEATURES_DEFAULT:-}
+      - KUBEEZ_TRIAL_DAYS=${KUBEEZ_TRIAL_DAYS:-}
     volumes:
       - kubeez-data:/app/data
       - kubeez-logs:/app/logs

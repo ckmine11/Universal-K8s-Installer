@@ -2,7 +2,21 @@
 
 *Version 2.3.0 · November 2026.* For each feature: **what it is**, **how it works**, and **when it helps**. For step-by-step use see [USER_GUIDE.md](USER_GUIDE.md); the full guide is built into the console under **Help → Docs**.
 
-> Plans: **(Free)** = every workspace. **(Pro)** = fully included in Pro and Enterprise; a Free workspace sees it and is asked to upgrade when it uses it.
+> Plans: **(Free)** = every workspace. **(Pro)** = included in Pro and Enterprise; on Free it shows an upgrade card. New hosted workspaces get 14 days of Pro. Free: 1 cluster, 5 nodes, 1 member — Pro: 10, 50, 5.
+
+| | Free | Pro / Enterprise |
+|---|---|---|
+| Clusters · nodes · team members | 1 · 5 · 1 | Pro 10 · 50 · 5; Enterprise as agreed |
+| Deploy, upgrade, scale, connect existing clusters, auto-healing, Ask AI | ✓ | ✓ |
+| Apps (Helm) with drift check; GitOps view, sync and new apps | ✓ | ✓ |
+| Security scans, certificates, DORA, app metrics, costs, hibernate | ✓ | ✓ |
+| Registry pull secrets, debug containers | ✓ | ✓ |
+| Add-ons | Dashboard, Metrics Server, KubeEZ AI, Explorer, Ingress, cert-manager, Trivy, Argo CD, Flux | All 30, plus advanced settings |
+| Alerts | 1 channel (Telegram, email or webhook), critical only | Every channel, rules; CVE, certificate and GitOps alerts |
+| Deploy guards (CVE gate, signatures, deploy risk, auto-rollback) | — (the preview says what the CVE gate would stop) | ✓ |
+| Pipelines (deploy tokens, previews, promote by PR, promotion, deploy from chat) | — | ✓ |
+| Rollouts, KEDA, scheduled hibernate, External Secrets | — | ✓ |
+| Custom roles, two-person approval, compliance reports, backups | — | ✓ |
 
 ---
 
@@ -31,6 +45,8 @@ A small program for servers in a private network. It connects **out** to KubeEZ,
 ---
 
 ## 2. Add-ons (Free / Pro)
+Free: Dashboard, Metrics Server, KubeEZ AI, Explorer, Ingress, cert-manager, Trivy, Argo CD and Flux — everything the Free features need. Pro: all 30 and advanced settings.
+
 30 ready add-ons — monitoring (Prometheus + Grafana, Loki), storage (Longhorn, NFS, S3), security (Trivy, Falco, Kyverno, Vault, Gatekeeper), GitOps (Argo CD, Flux), delivery (Argo Rollouts, KEDA), logging (Elasticsearch, Fluentd, Fluent Bit) and the KubeEZ Explorer.
 **Every add-on has settings** in a form, a preview before a change and an automatic rollback if it goes wrong. New versions are found every 12 hours, but an add-on is updated only when **you** choose.
 
@@ -78,7 +94,7 @@ Cluster → **Apps**: install, upgrade and roll back your own Helm releases. **P
 ### Deploy risk (Pro)
 **Assess risk** before a deploy: a 0–100 score and its reasons — data removed, storage or networking changed, a chart major version jump, a production environment, earlier failures, open incidents in the namespace, vulnerable or unsigned images. On top, the AI explains what could break, what to check and how to undo it. The score does not depend on the AI.
 
-### Helm drift (Pro)
+### Helm drift (Free)
 **What:** someone changed an app by hand with `kubectl edit` or `kubectl scale`? Drift shows **what** changed — what Helm deployed vs. what runs now.
 **Restore** brings back the state Helm deployed. Checked every hour, with an alert for new drift. Replicas set by an HPA / KEDA are not counted as drift.
 
@@ -97,14 +113,14 @@ In Slack / Telegram: `deploy web 1.4.2 to staging` → KubeEZ gives a code → t
 Both apply on every path: the UI, CI, previews, promotions and chat. Only an admin with a written reason can push past a block.
 
 ### Day-2 operations
-**Hibernate / Wake** (Free): scale a dev namespace to 0 at night and back in the morning — save money. **Schedule** (Pro): "every weekday 21:00 → 09:00". **Debug containers**, **canary rollouts** (Argo Rollouts), **KEDA autoscaling** (Pro).
+**Hibernate / Wake** (Free): scale a dev namespace to 0 at night and back in the morning — save money. **Schedule** (Pro): "every weekday 21:00 → 09:00". **Debug containers** (Free). **Canary rollouts** (Argo Rollouts), **KEDA autoscaling** (Pro).
 
 ---
 
 ## 7. GitOps
 - **View & sync** (Free): Argo CD and Flux apps on one list — synced? healthy? **Sync now**.
 - **Alerts** (Pro): a failed sync or an unhealthy app → an alert and an AI explanation.
-- **New app** (Pro): an Argo CD or Flux app from a Git repository — locked to **one namespace**, nothing cluster-wide.
+- **New app** (Free): an Argo CD or Flux app from a Git repository — locked to **one namespace**, nothing cluster-wide.
 - **Promote by pull request** (Pro): change a value in a YAML file on GitHub, GitLab or Bitbucket (such as `image.tag`) → KubeEZ opens a PR / MR → on merge, Argo CD / Flux deploy it.
 
 ---

@@ -157,7 +157,7 @@ const NAV = [
         { id: 'compliance', label: 'Compliance & Audit', k: 'cert-in dpdp iso cis report audit trail' },
         { id: 'roles', label: 'Team & Roles', k: 'admin operator viewer invite permissions custom role cluster access label access review namespace approval two-person temporary elevation kubeconfig' },
         { id: 'security', label: 'Security & Privacy', k: 'encryption data credentials' },
-        { id: 'plans', label: 'Plans', k: 'free pro enterprise pricing' }
+        { id: 'plans', label: 'Plans', k: 'free pro enterprise pricing trial limits upgrade' }
     ] },
     { title: 'Help', items: [
         { id: 'troubleshooting', label: 'Troubleshooting', k: 'error problem not working' },
@@ -544,7 +544,7 @@ export default function Docs() {
                             ['Install / Upgrade', <>Pick a chart from one of the workspace&apos;s <B>chart repositories</B> (https or oci://), a version and values (YAML). Secrets show as ••••••; leave them so to keep the current value. <B>Preview changes</B> runs a server-side dry run and shows every resource that is added, changed or removed, line by line.</>],
                             ['Assess risk (Pro)', <>A score from 0 to 100 with its reasons: data removed, storage or networking changed, permissions or CRDs changed, scale to 0, a chart major version jump, a protected environment, failed deploys of this app in the last 14 days, open problems in the namespace, vulnerable or unsigned images. The connected AI then explains what could go wrong, what to check and how to undo it. The score never depends on the AI.</>],
                             ['Roll back · Uninstall', 'History of every revision; roll back to any of them. Uninstall is for admins.'],
-                            ['Check drift (Pro)', <>Compares every release with what Helm deployed (<C>helm get manifest</C> against the live objects, a dry run). Shows what was changed by hand (kubectl edit / scale, a deleted Service) line by line; replicas an autoscaler (HPA / KEDA) sets are not drift. <B>Restore</B> applies the deployed revision again. An hourly check alerts when an app drifts.</>]
+                            ['Check drift', <>Compares every release with what Helm deployed (<C>helm get manifest</C> against the live objects, a dry run). Shows what was changed by hand (kubectl edit / scale, a deleted Service) line by line; replicas an autoscaler (HPA / KEDA) sets are not drift. <B>Restore</B> applies the deployed revision again. An hourly check alerts when an app drifts.</>]
                         ]} />
                         <Note>Installs and upgrades run as jobs: Helm waits until the pods are ready and rolls a failed upgrade back by itself. A <B>protected environment</B> asks a second person first, a <B>change freeze</B> stops changes (admins may override with a reason), and the environment&apos;s CVE and signature policies are checked before Helm changes anything.</Note>
                     </Section>
@@ -556,7 +556,7 @@ export default function Docs() {
                             ['Chart repositories', 'The only places apps may be deployed from. A password is stored encrypted and never shown again.'],
                             ['Change freezes', 'No deploys, rollbacks or GitOps syncs on the clusters they cover, up to 31 days (e.g. "Diwali sale"). Admins may override with a reason, which is recorded.'],
                             ['Compare & promote', <>The same app in two environments: chart version and every value that differs (secrets masked). <B>Promote</B> (Pro) deploys the source&apos;s chart version and the values you pick (image.tag by default) into the target; everything else keeps the target&apos;s own values.</>],
-                            ['Registries (Pro)', 'Registry logins, written as image pull secrets into the namespaces you choose. The signature gate uses them for private registries too.'],
+                            ['Registries', 'Registry logins, written as image pull secrets into the namespaces you choose. The signature gate uses them for private registries too.'],
                             ['Signing keys (Pro)', 'cosign public keys the signature gate trusts — see Deploy Guards.'],
                             ['Cost prices', 'The price of a CPU core and a GB of memory per month, for Cost per app.']
                         ]} />
@@ -567,7 +567,7 @@ export default function Docs() {
                         <Table head={['', '']} rows={[
                             ['View & sync', <>Every Argo CD Application and Flux Kustomization / HelmRelease: synced or not, healthy or not, repository, revision and what drifted. <B>Sync now</B> / <B>Refresh</B> asks the tool to do its own job; KubeEZ never edits an app&apos;s spec or prunes. <B>Explain with AI</B> on an app with a problem.</>],
                             ['Alerts (Pro)', 'Checked every 3 minutes: a failed sync, an unhealthy app or one out of sync for 30 minutes becomes an incident and an alert.'],
-                            ['New app (Pro)', <>From a public https Git repository, into one namespace. <B>Argo CD</B>: its own AppProject — only that repository, only that namespace, nothing cluster-wide. <B>Flux</B>: a GitRepository and a Kustomization run as their own ServiceAccount that may only change that namespace; revision = a branch, a full commit SHA or <C>refs/tags/…</C>. Neither prunes while the app runs. <B>Remove</B> deletes the app <B>and everything it deployed</B> (Argo CD / Flux clean up first; the namespace stays) — or, if you choose, only the app, leaving its workloads running.</>],
+                            ['New app', <>From a public https Git repository, into one namespace. <B>Argo CD</B>: its own AppProject — only that repository, only that namespace, nothing cluster-wide. <B>Flux</B>: a GitRepository and a Kustomization run as their own ServiceAccount that may only change that namespace; revision = a branch, a full commit SHA or <C>refs/tags/…</C>. Neither prunes while the app runs. <B>Remove</B> deletes the app <B>and everything it deployed</B> (Argo CD / Flux clean up first; the namespace stays) — or, if you choose, only the app, leaving its workloads running.</>],
                             ['Promote by pull request (Pro)', <>Delivery → <B>Promote by pull request</B>: add a <B>GitHub</B>, <B>GitLab</B> or <B>Bitbucket</B> account, then change values in a YAML file (e.g. <C>image.tag</C> in <C>apps/web/prod.yaml</C>). KubeEZ makes a branch and opens a pull request (a merge request on GitLab, sub-groups allowed); Argo CD / Flux deploy it once merged. Comments and layout of the file stay. Self-hosted GitHub Enterprise or GitLab: change the API address. Bitbucket: an access token, or an app password with your user name.</>]
                         ]} />
                     </Section>
@@ -614,7 +614,7 @@ curl -fsS -X DELETE https://<your-kubeez>/api/hooks/preview -H "Authorization: B
                         <Table head={['', '']} rows={[
                             ['Hibernate / Wake', 'Scale every Deployment and StatefulSet of a namespace to 0 (dev at night, a paused project) and back to exactly what it was. Protected environments need a second person; system namespaces are for admins.'],
                             ['Scheduled hibernate (Pro)', 'A namespace sleeps and wakes on a clock, e.g. dev 21:00 → 09:00 on weekdays, in your time zone. Skipped (with an alert) during a change freeze.'],
-                            ['Debug containers (Pro)', 'Add an ephemeral busybox or netshoot container to a running pod — also needs terminal access.'],
+                            ['Debug containers', 'Add an ephemeral busybox or netshoot container to a running pod — also needs terminal access.'],
                             ['Canary rollouts (Pro)', 'Argo Rollouts (add-on): see canary / blue-green steps, then promote, promote fully, abort or retry.'],
                             ['Autoscaling (Pro)', 'KEDA (add-on): a wizard for ScaledObjects on a schedule, CPU / memory or a Prometheus query.']
                         ]} />
@@ -920,27 +920,25 @@ curl -fsS -X DELETE https://<your-kubeez>/api/hooks/preview -H "Authorization: B
                     </Section>
 
                     <Section id="plans" Icon={CheckCircle2} color="text-emerald-400" title="Plans">
+                        <P>Free runs one cluster for real. Pro adds what a team in production needs. Every new hosted workspace starts with <B>14 days of Pro</B> — every feature, Pro limits, no card — and is Free afterwards; nothing is deleted. <Link to="/pricing" className="text-blue-400 hover:underline">Plan &amp; usage</Link> shows your plan, how much you use and, feature by feature, what you can use.</P>
                         <Table head={['', 'Free', 'Pro / Enterprise']} rows={[
-                            ['Deploy, upgrade, scale, resume', '✓', '✓'],
-                            ['Auto-healing & incidents', '✓', '✓'],
+                            ['Clusters · nodes · team members', '1 · 5 · 1', 'Pro: 10 · 50 · 5 — Enterprise: as agreed'],
+                            ['Deploy, upgrade, scale, resume, connect existing clusters', '✓', '✓'],
+                            ['Auto-healing & incidents, Ask AI (with your AI engine)', '✓', '✓'],
+                            ['Apps (Helm) with drift check, GitOps view, sync and new apps', '✓', '✓'],
+                            ['Security scans, certificates, DORA, app metrics, cost per app, hibernate', '✓', '✓'],
+                            ['Registry pull secrets, debug containers', '✓', '✓'],
+                            ['Add-ons', 'Dashboard, Metrics Server, KubeEZ AI, Explorer, Ingress, cert-manager, Trivy, Argo CD, Flux', 'All add-ons, and advanced settings (YAML)'],
                             ['Compliance scan & audit trail', '✓', '✓'],
-                            ['Add-ons', 'Kubernetes Dashboard, Metrics Server, KubeEZ AI', 'All add-ons, incl. the KubeEZ Explorer'],
-                            ['KubeEZ AI (own engines, fallbacks, safety)', '✓', '✓'],
-                            ['Cluster snapshots, restore, offsite backup, disaster recovery', '—', '✓'],
-                            ['Volume backups', '—', '✓'],
+                            ['Alerts', '1 channel (Telegram, email or webhook), critical alerts', 'Every channel and alert type, rules — plus CVE, certificate and GitOps alerts'],
+                            ['Deploy guards: CVE gate, image signatures, deploy risk, auto-rollback', '— (the deploy preview says what the CVE gate would stop)', '✓'],
+                            ['Pipelines: deploy tokens & CI webhook, previews, promote by pull request, promotion, deploy from chat', '—', '✓'],
+                            ['Canary rollouts, KEDA autoscaling, scheduled hibernate, External Secrets', '—', '✓'],
+                            ['Custom roles, two-person approval, temporary access', 'Admin / Operator / Viewer', '✓'],
                             ['Compliance PDF, monthly reports, fixes, CERT-In report', '—', '✓'],
-                            ['Alerts', '1 channel, critical alerts', 'All channels and alert types, rules'],
-                            ['Advanced add-on settings (YAML)', '—', '✓'],
-                            ['Custom roles, per-cluster and namespace access, access review', 'Admin / Operator / Viewer', '✓'],
-                            ['Two-person approval, temporary access', '—', '✓'],
-                            ['Helm apps, GitOps view & sync, Security, Certificates, DORA, app metrics, cost per app, hibernate', '✓', '✓'],
-                            ['GitOps alerts & new apps, promotion PRs (GitHub / GitLab / Bitbucket), promotion pipeline', '—', '✓'],
-                            ['Deploy tokens & CI webhook, preview environments, deploy from chat', '—', '✓'],
-                            ['CVE gate, image signature gate, deploy risk, Helm drift, auto-rollback', '—', '✓'],
-                            ['New CVE alerts, certificate alerts, scheduled hibernate, debug containers, canary rollouts, KEDA, registries, External Secrets', '—', '✓']
+                            ['Config backups, cluster snapshots, volume backups, off-site backup', '—', '✓'],
                         ]} />
-                        <P>Pro and Enterprise include every feature; a Free workspace sees the others and is asked to upgrade.</P>
-                        <P>Cluster, node and member limits depend on the plan. See <Link to="/pricing" className="text-blue-400 hover:underline">Plans</Link>.</P>
+                        <P>Pro and Enterprise include every feature; Enterprise differs only in quantities and support. On Free, a Pro section shows a <B>Pro</B> card with an upgrade button instead of its content, and a Pro button explains the upgrade when clicked. The server checks every one of them, too.</P>
                     </Section>
 
                     {/* ── Help ────────────────────────────────────────── */}

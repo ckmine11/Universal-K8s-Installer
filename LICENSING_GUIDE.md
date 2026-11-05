@@ -10,7 +10,7 @@ A license is **instance-wide**: while it is active, it applies to every workspac
 
 | | With an active license | Without one |
 |---|---|---|
-| Clusters and nodes the server may manage | the license's `maxClusters` / `maxNodes` | 1 cluster, 2 nodes |
+| Clusters and nodes the server may manage | the license's `maxClusters` / `maxNodes` | 1 cluster, 5 nodes |
 | Plan of every workspace — features (also background checks such as GitOps, CVE and certificate alerts, Helm drift), backups, compliance reports, custom roles, approvals, all alert channels | **Enterprise** for a license named `ENTERPRISE…`, otherwise **Pro** (`PRO`, `EVALUATION`, `TRIAL`…) | the workspace owner's own plan (Free) |
 | Team seats per workspace | the license's `maxMembers`, or **no limit** when it has none | 1 |
 

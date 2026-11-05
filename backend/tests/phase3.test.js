@@ -99,6 +99,11 @@ describe('the gate inside a deploy', () => {
         f.connect = (orig => async () => { const s = await orig(); const e = s.execCommand; s.execCommand = async (cmd, o) => /--dry-run=server/.test(cmd) ? { code: 0, stdout: `==CUR==\n==NEW==\n${JSON.stringify({ manifest: MANIFEST, chart: { metadata: { name: 'web', version: '1' } } })}` } : e(cmd, o); return s })(f.connect)
         const p = await helm.previewDeploy(cluster, d(), { connect: f.connect, gate: { policy: { mode: 'warn', severity: 'CRITICAL' }, read: async () => SECURITY } })
         assert.equal(p.cve.mode, 'warn'); assert.equal(p.cve.failing.length, 1); assert.equal('manifest' in p, false)
+        // a plan without the CVE gate: only a hint of what Pro would stop — never a block
+        const h = await helm.previewDeploy(cluster, d(), { connect: f.connect, cveHint: { read: async () => SECURITY } })
+        assert.equal(h.cve, undefined); assert.equal(h.cveHint.failing.length, 1); assert.equal(h.cveHint.feature, 'cveGate')
+        const clean = await helm.previewDeploy(cluster, d(), { connect: f.connect, cveHint: { read: async () => ({ reports: [] }) } })
+        assert.equal(clean.cveHint, undefined, 'nothing to say when no image has a critical vulnerability')
     })
 })
 

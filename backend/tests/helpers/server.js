@@ -30,6 +30,7 @@ export async function startServer(extraEnv = {}) {
             KUBEEZ_MODE: 'saas',
             APP_SECRET: 'test-secret',
             NODE_ENV: 'test',
+            KUBEEZ_TRIAL_DAYS: '0',   // sign-ups are Free; a test turns the Pro trial on itself
             KUBEEZ_DATA_DIR: dataDir,
             ...extraEnv
         },

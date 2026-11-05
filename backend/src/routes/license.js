@@ -27,7 +27,7 @@ router.get('/license/status', requireAuth, async (req, res) => {
             const authService = (await import('../services/authService.js')).authService;
             // Team members share the workspace owner's subscription
             const user = authService.getOrgOwner(req.user.orgId) || authService.getUserById(req.user.id);
-            const sub = user?.subscription || { plan: 'FREE', maxClusters: 1, maxNodes: 2 };
+            const sub = authService.orgSubscription(req.user.orgId);   // a running trial counts as Pro
             
             state.plan = sub.plan === 'FREE' ? 'Free Tier' : `${sub.plan} Subscription`;
             state.planCode = String(sub.plan || 'FREE').toUpperCase(); // raw code for reliable UI gating
@@ -38,7 +38,13 @@ router.get('/license/status', requireAuth, async (req, res) => {
             // Reflect the real subscription lifecycle instead of a fixed date:
             //  - FREE  → no expiry (free forever)
             //  - Paid  → auto-renewing; show the next renewal date if we track it
-            if (sub.plan === 'FREE') {
+            //  - trial → Pro until it ends, then Free
+            state.trial = sub.trial;
+            if (sub.trial?.daysLeft) {
+                state.plan = `Pro trial — ${sub.trial.daysLeft} day${sub.trial.daysLeft === 1 ? '' : 's'} left`;
+                state.expiresAt = sub.trial.endsAt;
+                state.autoRenew = false;
+            } else if (sub.plan === 'FREE') {
                 state.expiresAt = null;
                 state.autoRenew = false;
             } else {

@@ -162,6 +162,13 @@ function DeployDialog({ clusterId, start, environments, isAdmin, freeze, onClose
                                 {c.diff ? <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-black/30 p-2 font-mono leading-snug">{c.diff.map((l, k) => <div key={k} className={l[0] === '+' ? 'text-emerald-300' : l[0] === '-' ? 'text-red-300' : 'text-slate-500'}>{l}</div>)}</pre> : c.action !== 'remove' && <p className="text-slate-500">Too large to show.</p>}
                             </details>
                         ))}
+                        {preview.cveHint && (
+                            <div className="rounded-lg border border-amber-400/25 bg-amber-500/[0.06] p-2.5 text-[11px] space-y-1 text-amber-100">
+                                <p className="font-semibold">{preview.cveHint.failing.length} image{preview.cveHint.failing.length === 1 ? '' : 's'} with critical vulnerabilities — with Pro, the CVE gate would stop this deploy</p>
+                                {preview.cveHint.failing.map(f => <p key={f.image} className="font-mono break-all">{f.image}: {f.critical} critical{f.cves.length ? ` (${f.cves.join(', ')})` : ''}</p>)}
+                                <p className="text-slate-400">You can still deploy. <a href="/pricing" className="text-blue-300 hover:underline">See Pro</a></p>
+                            </div>
+                        )}
                         {preview.cve && (
                             <div className={`rounded-lg border p-2.5 text-[11px] space-y-1 ${preview.cve.blocked ? 'border-red-400/30 text-red-200' : preview.cve.failing.length ? 'border-amber-400/30 text-amber-100' : 'border-emerald-400/25 text-emerald-100'}`}>
                                 <p className="font-semibold">CVE policy of this environment: {preview.cve.mode} on {preview.cve.severity.toLowerCase()}{preview.cve.blocked ? ' — this deploy will be blocked' : preview.cve.failing.length ? ' — vulnerable images, deploy allowed' : ' — passed'}</p>

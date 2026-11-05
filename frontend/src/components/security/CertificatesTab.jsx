@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { BadgeCheck, RefreshCw, Loader2, AlertTriangle, Search, RotateCw, Lock } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
+import { Link } from 'react-router-dom'
+import { featureOn, featureIncluded, featuresKnown } from '../../config/features'
 
 // cert-manager of one cluster: every Certificate with its expiry and state
 // (worst first), the Issuers / ClusterIssuers, and ACME Challenges that are
@@ -82,6 +84,14 @@ export default function CertificatesTab({ clusterId, canInstall, onOpenAddons })
                         <Card label="Being issued" value={s.issuing} tone="text-blue-200" />
                         <Card label="Stuck challenges" value={s.challenges} tone="text-amber-200" />
                     </div>
+                )}
+                {/* Free: certificates need attention, and Pro would have said so on its own */}
+                {s && !missing && s.expired + s.failing + s.expiring > 0 && featuresKnown() && featureOn('certAlerts') && !featureIncluded('certAlerts') && (
+                    <p className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-100">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        {s.expired + s.failing + s.expiring} certificate{s.expired + s.failing + s.expiring === 1 ? '' : 's'} need{s.expired + s.failing + s.expiring === 1 ? 's' : ''} attention. With Pro, KubeEZ alerts you (Slack, Teams, email…) 14, 7, 3 and 1 day before a certificate expires — you would not have to look.
+                        <Link to="/pricing" className="font-semibold text-blue-300 hover:underline">Upgrade</Link>
+                    </p>
                 )}
             </div>
 

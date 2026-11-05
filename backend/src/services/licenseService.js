@@ -8,6 +8,8 @@ import { clusterStore } from './clusterStore.js'
 import { canAccessResource } from '../utils/access.js'
 import { DATA_DIR } from '../utils/paths.js'
 import { writeFileAtomic } from '../utils/atomicWrite.js'
+import { PLAN_LIMITS, effectiveSubscription } from './plans.js'
+const FREE_LIMITS = { maxClusters: PLAN_LIMITS.FREE.maxClusters, maxNodes: PLAN_LIMITS.FREE.maxNodes }
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -105,8 +107,7 @@ class LicenseService {
                     mode: 'self-hosted',
                     licenseKey: null,
                     plan: 'Free Tier',
-                    maxClusters: 1,
-                    maxNodes: 2,
+                    ...FREE_LIMITS,
                     status: 'unlicensed',
                     expiresAt: null,
                     systemId
@@ -120,8 +121,7 @@ class LicenseService {
                     mode: 'self-hosted',
                     licenseKey: null,
                     plan: 'Free Tier',
-                    maxClusters: 1,
-                    maxNodes: 2,
+                    ...FREE_LIMITS,
                     status: 'unlicensed',
                     expiresAt: null,
                     systemId
@@ -148,8 +148,7 @@ class LicenseService {
                 mode: 'self-hosted',
                 licenseKey: null,
                 plan: 'Free Tier',
-                maxClusters: 1,
-                maxNodes: 2,
+                ...FREE_LIMITS,
                 status: 'unlicensed',
                 expiresAt: null,
                 systemId
@@ -247,8 +246,7 @@ class LicenseService {
 
             // Use the user's own subscription limits (falls back to plan defaults)
             const { authService } = await import('./authService.js')
-            const owner = authService.getOrgOwner(orgId) || authService.getUserById(userId)
-            const sub = owner?.subscription || {}
+            const sub = authService.getOrgOwner(orgId) ? authService.orgSubscription(orgId) : effectiveSubscription(authService.getUserById(userId)?.subscription)
             const maxClusters = sub.maxClusters ?? state.maxClusters
             const maxNodes = sub.maxNodes ?? state.maxNodes
 

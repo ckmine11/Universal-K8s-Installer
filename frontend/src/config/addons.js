@@ -9,7 +9,7 @@ export const ADDONS_LIST = [
         gradient: 'from-emerald-500 via-green-500 to-teal-600',
         badge: '🔥 Popular',
         badgeColor: 'text-emerald-400 border-emerald-500/30',
-        tier: 'pro'
+        tier: 'free'
     },
     {
         key: 'dashboard',
@@ -37,7 +37,7 @@ export const ADDONS_LIST = [
         gradient: 'from-purple-500 via-fuchsia-500 to-pink-600',
         badge: '✨ New',
         badgeColor: 'text-purple-400 border-purple-500/30',
-        tier: 'pro'
+        tier: 'free'
     },
     {
         key: 'longhorn',
@@ -67,7 +67,7 @@ export const ADDONS_LIST = [
         gradient: 'from-cyan-500 via-blue-500 to-indigo-600',
         badge: '✨ New',
         badgeColor: 'text-cyan-400 border-cyan-500/30',
-        tier: 'pro'
+        tier: 'free'
     },
     {
         key: 'kubeez-ai',
@@ -88,7 +88,7 @@ export const ADDONS_LIST = [
         gradient: 'from-indigo-500 via-blue-500 to-cyan-600',
         badge: '✨ New',
         badgeColor: 'text-indigo-400 border-indigo-500/30',
-        tier: 'pro'
+        tier: 'free'
     },
     // ── Helm add-ons with settings (form, change later, advanced YAML on Pro) ──
     {
@@ -258,7 +258,7 @@ export const ADDONS_LIST = [
         gradient: 'from-indigo-500 via-violet-500 to-purple-600',
         badge: '✨ New',
         badgeColor: 'text-violet-400 border-violet-500/30',
-        tier: 'pro',
+        tier: 'free',
         helm: true
     },
     {
@@ -314,7 +314,7 @@ export const ADDONS_LIST = [
         gradient: 'from-sky-500 via-cyan-500 to-teal-600',
         badge: '✨ New',
         badgeColor: 'text-sky-400 border-sky-500/30',
-        tier: 'pro',
+        tier: 'free',
         helm: true
     }
 ];

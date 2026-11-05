@@ -25,12 +25,13 @@ router.get('/stats', async (req, res) => {
         const planCounts = { FREE: 0, PRO: 0, ENTERPRISE: 0 };
         let mrr = 0;
         let teamMembers = 0;
+        let trials = 0;   // Free workspaces in their Pro trial (services/plans.js)
         for (const u of users) {
             const plan = String(u.subscription?.plan || 'FREE').toUpperCase();
             if (plan === 'MEMBER') { teamMembers++; continue; }
             if (plan === 'PRO') { planCounts.PRO++; mrr += 49; }
             else if (plan === 'ENTERPRISE') { planCounts.ENTERPRISE++; mrr += monthlyFromBilling(u.subscription?.billing); }
-            else { planCounts.FREE++; }
+            else { planCounts.FREE++; if (Date.parse(u.subscription?.trialEndsAt || '') > Date.now()) trials++; }   // a trial pays nothing: counted as Free
         }
 
         const orgOwners = users.filter(u => u.role === 'admin' || u.role === 'superadmin').length;
@@ -54,6 +55,7 @@ router.get('/stats', async (req, res) => {
         res.json({
             tenants: { total: users.length, owners: orgOwners, teamMembers, suspended },
             plans: planCounts,
+            trials,
             revenue: { mrr: Math.round(mrr), arr: Math.round(mrr * 12), currency: 'USD' },
             clusters: { total: clusters.length, byStatus: clusterStatus, totalNodes },
             incidents: { total: incidents.length, unresolved: unresolvedIncidents },

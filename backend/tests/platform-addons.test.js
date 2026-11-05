@@ -12,19 +12,20 @@ process.env.KUBEEZ_DATA_DIR = tempDataDir()
 const { HELM_ADDONS, SYSTEM_NAMESPACES } = await import('../src/config/helmAddons.js')
 const { buildPlan, planFiles } = await import('../src/services/addonSettings.js')
 const { discoverFor, chartSources } = await import('../src/services/addonVersions.js')
-const { checkAddonPlan } = await import('../src/config/addonTiers.js')
+const { checkAddonPlan, FREE_ADDONS } = await import('../src/config/addonTiers.js')
 
 const NEW = ['nfs-provisioner', 'snapshot-controller', 'elasticsearch', 'fluentd', 'fluent-bit', 'harbor', 'flux', 'jenkins', 'vault', 'gatekeeper', 'falco', 'trivy-operator']
 const cluster = (addons = {}, extra = {}) => ({ id: 'c1', k8sVersion: '1.35.0', masterNodes: [{ ip: '10.0.0.4' }], workerNodes: [{ ip: '10.0.0.5' }], addons, ...extra })
 const plan = (key, settings = {}, addons = {}, extra) => buildPlan(key, cluster(addons, extra), { settings: { ...(HELM_ADDONS[key].example || {}), ...settings } })
 const values = (p, i = 0) => p.releases[i].values
 
-test('every new add-on: Pro, its own namespace kept out of policies, a chart repository for updates, an uninstall branch', () => {
+test('every new add-on: Pro unless a Free feature needs it, its own namespace kept out of policies, a chart repository for updates, an uninstall branch', () => {
     const uninstall = fs.readFileSync(new URL('../src/automation/addon-uninstall.sh', import.meta.url), 'utf8')
     for (const k of NEW) {
         const a = HELM_ADDONS[k]
         assert.ok(SYSTEM_NAMESPACES.includes(a.ns), `${k}: ${a.ns} is a system namespace`)
-        assert.equal(checkAddonPlan({ [k]: true }, 'FREE').allowed, false, `${k} is Pro`)
+        // Free only when a Free feature depends on it (Flux → GitOps, Trivy → Security)
+        assert.equal(checkAddonPlan({ [k]: true }, 'FREE').allowed, FREE_ADDONS.includes(k), `${k}: ${FREE_ADDONS.includes(k) ? 'Free' : 'Pro'}`)
         assert.ok(chartSources(a).length, `${k}: new versions can be found`)
         assert.match(uninstall, new RegExp(`^${k}\\)$`, 'm'), `${k}: uninstall branch`)
     }
