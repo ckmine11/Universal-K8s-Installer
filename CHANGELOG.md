@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Delivery settings**: the Cluster lists (environments, freezes, deploy tokens, registries) were empty — the page asked a route that does not exist.
 - **Chart lists of large repositories** (Bitnami: 28 MB index) took ~900 MB and blocked the server for ~10 s, so a 512 MB container restarted. Only the newest 30 versions of each chart are read now (~110 MB, the server stays responsive); two requests for the same repository share one read.
 - **Helm on RHEL-family nodes**: `sudo` did not find a Helm installed in `/usr/local/bin` ("sudo: helm: command not found"), breaking Apps, Compare, Previews and Drift; KubeEZ now runs it by its full path.
+- **A new sign-in on the same browser showed the previous person's Ask AI conversation** (and last cluster, installations). The browser now forgets them when someone else signs in or anyone signs out.
+- **Free workspaces**: pages loaded Pro lists by themselves, so Delivery settings failed to load and an upgrade pop-up appeared without a click. Pro sections now show a "Pro — Upgrade" card on Free and load nothing; Pro buttons still ask to upgrade when clicked.
 - **AI "No AI engine could answer right now"** hid the reason. It now says why in the engine's own words (e.g. OpenRouter: free-models-per-day used up) and where to fix it; a daily quota is no longer retried, the engine is paused with that reason.
 - **Helm 4** (which KubeEZ installs) has no `helm list -a`: listing releases failed ("unknown shorthand flag: 'a'"), so Apps, Compare and Previews showed nothing, and uninstalling an add-on left its releases behind. Helm 3 and 4 both work now.
 

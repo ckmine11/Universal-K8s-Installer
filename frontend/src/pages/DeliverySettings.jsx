@@ -3,7 +3,8 @@ import { Layers, Package, Snowflake, GitCompare, Plus, Trash2, Lock, Loader2, Al
 import { apiFetch } from '../context/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import PageHeader from '../components/ui/PageHeader'
-import { useFeatures } from '../config/features'
+import { useFeatures, featureUsable, featureIncluded, featuresKnown } from '../config/features'
+import ProLock from '../components/ui/ProLock'
 
 // Delivery settings of the workspace: environments (and which are protected),
 // chart repositories, change freezes — and comparing one app across two
@@ -23,6 +24,9 @@ function Section({ Icon, title, hint, children }) {
 export default function DeliverySettings() {
     const { toast } = useToast()
     const featureOn = useFeatures()
+    const known = featuresKnown()   // the plan is loaded: Pro lists may be asked for
+    // a Pro section on a Free workspace
+    const locked = (key) => known && featureOn(key) && !featureIncluded(key)
     const [clusters, setClusters] = useState([])
     const [envs, setEnvs] = useState(null)
     const [repos, setRepos] = useState(null)
@@ -54,16 +58,21 @@ export default function DeliverySettings() {
 
     const load = useCallback(async () => {
         try {
-            const [e, r, f, g, rg] = await Promise.all(['/api/delivery/environments', '/api/delivery/repos', '/api/delivery/freezes', '/api/delivery/git', '/api/delivery/registries'].map(u => apiFetch(u).then(json)))
-            setEnvs(e); setRepos(r); setFreezes(f); setGit(g); setRegs(rg); setError(null)
+            const [e, r, f] = await Promise.all(['/api/delivery/environments', '/api/delivery/repos', '/api/delivery/freezes'].map(u => apiFetch(u).then(json)))
+            setEnvs(e); setRepos(r); setFreezes(f); setError(null)
         } catch (err) { setError(err.message) }
+        if (!known) return
+        // Pro lists: only when the plan includes them (otherwise an upgrade card, no 402)
+        const pro = (key, url, set) => featureUsable(key) ? apiFetch(url).then(r => r.ok ? r.json() : null).then(set).catch(() => set(null)) : set(null)
+        pro('gitopsPromote', '/api/delivery/git', setGit)
+        pro('registries', '/api/delivery/registries', setRegs)
         apiFetch('/api/delivery/costs').then(r => r.ok ? r.json() : null).then(d => { if (d) { setCostRates(d.rates); setCostCanManage(d.canManage) } }).catch(() => { })
-        apiFetch('/api/delivery/tokens').then(r => r.ok ? r.json() : null).then(d => setTokens(d ? d.tokens : null)).catch(() => setTokens(null))
-        apiFetch('/api/delivery/previews').then(r => r.ok ? r.json() : null).then(setPreviews).catch(() => setPreviews(null))
-        apiFetch('/api/delivery/chat-deploy').then(r => r.ok ? r.json() : null).then(setChat).catch(() => setChat(null))
-        apiFetch('/api/delivery/signing-keys').then(r => r.ok ? r.json() : null).then(setSignKeys).catch(() => setSignKeys(null))
+        pro('deployTokens', '/api/delivery/tokens', d => setTokens(d ? d.tokens : null))
+        pro('previews', '/api/delivery/previews', setPreviews)
+        pro('chatDeploy', '/api/delivery/chat-deploy', setChat)
+        pro('signGate', '/api/delivery/signing-keys', setSignKeys)
         apiFetch('/api/clusters/list').then(r => r.ok ? r.json() : []).then(l => setClusters(Array.isArray(l) ? l : l.clusters || [])).catch(() => { })
-    }, [])
+    }, [known])
     useEffect(() => { load() }, [load])
 
     const send = async (url, method, body, ok) => {
@@ -126,19 +135,19 @@ export default function DeliverySettings() {
                             <li key={e.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-xs">
                                 <span className="font-semibold text-white">{e.name}</span><span className="text-slate-400">{e.clusterName} · {e.namespace}</span>
                                 {e.protected && <span className="flex items-center gap-1 text-amber-200"><Lock className="w-3 h-3" />protected</span>}
-                                {envs.canManage ? (
+                                {featureUsable('cveGate') && (envs.canManage ? (
                                     <select className="kz-input !w-auto !py-1 !text-[11px]" value={e.cvePolicy ? `${e.cvePolicy.mode}:${e.cvePolicy.severity}` : 'off'} aria-label={`CVE policy of ${e.name}`}
                                         onChange={ev => { const [mode, severity] = ev.target.value.split(':'); send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, cvePolicy: mode === 'off' ? { mode: 'off' } : { mode, severity } }, 'CVE policy saved') }}>
                                         <option value="off">CVE gate: off</option><option value="warn:CRITICAL">warn on critical</option><option value="block:CRITICAL">block critical</option><option value="warn:HIGH">warn on high+</option><option value="block:HIGH">block high+</option>
                                     </select>
-                                ) : e.cvePolicy && <span className="text-slate-400">CVE gate: {e.cvePolicy.mode} {e.cvePolicy.severity.toLowerCase()}</span>}
-                                {featureOn('signGate') && (envs.canManage ? (
+                                ) : e.cvePolicy && <span className="text-slate-400">CVE gate: {e.cvePolicy.mode} {e.cvePolicy.severity.toLowerCase()}</span>)}
+                                {featureUsable('signGate') && (envs.canManage ? (
                                     <select className="kz-input !w-auto !py-1 !text-[11px]" value={e.signPolicy?.mode || 'off'} aria-label={`Image signature policy of ${e.name}`} title="Images must be signed (cosign) with a workspace signing key"
                                         onChange={ev => send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, signPolicy: { mode: ev.target.value } }, 'Signature policy saved')}>
                                         <option value="off">Signatures: off</option><option value="warn">warn if unsigned</option><option value="block">block unsigned</option>
                                     </select>
                                 ) : e.signPolicy && <span className="text-slate-400">signatures: {e.signPolicy.mode}</span>)}
-                                {featureOn('autoRollback') && (envs.canManage ? (
+                                {featureUsable('autoRollback') && (envs.canManage ? (
                                     <select className="kz-input !w-auto !py-1 !text-[11px]" value={e.autoRollback || 'off'} aria-label={`Auto-rollback of ${e.name}`} title="When a Helm deploy breaks its workload within an hour"
                                         onChange={ev => send(`/api/delivery/environments/${e.id}`, 'PUT', { ...e, autoRollback: ev.target.value }, 'Auto-rollback saved')}>
                                         <option value="off">Auto-rollback: off</option><option value="ask">suggest a rollback</option><option value="auto">roll back by itself</option>
@@ -150,6 +159,7 @@ export default function DeliverySettings() {
                                 </span>}
                             </li>
                         ))}{!envs.environments.length && <li className="text-sm text-slate-500">None yet.</li>}</ul>
+                        {['cveGate', 'signGate', 'autoRollback'].some(locked) && <ProLock compact title="CVE gate · Image signatures · Auto-rollback">Per-environment guards: block images with critical vulnerabilities or without a signature, and roll back a deploy that breaks.</ProLock>}
                         {envs.canManage && (
                             <div className="flex flex-wrap items-end gap-2">
                                 <input className="kz-input !w-32" placeholder="prod" value={envForm.name} onChange={e => setEnvForm(f => ({ ...f, name: e.target.value }))} aria-label="Environment name" />
@@ -223,6 +233,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
+            {locked('registries') && <ProLock feature="registries" title="Registries (pull secrets)">A private registry's login written as a pull secret into the namespaces you pick, so pods pull without changing manifests.</ProLock>}
             {regs && featureOn('registries') && (
                 <Section Icon={Container} title="Registries (pull secrets)" hint="A private registry's login, written as a pull secret (kubeez-registry-<name>) into the namespaces you pick — optionally used by their default ServiceAccount, so pods pull without changing manifests. The password is stored encrypted and sent to the cluster on stdin.">
                     <ul className="space-y-1.5">{regs.registries.map(r => (
@@ -254,6 +265,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
+            {locked('deployTokens') && <ProLock feature="deployTokens" title="Deploy tokens (CI)">Deploy one app from GitHub Actions, GitLab CI or Jenkins with a token limited to one release and the values you list.</ProLock>}
             {tokens && featureOn('deployTokens') && (
                 <Section Icon={KeyRound} title="Deploy tokens (CI)" hint="A token deploys one app from your pipeline (GitHub Actions, GitLab CI, Jenkins) — one release, one chart, only the values you list (e.g. image.tag). Protected environments, freezes and the CVE gate still apply. The token is shown once.">
                     {newToken && (
@@ -291,6 +303,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
+            {locked('signGate') && <ProLock feature="signGate" title="Signing keys">Trust cosign public keys and let environments accept only signed images.</ProLock>}
             {signKeys && featureOn('signGate') && (
                 <Section Icon={ShieldCheck} title="Signing keys" hint="Public keys of cosign (cosign.pub). An environment with a signature policy accepts only images signed with one of these keys — KubeEZ checks the signature in the registry before each deploy (key-based signing; no transparency log, no keyless). Private registries use the logins under Registries.">
                     <ul className="space-y-1.5">{signKeys.keys.map(k => (
@@ -310,6 +323,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
+            {locked('previews') && <ProLock feature="previews" title="Preview environments">A short-lived copy of an app for each pull request or branch, removed by itself when it expires.</ProLock>}
             {previews && featureOn('previews') && (
                 <Section Icon={Eye} title="Preview environments" hint={`A short-lived copy of an app for one pull request or branch, in its own namespace (web-pr-42): the chart and version of the app it copies, its values plus what you change (the PR's image.tag). It removes itself when it expires — the whole namespace goes. From CI: a deploy token with "Previews too". Up to ${previews.max} at a time.`}>
                     <ul className="space-y-1.5">{previews.previews.map(p => (
@@ -338,6 +352,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
+            {locked('chatDeploy') && <ProLock feature="chatDeploy" title="Deploy from chat">Deploy from a Slack or Telegram channel, with a confirmation from the same person.</ProLock>}
             {chat && featureOn('chatDeploy') && (
                 <Section Icon={MessageSquare} title="Deploy from chat" hint={'Let a Slack or Telegram ChatOps channel deploy an app: "deploy web 1.4.2 to staging", then "confirm 4821" from the same person within 5 minutes. Only the one value you pick (image.tag) changes; the chart version stays. Protected environments and change freezes always refuse; the CVE gate applies. Leave users empty to allow everyone in that chat.'}>
                     <ul className="space-y-1.5">{chat.rules.map(r => (
@@ -363,6 +378,7 @@ export default function DeliverySettings() {
                 </Section>
             )}
 
+            {locked('gitopsPromote') && <ProLock feature="gitopsPromote" title="Promote by pull request">KubeEZ opens a pull request on GitHub, GitLab or Bitbucket that changes a value (e.g. image.tag); Argo CD / Flux deploy it once merged.</ProLock>}
             {git && featureOn('gitopsPromote') && (
                 <Section Icon={GitPullRequest} title="Promote by pull request" hint="Change values in a YAML file of a GitHub, GitLab or Bitbucket repository (e.g. image.tag in apps/web/prod.yaml) — KubeEZ opens a pull request (a merge request on GitLab); Argo CD / Flux deploy it once it is merged. Self-hosted GitHub Enterprise / GitLab: change the API address.">
                     <ul className="space-y-1.5">{git.accounts.map(a => (

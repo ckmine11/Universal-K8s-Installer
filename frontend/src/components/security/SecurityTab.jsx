@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { ShieldAlert, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Search, ExternalLink, Wrench } from 'lucide-react'
 import { apiFetch } from '../../context/AuthContext'
 import ExternalSecretsCard from './ExternalSecretsCard'
-import { useFeatures } from '../../config/features'
+import { useFeatures, featureUsable, featureIncluded, featuresKnown } from '../../config/features'
+import ProLock from '../ui/ProLock'
 
 // Security of one cluster from the Trivy Operator's reports: image
 // vulnerabilities per workload (critical / high listed, with the fixed
@@ -188,7 +189,8 @@ export default function SecurityTab({ clusterId, canInstall, onOpenAddons }) {
                     </>
                 ) : !error && vt?.state === 'ok' && <p className="text-sm text-slate-500 py-2">No scan results yet — the first scans take a few minutes after the Trivy Operator starts.</p>)}
             </div>
-            {featureOn('externalSecrets') && <ExternalSecretsCard clusterId={clusterId} />}
+            {featureUsable('externalSecrets') && <ExternalSecretsCard clusterId={clusterId} />}
+            {featuresKnown() && featureOn('externalSecrets') && !featureIncluded('externalSecrets') && <ProLock feature="externalSecrets">Whether External Secrets (Vault, AWS, GCP, Azure) are synced into the cluster, and refreshing them.</ProLock>}
         </div>
     )
 }

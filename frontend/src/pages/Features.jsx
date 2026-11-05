@@ -20,7 +20,7 @@ export default function Features() {
     const load = useCallback(async () => {
         try {
             const d = await json(await apiFetch('/api/features'))
-            setData(d); setFeatures(d.enabled); setError(null)
+            setData(d); setFeatures(d.enabled, d.features); setError(null)
             if (d.canManagePlatform) setPlatform((await json(await apiFetch('/api/features/platform'))).features)
         } catch (e) { setError(e.message) }
     }, [])

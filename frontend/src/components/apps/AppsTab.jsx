@@ -3,7 +3,8 @@ import { Boxes, RefreshCw, Loader2, AlertTriangle, Plus, ChevronDown, ChevronRig
 import { apiFetch, useAuth } from '../../context/AuthContext'
 import { useToast } from '../ToastProvider'
 import OpsPanel from './OpsPanel'
-import { useFeatures } from '../../config/features'
+import { useFeatures, featureUsable, featureOn as isOn, featureIncluded, featuresKnown, featureLabel } from '../../config/features'
+import ProLock from '../ui/ProLock'
 import ProgressivePanel from './ProgressivePanel'
 import MetricsPanel from './MetricsPanel'
 import CostPanel from './CostPanel'
@@ -338,10 +339,15 @@ export default function AppsTab({ clusterId }) {
                     </>
                 ) : <p className="text-sm text-slate-500 py-2">No Helm releases{data.hidden ? ' you can see' : ''} on this cluster yet.</p>)}
             </div>
-            {(featureOn('rollouts') || featureOn('autoscale')) && <ProgressivePanel clusterId={clusterId} rollouts={featureOn('rollouts')} autoscale={featureOn('autoscale')} />}
+            {(featureUsable('rollouts') || featureUsable('autoscale')) && <ProgressivePanel clusterId={clusterId} rollouts={featureUsable('rollouts')} autoscale={featureUsable('autoscale')} />}
             {featureOn('appMetrics') && <MetricsPanel clusterId={clusterId} />}
             {featureOn('costs') && <CostPanel clusterId={clusterId} />}
-            {(featureOn('hibernate') || featureOn('debug')) && <OpsPanel clusterId={clusterId} hibernate={featureOn('hibernate')} debug={featureOn('debug')} schedules={featureOn('hibernate') && featureOn('hibernateSchedule')} />}
+            {(featureOn('hibernate') || featureUsable('debug')) && <OpsPanel clusterId={clusterId} hibernate={featureOn('hibernate')} debug={featureUsable('debug')} schedules={featureOn('hibernate') && featureUsable('hibernateSchedule')} />}
+            {(() => {
+                // Pro panels on a Free workspace: what they are and how to get them, nothing loaded
+                const locked = ['rollouts', 'autoscale', 'debug', 'hibernateSchedule'].filter(k => featuresKnown() && isOn(k) && !featureIncluded(k))
+                return locked.length > 0 && <ProLock title={locked.map(featureLabel).join(' · ')}>Canary and blue-green rollouts, autoscaling, debug containers and sleep schedules are part of Pro.</ProLock>
+            })()}
             {dialog && <DeployDialog clusterId={clusterId} start={dialog.release ? dialog : null} environments={data?.environments || []} isAdmin={isAdmin} freeze={data?.freeze} onClose={() => setDialog(null)} onStarted={follow} />}
         </div>
     )

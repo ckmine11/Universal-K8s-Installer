@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { setAccess } from '../config/permissions';
+import { claimBrowser, clearAccountData } from '../utils/accountStorage';
+
+let signedInId = null   // who the plan and feature flags were loaded for (config/features.js)
 
 const AuthContext = createContext();
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -49,7 +52,14 @@ export async function apiFetch(url, options = {}) {
 }
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
+    const [user, setUserState] = useState(null);
+    // a different person than last time on this browser: their data is dropped first
+    const setUser = (u) => {
+        if (u?.id) claimBrowser(u.id);
+        const id = u?.id || null;
+        if (id !== signedInId) { signedInId = id; window.dispatchEvent(new CustomEvent('kz-user', { detail: id })); }
+        setUserState(u);
+    };
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSetupRequired, setIsSetupRequired] = useState(false);
@@ -73,7 +83,7 @@ export const AuthProvider = ({ children }) => {
             await apiFetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
         } catch (_) { /* ignore network errors on logout */ }
         localStorage.removeItem('user');
-        localStorage.removeItem('scaleClusterData');
+        clearAccountData();
         setUser(null);
         setIsAuthenticated(false);
         // Login screen renders at '/' when unauthenticated — there is no

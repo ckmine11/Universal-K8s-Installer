@@ -51,10 +51,16 @@ function loadDismissed() {
  * install is never "lost".
  */
 export function InstallationTrackerProvider({ children }) {
-    const { isAuthenticated } = useAuth()
+    const { isAuthenticated, user } = useAuth()
     const [activeInstallations, setActiveInstallations] = useState(loadPersisted)
     const dismissedRef = useRef(loadDismissed())
     const pollRef = useRef(null)
+
+    // another person signed in (or out): their list, not the previous one (utils/accountStorage.js)
+    useEffect(() => {
+        setActiveInstallations(loadPersisted())
+        dismissedRef.current = loadDismissed()
+    }, [user?.id])
 
     // Persist to localStorage whenever the list changes
     useEffect(() => {
