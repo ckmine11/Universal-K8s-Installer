@@ -135,7 +135,12 @@ describe('#8 Flux apps KubeEZ creates', () => {
         await assert.rejects(gitops.deleteFluxApp({ id: 'c' }, { name: 'x', namespace: 'team-a', managed: false }, { connect }), /only the apps it created/)
         const r = await gitops.deleteFluxApp({ id: 'c' }, { name: 'shop-web', namespace: 'team-a', managed: true }, { connect })
         for (const re of [/delete kustomizations\.kustomize\.toolkit\.fluxcd\.io 'shop-web'/, /delete gitrepositories\.source\.toolkit\.fluxcd\.io 'shop-web'/, /delete rolebinding 'kubeez-flux-shop-web'/, /delete serviceaccount 'kubeez-flux-shop-web'/]) assert.match(calls[0], re)
-        assert.match(r.message, /still running/)
+        // by default Flux prunes what it applied first, still running as its ServiceAccount — which goes last
+        assert.match(calls[0], /patch kustomizations\.kustomize\.toolkit\.fluxcd\.io 'shop-web' --type merge -p '\{"spec":\{"prune":true,"suspend":false\}\}'/)
+        assert.ok(calls[0].indexOf('wait --for=delete') < calls[0].indexOf("delete serviceaccount"), 'the ServiceAccount stays until the prune is done')
+        assert.match(r.message, /everything it deployed were removed/)
+        const keep = await gitops.deleteFluxApp({ id: 'c' }, { name: 'shop-web', namespace: 'team-a', managed: true }, { connect, cascade: false })
+        assert.equal(calls.at(-1).includes('prune'), false); assert.match(keep.message, /still running/)
     })
     test('the list marks KubeEZ\'s Kustomizations as managed (HelmReleases never)', () => {
         const out = `==KZGITOPS:ARGO_ERR==\ndoesn't have a resource type\n==KZGITOPS:KS==\n${JSON.stringify({ items: [{ metadata: { name: 'shop-web', namespace: 'team-a', labels: { 'app.kubernetes.io/managed-by': 'kubeez' } }, spec: { targetNamespace: 'team-a' }, status: {} }, { metadata: { name: 'infra', namespace: 'flux-system' }, spec: {}, status: {} }] })}\n==KZGITOPS:HR==\n${JSON.stringify({ items: [{ metadata: { name: 'h', namespace: 'team-a', labels: { 'app.kubernetes.io/managed-by': 'kubeez' } }, spec: {}, status: {} }] })}\n==KZGITOPS:GITREPO==\n{"items":[]}\n==KZGITOPS:END==`

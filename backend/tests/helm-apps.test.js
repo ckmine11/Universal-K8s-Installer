@@ -342,14 +342,21 @@ describe('GitOps level 2: Argo CD apps KubeEZ creates', () => {
         await gitops.createArgoApp({ id: 'c' }, gitops.cleanCreateApp(ok), { connect: connect('kubeez') })
     })
 
-    test('remove: only apps KubeEZ created; what they deployed stays', async () => {
+    test('remove: only apps KubeEZ created; by default what they deployed goes too (Argo CD\'s finalizer), or stays when asked', async () => {
         const calls = []
-        const connect = async () => ({ execCommand: async (cmd) => { calls.push(cmd); return { code: 0 } }, dispose() { } })
+        let code = 0
+        const connect = async () => ({ execCommand: async (cmd) => { calls.push(cmd); return { code } }, dispose() { } })
         await assert.rejects(gitops.deleteArgoApp({ id: 'c' }, { name: 'x', namespace: 'argocd', managed: false }, { connect }), /only the apps it created/)
         const r = await gitops.deleteArgoApp({ id: 'c' }, { name: 'shop-web', namespace: 'argocd', managed: true }, { connect })
-        assert.match(calls[0], /delete applications\.argoproj\.io 'shop-web' --cascade=orphan/)
-        assert.match(calls[0], /delete appprojects\.argoproj\.io 'kubeez-shop-web'/)
-        assert.match(r.message, /still running/)
+        const c = calls.at(-1)
+        assert.match(c, /patch applications\.argoproj\.io 'shop-web' --type merge -p '\{"metadata":\{"finalizers":\["resources-finalizer\.argocd\.argoproj\.io"\]\}\}'/)
+        assert.ok(c.indexOf('wait --for=delete applications.argoproj.io/shop-web') < c.indexOf("delete appprojects.argoproj.io 'kubeez-shop-web'"), 'the project goes only after the app and its resources')
+        assert.equal(c.includes('--cascade=orphan'), false); assert.match(r.message, /everything it deployed were removed/)
+        const keep = await gitops.deleteArgoApp({ id: 'c' }, { name: 'shop-web', namespace: 'argocd', managed: true }, { connect, cascade: false })
+        assert.match(calls.at(-1), /delete applications\.argoproj\.io 'shop-web' --cascade=orphan/); assert.match(keep.message, /still running/)
+        code = 75   // still deleting after the wait
+        const slow = await gitops.deleteArgoApp({ id: 'c' }, { name: 'shop-web', namespace: 'argocd', managed: true }, { connect })
+        assert.equal(slow.pending, true); assert.match(slow.message, /still deleting/)
     })
 })
 
@@ -522,6 +529,8 @@ describe('API: who may deploy, where, and when', () => {
         assert.equal((await call('admin', 'DELETE', '/api/clusters/h1/gitops/apps/argocd/theirs')).status, 409)
         assert.equal((await call('admin', 'DELETE', '/api/clusters/h1/gitops/apps/argocd/ghost')).status, 404)
         const d = await call('admin', 'DELETE', '/api/clusters/h1/gitops/apps/argocd/mine')
-        assert.equal(d.status, 200); assert.ok(gitCalls.some(x => /delete applications\.argoproj\.io 'mine' --cascade=orphan/.test(x)))
+        assert.equal(d.status, 200); assert.ok(gitCalls.some(x => /patch applications\.argoproj\.io 'mine'.*resources-finalizer/.test(x)), 'deleted together with what it deployed')
+        const k = await call('admin', 'DELETE', '/api/clusters/h1/gitops/apps/argocd/mine?keep=1')
+        assert.equal(k.status, 200); assert.ok(gitCalls.some(x => /delete applications\.argoproj\.io 'mine' --cascade=orphan/.test(x)), 'kept running when asked')
     })
 })

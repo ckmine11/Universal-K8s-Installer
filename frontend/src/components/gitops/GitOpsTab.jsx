@@ -218,10 +218,16 @@ export default function GitOpsTab({ clusterId, canInstall, onOpenAddons }) {
         } finally { setBusy(null) }
     }
     const removeApp = async (app) => {
-        if (!window.confirm(`Remove ${app.name} from ${TOOL_NAME[app.tool]}? What it deployed keeps running — delete that yourself if it should go.`)) return
+        // default: the app AND everything it deployed are deleted from the cluster; declining offers to keep the workloads
+        let keep = false
+        if (!window.confirm(`Remove ${app.name} and everything it deployed from the cluster?\n\n${TOOL_NAME[app.tool]} deletes its Deployments, Services and other resources first. The namespace stays.`)) {
+            if (!window.confirm(`Remove only the ${TOOL_NAME[app.tool]} app ${app.name} and keep what it deployed running?`)) return
+            keep = true
+        }
         setBusy(app.id)
         try {
-            const res = await apiFetch(`/api/clusters/${clusterId}/gitops/apps/${app.namespace}/${app.name}${app.kind === 'Kustomization' ? '?kind=Kustomization' : ''}`, { method: 'DELETE' })
+            const qs = new URLSearchParams({ ...(app.kind === 'Kustomization' ? { kind: 'Kustomization' } : {}), ...(keep ? { keep: '1' } : {}) }).toString()
+            const res = await apiFetch(`/api/clusters/${clusterId}/gitops/apps/${app.namespace}/${app.name}${qs ? `?${qs}` : ''}`, { method: 'DELETE' })
             const d = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(d.error || 'Not removed')
             toast({ title: 'Removed', message: d.message, type: 'success' }); load(true)

@@ -211,6 +211,7 @@ Hibernate / Wake a namespace (also on a schedule), debug containers, canary roll
 Cluster → **GitOps** lists Argo CD Applications and Flux Kustomizations / HelmReleases with sync, health, revision and drift. **Sync now** and **Refresh** ask the tool to do its own job; KubeEZ never prunes.
 
 - **New app** (Pro): from a public https repository, into one namespace — with Argo CD (own AppProject) or Flux (own namespace-only ServiceAccount).
+- **Remove** (admins): deletes the app **and everything it deployed** from the cluster — Argo CD / Flux clean up first, the namespace stays. Decline the first question to remove only the app and keep its workloads running.
 - **Promote by pull request** (Pro, Delivery page): add a GitHub, GitLab or Bitbucket account, then change values in a YAML file; KubeEZ opens the pull / merge request.
 
 ---

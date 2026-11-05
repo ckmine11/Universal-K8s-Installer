@@ -389,14 +389,35 @@ export async function createArgoApp(cluster, spec, { by, connect } = {}) {
     } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
 }
 
-/** Remove an app KubeEZ created and its AppProject. What it deployed stays (no cascade). */
-export async function deleteArgoApp(cluster, app, { connect } = {}) {
+// wait until an object is gone — up to 55 s, so the answer fits the 90-second request deadline; exit 75 when it is still there
+const STILL_DELETING = 75
+const waitGone = (ns, ref) => `{ ${KUBECTL} -n ${q(ns)} wait --for=delete ${ref} --timeout=55s >/dev/null 2>&1 || exit ${STILL_DELETING}; }`
+const refused = (r) => Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
+
+/**
+ * Remove an app KubeEZ created and its AppProject. cascade (default): Argo CD
+ * deletes everything the app deployed first (its resources finalizer), then the
+ * app and its project go. cascade false: what it deployed keeps running.
+ * The namespace itself stays.
+ */
+export async function deleteArgoApp(cluster, app, { connect, cascade = true } = {}) {
     if (!app.managed) throw Object.assign(new Error('KubeEZ removes only the apps it created — remove this one in Argo CD.'), { status: 409 })
     const ssh = await (connect || defaultConnect)(cluster)
+    const n = q(app.namespace), res = `applications.argoproj.io ${q(app.name)}`
+    const project = `${KUBECTL} -n ${n} delete appprojects.argoproj.io ${q(`kubeez-${app.name}`)} --ignore-not-found --request-timeout=30s`
     try {
-        const r = await ssh.execCommand(`${KUBECTL} -n ${q(app.namespace)} delete applications.argoproj.io ${q(app.name)} --cascade=orphan --wait=false --request-timeout=30s && ${KUBECTL} -n ${q(app.namespace)} delete appprojects.argoproj.io ${q(`kubeez-${app.name}`)} --ignore-not-found --request-timeout=30s`, { timeoutMs: 60e3 })
-        if (r.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
-        return { message: `${app.name} removed from Argo CD. What it deployed is still running — delete it yourself if it should go.` }
+        const cmd = cascade
+            // the finalizer makes Argo CD delete the app's resources before the Application itself goes;
+            // the project must stay until then (Argo CD needs it to delete them)
+            ? [`${KUBECTL} -n ${n} patch ${res} --type merge -p ${q(JSON.stringify({ metadata: { finalizers: ['resources-finalizer.argocd.argoproj.io'] } }))} --request-timeout=30s`,
+                `${KUBECTL} -n ${n} delete ${res} --wait=false --request-timeout=30s`,
+                waitGone(app.namespace, `applications.argoproj.io/${app.name}`),
+                project].join(' && ')
+            : `${KUBECTL} -n ${n} delete ${res} --cascade=orphan --wait=false --request-timeout=30s && ${project}`
+        const r = await ssh.execCommand(cmd, { timeoutMs: 85e3 })
+        if (r.code === STILL_DELETING) return { message: `Argo CD is still deleting what ${app.name} deployed — it finishes by itself; press Remove again later to clear its project.`, pending: true }
+        if (r.code) throw refused(r)
+        return { message: cascade ? `${app.name} and everything it deployed were removed from the cluster.` : `${app.name} removed from Argo CD. What it deployed is still running.` }
     } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
 }
 
@@ -454,20 +475,28 @@ export async function createFluxApp(cluster, spec, { by, connect } = {}) {
     } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
 }
 
-/** Remove a Flux app KubeEZ created: Kustomization, GitRepository, ServiceAccount, RoleBinding. What it deployed stays (prune is off). */
-export async function deleteFluxApp(cluster, app, { connect } = {}) {
+/**
+ * Remove a Flux app KubeEZ created: Kustomization, GitRepository, ServiceAccount,
+ * RoleBinding. cascade (default): prune is switched on first, so Flux deletes
+ * everything the Kustomization applied before it goes — the ServiceAccount it
+ * runs as stays until then. cascade false: what it deployed keeps running.
+ */
+export async function deleteFluxApp(cluster, app, { connect, cascade = true } = {}) {
     if (!app.managed) throw Object.assign(new Error('KubeEZ removes only the apps it created — remove this one with Flux.'), { status: 409 })
     const ssh = await (connect || defaultConnect)(cluster)
-    const n = q(app.namespace), sa = q(fluxSa(app.name))
+    const n = q(app.namespace), sa = q(fluxSa(app.name)), ks = `kustomizations.kustomize.toolkit.fluxcd.io ${q(app.name)}`
     try {
         const r = await ssh.execCommand([
-            `${KUBECTL} -n ${n} delete kustomizations.kustomize.toolkit.fluxcd.io ${q(app.name)} --wait=false --request-timeout=30s`,
+            ...(cascade ? [`${KUBECTL} -n ${n} patch ${ks} --type merge -p ${q(JSON.stringify({ spec: { prune: true, suspend: false } }))} --request-timeout=30s`] : []),
+            `${KUBECTL} -n ${n} delete ${ks} --wait=false --request-timeout=30s`,
+            ...(cascade ? [waitGone(app.namespace, `kustomizations.kustomize.toolkit.fluxcd.io/${app.name}`)] : []),
             `${KUBECTL} -n ${n} delete gitrepositories.source.toolkit.fluxcd.io ${q(app.name)} --ignore-not-found --request-timeout=30s`,
             `${KUBECTL} -n ${n} delete rolebinding ${sa} --ignore-not-found --request-timeout=30s`,
             `${KUBECTL} -n ${n} delete serviceaccount ${sa} --ignore-not-found --request-timeout=30s`
-        ].join(' && '), { timeoutMs: 90e3 })
-        if (r.code) throw Object.assign(new Error(`The cluster refused it: ${String(r.stderr || r.stdout || '').trim().slice(0, 300)}`), { status: 502 })
-        return { message: `${app.name} removed from Flux. What it deployed is still running — delete it yourself if it should go.` }
+        ].join(' && '), { timeoutMs: 85e3 })
+        if (r.code === STILL_DELETING) return { message: `Flux is still deleting what ${app.name} deployed — it finishes by itself; press Remove again later to clear the rest.`, pending: true }
+        if (r.code) throw refused(r)
+        return { message: cascade ? `${app.name} and everything it deployed were removed from the cluster.` : `${app.name} removed from Flux. What it deployed is still running.` }
     } finally { ssh.dispose?.(); forgetGitops(cluster.id) }
 }
 

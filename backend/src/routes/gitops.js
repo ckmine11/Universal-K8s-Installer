@@ -107,8 +107,10 @@ router.delete('/:id/gitops/apps/:ns/:name', requirePermission('gitops:delete'), 
         const app = r.apps.find(a => a.kind === kind && a.namespace === req.params.ns && a.name === req.params.name)
         if (!app || !visibleTo(app, matcherFor(req.user, cluster))) return res.status(404).json({ error: 'App not found on this cluster' })
         const override = checkFreeze(req.user, cluster, req.body)
-        req.auditDetail = `remove ${app.tool} ${kind} ${app.namespace}/${app.name}${override ? ` — ${override}` : ''}`
-        res.json({ success: true, ...await withTimeout((kind === 'Kustomization' ? deleteFluxApp : deleteArgoApp)(cluster, app), 90e3, 'The cluster did not answer in time') })
+        // by default what the app deployed is deleted too (?keep=1 leaves it running)
+        const cascade = req.query.keep !== '1'
+        req.auditDetail = `remove ${app.tool} ${kind} ${app.namespace}/${app.name}${cascade ? ' and everything it deployed' : ' (deployed resources kept)'}${override ? ` — ${override}` : ''}`
+        res.json({ success: true, ...await withTimeout((kind === 'Kustomization' ? deleteFluxApp : deleteArgoApp)(cluster, app, { cascade }), 88e3, 'The cluster did not answer in time') })
     } catch (e) { fail(res, e) }
 })
 

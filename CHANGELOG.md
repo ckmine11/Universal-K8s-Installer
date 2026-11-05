@@ -42,6 +42,7 @@ Everything since 2.2.0 (about 250 changes). The built-in guide (Help → Docs) d
 
 ### Changed
 - Version numbers aligned: backend, frontend and `/api/config` report 2.3.0.
+- Removing a GitOps app KubeEZ created now deletes everything it deployed too (Argo CD resources finalizer / Flux prune), so nothing is left to clean up by hand; "keep running" stays available.
 - `.env.example` documents SSO (`OIDC_*`) and feature flags.
 - Documentation rewritten in English for this version: README, SETUP, USER_GUIDE, FEATURES_EXPLAINED, TESTING_GUIDE, UI guide (UI_ENHANCEMENTS), engineering notes (IMPROVEMENTS), API (CI and ChatOps), and the in-app Docs.
 - The Gateway Agent page's "connected" message is in English (it was Roman Hindi since 2.2.0).
