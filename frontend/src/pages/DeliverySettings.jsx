@@ -172,7 +172,7 @@ export default function DeliverySettings() {
                                 {r.username && <span className="text-slate-500">as {r.username}{r.hasPassword ? ' (password set)' : ''}</span>}
                                 {repos.canManage && <button onClick={() => window.confirm(`Remove repository ${r.name}?`) && send(`/api/delivery/repos/${r.id}`, 'DELETE', null, 'Removed')} className="ml-auto kz-btn-ghost !py-1 !px-2 !text-[11px] text-red-300" aria-label={`Remove ${r.name}`}><Trash2 className="w-3 h-3" /></button>}
                             </li>
-                        ))}{!repos.repos.length && <li className="text-sm text-slate-500">None yet — add e.g. bitnami: https://charts.bitnami.com/bitnami</li>}</ul>
+                        ))}{!repos.repos.length && <li className="text-sm text-slate-500">None yet — add e.g. ingress-nginx: https://kubernetes.github.io/ingress-nginx, or an OCI registry such as oci://registry-1.docker.io/bitnamicharts</li>}</ul>
                         {repos.canManage && (
                             <div className="flex flex-wrap items-end gap-2">
                                 <input className="kz-input !w-32" placeholder="name" value={repoForm.name} onChange={e => setRepoForm(f => ({ ...f, name: e.target.value }))} aria-label="Repository name" />
